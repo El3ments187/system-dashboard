@@ -1,0 +1,114 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Frontend: Dev Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend",
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "external",
+          "fileLocation": "relative",
+          "baseline": {
+            "startsWith": "VITE",
+            "endsWith": "ready"
+          },
+          "pattern": {
+            "regexp": "^VITE\\s+v(?<version>\\S+)\\s+ready\\s+in\\s+(?<time>\\d+)\\s+ms$",
+            "severity": "info",
+            "message": "Frontend dev server is ready"
+          }
+        },
+        {
+          "severity": "error",
+          "pattern": {
+            "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning)",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4
+          }
+        }
+      ],
+      "presentation": {
+        "focus": true,
+        "panel": "dedicated",
+        "reveal": "always",
+        "close": false
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Backend: Rust Server",
+      "type": "shell",
+      "command": "cargo run",
+      "cwd": "${workspaceFolder}/backend",
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "rust",
+          "severity": "error",
+          "pattern": {
+            "regexp": "^(.+):(\\d+):(\\d+):(\\s+)?(#\\w+\\s+)?(?<severity>error|warning):\\s+(?<message>.+)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 6
+          }
+        },
+        {
+          "severity": "info",
+          "pattern": {
+            "regexp": "^\\s+Finished\\s+`(?<profile>\\S+)`\\s+\\[",
+            "message": "Backend build finished"
+          }
+        }
+      ],
+      "presentation": {
+        "focus": true,
+        "panel": "dedicated",
+        "reveal": "always",
+        "close": false
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Start Dashboard",
+      "type": "shell",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/start-dashboard.sh"],
+      "presentation": {
+        "focus": true,
+        "panel": "shared",
+        "reveal": "always",
+        "close": true
+      },
+      "group": "run"
+    },
+    {
+      "label": "Stop Dashboard",
+      "type": "shell",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/stop-dashboard.sh"],
+      "presentation": {
+        "focus": true,
+        "panel": "shared",
+        "reveal": "always",
+        "close": true
+      },
+      "group": {
+        "kind": "run",
+        "isDefault": false
+      }
+    }
+  ]
+}
