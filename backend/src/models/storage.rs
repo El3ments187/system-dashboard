@@ -25,6 +25,7 @@ pub struct DiskIOStats {
     pub write_iops: f64,
     pub read_latency_ms: f64,
     pub write_latency_ms: f64,
+    pub utilization_percent: f64,
 }
 
 #[derive(Debug, Serialize)]

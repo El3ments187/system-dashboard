@@ -1,95 +1,68 @@
-# Investigation Rules
+# Engineering Rules
 
-Use evidence, measurements, logs, tests, and scripts as the source of truth.
+## Investigation
 
-Do not repeatedly analyze the same issue.
+* Use measurements, logs, tests, scripts, and source data as the source of truth.
+* Prefer execution over speculation.
+* Do not re-analyze verified conclusions without new evidence.
+* If an investigation repeats twice, stop reasoning and create a script, test, or measurement.
 
-If the same investigation step has been performed twice:
+## Git
 
-1. Stop reasoning.
-2. Create a script, test, query, or measurement to obtain the answer.
-3. Continue using the measured result.
+* Check `git status` and `git diff` before making changes.
+* Use Git history when investigating regressions.
+* Review recent changes before modifying related code.
+* Never run `git add`, `git commit`, `git push`, `git reset`, `git rebase`, or force-push without approval.
 
-Do not manually parse structured formats when tooling can verify the answer.
+## Project Workflow
 
-Examples:
+* Use project scripts when available instead of inventing new commands.
+* Start the dashboard using `scripts/start-dashboard.sh`.
+* Stop the dashboard using `scripts/stop-dashboard.sh`.
+* Preserve existing workflows and scripts.
+* If a script fails, fix the script rather than bypassing it.
 
-* /proc files
-* JSON
-* APIs
-* CSV
-* Database schemas
-* Log formats
+## Implementation
 
-Use scripts and validation instead.
+* Prefer the smallest effective change.
+* Reuse existing code and architecture.
+* Avoid new abstractions unless necessary.
+* Avoid unrelated refactoring.
+* Do not change project structure or file extensions without approval.
 
-# Progress Rules
+## Verification
 
-Do not remain in investigation mode indefinitely.
+* Build and test after changes.
+* Restart affected services when necessary for verification.
+* Verify fixes in the running application.
+* Reproduce bugs before fixing them when possible.
+* Reproduce the issue after the fix to confirm it is resolved.
+* Check for regressions in related functionality.
+* Do not claim success based solely on code inspection.
+* Do not claim success without verification.
+* Report failures instead of silently changing behavior.
 
-After identifying a likely root cause:
+## Metrics & Dashboard Validation
 
-1. Validate it.
-2. Implement the smallest effective fix.
-3. Verify the result.
+* Never assume metrics are correct.
+* Validate against source data and system tools.
+* Use real workloads when testing performance metrics.
 
-Avoid repeatedly restating findings, plans, or observations.
+For dashboards, verify:
 
-Avoid re-analyzing previously verified conclusions.
+Raw source → API → history buffer → chart → tooltip → card
 
-# Context Management
+All displayed values must match within expected precision.
 
-As context grows:
+## Storage Metrics
 
-* Reduce summaries.
-* Reduce repeated explanations.
-* Focus on execution.
-* Reference prior conclusions instead of re-deriving them.
+Validate storage metrics against:
 
-Do not revisit previously completed investigations unless new evidence contradicts them.
+* `iostat`
+* `/proc/diskstats`
+* `/sys/block/*/stat`
 
-# Decision Making
-
-When multiple solutions exist:
-
-1. Prefer the smallest change.
-2. Prefer reuse of existing code.
-3. Prefer consistency with existing architecture.
-4. Avoid introducing new abstractions unless necessary.
-
-# Verification Requirements
-
-For metrics, performance data, system information, and hardware statistics:
-
-Never assume values are correct.
-
-Verify against source data.
-
-Where possible compare dashboard values against:
-
-* System tools
-* Raw measurements
-* Source APIs
-* Direct device statistics
-
-Use actual workloads to validate behavior.
-
-# Stalled Investigation Rule
-
-If progress stalls or reasoning begins repeating:
-
-1. Summarize current findings.
-2. Identify the blocker.
-3. Choose the most likely path and proceed.
-4. If the choice is high risk, ask for guidance.
-
-Do not continue repeating the same investigation.
-
-# Storage Dashboard Rule
-
-When validating storage metrics:
-
-Use real read and write workloads.
+Use real read/write workloads.
 
 Verify:
 
@@ -98,7 +71,14 @@ Verify:
 * Utilization
 * Latency
 
-Compare dashboard values against raw system measurements.
-
 Do not consider a metric correct simply because a chart renders.
+
+## Stalled Progress
+
+If progress stalls:
+
+1. Summarize findings.
+2. Identify the blocker.
+3. Choose the most likely path.
+4. Proceed or ask for guidance if risk is high.
 

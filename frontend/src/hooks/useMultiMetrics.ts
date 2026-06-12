@@ -49,10 +49,16 @@ export function useMetrics<T>(
       const value = extractorRef.current(json.data);
       const timestamp = new Date();
 
+      // [TRACE] Stage 1: Raw API response
+      console.log(`[TRACE-API] endpoint=${endpointRef.current} raw_data=`, JSON.stringify(json.data), `extracted_value=${value}`);
+
       setCurrentValue(value);
       setHistory(prev => {
-        return [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp, value }]
+        const next = [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp, value }]
           .map((p, idx) => ({ ...p, slot: idx }));
+        // [TRACE] Stage 2: History buffer (last point)
+        console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} last_point=`, JSON.stringify(next[next.length - 1]));
+        return next;
       });
       setError(null);
     } catch (err) {
@@ -151,8 +157,14 @@ export function useMultiMetrics<T>(
       const json = await response.json();
       const data = json.data;
 
+      // [TRACE] Stage 1: Raw API response
+      console.log(`[TRACE-API] endpoint=${endpointRef.current} raw_data=`, JSON.stringify(data));
+
       const values = extractorsRef.current.map(ex => ex(data));
       setCurrentValues(values);
+
+      // [TRACE] Stage 1b: Extracted values
+      console.log(`[TRACE-EXTRACT] endpoint=${endpointRef.current} extracted_values=`, JSON.stringify(values));
 
       // Update history buffers for tracked indices
       setHistories(prev => prev.map((h, i) => {
@@ -160,8 +172,11 @@ export function useMultiMetrics<T>(
         const newValue = values[i];
 
         // Shift buffer: drop oldest, append new value with correct slot indices
-        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: newValue }]
+        const next = [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: newValue }]
           .map((p, idx) => ({ ...p, slot: idx }));
+        // [TRACE] Stage 2: History buffer (last tracked point)
+        console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} history_idx=${i} last_point=`, JSON.stringify(next[next.length - 1]));
+        return next;
       }));
 
       setError(null);

@@ -285,6 +285,15 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
             0.0
         };
 
+        // Compute I/O utilization from ms_io delta
+        let prev_ms_io = prev_snap.prev_ms_io.get(disk_name).copied().unwrap_or(0);
+        let io_delta = (current.ms_io.wrapping_sub(prev_ms_io)) as f64;
+        let utilization_percent = if elapsed > 0.01 {
+            (io_delta / elapsed / 10.0).min(100.0)
+        } else {
+            0.0
+        };
+
         let io = DiskIOStats {
             reads: current.reads_completed,
             writes: current.writes_completed,
@@ -296,6 +305,7 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
             write_iops: write_delta / effective_elapsed,
             read_latency_ms: read_latency,
             write_latency_ms: write_latency,
+            utilization_percent,
         };
 
         // Update snapshot using current parameter (not re-reading /proc/diskstats)
@@ -600,12 +610,16 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     }
 
     // Collect all non-None slots from each device's buffer
+    // Buffer stores newest at slots[0], oldest at highest index.
+    // Reverse iteration so slot=0 = oldest (left edge), highest slot = newest (right edge).
     for (device, buffer) in &state.buffers {
-        for (i, slot_data) in buffer.slots.iter().enumerate() {
-            if let Some(data) = slot_data
+        let mut slot_idx: usize = 0;
+        for i in (0..STORAGE_HISTORY_SIZE).rev() {
+            if let Some(data) = &buffer.slots[i]
                 && data.device == *device {
                     let mut cloned = data.clone();
-                    cloned.slot = i;
+                    cloned.slot = slot_idx;
+                    slot_idx += 1;
                     result.push(cloned);
                 }
         }

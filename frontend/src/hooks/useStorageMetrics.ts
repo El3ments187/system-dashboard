@@ -15,18 +15,44 @@ export function useStorageMetrics(): {
 
   const fetchStorage = useCallback(async () => {
     try {
-      const response = await fetch('/api/metrics/storage/devices');
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const [devicesRes, historyRes] = await Promise.all([
+        fetch('/api/metrics/storage/devices'),
+        fetch('/api/metrics/storage/history'),
+      ]);
+
+      if (!devicesRes.ok) {
+        throw new Error(`HTTP ${devicesRes.status}: ${devicesRes.statusText}`);
       }
-      const json = await response.json();
-      const data = json.data as DeviceStorageInfo[];
-      if (Array.isArray(data)) {
-        setStorageDevices(data);
-      } else {
-        setStorageDevices([]);
+      if (!historyRes.ok) {
+        throw new Error(`HTTP ${historyRes.status}: ${historyRes.statusText}`);
       }
+
+      const [devicesJson, historyJson] = await Promise.all([
+        devicesRes.json(),
+        historyRes.json(),
+      ]);
+
+      const devices = devicesJson.data as DeviceStorageInfo[];
+      const history = historyJson.data as StorageHistoryPoint[];
+
+      setStorageDevices(devices);
       setError(null);
+
+      // Group history points by device
+      const grouped = new Map<string, StorageHistoryPoint[]>();
+      for (const point of history) {
+        const existing = grouped.get(point.device) ?? [];
+        existing.push(point);
+        grouped.set(point.device, existing);
+      }
+
+      // Sort each device's history by slot ascending (oldest first)
+      for (const [device, points] of grouped.entries()) {
+        points.sort((a, b) => a.slot - b.slot);
+        grouped.set(device, points);
+      }
+
+      setStorageHistories(grouped);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -34,48 +60,15 @@ export function useStorageMetrics(): {
     }
   }, []);
 
-  const fetchHistory = useCallback(async () => {
-    try {
-      const response = await fetch('/api/metrics/storage/history');
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      const json = await response.json();
-      const data = json.data as StorageHistoryPoint[];
-
-      if (!Array.isArray(data) || data.length === 0) {
-        return;
-      }
-
-       // Replace stale data with fresh backend buffer — prevents accumulation of old points
-      const next = new Map<string, StorageHistoryPoint[]>();
-      for (const point of data) {
-        const device = point.device;
-        if (!next.has(device)) {
-          next.set(device, []);
-        }
-        next.get(device)!.push({ ...point, slot: point.slot });
-      }
-      setStorageHistories(next);
-    } catch (err) {
-      // Silently fail history errors - they don't affect main data
-    }
-  }, []);
-
   useEffect(() => {
     fetchStorage();
-    fetchHistory();
-    const interval = setInterval(() => {
-      fetchStorage();
-      fetchHistory();
-    }, 1000);
+    const interval = setInterval(fetchStorage, 1000);
     return () => clearInterval(interval);
-  }, [fetchStorage, fetchHistory]);
+  }, [fetchStorage]);
 
   const retry = useCallback(() => {
     fetchStorage();
-    fetchHistory();
-  }, [fetchStorage, fetchHistory]);
+  }, [fetchStorage]);
 
   return { storageDevices, storageHistories, loading, error, retry };
 }

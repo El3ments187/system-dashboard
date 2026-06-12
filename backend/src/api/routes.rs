@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::collectors::cpu::collect_cpu_metrics;
 use crate::collectors::memory::collect_memory_metrics;
 use crate::collectors::gpu::collect_gpu_metrics;
-use crate::collectors::storage::{collect_storage_by_device, collect_storage_metrics, collect_storage_history};
+use crate::collectors::storage::{collect_storage_by_device, collect_storage_history, collect_storage_metrics};
 use crate::collectors::system::collect_system_metrics;
 
 pub fn create_router() -> axum::Router {

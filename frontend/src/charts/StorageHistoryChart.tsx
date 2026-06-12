@@ -1,7 +1,6 @@
-import { useMemo, useEffect, useState, useRef } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { StorageHistoryPoint } from '../types/metrics';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useTooltip } from '../components/common/TooltipProvider';
+import ChartTooltip from '../components/common/ChartTooltip';
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -9,6 +8,9 @@ interface ChartProps {
 }
 
 const SERIES_COLORS = ['#4adea4', '#f59b1c', '#60a5f5', '#f5a660', '#a6f5a0', '#f5a6a6', '#a6a6f5', '#f5f5a6'];
+const CROSSHAIR_COLOR = '#5a6578';
+const GRID_COLOR = '#1e2535';
+const AXIS_COLOR = '#2a3143';
 
 function formatTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -23,55 +25,17 @@ function formatBytesPerSec(bps: number): string {
 }
 
 export default function StorageHistoryChart({ accent, data }: ChartProps) {
-  const tooltip = useTooltip();
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
-  const [chartWidth, setChartWidth] = useState(0);
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
-  const pendingTooltipRef = useRef<{ timestamp: string; series: Array<{ name: string; value: string; color?: string }> } | null>(null);
-  const lastTooltipKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (pendingTooltipRef.current) {
-      const key = JSON.stringify(pendingTooltipRef.current);
-      if (key !== lastTooltipKeyRef.current) {
-        lastTooltipKeyRef.current = key;
-        tooltip.setChartTooltip(pendingTooltipRef.current);
-      }
-      pendingTooltipRef.current = null;
-    }
-  });
-
-  useEffect(() => {
-    import('recharts').then((recharts) => {
-      setChartComponents(recharts);
-    });
-  }, []);
-
-  useEffect(() => {
-    const update = () => {
-      const els = document.querySelectorAll('.storage-chart-container');
-      const arr = Array.from(els);
-      arr.forEach((el, i) => {
-        const rect = el.getBoundingClientRect();
-        if (rect.width > 0) {
-          const idx = arr.indexOf(el);
-          if (idx === i) {
-            setChartWidth(Math.round(rect.width));
-          }
-        }
-      });
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    document.querySelectorAll('.storage-chart-container').forEach(el => ro.observe(el));
-    return () => ro.disconnect();
+    import('recharts').then((recharts) => setChartComponents(recharts));
   }, []);
 
   const chartData = useMemo(() => {
     const entries = Array.from(data.entries());
     if (entries.length === 0) return [];
 
-    // Merge all device data points by slot
     const slotMap = new Map<number, any>();
 
     for (const [device, points] of entries) {
@@ -79,7 +43,11 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
         if (!point) continue;
         const slot = point.slot;
         if (!slotMap.has(slot)) {
-          slotMap.set(slot, { slot, name: formatTime(point.timestamp), timestampMs: new Date(point.timestamp).getTime() });
+          slotMap.set(slot, {
+            x: slot,
+            timeLabel: formatTime(point.timestamp),
+            timestampMs: new Date(point.timestamp).getTime(),
+          });
         }
         const entry = slotMap.get(slot);
         entry[`${device}_read`] = point.read_bytes_per_sec;
@@ -88,12 +56,17 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
       }
     }
 
-    return Array.from(slotMap.values())
-       .sort((a, b) => a.timestampMs - b.timestampMs);
+    const result = Array.from(slotMap.values()).sort((a, b) => a.timestampMs - b.timestampMs);
+    // [TRACE] Stage 3: Storage chart data — last point
+    if (result.length > 0) {
+      console.log('[TRACE-CHART] title=StorageHistory mode=storage last_point=', JSON.stringify(result[result.length - 1]));
+    }
+    return result;
   }, [data]);
 
   const deviceNames = Array.from(data.keys()).sort();
   const hasData = chartData.length > 0;
+  const dataMaxX = chartData.length > 0 ? chartData.length - 1 : 0;
 
   if (!chartComponents) {
     return (
@@ -105,11 +78,36 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
     );
   }
 
-  const w = chartWidth || 1200;
+  const AreaChart = chartComponents.AreaChart as any;
+  const Area = chartComponents.Area as any;
+  const XAxis = chartComponents.XAxis as any;
+  const YAxis = chartComponents.YAxis as any;
+  const CartesianGrid = chartComponents.CartesianGrid as any;
+  const Tooltip = chartComponents.Tooltip as any;
+  const ResponsiveContainer = chartComponents.ResponsiveContainer as any;
+
+  const tooltipContent = (props: any) => {
+    if (!props || !props.payload || !props.payload[0] || !props.active) return null;
+    const payloadArr = props.payload;
+    const firstDatum = payloadArr[0]?.payload ?? {};
+
+    // [TRACE] Stage 4: Storage tooltip payload
+    console.log('[TRACE-TOOLTIP] title=StorageHistory index=', props.label, 'payload_point=', JSON.stringify(firstDatum), 'all_payloads=', JSON.stringify(payloadArr.map((e: any) => ({ name: e.name, value: e.value }))));
+
+    const ts = firstDatum?.timestampMs ?? 0;
+    const timestamp = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+
+    const series = payloadArr.map((entry: any) => ({
+      name: entry.name,
+      value: activeTab === 'throughput' ? formatBytesPerSec(entry.value ?? 0) : `${(entry.value ?? 0).toFixed(1)}%`,
+      color: entry.color || '#fff',
+    }));
+
+    return <ChartTooltip timestamp={timestamp} series={series} />;
+  };
 
   return (
     <div className="chart-container storage-chart-container" style={{ flex: 1, minHeight: 0, height: 0 }}>
-      {/* Tab selector */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {(['throughput', 'utilization'] as const).map(tab => (
           <button
@@ -124,7 +122,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
               cursor: 'pointer',
               fontSize: 11,
               fontWeight: activeTab === tab ? 600 : 400,
-              fontFamily: 'JetBrains Mono, Fira Code, monospace',
+              fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             }}
           >
             {tab === 'throughput' ? 'Throughput' : 'Utilization'}
@@ -134,16 +132,15 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
 
       {hasData ? (
         <>
-          {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
             {deviceNames.map((device, i) => (
               <div key={device} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: 12, height: 4, borderRadius: 2, background: SERIES_COLORS[i % SERIES_COLORS.length] }} />
-                <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, Fira Code, monospace' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                   {device}
                 </span>
                 {activeTab !== 'utilization' && (
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, Fira Code, monospace' }}>
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                     R/W
                   </span>
                 )}
@@ -151,88 +148,72 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
             ))}
           </div>
 
-          <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}
-            onMouseLeave={() => tooltip.setChartTooltip(null)}
-          >
-            <ResponsiveContainer width={w} height="100%">
+          <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <ResponsiveContainer>
               <AreaChart data={chartData}>
-                <CartesianGrid stroke="var(--border-light)" strokeDasharray="4 4" />
+                <CartesianGrid stroke={GRID_COLOR} strokeDasharray="4 4" />
                 <XAxis
-                  dataKey="timestampMs"
-                  type={"time" as "auto"}
-                  domain={['dataMin', 'dataMax']}
+                  dataKey="x"
+                  type="number"
+                  domain={[0, dataMaxX]}
+                  ticks={chartData.map((_, i) => i)}
                   tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                  axisLine={{ stroke: 'var(--border-color)' }}
-                  tickFormatter={(t: number) => new Date(t).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  axisLine={{ stroke: AXIS_COLOR }}
+                  tickFormatter={(tickVal: number) => {
+                    const pt = chartData[Math.round(tickVal)];
+                    return pt ? pt.timeLabel : '';
+                  }}
+                  interval="preserveStartEnd"
                 />
                 <YAxis
                   type="number"
                   domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
-                  fontSize={10}
-                  axisLine={{ stroke: 'var(--border-color)' }}
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  axisLine={{ stroke: AXIS_COLOR }}
                   tickFormatter={(v: number) => {
                     if (activeTab === 'throughput') return formatBytesPerSec(v);
                     return `${v}%`;
                   }}
                 />
-               <Tooltip
-                   isAnimationActive={false}
-                   animationDuration={0}
-                  content={(props: any) => {
-                       const { payload } = props;
-                       if (!payload || !payload[0]) return null;
-                       const datum = payload[0].datum;
-                      if (!datum) return null;
-
-                      const series = deviceNames.flatMap(device => {
-                         const readKey = `${device}_read`;
-                         const writeKey = `${device}_write`;
-                         const utilKey = `${device}_util`;
-                         const readVal = (datum as any)[readKey] ?? 0;
-                         const writeVal = (datum as any)[writeKey] ?? 0;
-                         const utilVal = (datum as any)[utilKey] ?? 0;
-                         const color = SERIES_COLORS[deviceNames.indexOf(device) % SERIES_COLORS.length];
-                         return [
-                           { name: `${device} Read`, value: formatBytesPerSec(readVal), color },
-                           { name: `${device} Write`, value: formatBytesPerSec(writeVal), color },
-                           { name: `${device} Util`, value: `${utilVal.toFixed(1)}%`, color },
-                         ];
-                      });
-
-                      pendingTooltipRef.current = { timestamp: datum.name, series };
-                      return null;
-                   }}
+                <Tooltip
+                  isAnimationActive={false}
+                  animationDuration={0}
+                  content={tooltipContent}
+                  cursor={{ stroke: CROSSHAIR_COLOR, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                  offset={12}
                 />
-                 {deviceNames.map((device, i) => {
-                     const color = SERIES_COLORS[i % SERIES_COLORS.length];
-                     const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
-                     const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
-                   return (
-                     <g key={device}>
-                     <Area
-                          dataKey={baseKey}
-                         stroke={color}
-                         fill={`${color}20`}
-                         strokeWidth={2}
-                         fillOpacity={0.3}
-                         isAnimationActive={false}
-                         animationDuration={0}
-                       />
-                       {writeKey && (
-                         <Area
-                           dataKey={writeKey}
-                           stroke={color}
-                           fill={`${color}10`}
-                           strokeWidth={2}
-                           strokeDasharray="4 4"
-                           fillOpacity={0.2}
-                           isAnimationActive={false}
-                           animationDuration={0}
-                         />
-                       )}
-                     </g>
-                   );
-                 })}
+                {deviceNames.map((device, i) => {
+                  const color = SERIES_COLORS[i % SERIES_COLORS.length];
+                  const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
+                  const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
+                  return (
+                    <g key={device}>
+                      <Area
+                        dataKey={baseKey}
+                        stroke={color}
+                        fill={`${color}20`}
+                        strokeWidth={2}
+                        fillOpacity={0.3}
+                        isAnimationActive={false}
+                        animationDuration={0}
+                        activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: color }}
+                      />
+                      {writeKey && (
+                        <Area
+                          dataKey={writeKey}
+                          stroke={color}
+                          fill={`${color}10`}
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          fillOpacity={0.2}
+                          isAnimationActive={false}
+                          animationDuration={0}
+                          activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: color }}
+                        />
+                      )}
+                    </g>
+                  );
+                })}
               </AreaChart>
             </ResponsiveContainer>
           </div>

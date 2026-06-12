@@ -50,7 +50,8 @@ export interface DiskIOStats {
    write_bytes_per_sec: number;
    read_iops: number;
    write_iops: number;
-  }
+   utilization_percent: number;
+ }
 
 export interface DeviceStorageInfo {
   device: string;
