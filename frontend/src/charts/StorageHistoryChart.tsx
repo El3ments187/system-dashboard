@@ -28,10 +28,15 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
   const [chartWidth, setChartWidth] = useState(0);
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
   const pendingTooltipRef = useRef<{ timestamp: string; series: Array<{ name: string; value: string; color?: string }> } | null>(null);
+  const lastTooltipKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (pendingTooltipRef.current) {
-      tooltip.setChartTooltip(pendingTooltipRef.current);
+      const key = JSON.stringify(pendingTooltipRef.current);
+      if (key !== lastTooltipKeyRef.current) {
+        lastTooltipKeyRef.current = key;
+        tooltip.setChartTooltip(pendingTooltipRef.current);
+      }
       pendingTooltipRef.current = null;
     }
   });
@@ -93,10 +98,6 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
   if (!chartComponents) {
     return (
       <div className="chart-container storage-chart-container" style={{ flex: 1, minHeight: 0, height: 0 }}>
-        <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span>Storage Performance</span>
-          <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '12px' }}>60s window</span>
-        </div>
         <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
           Loading chart...
         </div>
@@ -108,11 +109,6 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
 
   return (
     <div className="chart-container storage-chart-container" style={{ flex: 1, minHeight: 0, height: 0 }}>
-      <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span>Storage Performance</span>
-        <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '12px' }}>60s window</span>
-      </div>
-
       {/* Tab selector */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {(['throughput', 'utilization'] as const).map(tab => (

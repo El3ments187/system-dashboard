@@ -47,22 +47,16 @@ export function useStorageMetrics(): {
         return;
       }
 
-       setStorageHistories(prev => {
-        const next = new Map(prev);
-
-        for (const point of data) {
-          const device = point.device;
-          let existing = next.get(device);
-
-          if (!existing) {
-            next.set(device, [{ ...point, slot: point.slot }]);
-          } else if (!existing.some((p: StorageHistoryPoint) => p.slot === point.slot)) {
-            existing.push({ ...point, slot: point.slot });
-          }
+       // Replace stale data with fresh backend buffer — prevents accumulation of old points
+      const next = new Map<string, StorageHistoryPoint[]>();
+      for (const point of data) {
+        const device = point.device;
+        if (!next.has(device)) {
+          next.set(device, []);
         }
-
-        return next;
-      });
+        next.get(device)!.push({ ...point, slot: point.slot });
+      }
+      setStorageHistories(next);
     } catch (err) {
       // Silently fail history errors - they don't affect main data
     }

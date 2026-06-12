@@ -33,7 +33,7 @@ struct StorageHistoryState {
     buffers: BTreeMap<String, DeviceHistoryBuffer>,
     last_io_stats: BTreeMap<String, (u64, u64)>,
     last_timestamp: std::time::Instant,
-    prev_weighted_ms: BTreeMap<String, u64>,
+    prev_ms_io: BTreeMap<String, u64>,
     prev_ms_read: BTreeMap<String, u64>,
     prev_ms_written: BTreeMap<String, u64>,
 }
@@ -184,7 +184,7 @@ struct DiskStat {
     sectors_written: u64,
     ms_written: u64,
     _io_in_progress: u64,
-    _ms_in_progress: u64,
+    ms_io: u64,
     _weighted_ms: u64,
 }
 
@@ -207,7 +207,7 @@ fn read_disk_stats() -> std::collections::HashMap<String, DiskStat> {
                     sectors_written: parts[9].parse().unwrap_or(0),
                     ms_written: parts[10].parse().unwrap_or(0),
                     _io_in_progress: parts[11].parse().unwrap_or(0),
-                    _ms_in_progress: parts[12].parse().unwrap_or(0),
+                    ms_io: parts[12].parse().unwrap_or(0),
                     _weighted_ms: parts[13].parse().unwrap_or(0),
                 });
             }
@@ -223,7 +223,7 @@ struct DiskStatsSnapshot {
     writes: std::collections::HashMap<String, u64>,
     read_sectors: std::collections::HashMap<String, u64>,
     write_sectors: std::collections::HashMap<String, u64>,
-    prev_weighted_ms: std::collections::HashMap<String, u64>,
+    prev_ms_io: std::collections::HashMap<String, u64>,
     prev_ms_read: std::collections::HashMap<String, u64>,
     prev_ms_written: std::collections::HashMap<String, u64>,
     timestamp: std::time::Instant,
@@ -238,7 +238,7 @@ fn init_storage_history() -> StorageHistoryState {
         buffers: BTreeMap::new(),
         last_io_stats: BTreeMap::new(),
         last_timestamp: std::time::Instant::now(),
-        prev_weighted_ms: BTreeMap::new(),
+        prev_ms_io: BTreeMap::new(),
         prev_ms_read: BTreeMap::new(),
         prev_ms_written: BTreeMap::new(),
     }
@@ -304,7 +304,7 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
             s.writes.insert(disk_name.clone(), current.writes_completed);
             s.read_sectors.insert(disk_name.clone(), current.sectors_read);
             s.write_sectors.insert(disk_name.clone(), current.sectors_written);
-            s.prev_weighted_ms.insert(disk_name.clone(), current._weighted_ms);
+            s.prev_ms_io.insert(disk_name.clone(), current.ms_io);
             s.prev_ms_read.insert(disk_name.clone(), current.ms_read);
             s.prev_ms_written.insert(disk_name.clone(), current.ms_written);
             s.timestamp = std::time::Instant::now();
@@ -318,7 +318,7 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
             writes: std::collections::HashMap::from([(disk_name.clone(), current.writes_completed)]),
             read_sectors: std::collections::HashMap::from([(disk_name.clone(), current.sectors_read)]),
             write_sectors: std::collections::HashMap::from([(disk_name.clone(), current.sectors_written)]),
-            prev_weighted_ms: std::collections::HashMap::from([(disk_name.clone(), current._weighted_ms)]),
+            prev_ms_io: std::collections::HashMap::from([(disk_name.clone(), current.ms_io)]),
             prev_ms_read: std::collections::HashMap::from([(disk_name.clone(), current.ms_read)]),
             prev_ms_written: std::collections::HashMap::from([(disk_name.clone(), current.ms_written)]),
         });
@@ -392,7 +392,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
                 writes: std::collections::HashMap::new(),
                 read_sectors: std::collections::HashMap::new(),
                 write_sectors: std::collections::HashMap::new(),
-                prev_weighted_ms: std::collections::HashMap::new(),
+                prev_ms_io: std::collections::HashMap::new(),
                 prev_ms_read: std::collections::HashMap::new(),
                 prev_ms_written: std::collections::HashMap::new(),
             });
@@ -401,7 +401,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
                 s.writes.insert(name.clone(), stat.writes_completed);
                 s.read_sectors.insert(name.clone(), stat.sectors_read);
                 s.write_sectors.insert(name.clone(), stat.sectors_written);
-                s.prev_weighted_ms.insert(name.clone(), stat._weighted_ms);
+                s.prev_ms_io.insert(name.clone(), stat.ms_io);
                 s.prev_ms_read.insert(name.clone(), stat.ms_read);
                 s.prev_ms_written.insert(name.clone(), stat.ms_written);
             }
@@ -557,18 +557,18 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
             0.0
         };
 
-        // I/O utilization from weighted milliseconds (combined read+write)
+        // I/O utilization from ms_io (total time spent doing I/O)
         let utilization: f64 = {
-            let prev_w = state.prev_weighted_ms.get(device).copied().unwrap_or(0);
-            let cur_w = cur_read + cur_written;
-            let weighted_delta = (cur_w.wrapping_sub(prev_w)) as f64;
+            let prev_w = state.prev_ms_io.get(device).copied().unwrap_or(0);
+            let cur_w = disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0);
+            let io_delta = (cur_w.wrapping_sub(prev_w)) as f64;
             if elapsed > 0.01 {
-                (weighted_delta / elapsed / 10.0).min(100.0)
+                (io_delta / elapsed / 10.0).min(100.0)
             } else {
                 0.0
             }
         };
-        state.prev_weighted_ms.insert(device.clone(), cur_read + cur_written);
+        state.prev_ms_io.insert(device.clone(), disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0));
         state.prev_ms_read.insert(device.clone(), cur_read);
         state.prev_ms_written.insert(device.clone(), cur_written);
 

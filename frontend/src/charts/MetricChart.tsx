@@ -21,10 +21,15 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
   const pendingTooltipRef = useRef<{ timestamp: string; series: Array<{ name: string; value: string; color?: string }>; description?: ReturnType<typeof getMetricDescription> } | null>(null);
+  const lastTooltipKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (pendingTooltipRef.current) {
-      tooltip.setChartTooltip(pendingTooltipRef.current);
+      const key = JSON.stringify(pendingTooltipRef.current);
+      if (key !== lastTooltipKeyRef.current) {
+        lastTooltipKeyRef.current = key;
+        tooltip.setChartTooltip(pendingTooltipRef.current);
+      }
       pendingTooltipRef.current = null;
     }
   });
@@ -82,7 +87,7 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
     // Generic single-series path
     return data
       .map(p => ({
-        timestampMs: p.timestamp instanceof Date ? p.timestamp.getTime() : new Date(p.timestamp).getTime(),
+        timestampMs: typeof p.timestamp === 'number' ? p.timestamp : p.timestamp instanceof Date ? p.timestamp.getTime() : new Date(String(p.timestamp)).getTime(),
         x: (p as MetricHistoryPoint).slot ?? 0,
         name: formatTime((p as MetricHistoryPoint).timestamp),
         value: p.value != null ? Math.round((p.value as number) * 10) / 10 : null,
@@ -159,7 +164,7 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
                domain={['dataMin', 'dataMax']}
                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
                axisLine={{ stroke: 'var(--border-color)' }}
-               tickFormatter={(t) => new Date(t).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+               tickFormatter={(t: number) => new Date(t).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
              />
             <YAxis
               type="number"

@@ -51,15 +51,15 @@ export function useMetrics<T>(
 
       setCurrentValue(value);
       setHistory(prev => {
-        const updated = [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp, value }];
-        return updated;
+        return [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp, value }]
+          .map((p, idx) => ({ ...p, slot: idx }));
       });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setHistory(prev => {
-        const updated = [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }];
-        return updated;
+        return [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }]
+          .map((p, idx) => ({ ...p, slot: idx }));
       });
     } finally {
       setLoading(false);
@@ -158,9 +158,10 @@ export function useMultiMetrics<T>(
       setHistories(prev => prev.map((h, i) => {
         if (!h || !trackHistoryRef.current?.[i]) return h;
         const newValue = values[i];
-        
-        // Insert new value at the end, remove oldest if buffer is full
-        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: newValue }];
+
+        // Shift buffer: drop oldest, append new value with correct slot indices
+        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: newValue }]
+          .map((p, idx) => ({ ...p, slot: idx }));
       }));
 
       setError(null);
@@ -168,7 +169,8 @@ export function useMultiMetrics<T>(
       setError(err instanceof Error ? err.message : 'Unknown error');
       setHistories(prev => prev.map((h, i) => {
         if (!h || !trackHistoryRef.current?.[i]) return h;
-        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }];
+        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }]
+          .map((p, idx) => ({ ...p, slot: idx }));
       }));
     } finally {
       setLoading(false);
