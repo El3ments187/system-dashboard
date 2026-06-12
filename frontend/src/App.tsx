@@ -23,6 +23,8 @@ const ACCENT_COLORS: Record<string, { color: string; glow: string }> = {
   purple: { color: '#8b5aff', glow: 'rgba(139, 90, 255, 0.3)' },
   orange: { color: '#f59b1c', glow: 'rgba(245, 155, 28, 0.3)' },
   red:    { color: '#e84747', glow: 'rgba(232, 71, 71, 0.3)' },
+  pink:   { color: '#ff6eb4', glow: 'rgba(255, 110, 180, 0.3)' },
+  yellow: { color: '#f5c542', glow: 'rgba(245, 197, 66, 0.3)' },
 };
 
 export default function App() {
