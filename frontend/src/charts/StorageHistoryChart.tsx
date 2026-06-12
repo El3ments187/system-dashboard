@@ -79,7 +79,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
         if (!point) continue;
         const slot = point.slot;
         if (!slotMap.has(slot)) {
-          slotMap.set(slot, { slot, name: formatTime(point.timestamp), time: new Date(point.timestamp).getTime() });
+          slotMap.set(slot, { slot, name: formatTime(point.timestamp), timestampMs: new Date(point.timestamp).getTime() });
         }
         const entry = slotMap.get(slot);
         entry[`${device}_read`] = point.read_bytes_per_sec;
@@ -89,7 +89,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
     }
 
     return Array.from(slotMap.values())
-      .sort((a, b) => a.time - b.time);
+       .sort((a, b) => a.timestampMs - b.timestampMs);
   }, [data]);
 
   const deviceNames = Array.from(data.keys()).sort();
@@ -158,10 +158,12 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
               <AreaChart data={chartData}>
                 <CartesianGrid stroke="var(--border-light)" strokeDasharray="4 4" />
                 <XAxis
-                  dataKey="name"
-                  type="category"
-                  tick={false}
+                  dataKey="timestampMs"
+                  type={"time" as "auto"}
+                  domain={['dataMin', 'dataMax']}
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
                   axisLine={{ stroke: 'var(--border-color)' }}
+                  tickFormatter={(t: number) => new Date(t).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 />
                 <YAxis
                   type="number"
