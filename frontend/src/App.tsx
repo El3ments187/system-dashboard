@@ -13,27 +13,12 @@ import StorageCard from './components/cards/StorageCard';
 import StoragePerformanceCard from './components/cards/StoragePerformanceCard';
 import { MetricsProvider } from './context/MetricsContext';
 import { TooltipProvider } from './components/common/TooltipProvider';
+import { useTheme } from './hooks/useTheme';
 import './styles/theme.css';
 import { checkHealth } from './services/api';
 
-const ACCENT_COLORS: Record<string, { color: string; glow: string }> = {
-  blue:   { color: '#3b8aff', glow: 'rgba(59, 138, 255, 0.3)' },
-  cyan:   { color: '#00e0ff', glow: 'rgba(0, 224, 255, 0.3)' },
-  green:  { color: '#22c192', glow: 'rgba(34, 193, 146, 0.3)' },
-  purple: { color: '#8b5aff', glow: 'rgba(139, 90, 255, 0.3)' },
-  orange: { color: '#f59b1c', glow: 'rgba(245, 155, 28, 0.3)' },
-  red:    { color: '#e84747', glow: 'rgba(232, 71, 71, 0.3)' },
-  pink:   { color: '#ff6eb4', glow: 'rgba(255, 110, 180, 0.3)' },
-  yellow: { color: '#f5c542', glow: 'rgba(245, 197, 66, 0.3)' },
-};
-
 export default function App() {
-  const [accent, setAccent] = useState<string>(() => {
-    return localStorage.getItem('dashboard-accent') || 'blue';
-  });
-  const [bg, setBg] = useState<string>(() => {
-    return localStorage.getItem('dashboard-bg') || 'dark';
-  });
+  const { accent, setAccent, bg, setBg, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -46,21 +31,9 @@ export default function App() {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-accent', accent);
-    localStorage.setItem('dashboard-accent', accent);
-  }, [accent]);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-bg', bg);
-    localStorage.setItem('dashboard-bg', bg);
-  }, [bg]);
-
-  useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 800);
     return () => clearTimeout(timer);
   }, []);
-
-  const current = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
 
   if (loading) {
     return (

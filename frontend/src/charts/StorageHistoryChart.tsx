@@ -8,9 +8,16 @@ interface ChartProps {
 }
 
 const SERIES_COLORS = ['#4adea4', '#f59b1c', '#60a5f5', '#f5a660', '#a6f5a0', '#f5a6a6', '#a6a6f5', '#f5f5a6'];
-const CROSSHAIR_COLOR = '#5a6578';
-const GRID_COLOR = '#1e2535';
-const AXIS_COLOR = '#2a3143';
+
+function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    grid: cs.getPropertyValue('--chart-grid').trim() || '#1e2535',
+    axis: cs.getPropertyValue('--chart-axis').trim() || '#2a3143',
+    crosshair: cs.getPropertyValue('--chart-crosshair').trim() || '#5a6578',
+    dotStroke: cs.getPropertyValue('--chart-dot-stroke').trim() || '#fff',
+  };
+}
 
 function formatTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -27,9 +34,17 @@ function formatBytesPerSec(bps: number): string {
 export default function StorageHistoryChart({ accent, data }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
+  const [chartColors, setChartColors] = useState(() => getChartColors());
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
+  }, []);
+
+  useEffect(() => {
+    setChartColors(getChartColors());
+    const observer = new MutationObserver(() => setChartColors(getChartColors()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
+    return () => observer.disconnect();
   }, []);
 
   const chartData = useMemo(() => {
@@ -151,14 +166,14 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
           <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <ResponsiveContainer>
               <AreaChart data={chartData}>
-                <CartesianGrid stroke={GRID_COLOR} strokeDasharray="4 4" />
+                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="x"
                   type="number"
                   domain={[0, dataMaxX]}
                   ticks={chartData.map((_, i) => i)}
                   tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                  axisLine={{ stroke: AXIS_COLOR }}
+                  axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={(tickVal: number) => {
                     const pt = chartData[Math.round(tickVal)];
                     return pt ? pt.timeLabel : '';
@@ -169,7 +184,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
                   type="number"
                   domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
                   tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                  axisLine={{ stroke: AXIS_COLOR }}
+                  axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={(v: number) => {
                     if (activeTab === 'throughput') return formatBytesPerSec(v);
                     return `${v}%`;
@@ -179,7 +194,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
                   isAnimationActive={false}
                   animationDuration={0}
                   content={tooltipContent}
-                  cursor={{ stroke: CROSSHAIR_COLOR, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
                   offset={12}
                 />
                 {deviceNames.map((device, i) => {
@@ -196,7 +211,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
                         fillOpacity={0.3}
                         isAnimationActive={false}
                         animationDuration={0}
-                        activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: color }}
+                        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
                       />
                       {writeKey && (
                         <Area
@@ -208,7 +223,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
                           fillOpacity={0.2}
                           isAnimationActive={false}
                           animationDuration={0}
-                          activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: color }}
+                          activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
                         />
                       )}
                     </g>

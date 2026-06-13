@@ -27,20 +27,38 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
         <div className="theme-panel-title">Theme Settings</div>
         <div className="theme-panel-subtitle">Choose an accent color for the dashboard</div>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, padding: 16,
-          background: 'var(--bg-card)', borderRadius: 10,
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24,
         }}>
           <div style={{
-            width: 48, height: 48, borderRadius: '50%',
-            background: `radial-gradient(circle at 30% 30%, ${current.color}, ${current.glow})`,
-            border: '2px solid var(--border-color)',
-          }} />
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
-              {presets.find(p => p.value === accent)?.name || 'Blue'}
+            display: 'flex', alignItems: 'center', gap: 12, padding: 12,
+            background: 'var(--bg-card)', borderRadius: 10,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+              background: `radial-gradient(circle at 30% 30%, ${current.color}, ${current.glow})`,
+              border: '2px solid var(--border-color)',
+            }} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                {presets.find(p => p.value === accent)?.name || 'Blue'}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                {current.color}
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-              {current.color}
+          </div>
+          <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+              Live Preview
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 6, background: current.color, border: '1px solid var(--border-color)' }} />
+              <div style={{ width: 32, height: 32, borderRadius: 6, background: current.glow, border: '1px solid var(--border-color)' }} />
+              <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--bg-card)', border: `2px solid ${current.color}` }} />
+              <div style={{
+                width: 32, height: 32, borderRadius: 6, background: `linear-gradient(90deg, ${current.color}, ${current.glow})`,
+                border: '1px solid var(--border-color)',
+              }} />
             </div>
           </div>
         </div>
@@ -65,7 +83,7 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
           Background Colors
         </div>
-        <div className="color-grid" style={{ marginBottom: 24 }}>
+        <div className="color-grid" style={{ marginBottom: 16 }}>
           {bgPresets.map(bgPreset => (
             <div
               key={bgPreset.value}
@@ -83,21 +101,7 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 32, padding: 16, background: 'var(--bg-card)', borderRadius: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-            Live Preview
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: accent === 'blue' ? accent : 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} />
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: current.glow, border: '1px solid var(--border-color)' }} />
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--bg-card)', border: `2px solid ${current.color}` }} />
-            <div style={{
-              width: 40, height: 40, borderRadius: 8, background: `linear-gradient(90deg, ${current.color}, ${current.glow})`,
-              border: '1px solid var(--border-color)',
-            }} />
-          </div>
-        </div>
-      </div>
+     </div>
     </>
   );
 }

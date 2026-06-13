@@ -11,9 +11,15 @@ interface ChartProps {
   dataKeys?: string[];
 }
 
-const CROSSHAIR_COLOR = '#5a6578';
-const GRID_COLOR = '#1e2535';
-const AXIS_COLOR = '#2a3143';
+function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    grid: cs.getPropertyValue('--chart-grid').trim() || '#1e2535',
+    axis: cs.getPropertyValue('--chart-axis').trim() || '#2a3143',
+    crosshair: cs.getPropertyValue('--chart-crosshair').trim() || '#5a6578',
+    dotStroke: cs.getPropertyValue('--chart-dot-stroke').trim() || '#fff',
+  };
+}
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -21,9 +27,17 @@ function formatTime(date: Date): string {
 
 export default function MetricChart({ accent, title, data, color, timeFrame, dataKeys }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
+  const [chartColors, setChartColors] = useState(() => getChartColors());
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
+  }, []);
+
+  useEffect(() => {
+    setChartColors(getChartColors());
+    const observer = new MutationObserver(() => setChartColors(getChartColors()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
+    return () => observer.disconnect();
   }, []);
 
   const chartData = useMemo(() => {
@@ -159,14 +173,14 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
       <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <ResponsiveContainer>
           <AreaChart data={chartData}>
-            <CartesianGrid stroke={GRID_COLOR} strokeDasharray="4 4" />
+            <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
             <XAxis
               dataKey="x"
               type="number"
               domain={[0, dataMaxX]}
               ticks={chartData.map((_, i) => i)}
               tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-              axisLine={{ stroke: AXIS_COLOR }}
+              axisLine={{ stroke: chartColors.axis }}
               tickFormatter={(tickVal: number) => {
                 const pt = chartData[Math.round(tickVal)];
                 return pt ? pt.timeLabel : '';
@@ -177,13 +191,13 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
               type="number"
               domain={[0, 100]}
               tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-              axisLine={{ stroke: AXIS_COLOR }}
+              axisLine={{ stroke: chartColors.axis }}
             />
             <Tooltip
               isAnimationActive={false}
               animationDuration={0}
               content={tooltipContent}
-              cursor={{ stroke: CROSSHAIR_COLOR, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+              cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
               offset={12}
             />
             {dataKeys ? (
@@ -199,7 +213,7 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
                     fillOpacity={0.3}
                     isAnimationActive={false}
                     animationDuration={0}
-                    activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: keyColor }}
+                    activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
                   />
                 );
               })
@@ -212,7 +226,7 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
                 fillOpacity={0.3}
                 isAnimationActive={false}
                 animationDuration={0}
-                activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: strokeColor }}
+                activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
               />
             )}
           </AreaChart>

@@ -317,7 +317,7 @@ main {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 320px;
+  width: 480px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   z-index: 201;
@@ -365,7 +365,7 @@ main {
 
 .color-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   margin-top: 16px;
 }
