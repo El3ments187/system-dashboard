@@ -62,9 +62,9 @@ export default function Header({ accent, onToggleThemePanel, healthOk }: HeaderP
           <div className="header-info">
             <span className="header-info-label">Status</span>
             {healthOk ? (
-              <Wifi size={14} style={{ color: '#22c192' }} />
+              <Wifi size={14} style={{ color: 'var(--success)' }} />
             ) : (
-              <WifiOff size={14} style={{ color: '#e84747' }} />
+              <WifiOff size={14} style={{ color: 'var(--danger)' }} />
             )}
           </div>
         </div>

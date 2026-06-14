@@ -6,7 +6,7 @@ import { useTooltip } from '../../components/common/TooltipProvider';
 import { getMetricDescription } from '../../data/metricDescriptions';
 
 interface CardProps {
-  accent: { color: string; glow: string };
+  accent?: { color: string; glow: string };
 }
 
 function formatBytes(bytes: number): string {
@@ -32,9 +32,9 @@ function formatIops(iops: number): string {
 }
 
 function getUtilColor(util: number): string {
-  if (util < 70) return '#22c192';
-  if (util < 90) return '#f59b1c';
-  return '#e84747';
+  if (util < 70) return 'var(--success)';
+  if (util < 90) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 function getDeviceState(io: any): string {
@@ -47,10 +47,10 @@ function getDeviceState(io: any): string {
 
 function getDeviceStateColor(state: string): string {
   switch (state) {
-    case 'Busy': return '#e84747';
-    case 'Active': return '#f59b1c';
-    case 'Idle': return '#888';
-    default: return '#22c192';
+    case 'Busy': return 'var(--danger)';
+    case 'Active': return 'var(--warning)';
+    case 'Idle': return 'var(--text-muted)';
+    default: return 'var(--success)';
   }
 }
 
@@ -79,7 +79,7 @@ interface DeviceStorageInfo {
   mounts: StorageMount[];
 }
 
-export default function StorageCard({ accent }: CardProps) {
+export default function StorageCard(_props: CardProps) {
   const tooltip = useTooltip();
   const { storageDevices, storageLoading, storageError, retryStorage } = useMetricsContext();
 
@@ -112,12 +112,12 @@ export default function StorageCard({ accent }: CardProps) {
         <div className="metric-card" style={{ opacity: 0.5 }}>
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <HardDrive size={20} style={{ color: accent.color }} />
+              <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
               <span className="card-title">Storage</span>
             </div>
             <div className="card-status">
-              <div className="status-dot" style={{ background: '#22c192' }} />
-              <span style={{ color: '#22c192' }}>Active</span>
+              <div className="status-dot" style={{ background: 'var(--success)' }} />
+              <span style={{ color: 'var(--success)' }}>Active</span>
             </div>
           </div>
           <div className="card-value">
@@ -142,12 +142,12 @@ export default function StorageCard({ accent }: CardProps) {
         <div className="metric-card">
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <HardDrive size={20} style={{ color: accent.color }} />
+              <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
               <span className="card-title">Storage</span>
             </div>
             <div className="card-status">
-              <div className="status-dot" style={{ background: '#22c192' }} />
-              <span style={{ color: '#22c192' }}>Active</span>
+              <div className="status-dot" style={{ background: 'var(--success)' }} />
+              <span style={{ color: 'var(--success)' }}>Active</span>
             </div>
           </div>
           <div className="card-value">
@@ -158,7 +158,7 @@ export default function StorageCard({ accent }: CardProps) {
               className="card-progress-bar"
               style={{
                 width: '0%',
-                background: `linear-gradient(90deg, ${accent.color}, ${accent.glow})`,
+                background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
               }}
             />
           </div>
@@ -175,7 +175,7 @@ export default function StorageCard({ accent }: CardProps) {
       <div className="metric-card">
         <div className="card-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <HardDrive size={20} style={{ color: accent.color }} />
+            <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
             <span className="card-title">Storage</span>
           </div>
           <div className="card-status">
@@ -192,7 +192,7 @@ export default function StorageCard({ accent }: CardProps) {
             className="card-progress-bar"
             style={{
               width: `${Math.min(overallUtil, 100)}%`,
-              background: `linear-gradient(90deg, ${getUtilColor(overallUtil)}, ${accent.glow})`,
+              background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
             }}
           />
         </div>
@@ -208,37 +208,37 @@ export default function StorageCard({ accent }: CardProps) {
             <div key={di} style={{ marginBottom: 8, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
               {/* Device header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <div style={{ width: 4, height: 16, borderRadius: 2, background: accent.color, flexShrink: 0 }} />
+                <div style={{ width: 4, height: 16, borderRadius: 2, background: 'var(--accent-primary)', flexShrink: 0 }} />
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
                   {device.device}
                 </span>
               </div>
              {/* Performance metrics — grouped by type with explicit labels */}
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 8px', marginBottom: 4 }}>
-                   <span style={{ fontSize: 9, color: '#4adea4', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
-                     onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
-                     onMouseLeave={() => tooltip.setCardTooltip(null)}
-                   >
-                     R: {io ? formatThroughput(io.read_bytes_per_sec) : 'N/A'}
-                   </span>
-                   <span style={{ fontSize: 9, color: '#4adea4', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
-                     onMouseEnter={(e) => { const desc = getMetricDescription('storage_write_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
-                     onMouseLeave={() => tooltip.setCardTooltip(null)}
-                   >
-                     W: {io ? formatThroughput(io.write_bytes_per_sec) : 'N/A'}
-                   </span>
-                   <span style={{ fontSize: 9, color: '#6ab1ff', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
-                     onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_iops'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description }, e); }}
-                     onMouseLeave={() => tooltip.setCardTooltip(null)}
-                   >
-                     R: {io ? formatIops(io.read_iops) : 'N/A'} IOPS
-                   </span>
-                   <span style={{ fontSize: 9, color: '#6ab1ff', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
-                     onMouseEnter={(e) => { const desc = getMetricDescription('storage_write_iops'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description }, e); }}
-                     onMouseLeave={() => tooltip.setCardTooltip(null)}
-                   >
-                     W: {io ? formatIops(io.write_iops) : 'N/A'} IOPS
-                   </span>
+                   <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                      onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
+                      onMouseLeave={() => tooltip.setCardTooltip(null)}
+                    >
+                      R: {io ? formatThroughput(io.read_bytes_per_sec) : 'N/A'}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                      onMouseEnter={(e) => { const desc = getMetricDescription('storage_write_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
+                      onMouseLeave={() => tooltip.setCardTooltip(null)}
+                    >
+                      W: {io ? formatThroughput(io.write_bytes_per_sec) : 'N/A'}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--accent-secondary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                      onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_iops'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description }, e); }}
+                      onMouseLeave={() => tooltip.setCardTooltip(null)}
+                    >
+                      R: {io ? formatIops(io.read_iops) : 'N/A'} IOPS
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--accent-secondary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                      onMouseEnter={(e) => { const desc = getMetricDescription('storage_write_iops'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description }, e); }}
+                      onMouseLeave={() => tooltip.setCardTooltip(null)}
+                    >
+                      W: {io ? formatIops(io.write_iops) : 'N/A'} IOPS
+                    </span>
                  </div>
               {/* Status row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -269,7 +269,7 @@ export default function StorageCard({ accent }: CardProps) {
                         style={{
                           height: 4,
                           width: `${Math.min(mount.utilization_percent, 100)}%`,
-                          background: `linear-gradient(90deg, ${getUtilColor(mount.utilization_percent)}, ${accent.glow})`,
+                          background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
                         }}
                       />
                     </div>

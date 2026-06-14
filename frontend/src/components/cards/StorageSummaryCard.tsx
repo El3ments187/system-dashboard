@@ -2,7 +2,7 @@ import { useMetricsContext } from '../../context/MetricsContext';
 import { HardDrive, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface CardProps {
-  accent: { color: string; glow: string };
+  accent?: { color: string; glow: string };
 }
 
 function formatBytes(bytes: number): string {
@@ -20,7 +20,7 @@ function formatBytesPerSec(bps: number): string {
   return (bps / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
 }
 
-export default function StorageSummaryCard({ accent }: CardProps) {
+export default function StorageSummaryCard(_props: CardProps) {
   const { storageDevices, storageLoading } = useMetricsContext();
 
   const devices = storageDevices || [];
@@ -34,7 +34,7 @@ export default function StorageSummaryCard({ accent }: CardProps) {
   const totalReadBps = devices.reduce((s, d) => s + (d.io_stats?.read_bytes_per_sec || 0), 0);
   const totalWriteBps = devices.reduce((s, d) => s + (d.io_stats?.write_bytes_per_sec || 0), 0);
 
-  const statusColor = overallUtil < 70 ? '#22c192' : overallUtil < 90 ? '#f59b1c' : '#e84747';
+  const statusColor = overallUtil < 70 ? 'var(--success)' : overallUtil < 90 ? 'var(--warning)' : 'var(--danger)';
   const statusLabel = overallUtil < 70 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
 
   if (storageLoading) {
@@ -42,12 +42,12 @@ export default function StorageSummaryCard({ accent }: CardProps) {
       <div className="metric-card" style={{ opacity: 0.5 }}>
         <div className="card-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <HardDrive size={20} style={{ color: accent.color }} />
+            <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
             <span className="card-title">Storage</span>
           </div>
           <div className="card-status">
-            <div className="status-dot" style={{ background: '#22c192' }} />
-            <span style={{ color: '#22c192' }}>Active</span>
+            <div className="status-dot" style={{ background: 'var(--success)' }} />
+            <span style={{ color: 'var(--success)' }}>Active</span>
           </div>
         </div>
         <div className="card-value">
@@ -70,12 +70,12 @@ export default function StorageSummaryCard({ accent }: CardProps) {
       <div className="metric-card">
         <div className="card-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <HardDrive size={20} style={{ color: accent.color }} />
+            <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
             <span className="card-title">Storage</span>
           </div>
           <div className="card-status">
-            <div className="status-dot" style={{ background: '#22c192' }} />
-            <span style={{ color: '#22c192' }}>Active</span>
+            <div className="status-dot" style={{ background: 'var(--success)' }} />
+            <span style={{ color: 'var(--success)' }}>Active</span>
           </div>
         </div>
         <div className="card-value">
@@ -84,7 +84,7 @@ export default function StorageSummaryCard({ accent }: CardProps) {
         <div className="card-progress">
           <div
             className="card-progress-bar"
-            style={{ width: '0%', background: `linear-gradient(90deg, ${accent.color}, ${accent.glow})` }}
+            style={{ width: '0%', background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-glow))' }}
           />
         </div>
         <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
@@ -98,7 +98,7 @@ export default function StorageSummaryCard({ accent }: CardProps) {
     <div className="metric-card">
       <div className="card-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <HardDrive size={20} style={{ color: accent.color }} />
+          <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
           <span className="card-title">Storage</span>
         </div>
         <div className="card-status">
@@ -115,7 +115,7 @@ export default function StorageSummaryCard({ accent }: CardProps) {
           className="card-progress-bar"
           style={{
             width: `${Math.min(overallUtil, 100)}%`,
-            background: `linear-gradient(90deg, ${overallUtil < 70 ? '#22c192' : overallUtil < 90 ? '#f59b1c' : '#e84747'}, ${accent.glow})`,
+            background: `linear-gradient(90deg, ${statusColor}, var(--accent-glow))`,
           }}
         />
       </div>
@@ -132,7 +132,7 @@ export default function StorageSummaryCard({ accent }: CardProps) {
             style={{
               height: 4,
               width: `${Math.min(overallUtil, 100)}%`,
-              background: `linear-gradient(90deg, ${overallUtil < 70 ? '#22c192' : overallUtil < 90 ? '#f59b1c' : '#e84747'}, ${accent.glow})`,
+           background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
             }}
           />
         </div>
@@ -149,19 +149,19 @@ export default function StorageSummaryCard({ accent }: CardProps) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'var(--bg-secondary)', borderRadius: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ArrowUp size={12} style={{ color: '#4adea4' }} />
+              <ArrowUp size={12} style={{ color: 'var(--accent-primary)' }} />
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Read</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#4adea4' }}>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-primary)' }}>
               {formatBytesPerSec(totalReadBps)}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'var(--bg-secondary)', borderRadius: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ArrowDown size={12} style={{ color: '#4adea4' }} />
+              <ArrowDown size={12} style={{ color: 'var(--accent-primary)' }} />
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Write</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#4adea4' }}>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-primary)' }}>
               {formatBytesPerSec(totalWriteBps)}
             </span>
           </div>

@@ -30,10 +30,7 @@ export default function CpuCard({ accent }: CardProps) {
   };
 
   const status = getStatus(currentValue);
-  let statusColor: string;
-  if (status === 'good') statusColor = '#22c192';
-  else if (status === 'warn') statusColor = '#f59b1c';
-  else statusColor = '#e84747';
+  const statusColor = status === 'good' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)';
 
   let statusLabel: string;
   if (status === 'good') statusLabel = 'Normal';

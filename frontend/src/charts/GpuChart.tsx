@@ -7,5 +7,5 @@ interface ChartProps {
 
 export default function GpuChart({ accent }: ChartProps) {
   const { gpuHistory } = useMetricsContext();
-  return <MetricChart accent={accent} title="GPU Utilization History" data={gpuHistory} color={accent.color} timeFrame="(Last 60s)" />;
+  return <MetricChart accent={accent} title="GPU Utilization History" data={gpuHistory} timeFrame="(Last 60s)" />;
 }

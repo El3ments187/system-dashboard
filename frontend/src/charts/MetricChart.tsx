@@ -21,21 +21,40 @@ function getChartColors(): { grid: string; axis: string; crosshair: string; dotS
   };
 }
 
+function getSeriesColors(): string[] {
+  const cs = getComputedStyle(document.documentElement);
+  const primary = cs.getPropertyValue('--accent-primary').trim() || '#3B82F6';
+   const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
+  return [primary, secondary];
+}
+
 function formatTime(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export default function MetricChart({ accent, title, data, color, timeFrame, dataKeys }: ChartProps) {
+export default function MetricChart({ accent: _props, title, data, color: _color, timeFrame, dataKeys }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
+  const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
+  const [strokeColor, setStrokeColor] = useState(() => {
+    if (_color) return _color;
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#3B82F6';
+  });
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
   }, []);
 
   useEffect(() => {
-    setChartColors(getChartColors());
-    const observer = new MutationObserver(() => setChartColors(getChartColors()));
+    const update = () => {
+      setChartColors(getChartColors());
+      setSeriesColors(getSeriesColors());
+      if (!_color) {
+        setStrokeColor(getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#3B82F6');
+      }
+    };
+    update();
+    const observer = new MutationObserver(update);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
     return () => observer.disconnect();
   }, []);
@@ -87,8 +106,6 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
     return result;
   }, [data, dataKeys]);
 
-  const seriesColors = [accent.color, accent.glow, '#60a5f5', '#f5a660', '#a6f5a0', '#f5a6a6'];
-  const strokeColor = color || accent.color;
   const fillColor = `${strokeColor}20`;
 
   const seriesLabels: Record<string, string> = {
@@ -160,9 +177,13 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
       </div>
       {dataKeys && dataKeys.length > 0 && (
         <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-          {dataKeys.map((key, i) => (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 12, height: 4, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
+            {dataKeys.map((key, i) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {i === 1 ? (
+                  <div style={{ width: 12, height: 0, borderBottom: `2px dashed ${seriesColors[i % seriesColors.length]}` }} />
+                ) : (
+                  <div style={{ width: 12, height: 4, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
+                )}
               <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                 {seriesLabels[key] || key}
               </span>
@@ -200,23 +221,24 @@ export default function MetricChart({ accent, title, data, color, timeFrame, dat
               cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
               offset={12}
             />
-            {dataKeys ? (
-              dataKeys.map((key, i) => {
-                const keyColor = seriesColors[i % seriesColors.length];
-                return (
-                  <Area
-                    key={key}
-                    dataKey={key}
-                    stroke={keyColor}
-                    fill={`${keyColor}20`}
-                    strokeWidth={2}
-                    fillOpacity={0.3}
-                    isAnimationActive={false}
-                    animationDuration={0}
-                    activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
-                  />
-                );
-              })
+           {dataKeys ? (
+                dataKeys.map((key, i) => {
+                    const keyColor = seriesColors[i % seriesColors.length];
+                    return (
+                      <Area
+                        key={key}
+                        dataKey={key}
+                        stroke={keyColor}
+                        fill={`${keyColor}20`}
+                        strokeWidth={2}
+                        strokeDasharray={i === 1 ? "5 5" : "0"}
+                        fillOpacity={i === 1 ? 0.2 : 0.3}
+                        isAnimationActive={false}
+                        animationDuration={0}
+                        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
+                      />
+                    );
+                })
             ) : (
               <Area
                 dataKey="value"

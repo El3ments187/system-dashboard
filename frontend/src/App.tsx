@@ -80,7 +80,7 @@ export default function App() {
           </div>
           <div className="dashboard-row storage-row">
             <StorageCard accent={current} />
-            <StoragePerformanceCard accent={current} />
+            <StoragePerformanceCard />
           </div>
         </main>
       </div>

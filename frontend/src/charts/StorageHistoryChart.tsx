@@ -3,11 +3,15 @@ import { StorageHistoryPoint } from '../types/metrics';
 import ChartTooltip from '../components/common/ChartTooltip';
 
 interface ChartProps {
-  accent: { color: string; glow: string };
   data: Map<string, StorageHistoryPoint[]>;
 }
 
-const SERIES_COLORS = ['#4adea4', '#f59b1c', '#60a5f5', '#f5a660', '#a6f5a0', '#f5a6a6', '#a6a6f5', '#f5f5a6'];
+function getSeriesColors(): string[] {
+  const cs = getComputedStyle(document.documentElement);
+  const primary = cs.getPropertyValue('--accent-primary').trim() || '#3B82F6';
+  const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
+  return [primary, secondary];
+}
 
 function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
   const cs = getComputedStyle(document.documentElement);
@@ -31,18 +35,23 @@ function formatBytesPerSec(bps: number): string {
   return (bps / Math.pow(1024, i)).toFixed(1) + units[i];
 }
 
-export default function StorageHistoryChart({ accent, data }: ChartProps) {
+export default function StorageHistoryChart({ data }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
   const [chartColors, setChartColors] = useState(() => getChartColors());
+  const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
   }, []);
 
   useEffect(() => {
-    setChartColors(getChartColors());
-    const observer = new MutationObserver(() => setChartColors(getChartColors()));
+    const update = () => {
+      setChartColors(getChartColors());
+      setSeriesColors(getSeriesColors());
+    };
+    update();
+    const observer = new MutationObserver(update);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
     return () => observer.disconnect();
   }, []);
@@ -115,7 +124,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
     const series = payloadArr.map((entry: any) => ({
       name: entry.name,
       value: activeTab === 'throughput' ? formatBytesPerSec(entry.value ?? 0) : `${(entry.value ?? 0).toFixed(1)}%`,
-      color: entry.color || '#fff',
+      color: entry.color || seriesColors[0],
     }));
 
     return <ChartTooltip timestamp={timestamp} series={series} />;
@@ -133,7 +142,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
               borderRadius: 4,
               border: '1px solid var(--border-color)',
               background: activeTab === tab ? 'var(--bg-secondary)' : 'transparent',
-              color: activeTab === tab ? accent.color : 'var(--text-muted)',
+              color: activeTab === tab ? 'var(--accent-primary)' : 'var(--text-muted)',
               cursor: 'pointer',
               fontSize: 11,
               fontWeight: activeTab === tab ? 600 : 400,
@@ -150,7 +159,7 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
           <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
             {deviceNames.map((device, i) => (
               <div key={device} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 12, height: 4, borderRadius: 2, background: SERIES_COLORS[i % SERIES_COLORS.length] }} />
+                <div style={{ width: 12, height: 4, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
                 <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                   {device}
                 </span>
@@ -197,10 +206,10 @@ export default function StorageHistoryChart({ accent, data }: ChartProps) {
                   cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
                   offset={12}
                 />
-                {deviceNames.map((device, i) => {
-                  const color = SERIES_COLORS[i % SERIES_COLORS.length];
-                  const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
-                  const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
+               {deviceNames.map((device, i) => {
+                    const color = seriesColors[i % seriesColors.length];
+                    const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
+                    const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
                   return (
                     <g key={device}>
                       <Area

@@ -62,8 +62,8 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
       {/* Header */}
       <div className="card-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <AlertTriangle size={20} style={{ color: '#e84747' }} />
-          <span className="card-title" style={{ color: '#e84747' }}>{panelLabel} Error</span>
+          <AlertTriangle size={20} style={{ color: 'var(--danger)' }} />
+          <span className="card-title" style={{ color: 'var(--danger)' }}>{panelLabel} Error</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -100,8 +100,8 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
       <div
         style={{
           padding: '10px 12px',
-          background: 'rgba(232, 71, 71, 0.08)',
-          border: '1px solid rgba(232, 71, 71, 0.2)',
+          background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
           borderRadius: 6,
           fontSize: 12,
           color: 'var(--text-secondary)',
@@ -126,7 +126,7 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
           overflow: 'hidden',
         }}
       >
-        <span style={{ color: '#e84747', flexShrink: 0 }}>ERR</span>
+        <span style={{ color: 'var(--danger)', flexShrink: 0 }}>ERR</span>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {getErrorSummary()}
         </span>
@@ -150,7 +150,7 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
           {/* Error name */}
           <div style={{ marginBottom: 8 }}>
             <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Error:</span>
-            <span style={{ color: '#e84747' }}>{error?.name || 'Error'}</span>
+            <span style={{ color: 'var(--danger)' }}>{error?.name || 'Error'}</span>
           </div>
 
           {/* Error message */}

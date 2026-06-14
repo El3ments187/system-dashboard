@@ -4,11 +4,7 @@ import PanelErrorBoundary from '../common/PanelErrorBoundary';
 import PanelErrorState from '../common/PanelErrorState';
 import StorageHistoryChart from '../../charts/StorageHistoryChart';
 
-interface Props {
-  accent: { color: string; glow: string };
-}
-
-export default function StoragePerformanceCard({ accent }: Props) {
+export default function StoragePerformanceCard() {
   const { storageHistories, storageDevices, storageLoading, storageError, retryStorage } = useMetricsContext();
 
   if (storageLoading) {
@@ -17,7 +13,7 @@ export default function StoragePerformanceCard({ accent }: Props) {
         <div className="metric-card" style={{ gridColumn: '1 / -1', opacity: 0.5 }}>
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Activity size={20} style={{ color: '#f59b1c' }} />
+<Activity size={20} style={{ color: 'var(--accent-primary)' }} />
               <span className="card-title">Storage Performance</span>
             </div>
           </div>
@@ -52,17 +48,17 @@ export default function StoragePerformanceCard({ accent }: Props) {
       <div className="metric-card" style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Activity size={20} style={{ color: '#f59b1c' }} />
+            <Activity size={20} style={{ color: 'var(--accent-primary)' }} />
             <span className="card-title">Storage Performance</span>
           </div>
           <div className="card-status">
-            <div className="status-dot" style={{ background: '#22c192' }} />
-            <span style={{ color: '#22c192' }}>Real-time</span>
+            <div className="status-dot" style={{ background: 'var(--success)' }} />
+            <span style={{ color: 'var(--success)' }}>Real-time</span>
           </div>
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <StorageHistoryChart accent={accent} data={storageHistories} />
+          <StorageHistoryChart data={storageHistories} />
         </div>
       </div>
     </PanelErrorBoundary>
