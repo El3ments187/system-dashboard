@@ -5,7 +5,7 @@ use libc::statvfs as c_statvfs;
 use std::collections::BTreeMap;
 
 // History buffer size for storage metrics
-const STORAGE_HISTORY_SIZE: usize = 60;
+const STORAGE_HISTORY_SIZE: usize = 120;
 
 /// A single history data point for a storage device
 #[derive(serde::Serialize, Clone)]

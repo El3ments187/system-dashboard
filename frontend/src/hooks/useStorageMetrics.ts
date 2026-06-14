@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DeviceStorageInfo, StorageHistoryPoint } from '../types/metrics';
 
+// Fixed rolling buffer size for 60s window at 500ms polling
+const STORAGE_BUFFER_SIZE = 120;
+
 export function useStorageMetrics(): {
   storageDevices: DeviceStorageInfo[];
   storageHistories: Map<string, StorageHistoryPoint[]>;
@@ -52,7 +55,42 @@ export function useStorageMetrics(): {
         grouped.set(device, points);
       }
 
-      setStorageHistories(grouped);
+      // Build fixed-size rolling buffer per device with null placeholders
+      const buffered = new Map<string, StorageHistoryPoint[]>();
+      for (const [device, points] of grouped.entries()) {
+        // Create a fixed-size array indexed by slot position
+        const buffer: (StorageHistoryPoint | null)[] = new Array(STORAGE_BUFFER_SIZE).fill(null);
+
+        // Place real data at the correct slot positions
+        // Backend sends slots 0..N-1 where N is the number of collected samples.
+        // Map them to the rightmost positions so the chart fills left-to-right.
+        const offset = STORAGE_BUFFER_SIZE - points.length;
+        for (let i = 0; i < points.length; i++) {
+          const slotIdx = offset + i;
+          if (slotIdx >= 0 && slotIdx < STORAGE_BUFFER_SIZE) {
+            const pt = { ...points[i], slot: slotIdx };
+            buffer[slotIdx] = pt;
+          }
+        }
+
+        // Fill null slots with placeholder entries to maintain fixed chart width
+        for (let i = 0; i < STORAGE_BUFFER_SIZE; i++) {
+          if (!buffer[i]) {
+            buffer[i] = {
+              device,
+              slot: i,
+              timestamp: new Date().toISOString(),
+              read_bytes_per_sec: null as any,
+              write_bytes_per_sec: null as any,
+              utilization: null as any,
+            };
+          }
+        }
+
+        buffered.set(device, buffer as StorageHistoryPoint[]);
+      }
+
+      setStorageHistories(buffered);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -62,7 +100,7 @@ export function useStorageMetrics(): {
 
   useEffect(() => {
     fetchStorage();
-    const interval = setInterval(fetchStorage, 1000);
+    const interval = setInterval(fetchStorage, 500);
     return () => clearInterval(interval);
   }, [fetchStorage]);
 

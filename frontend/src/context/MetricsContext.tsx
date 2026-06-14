@@ -35,66 +35,69 @@ const MetricsContext = React.createContext<MetricsContextValue | null>(null);
 export function MetricsProvider({ children }: { children: React.ReactNode }) {
   // console.log('[MetricsProvider] START');
   const cpu = useMultiMetrics(
-    '/cpu',
-    [
-      (data: any) => data?.utilization_percent ?? null,
-      (data: any) => data?.temperature_celsius ?? null,
-      (data: any) => data?.frequency_mhz ?? null,
-      (data: any) => data?.physical_cores ?? null,
-      (data: any) => data?.threads ?? null,
-      (data: any) => data?.load_1m ?? null,
-      (data: any) => data?.load_5m ?? null,
-      (data: any) => data?.load_15m ?? null,
-    ],
-    [true, false, false, false, false, false, false, false],
-  );
+     '/cpu',
+     [
+       (data: any) => data?.utilization_percent ?? null,
+       (data: any) => data?.temperature_celsius ?? null,
+       (data: any) => data?.frequency_mhz ?? null,
+       (data: any) => data?.physical_cores ?? null,
+       (data: any) => data?.threads ?? null,
+       (data: any) => data?.load_1m ?? null,
+       (data: any) => data?.load_5m ?? null,
+       (data: any) => data?.load_15m ?? null,
+     ],
+     [true, false, false, false, false, false, false, false],
+     500,
+   );
 
   const memory = useMultiMetrics(
-    '/memory',
-    [
-      (data: any) => data?.utilization_percent ?? null,
-      (data: any) => data?.used_gb ?? null,
-      (data: any) => data?.total_gb ?? null,
-      (data: any) => data?.swap_used_gb ?? null,
-      (data: any) => data?.swap_total_gb ?? null,
-      (data: any) =>
-        data?.swap_total_gb && data.swap_total_gb > 0
-          ? (data.swap_used_gb / data.swap_total_gb) * 100
-          : null,
-    ],
-    [true, false, false, false, false, true],
-  );
+     '/memory',
+     [
+       (data: any) => data?.utilization_percent ?? null,
+       (data: any) => data?.used_gb ?? null,
+       (data: any) => data?.total_gb ?? null,
+       (data: any) => data?.swap_used_gb ?? null,
+       (data: any) => data?.swap_total_gb ?? null,
+       (data: any) =>
+         data?.swap_total_gb && data.swap_total_gb > 0
+           ? (data.swap_used_gb / data.swap_total_gb) * 100
+           : null,
+     ],
+     [true, false, false, false, false, true],
+     1000,
+   );
 
   const gpu = useMultiMetrics(
-    '/gpu',
-    [
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
-        return data?.utilization_percent ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
-        return data?.temperature_celsius ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
-        return data?.vram_used_gb ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
-        return data?.vram_total_gb ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
-        return data?.power_usage_watts ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
-        return data?.power_limit_watts ?? null;
-      },
-    ],
-    [true, false, false, false, false, false],
-  );
+     '/gpu',
+     [
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
+         return data?.utilization_percent ?? null;
+       },
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
+         return data?.temperature_celsius ?? null;
+       },
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
+         return data?.vram_used_gb ?? null;
+       },
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
+         return data?.vram_total_gb ?? null;
+       },
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
+         return data?.power_usage_watts ?? null;
+       },
+       (data: any) => {
+         if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
+         return data?.power_limit_watts ?? null;
+       },
+     ],
+     [true, false, false, false, false, false],
+     500,
+   );
 
   const storage = useStorageMetrics();
 

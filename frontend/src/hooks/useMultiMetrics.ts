@@ -1,28 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MetricHistoryPoint } from '../types/metrics';
 
-const BUFFER_SIZE = 60;
-
 /**
  * Hook for polling metrics from the backend API.
- * Maintains a rolling 60-second history (60 data points at 1s interval).
+ * Maintains a rolling 60-second history (buffer size derived from interval).
  * Handles errors gracefully without crashing.
  */
 export function useMetrics<T>(
   endpoint: string,
   valueExtractor: (data: T) => number | null,
+  intervalMs = 1000,
 ): {
   currentValue: number | null;
   history: MetricHistoryPoint[];
   loading: boolean;
   error: string | null;
 } {
+  const bufferSize = Math.ceil(60000 / intervalMs);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [history, setHistory] = useState<MetricHistoryPoint[]>(() => {
     const now = new Date();
-    return Array.from({ length: BUFFER_SIZE }, (_, i) => ({
+    return Array.from({ length: bufferSize }, (_, i) => ({
       slot: i,
-      timestamp: new Date(now.getTime() - (BUFFER_SIZE - i) * 1000),
+      timestamp: new Date(now.getTime() - (bufferSize - i) * intervalMs),
       value: 0,
     }));
   });
@@ -54,7 +54,7 @@ export function useMetrics<T>(
 
       setCurrentValue(value);
       setHistory(prev => {
-        const next = [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp, value }]
+        const next = [...prev.slice(1), { slot: bufferSize - 1, timestamp, value }]
           .map((p, idx) => ({ ...p, slot: idx }));
         // [TRACE] Stage 2: History buffer (last point)
         console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} last_point=`, JSON.stringify(next[next.length - 1]));
@@ -64,7 +64,7 @@ export function useMetrics<T>(
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setHistory(prev => {
-        return [...prev.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }]
+        return [...prev.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: null }]
           .map((p, idx) => ({ ...p, slot: idx }));
       });
     } finally {
@@ -74,9 +74,9 @@ export function useMetrics<T>(
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 1000);
+    const interval = setInterval(fetchData, intervalMs);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, intervalMs]);
 
   return { currentValue, history, loading, error };
 }
@@ -85,13 +85,14 @@ export function useMetrics<T>(
  * Hook for polling a single endpoint and extracting multiple values.
  * Only creates one interval, avoiding redundant API calls.
  *
- * When trackHistory is true for an index, that value's rolling 60-point
+ * When trackHistory is true for an index, that value's rolling 60-second
  * history is returned so charts and cards can share the same polling data.
  */
 export function useMultiMetrics<T>(
   endpoint: string,
   extractors: Array<(data: T) => number | null>,
   trackHistory?: Array<boolean>,
+  intervalMs = 1000,
 ): {
   currentValues: Array<number | null>;
   histories: Array<MetricHistoryPoint[] | null>;
@@ -99,14 +100,15 @@ export function useMultiMetrics<T>(
   error: string | null;
   retry: () => void;
 } {
+  const bufferSize = Math.ceil(60000 / intervalMs);
   const [currentValues, setCurrentValues] = useState<Array<number | null>>(() => Array(extractors.length).fill(null));
   const [histories, setHistories] = useState<Array<MetricHistoryPoint[] | null>>(() =>
     extractors.map((_, i) => {
       if (!trackHistory?.[i]) return null;
       const now = new Date();
-      return Array.from({ length: BUFFER_SIZE }, (_, j) => ({
+      return Array.from({ length: bufferSize }, (_, j) => ({
         slot: j,
-        timestamp: new Date(now.getTime() - (BUFFER_SIZE - j) * 1000),
+        timestamp: new Date(now.getTime() - (bufferSize - j) * intervalMs),
         value: 0,
       }));
     })
@@ -123,9 +125,9 @@ export function useMultiMetrics<T>(
       setCurrentValues(Array(len).fill(null));
       setHistories(
         extractors.map((_, i) =>
-          trackHistory?.[i] ? Array.from({ length: BUFFER_SIZE }, (_, j) => ({
+          trackHistory?.[i] ? Array.from({ length: bufferSize }, (_, j) => ({
             slot: j,
-            timestamp: new Date(Date.now() - (BUFFER_SIZE - j) * 1000),
+            timestamp: new Date(Date.now() - (bufferSize - j) * intervalMs),
             value: 0,
           })) : null
         )
@@ -172,7 +174,7 @@ export function useMultiMetrics<T>(
         const newValue = values[i];
 
         // Shift buffer: drop oldest, append new value with correct slot indices
-        const next = [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: newValue }]
+        const next = [...h.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: newValue }]
           .map((p, idx) => ({ ...p, slot: idx }));
         // [TRACE] Stage 2: History buffer (last tracked point)
         console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} history_idx=${i} last_point=`, JSON.stringify(next[next.length - 1]));
@@ -184,7 +186,7 @@ export function useMultiMetrics<T>(
       setError(err instanceof Error ? err.message : 'Unknown error');
       setHistories(prev => prev.map((h, i) => {
         if (!h || !trackHistoryRef.current?.[i]) return h;
-        return [...h.slice(1), { slot: BUFFER_SIZE - 1, timestamp: new Date(), value: null }]
+        return [...h.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: null }]
           .map((p, idx) => ({ ...p, slot: idx }));
       }));
     } finally {
@@ -198,9 +200,9 @@ export function useMultiMetrics<T>(
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 1000);
+    const interval = setInterval(fetchData, intervalMs);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, intervalMs]);
 
   return { currentValues, histories, loading, error, retry };
 }

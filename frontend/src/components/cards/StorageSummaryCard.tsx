@@ -35,7 +35,8 @@ export default function StorageSummaryCard(_props: CardProps) {
   const totalWriteBps = devices.reduce((s, d) => s + (d.io_stats?.write_bytes_per_sec || 0), 0);
 
   const statusColor = overallUtil < 70 ? 'var(--success)' : overallUtil < 90 ? 'var(--warning)' : 'var(--danger)';
-  const statusLabel = overallUtil < 70 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
+  const statusLabel = overallUtil < 80 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
+  const utilColor = overallUtil < 80 ? 'var(--accent-primary)' : overallUtil < 90 ? 'var(--warning)' : 'var(--danger)';
 
   if (storageLoading) {
     return (
@@ -115,7 +116,7 @@ export default function StorageSummaryCard(_props: CardProps) {
           className="card-progress-bar"
           style={{
             width: `${Math.min(overallUtil, 100)}%`,
-            background: `linear-gradient(90deg, ${statusColor}, var(--accent-glow))`,
+            background: `linear-gradient(90deg, ${utilColor}, var(--accent-glow))`,
           }}
         />
       </div>

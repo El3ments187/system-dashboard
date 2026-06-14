@@ -35,6 +35,9 @@ function formatBytesPerSec(bps: number): string {
   return (bps / Math.pow(1024, i)).toFixed(1) + units[i];
 }
 
+// Fixed rolling buffer size for 60s window at 500ms polling
+const STORAGE_BUFFER_SIZE = 120;
+
 export default function StorageHistoryChart({ data }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
@@ -62,10 +65,28 @@ export default function StorageHistoryChart({ data }: ChartProps) {
 
     const slotMap = new Map<number, any>();
 
+    // Pre-initialize all buffer slots so the x-axis is fixed from startup
+    for (let i = 0; i < STORAGE_BUFFER_SIZE; i++) {
+      slotMap.set(i, {
+        x: i,
+        timeLabel: '',
+        timestampMs: 0,
+      });
+    }
+
     for (const [device, points] of entries) {
       for (const point of points) {
         if (!point) continue;
         const slot = point.slot;
+        if (point.read_bytes_per_sec == null && point.write_bytes_per_sec == null && point.utilization == null) {
+          // Placeholder entry — only update timeLabel/timestampMs if this is the first for this slot
+          const existing = slotMap.get(slot);
+          if (existing && existing.timestampMs === 0 && point.timestamp) {
+            existing.timeLabel = formatTime(point.timestamp);
+            existing.timestampMs = new Date(point.timestamp).getTime();
+          }
+          continue;
+        }
         if (!slotMap.has(slot)) {
           slotMap.set(slot, {
             x: slot,
@@ -74,13 +95,15 @@ export default function StorageHistoryChart({ data }: ChartProps) {
           });
         }
         const entry = slotMap.get(slot);
+        entry.timeLabel = formatTime(point.timestamp);
+        entry.timestampMs = new Date(point.timestamp).getTime();
         entry[`${device}_read`] = point.read_bytes_per_sec;
         entry[`${device}_write`] = point.write_bytes_per_sec;
         entry[`${device}_util`] = point.utilization;
       }
     }
 
-    const result = Array.from(slotMap.values()).sort((a, b) => a.timestampMs - b.timestampMs);
+    const result = Array.from(slotMap.values()).sort((a, b) => a.x - b.x);
     // [TRACE] Stage 3: Storage chart data — last point
     if (result.length > 0) {
       console.log('[TRACE-CHART] title=StorageHistory mode=storage last_point=', JSON.stringify(result[result.length - 1]));
@@ -90,7 +113,6 @@ export default function StorageHistoryChart({ data }: ChartProps) {
 
   const deviceNames = Array.from(data.keys()).sort();
   const hasData = chartData.length > 0;
-  const dataMaxX = chartData.length > 0 ? chartData.length - 1 : 0;
 
   if (!chartComponents) {
     return (
@@ -179,7 +201,7 @@ export default function StorageHistoryChart({ data }: ChartProps) {
                 <XAxis
                   dataKey="x"
                   type="number"
-                  domain={[0, dataMaxX]}
+                  domain={[0, STORAGE_BUFFER_SIZE - 1]}
                   ticks={chartData.map((_, i) => i)}
                   tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
                   axisLine={{ stroke: chartColors.axis }}

@@ -32,7 +32,7 @@ function formatIops(iops: number): string {
 }
 
 function getUtilColor(util: number): string {
-  if (util < 70) return 'var(--success)';
+  if (util < 80) return 'var(--accent-primary)';
   if (util < 90) return 'var(--warning)';
   return 'var(--danger)';
 }
@@ -91,7 +91,7 @@ export default function StorageCard(_props: CardProps) {
   const overallUtil = totalCapacity > 0 ? (totalUsed / totalCapacity) * 100 : 0;
 
   const statusColor = getUtilColor(overallUtil);
-  const statusLabel = overallUtil < 70 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
+  const statusLabel = overallUtil < 80 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
 
   if (storageError) {
     return (
@@ -269,7 +269,7 @@ export default function StorageCard(_props: CardProps) {
                         style={{
                           height: 4,
                           width: `${Math.min(mount.utilization_percent, 100)}%`,
-                          background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
+                          background: `linear-gradient(90deg, ${getUtilColor(mount.utilization_percent)}, ${getUtilColor(mount.utilization_percent)})`,
                         }}
                       />
                     </div>

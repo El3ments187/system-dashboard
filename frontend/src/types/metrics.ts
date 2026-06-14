@@ -83,7 +83,7 @@ export interface StorageHistoryPoint {
    device: string;
    slot: number;
    timestamp: string;
-   read_bytes_per_sec: number;
-   write_bytes_per_sec: number;
-   utilization: number;
- }
+   read_bytes_per_sec: number | null;
+   write_bytes_per_sec: number | null;
+   utilization: number | null;
+}
