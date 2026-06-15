@@ -1,31 +1,34 @@
 //! GPU metrics collector for NVIDIA GPUs using nvml-wrapper.
 
+use std::sync::{LazyLock, Mutex};
 use crate::models::metrics::GpuMetrics;
 
+static NVML: LazyLock<Mutex<Option<nvml_wrapper::Nvml>>> = LazyLock::new(|| Mutex::new(None));
+
 pub fn collect_gpu_metrics() -> Vec<GpuMetrics> {
-    match init_nvml() {
-        Ok(nvml) => gpu_from_nvml(&nvml),
-        Err(reason) => {
-            eprintln!("[GPU] NVML unavailable: {reason}. Falling back to nvidia-smi.");
+    let mut guard = NVML.lock().unwrap();
+    if guard.is_none() {
+        *guard = nvml_wrapper::Nvml::init().ok();
+    }
+    match guard.as_ref() {
+        Some(nvml) => gpu_from_nvml(nvml),
+        None => {
+            drop(guard);
+            eprintln!("[GPU] NVML unavailable. Falling back to nvidia-smi.");
             smi_from_all()
         }
     }
 }
 
-fn init_nvml() -> Result<nvml_wrapper::Nvml, String> {
-    match nvml_wrapper::Nvml::init() {
-        Ok(nvml) => Ok(nvml),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
+    let driver_version = nvml.sys_driver_version().ok();
+
     match nvml.device_count() {
         Ok(count) if count > 0 => {
             let mut metrics = Vec::new();
             for i in 0..count {
                 match nvml.device_by_index(i) {
-                    Ok(device) => metrics.push(one_gpu(&device)),
+                    Ok(device) => metrics.push(one_gpu(&device, driver_version.as_deref())),
                     Err(e) => {
                         eprintln!("[GPU] device_by_index({i}): {e}");
                     }
@@ -45,7 +48,7 @@ fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
     }
 }
 
-fn one_gpu(device: &nvml_wrapper::Device) -> GpuMetrics {
+fn one_gpu(device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMetrics {
     let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
 
     let temp = device
@@ -64,19 +67,34 @@ fn one_gpu(device: &nvml_wrapper::Device) -> GpuMetrics {
         (used, total)
     }).unwrap_or((0.0, 0.0));
 
-      let power = device.power_usage().ok().map(|p| {
+    let power = device.power_usage().ok().map(|p| {
         (p as f64 / 1000.0, device.enforced_power_limit().ok().map(|pl| pl as f64 / 1000.0).unwrap_or(0.0))
     }).unwrap_or((0.0, 0.0));
 
+    let fan = device.fan_speed_rpm(0).ok().map(|f| f as f64).unwrap_or(0.0);
+
+    let clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
+        .ok()
+        .filter(|c| *c > 0)
+        .map(|c| c as f64);
+
+    let mem_clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Memory)
+        .ok()
+        .filter(|c| *c > 0)
+        .map(|c| c as f64);
+
     GpuMetrics {
         name,
-        driver_version: "N/A".to_string(),
+        driver_version: driver_version.map(|s| s.to_string()),
         utilization_percent: util,
         temperature_celsius: temp,
         vram_used_gb: mem.0,
         vram_total_gb: mem.1,
         power_usage_watts: power.0,
         power_limit_watts: power.1,
+        clock_speed_mhz: clock,
+        memory_clock_mhz: mem_clock,
+        fan_speed_rpm: fan,
     }
 }
 
@@ -87,13 +105,16 @@ fn default_gpu() -> Vec<GpuMetrics> {
 fn default_gpu_metrics() -> GpuMetrics {
     GpuMetrics {
         name: "No GPU detected".to_string(),
-        driver_version: "N/A".to_string(),
+        driver_version: None,
         utilization_percent: 0.0,
         temperature_celsius: 0.0,
         vram_used_gb: 0.0,
         vram_total_gb: 0.0,
         power_usage_watts: 0.0,
         power_limit_watts: 0.0,
+        clock_speed_mhz: None,
+        memory_clock_mhz: None,
+        fan_speed_rpm: 0.0,
     }
 }
 
@@ -132,7 +153,7 @@ fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
         .iter()
         .map(|gpu| {
             let name = extract_tag(gpu, "product_name").unwrap_or("Unknown".to_string());
-            let driver = extract_tag(gpu, "driver_version").unwrap_or("N/A".to_string());
+            let driver = extract_tag(gpu, "driver_version");
             let temp = extract_tag_float(gpu, "temp_entry[0]").unwrap_or(0.0);
             let util = extract_tag_float(gpu, "utilization[0].gpu_util").unwrap_or(0.0);
             let vram_used = extract_tag_float(gpu, "used")
@@ -145,16 +166,24 @@ fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
                 .unwrap_or(0.0);
             let power_limit = extract_tag_float(gpu, "power_limit[0].current")
                 .unwrap_or(0.0);
+            let clock = extract_tag_float(gpu, "gpu_clock_freq");
+            let mem_clock = extract_tag_float(gpu, "mem_clock_freq");
+            let fan = extract_tag_float(gpu, "fan_speed[0].current")
+                .map(|f| f * 10.0)
+                .unwrap_or(0.0);
 
             GpuMetrics {
                 name,
-                driver_version: driver,
+                driver_version: driver.filter(|d| !d.is_empty()),
                 utilization_percent: util,
                 temperature_celsius: temp,
                 vram_used_gb: vram_used,
                 vram_total_gb: vram_total,
                 power_usage_watts: power,
                 power_limit_watts: power_limit,
+                clock_speed_mhz: clock,
+                memory_clock_mhz: mem_clock,
+                fan_speed_rpm: fan,
             }
         })
         .collect()

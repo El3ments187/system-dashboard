@@ -48,8 +48,8 @@ export default function GpuCard({ accent }: { accent: { color: string; glow: str
     <PanelErrorBoundary panelName="GPU">
       <div className="metric-card">
         <div className="card-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Monitor size={20} style={{ color: accent.color }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Monitor size={16} style={{ color: accent.color }} />
             <span className="card-title">GPU</span>
           </div>
           <div className="card-status">

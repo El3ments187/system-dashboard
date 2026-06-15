@@ -1,0 +1,286 @@
+import { useMetricsContext } from '../context/MetricsContext';
+import MetricChart from '../charts/MetricChart';
+import PanelErrorBoundary from '../components/common/PanelErrorBoundary';
+import PanelErrorState from '../components/common/PanelErrorState';
+import { Gpu, Thermometer, Zap, Cpu, HardDrive, Activity, Fan } from 'lucide-react';
+
+const GPU_CHART_HEIGHT = 260;
+const GPU_HISTORY_LABEL = '(Last 2m)';
+
+interface GpuPageProps {
+  accent: { color: string; glow: string };
+}
+
+function formatBytes(gb: number): string {
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${(gb * 1024).toFixed(0)} MB`;
+}
+
+function getStatusColor(temp: number, util: number): { color: string; label: string } {
+  if (temp > 90 || util > 95) return { color: 'var(--danger)', label: 'Critical' };
+  if (temp > 75 || util > 80) return { color: 'var(--warning)', label: 'Warning' };
+  return { color: 'var(--success)', label: 'Normal' };
+}
+
+function resolveVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function getUtilBarColor(value: number): string {
+  if (value > 95) return resolveVar('--danger');
+  if (value > 80) return resolveVar('--warning');
+  return resolveVar('--accent-primary');
+}
+
+function getTempBarColor(temp: number): string {
+  if (temp > 90) return resolveVar('--danger');
+  if (temp > 80) return resolveVar('--warning');
+  return resolveVar('--accent-primary');
+}
+
+function getPowerBarColor(value: number, limit: number): string {
+  if (limit <= 0) return resolveVar('--accent-primary');
+  const pct = (value / limit) * 100;
+  if (pct > 95) return resolveVar('--danger');
+  if (pct > 85) return resolveVar('--warning');
+  return resolveVar('--accent-primary');
+}
+
+/* ─── Vertical Progress Bar ─── */
+
+function VerticalProgress({ value, label, type = 'percent', max = 100, limit }: {
+  value: number;
+  label: string;
+  type?: 'percent' | 'temp' | 'power';
+  max?: number;
+  limit?: number;
+}) {
+  const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
+  let color: string;
+  let displayValue: string;
+
+  if (type === 'temp') {
+    color = getTempBarColor(value);
+    displayValue = `${Math.round(value)}°C`;
+  } else if (type === 'power') {
+    color = getPowerBarColor(value, limit ?? max);
+    displayValue = `${Math.round(value)}W`;
+  } else {
+    color = getUtilBarColor(value);
+    displayValue = `${Math.round(value)}%`;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minHeight: 0, gap: 4 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: resolveVar('--text-primary'), fontFamily: "'JetBrains Mono', 'Fira Code', monospace", lineHeight: 1, flexShrink: 0 }}>
+        {displayValue}
+      </div>
+      <div style={{ position: 'relative', width: 40, background: resolveVar('--bg-secondary'), borderRadius: 6, overflow: 'hidden', border: `1px solid ${resolveVar('--border-color')}`, flex: 1, minHeight: 0 }}>
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: `${pct}%`,
+          background: `linear-gradient(to top, ${color}, ${color}dd)`,
+          borderRadius: 5,
+          transition: 'height 0.6s ease, background 0.4s ease',
+        }} />
+        <div style={{ position: 'absolute', bottom: '33%', left: 3, right: 3, height: 1, background: resolveVar('--border-color'), opacity: 0.25 }} />
+        <div style={{ position: 'absolute', bottom: '66%', left: 3, right: 3, height: 1, background: resolveVar('--border-color'), opacity: 0.25 }} />
+      </div>
+      <div style={{ fontSize: 9, color: resolveVar('--text-muted'), textTransform: 'uppercase', letterSpacing: 1.2, flexShrink: 0 }}>{label}</div>
+    </div>
+  );
+}
+
+/* ─── Combined GPU Summary Card ─── */
+
+function GpuSummaryCard({ gpu, accent, index }: { gpu: any; accent: { color: string; glow: string }; index: number }) {
+  const vramPct = gpu.vram_total_gb > 0 ? (gpu.vram_used_gb / gpu.vram_total_gb) * 100 : 0;
+  const { color: statusColor, label: statusLabel } = getStatusColor(gpu.temperature_celsius, gpu.utilization_percent);
+
+  return (
+    <div className="metric-card" style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, flex: 1, minHeight: 0 }}>
+      {/* Header */}
+      <div className="card-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Gpu size={16} style={{ color: accent.color }} />
+          <span className="card-title" style={{ fontSize: '12px' }}>GPU {index}</span>
+        </div>
+        <div className="card-status">
+          <div className="status-dot" style={{ background: statusColor }} />
+          <span style={{ color: statusColor, fontSize: '11px' }}>{statusLabel}</span>
+        </div>
+      </div>
+
+      {/* GPU name */}
+      <div style={{ padding: '0 2px', marginBottom: 8 }}>
+        <div style={{
+          fontSize: '13px',
+          color: 'var(--text-primary)',
+          fontWeight: 600,
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {gpu.name || 'Unknown GPU'}
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div style={{ height: 1, background: 'var(--border-color)', margin: '0 2px 8px' }} />
+
+      {/* Metrics grid - compact 2-column layout */}
+      <div className="card-details gpu-metrics-grid" style={{ margin: '0 2px', flexShrink: 0 }}>
+        <div className="card-detail-item">
+          <span className="card-detail-label"><Thermometer size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>Temp</span>
+          <span className="card-detail-value" style={{ color: accent.color }}>
+            {gpu.temperature_celsius.toFixed(0)}°C
+          </span>
+        </div>
+        <div className="card-detail-item">
+          <span className="card-detail-label"><Zap size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>Power</span>
+          <span className="card-detail-value" style={{ color: accent.color }}>
+            {gpu.power_usage_watts.toFixed(0)}W
+          </span>
+        </div>
+        <div className="card-detail-item">
+          <span className="card-detail-label"><HardDrive size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>VRAM</span>
+          <span className="card-detail-value" style={{ color: accent.color }}>
+            {formatBytes(gpu.vram_used_gb)} / {formatBytes(gpu.vram_total_gb)}
+          </span>
+        </div>
+        <div className="card-detail-item">
+          <span className="card-detail-label"><Fan size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>Fan</span>
+          <span className="card-detail-value" style={{ color: accent.color }}>
+            {gpu.fan_speed_rpm > 0 ? `${gpu.fan_speed_rpm} RPM` : '—'}
+          </span>
+        </div>
+        {gpu.clock_speed_mhz != null && gpu.clock_speed_mhz > 0 && (
+          <div className="card-detail-item">
+            <span className="card-detail-label"><Activity size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>Clock</span>
+            <span className="card-detail-value" style={{ color: accent.color }}>
+              {gpu.clock_speed_mhz.toFixed(0)} MHz
+            </span>
+          </div>
+        )}
+        {gpu.memory_clock_mhz != null && gpu.memory_clock_mhz > 0 && (
+          <div className="card-detail-item">
+            <span className="card-detail-label"><Cpu size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>MemClk</span>
+            <span className="card-detail-value" style={{ color: accent.color }}>
+              {gpu.memory_clock_mhz.toFixed(0)} MHz
+            </span>
+          </div>
+        )}
+        {gpu.driver_version && (
+          <div className="card-detail-item" style={{ gridColumn: '1 / -1' }}>
+            <span className="card-detail-label"><Zap size={11} style={{ marginRight: 4, verticalAlign: 'middle' }}/>Driver</span>
+            <span className="card-detail-value" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+              {gpu.driver_version}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Separator */}
+      <div style={{ height: 1, background: 'var(--border-color)', margin: '8px 2px', flexShrink: 0 }} />
+
+      {/* Vertical utilization bars - fill remaining space */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        justifyContent: 'center',
+        flex: 1,
+        minHeight: 0,
+        padding: '8px 0 4px',
+        gap: 24,
+      }}>
+        <VerticalProgress value={gpu.utilization_percent} label="GPU UTIL" />
+        <VerticalProgress value={vramPct} label="VRAM" />
+        <VerticalProgress value={gpu.temperature_celsius} label="TEMP" type="temp" max={120} />
+        <VerticalProgress value={gpu.power_usage_watts} label="POWER" type="power" max={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : 300} limit={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── GPU Row (2-column layout per GPU) ─── */
+
+function GpuRow({ gpu, index, accent, hasHistory, gpuHistory, gpuVramUtilHistory, gpuTemperatureHistory }: {
+  gpu: any;
+  index: number;
+  accent: { color: string; glow: string };
+  hasHistory: boolean;
+  gpuHistory: any[];
+  gpuVramUtilHistory: any[];
+  gpuTemperatureHistory: any[];
+}) {
+  return (
+    <div className="gpu-row">
+      {/* Left column - combined GPU card */}
+      <div className="gpu-col-left">
+        <GpuSummaryCard gpu={gpu} accent={accent} index={index} />
+      </div>
+
+      {/* Right column - charts stack */}
+      <div className="gpu-charts" style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+        {hasHistory && (
+          <>
+            <MetricChart accent={accent} title="GPU Utilization History" data={gpuHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
+            <MetricChart accent={accent} title="VRAM Utilization History" data={gpuVramUtilHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
+            <MetricChart accent={accent} title="GPU Temperature History" data={gpuTemperatureHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Page ─── */
+
+export default function GpuPage({ accent }: GpuPageProps) {
+  const { gpuHistory, gpuTemperatureHistory, gpuVramUtilHistory, gpuError, retryGpu, gpuRawData } = useMetricsContext();
+  const gpuData = Array.isArray(gpuRawData) ? gpuRawData : (gpuRawData ? [gpuRawData] : []);
+
+  if (gpuError) {
+    return (
+      <main className="dashboard-grid" style={{ padding: 24 }}>
+        <PanelErrorBoundary panelName="GPU">
+          <PanelErrorState panelName="GPU" error={new Error(gpuError)} errorInfo={null} onRetry={retryGpu} />
+        </PanelErrorBoundary>
+      </main>
+    );
+  }
+
+  const hasHistory = gpuHistory && gpuHistory.length > 0;
+
+  return (
+    <main className="dashboard-grid" style={{ padding: 24 }}>
+      {gpuData.length > 0 ? (
+        gpuData.map((gpu: any, i: number) => (
+          <GpuRow
+            key={i}
+            gpu={gpu}
+            index={i + 1}
+            accent={accent}
+            hasHistory={hasHistory}
+            gpuHistory={gpuHistory}
+            gpuVramUtilHistory={gpuVramUtilHistory}
+            gpuTemperatureHistory={gpuTemperatureHistory}
+          />
+        ))
+      ) : (
+        <div className="dashboard-row">
+          <div className="metric-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+              <Activity size={32} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+              <div style={{ fontSize: '14px' }}>No GPU data available</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

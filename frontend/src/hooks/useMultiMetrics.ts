@@ -49,15 +49,10 @@ export function useMetrics<T>(
       const value = extractorRef.current(json.data);
       const timestamp = new Date();
 
-      // [TRACE] Stage 1: Raw API response
-      console.log(`[TRACE-API] endpoint=${endpointRef.current} raw_data=`, JSON.stringify(json.data), `extracted_value=${value}`);
-
       setCurrentValue(value);
       setHistory(prev => {
         const next = [...prev.slice(1), { slot: bufferSize - 1, timestamp, value }]
           .map((p, idx) => ({ ...p, slot: idx }));
-        // [TRACE] Stage 2: History buffer (last point)
-        console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} last_point=`, JSON.stringify(next[next.length - 1]));
         return next;
       });
       setError(null);
@@ -93,14 +88,16 @@ export function useMultiMetrics<T>(
   extractors: Array<(data: T) => number | null>,
   trackHistory?: Array<boolean>,
   intervalMs = 1000,
+  bufferDurationMs = 60000,
 ): {
   currentValues: Array<number | null>;
   histories: Array<MetricHistoryPoint[] | null>;
+  rawData: T | null;
   loading: boolean;
   error: string | null;
   retry: () => void;
 } {
-  const bufferSize = Math.ceil(60000 / intervalMs);
+  const bufferSize = Math.ceil(bufferDurationMs / intervalMs);
   const [currentValues, setCurrentValues] = useState<Array<number | null>>(() => Array(extractors.length).fill(null));
   const [histories, setHistories] = useState<Array<MetricHistoryPoint[] | null>>(() =>
     extractors.map((_, i) => {
@@ -113,6 +110,7 @@ export function useMultiMetrics<T>(
       }));
     })
   );
+  const [rawData, setRawData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,14 +157,9 @@ export function useMultiMetrics<T>(
       const json = await response.json();
       const data = json.data;
 
-      // [TRACE] Stage 1: Raw API response
-      console.log(`[TRACE-API] endpoint=${endpointRef.current} raw_data=`, JSON.stringify(data));
-
       const values = extractorsRef.current.map(ex => ex(data));
       setCurrentValues(values);
-
-      // [TRACE] Stage 1b: Extracted values
-      console.log(`[TRACE-EXTRACT] endpoint=${endpointRef.current} extracted_values=`, JSON.stringify(values));
+      setRawData(data);
 
       // Update history buffers for tracked indices
       setHistories(prev => prev.map((h, i) => {
@@ -176,8 +169,6 @@ export function useMultiMetrics<T>(
         // Shift buffer: drop oldest, append new value with correct slot indices
         const next = [...h.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: newValue }]
           .map((p, idx) => ({ ...p, slot: idx }));
-        // [TRACE] Stage 2: History buffer (last tracked point)
-        console.log(`[TRACE-BUFFER] endpoint=${endpointRef.current} history_idx=${i} last_point=`, JSON.stringify(next[next.length - 1]));
         return next;
       }));
 
@@ -204,5 +195,5 @@ export function useMultiMetrics<T>(
     return () => clearInterval(interval);
   }, [fetchData, intervalMs]);
 
-  return { currentValues, histories, loading, error, retry };
+  return { currentValues, histories, rawData, loading, error, retry };
 }

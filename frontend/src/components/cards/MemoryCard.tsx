@@ -51,8 +51,8 @@ export default function MemoryCard({ accent }: CardProps) {
     <PanelErrorBoundary panelName="Memory">
       <div className="metric-card">
         <div className="card-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MemoryStick size={20} style={{ color: accent.color }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <MemoryStick size={16} style={{ color: accent.color }} />
             <span className="card-title">Memory</span>
           </div>
           <div className="card-status">

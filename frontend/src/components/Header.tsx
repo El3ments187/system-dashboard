@@ -8,9 +8,11 @@ interface HeaderProps {
   showThemePanel: boolean;
   onToggleThemePanel: () => void;
   healthOk?: boolean;
+  activePage?: 'overview' | 'gpu';
+  onPageChange?: (page: 'overview' | 'gpu') => void;
 }
 
-export default function Header({ accent, onToggleThemePanel, healthOk }: HeaderProps) {
+export default function Header({ accent, onToggleThemePanel, healthOk, activePage = 'overview', onPageChange }: HeaderProps) {
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ['metrics', 'system'],
     queryFn: getSystemMetrics,
@@ -34,15 +36,49 @@ export default function Header({ accent, onToggleThemePanel, healthOk }: HeaderP
       <header className="dashboard-header">
         <div className="header-left">
           <div style={{
-            width: 28, height: 28, borderRadius: 6, background: `linear-gradient(135deg, ${accent.color}, ${accent.glow})`,
+            width: 24, height: 24, borderRadius: 5, background: `linear-gradient(135deg, ${accent.color}, ${accent.glow})`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
               <circle cx="12" cy="12" r="4" />
               <path d="M12 2v4l-2 2 1-3M12 22v-4l-2-2 1-3M2 12h4l2-2-3-1M22 12h-4l-2 2 3-1" />
             </svg>
           </div>
           <span className="header-title">System Dashboard</span>
+          <nav style={{ display: 'flex', gap: 3, marginLeft: 12, alignItems: 'center' }}>
+            {(['overview', 'gpu'] as const).map((page) => (
+              <button
+                key={page}
+                onClick={() => onPageChange?.(page)}
+                style={{
+                  background: activePage === page ? `${accent.color}15` : 'transparent',
+                  color: activePage === page ? accent.color : 'var(--text-secondary)',
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontFamily: "inherit",
+                  fontSize: '12px',
+                  fontWeight: activePage === page ? 600 : 400,
+                  transition: 'all 0.15s ease',
+                  border: activePage === page ? `1px solid ${accent.color}40` : '1px solid transparent',
+                }}
+                onMouseEnter={(e) => {
+                  if (activePage !== page) {
+                    e.currentTarget.style.color = accent.color;
+                    e.currentTarget.style.background = `${accent.color}10`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activePage !== page) {
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                    e.currentTarget.style.background = 'transparent';
+                  }
+                }}
+              >
+                {page === 'overview' ? 'Overview' : 'GPU'}
+              </button>
+            ))}
+          </nav>
         </div>
         <div className="header-center">
           {system && (

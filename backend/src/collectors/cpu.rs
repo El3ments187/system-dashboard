@@ -3,26 +3,32 @@
 use std::sync::{LazyLock, Mutex};
 use crate::models::metrics::CpuMetrics;
 
-static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| Mutex::new(sysinfo::System::new()));
+pub static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| {
+    let mut s = sysinfo::System::new();
+    s.refresh_cpu_all();
+    s.refresh_memory();
+    Mutex::new(s)
+});
 
-pub fn collect_cpu_metrics() -> CpuMetrics {
+static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(|| read_physical_cores());
+
+pub async fn collect_cpu_metrics() -> CpuMetrics {
+    let (avg_util, cores) = read_cpu_utilization().await;
+
     let mut system = SYSTEM.lock().unwrap();
     let len = system.cpus().len();
-
-    let (avg_util, cores) = read_cpu_utilization();
 
     system.refresh_cpu_frequency();
     let cpus2 = system.cpus();
     let freq = if len > 0 { cpus2.first().map(|c| c.frequency() as f64).unwrap_or(0.0) } else { 0.0 };
 
-    let physical_cores = read_physical_cores();
     let load_avg = sysinfo::System::load_average();
     let (load1, load5, load15) = (load_avg.one, load_avg.five, load_avg.fifteen);
 
     CpuMetrics {
         utilization_percent: avg_util,
         temperature_celsius: read_cpu_temperature(),
-        physical_cores,
+        physical_cores: *PHYSICAL_CORES,
         threads: len,
         load_1m: load1,
         load_5m: load5,
@@ -32,10 +38,10 @@ pub fn collect_cpu_metrics() -> CpuMetrics {
     }
 }
 
-fn read_cpu_utilization() -> (f64, Vec<crate::models::metrics::CpuCoreInfo>) {
+async fn read_cpu_utilization() -> (f64, Vec<crate::models::metrics::CpuCoreInfo>) {
     let stat1 = read_all_proc_stats();
     if stat1.is_some() {
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let stat2 = read_all_proc_stats();
         if let (Some(s1), Some(s2)) = (stat1, stat2) {
             let total1 = s1.user + s1.nice + s1.system + s1.idle + s1.iowait;

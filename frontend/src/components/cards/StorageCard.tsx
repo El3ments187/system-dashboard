@@ -174,10 +174,10 @@ export default function StorageCard(_props: CardProps) {
     <PanelErrorBoundary panelName="Storage">
       <div className="metric-card">
         <div className="card-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <HardDrive size={20} style={{ color: 'var(--accent-primary)' }} />
-            <span className="card-title">Storage</span>
-          </div>
+           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <HardDrive size={16} style={{ color: 'var(--accent-primary)' }} />
+              <span className="card-title">Storage</span>
+            </div>
           <div className="card-status">
             <div className="status-dot" style={{ background: statusColor }} />
             <span style={{ color: statusColor }}>{statusLabel}</span>
@@ -205,16 +205,16 @@ export default function StorageCard(_props: CardProps) {
             const stateColor = getDeviceStateColor(deviceState);
 
             return (
-            <div key={di} style={{ marginBottom: 8, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
+            <div key={di} style={{ marginBottom: di === devices.length - 1 ? 0 : 6, borderBottom: di === devices.length - 1 ? 'none' : '1px solid var(--border-color)', paddingBottom: 6 }}>
               {/* Device header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <div style={{ width: 4, height: 16, borderRadius: 2, background: 'var(--accent-primary)', flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: 'var(--accent-primary)', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
                   {device.device}
                 </span>
               </div>
              {/* Performance metrics — grouped by type with explicit labels */}
-                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 8px', marginBottom: 4 }}>
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '3px 6px', marginBottom: 3 }}>
                    <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
                       onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
                       onMouseLeave={() => tooltip.setCardTooltip(null)}
@@ -250,31 +250,31 @@ export default function StorageCard(_props: CardProps) {
               </div>
               {/* Mount rows */}
               {device.mounts.map((mount, mi) => (
-                <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0 4px 14px', marginBottom: 4 }}>
+                <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0 3px 12px', marginBottom: 3 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 1 }}>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {mount.mount_point}
                       </span>
-                      <span style={{ fontSize: 11, color: getUtilColor(mount.utilization_percent), fontFamily: 'monospace', flexShrink: 0, cursor: 'help' }}
+                      <span style={{ fontSize: 10, color: getUtilColor(mount.utilization_percent), fontFamily: 'monospace', flexShrink: 0, cursor: 'help' }}
                         onMouseEnter={(e) => { const desc = getMetricDescription('storage_utilization'); if (desc) tooltip.setCardTooltip({ title: `${mount.mount_point} - ${desc.title}`, description: desc.description, unit: desc.unit }, e); }}
                         onMouseLeave={() => tooltip.setCardTooltip(null)}
                       >
                         {mount.utilization_percent.toFixed(1)}%
                       </span>
                     </div>
-                    <div className="card-progress" style={{ height: 4, marginBottom: 2 }}>
+                    <div className="card-progress" style={{ height: 3, marginBottom: 1 }}>
                       <div
                         className="card-progress-bar"
                         style={{
-                          height: 4,
+                          height: 3,
                           width: `${Math.min(mount.utilization_percent, 100)}%`,
                           background: `linear-gradient(90deg, ${getUtilColor(mount.utilization_percent)}, ${getUtilColor(mount.utilization_percent)})`,
                         }}
                       />
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {formatBytes(mount.used_bytes)} / {formatBytes(mount.total_bytes)}
                   </div>
                 </div>

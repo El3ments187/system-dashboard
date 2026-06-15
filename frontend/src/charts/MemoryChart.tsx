@@ -29,12 +29,8 @@ export default function MemoryChart({ accent }: ChartProps) {
         swap: swapPoint?.value != null ? Math.round((swapPoint.value as number) * 10) / 10 : null,
       });
     }
-    const sorted = result.sort((a, b) => (a.slot as number) - (b.slot as number));
-    // [TRACE] Stage 3: Memory chart data — last point
-    if (sorted.length > 0) {
-      console.log('[TRACE-CHART] title=Memory mode=merged last_point=', JSON.stringify(sorted[sorted.length - 1]));
-    }
-    return sorted;
+   const sorted = result.sort((a, b) => (a.slot as number) - (b.slot as number));
+      return sorted;
   }, [memoryHistory, swapHistory]);
 
   return (

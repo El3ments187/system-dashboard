@@ -54,8 +54,8 @@ export default function CpuCard({ accent }: CardProps) {
     <PanelErrorBoundary panelName="CPU">
       <div className="metric-card">
         <div className="card-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Cpu size={20} style={{ color: accent.color }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Cpu size={16} style={{ color: accent.color }} />
             <span className="card-title">CPU</span>
           </div>
           <div className="card-status">

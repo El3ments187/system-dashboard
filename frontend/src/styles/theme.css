@@ -94,8 +94,8 @@
 .dashboard-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px;
+  gap: 12px;
+  padding: 16px;
   flex: 1;
   min-height: 0;
   animation: fadeIn 400ms ease;
@@ -106,7 +106,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
   align-items: stretch;
 }
@@ -123,9 +123,20 @@
   overflow: hidden;
 }
 
+.dashboard-row.gpu-full-width > .chart-container {
+  flex: 0 0 100% !important;
+}
+
+/* GPU row side columns stretch to full row height */
+.gpu-col-left,
+.gpu-col-right {
+  align-self: stretch !important;
+  min-height: 0;
+}
+
 /* Storage row (2-column layout) */
 .storage-row {
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   align-items: stretch;
@@ -143,19 +154,58 @@
   overflow: hidden;
 }
 
-@media (max-width: 1279px) {
-  .dashboard-row {
-    flex-direction: column;
-  }
-  .dashboard-row > .metric-card {
-    flex: none;
-    max-width: none;
-    width: 100%;
-  }
-  .dashboard-row > *:last-child {
-    flex: none;
-    width: 100%;
-  }
+/* GPU page two-column layout (desktop) */
+.gpu-row {
+  display: grid !important;
+  grid-template-columns: 320px 1fr !important;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.gpu-row > :first-child {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.gpu-row > :last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* Left column card must fill the full row height */
+.gpu-col-left .metric-card {
+  height: 100%;
+  min-height: 0;
+}
+
+/* GPU metrics grid - compact layout */
+.gpu-metrics-grid {
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px !important;
+  margin-top: 0 !important;
+  padding-top: 6px !important;
+}
+
+.gpu-metrics-grid .card-detail-item {
+  font-size: 11px !important;
+  padding: 2px 0;
+}
+
+.gpu-metrics-grid .card-detail-label {
+  width: auto !important;
+  flex-shrink: 0;
+  font-size: 11px !important;
+}
+
+.gpu-metrics-grid .card-detail-value {
+  font-size: 11px !important;
 }
 
 @media (min-width: 2560px) {
@@ -218,7 +268,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 10px 20px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
@@ -233,7 +283,7 @@ main {
 }
 
 .header-title {
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -241,8 +291,8 @@ main {
 .header-center {
   display: flex;
   align-items: center;
-  gap: 24px;
-  font-size: 13px;
+  gap: 16px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 
@@ -255,18 +305,18 @@ main {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: 6px;
+  padding: 3px 8px;
   background: var(--bg-card);
   border-radius: var(--radius-sm);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
 .header-info-label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -414,7 +464,7 @@ main {
 .metric-card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
-  padding: 14px;
+  padding: 10px;
   border: 1px solid var(--border-color);
   transition: var(--transition-normal);
   animation: fadeIn 400ms ease;
@@ -422,7 +472,6 @@ main {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  min-height: 250px;
 }
 
 .metric-card:hover {
@@ -435,7 +484,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .card-title {
@@ -447,30 +496,29 @@ main {
 }
 
 .card-value {
-  font-size: 42px;
+  font-size: 34px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .card-unit {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 400;
   color: var(--text-secondary);
-  margin-left: 4px;
+  margin-left: 3px;
 }
 
 .card-details {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--border-color);
-  flex: 1;
-  min-height: 0;
+  flex-shrink: 0;
   min-width: 0;
 }
 
@@ -482,7 +530,7 @@ main {
 .card-detail-item {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 11px;
   min-width: 0;
   white-space: nowrap;
 }
@@ -490,7 +538,7 @@ main {
 .card-detail-label {
   color: var(--text-muted);
   display: inline-block;
-  width: 64px;
+  width: 56px;
   flex-shrink: 0;
 }
 
@@ -506,8 +554,8 @@ main {
 }
 
 .card-progress {
-  margin-top: 4px;
-  height: 6px;
+  margin-top: 3px;
+  height: 5px;
   background: var(--bg-secondary);
   border-radius: 3px;
   overflow: hidden;
@@ -523,14 +571,14 @@ main {
 .card-status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--success);
   animation: pulse 2s infinite;
@@ -540,7 +588,7 @@ main {
 .chart-container {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
-  padding: 6px;
+  padding: 4px;
   border: 1px solid var(--border-color);
   animation: fadeIn 400ms ease;
   min-height: 0;
@@ -550,12 +598,12 @@ main {
 }
 
 .chart-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .chart-area {

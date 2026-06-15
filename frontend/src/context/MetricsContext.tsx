@@ -7,6 +7,7 @@ interface MetricsContextValue {
   cpuCurrentValues: Array<number | null>;
   memoryCurrentValues: Array<number | null>;
   gpuCurrentValues: Array<number | null>;
+  gpuRawData: any;
   cpuHistories: Array<any | null>;
   memoryHistories: Array<any | null>;
   gpuHistories: Array<any | null>;
@@ -14,6 +15,8 @@ interface MetricsContextValue {
   memoryHistory: any | null;
   swapHistory: any | null;
   gpuHistory: any | null;
+  gpuTemperatureHistory: any | null;
+  gpuVramUtilHistory: any | null;
   cpuLoading: boolean;
   memoryLoading: boolean;
   gpuLoading: boolean;
@@ -33,7 +36,6 @@ interface MetricsContextValue {
 const MetricsContext = React.createContext<MetricsContextValue | null>(null);
 
 export function MetricsProvider({ children }: { children: React.ReactNode }) {
-  // console.log('[MetricsProvider] START');
   const cpu = useMultiMetrics(
      '/cpu',
      [
@@ -67,37 +69,46 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
      1000,
    );
 
-  const gpu = useMultiMetrics(
-     '/gpu',
-     [
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
-         return data?.utilization_percent ?? null;
-       },
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
-         return data?.temperature_celsius ?? null;
-       },
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
-         return data?.vram_used_gb ?? null;
-       },
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
-         return data?.vram_total_gb ?? null;
-       },
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
-         return data?.power_usage_watts ?? null;
-       },
-       (data: any) => {
-         if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
-         return data?.power_limit_watts ?? null;
-       },
-     ],
-     [true, false, false, false, false, false],
-     500,
-   );
+ const gpu = useMultiMetrics(
+      '/gpu',
+      [
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
+          return data?.utilization_percent ?? null;
+        },
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
+          return data?.temperature_celsius ?? null;
+        },
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
+          return data?.vram_used_gb ?? null;
+        },
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
+          return data?.vram_total_gb ?? null;
+        },
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
+          return data?.power_usage_watts ?? null;
+        },
+        (data: any) => {
+          if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
+          return data?.power_limit_watts ?? null;
+        },
+        (data: any) => {
+          const vramUsed = Array.isArray(data) && data.length > 0 ? data[0]?.vram_used_gb : data?.vram_used_gb;
+          const vramTotal = Array.isArray(data) && data.length > 0 ? data[0]?.vram_total_gb : data?.vram_total_gb;
+          if (vramUsed != null && vramTotal != null && vramTotal > 0) {
+            return (vramUsed / vramTotal) * 100;
+          }
+          return null;
+        },
+      ],
+      [true, true, false, false, false, false, true],
+      500,
+      120000,
+    );
 
   const storage = useStorageMetrics();
 
@@ -105,6 +116,7 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     cpuCurrentValues: cpu.currentValues,
     memoryCurrentValues: memory.currentValues,
     gpuCurrentValues: gpu.currentValues,
+    gpuRawData: gpu.rawData,
     cpuHistories: cpu.histories,
     memoryHistories: memory.histories,
     gpuHistories: gpu.histories,
@@ -112,6 +124,8 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     memoryHistory: memory.histories?.[0] ?? null,
     swapHistory: memory.histories?.[5] ?? null,
     gpuHistory: gpu.histories?.[0] ?? null,
+     gpuTemperatureHistory: gpu.histories?.[1] ?? null,
+     gpuVramUtilHistory: gpu.histories?.[6] ?? null,
     cpuLoading: cpu.loading,
     memoryLoading: memory.loading,
     gpuLoading: gpu.loading,

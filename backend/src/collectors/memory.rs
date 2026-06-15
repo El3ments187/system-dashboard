@@ -1,9 +1,10 @@
 //! Memory metrics collector using sysinfo.
 
+use crate::collectors::cpu::SYSTEM;
 use crate::models::metrics::MemoryMetrics;
 
 pub fn collect_memory_metrics() -> MemoryMetrics {
-    let mut system = sysinfo::System::new();
+    let mut system = SYSTEM.lock().unwrap();
     system.refresh_memory();
     let total = system.total_memory();
     let available = system.available_memory();

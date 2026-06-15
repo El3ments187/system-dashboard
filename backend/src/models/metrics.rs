@@ -33,13 +33,19 @@ pub struct MemoryMetrics {
 #[derive(Debug, Serialize)]
 pub struct GpuMetrics {
     pub name: String,
-    pub driver_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver_version: Option<String>,
     pub utilization_percent: f64,
     pub temperature_celsius: f64,
     pub vram_used_gb: f64,
     pub vram_total_gb: f64,
     pub power_usage_watts: f64,
     pub power_limit_watts: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clock_speed_mhz: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_clock_mhz: Option<f64>,
+    pub fan_speed_rpm: f64,
 }
 
 #[derive(Debug, Serialize)]

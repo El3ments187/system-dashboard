@@ -30,7 +30,7 @@ async fn health_handler() -> axum::response::Json<Value> {
 }
 
 async fn cpu_handler() -> axum::response::Json<Value> {
-    let metrics = collect_cpu_metrics();
+    let metrics = collect_cpu_metrics().await;
     let json_data = serde_json::to_value(&metrics).unwrap();
     Json(json!({
         "data": json_data,

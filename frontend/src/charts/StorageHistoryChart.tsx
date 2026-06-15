@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { StorageHistoryPoint } from '../types/metrics';
 import ChartTooltip from '../components/common/ChartTooltip';
 
@@ -43,10 +43,27 @@ export default function StorageHistoryChart({ data }: ChartProps) {
   const [activeTab, setActiveTab] = useState<'throughput' | 'utilization'>('throughput');
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
   }, []);
+
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 1 && r.height > 1) {
+        setChartSize({ width: Math.floor(r.width), height: Math.floor(r.height) });
+      }
+    };
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    updateSize();
+    return () => ro.disconnect();
+  }, [chartComponents]);
 
   useEffect(() => {
     const update = () => {
@@ -103,12 +120,8 @@ export default function StorageHistoryChart({ data }: ChartProps) {
       }
     }
 
-    const result = Array.from(slotMap.values()).sort((a, b) => a.x - b.x);
-    // [TRACE] Stage 3: Storage chart data — last point
-    if (result.length > 0) {
-      console.log('[TRACE-CHART] title=StorageHistory mode=storage last_point=', JSON.stringify(result[result.length - 1]));
-    }
-    return result;
+   const result = Array.from(slotMap.values()).sort((a, b) => a.x - b.x);
+      return result;
   }, [data]);
 
   const deviceNames = Array.from(data.keys()).sort();
@@ -117,7 +130,7 @@ export default function StorageHistoryChart({ data }: ChartProps) {
   if (!chartComponents) {
     return (
       <div className="chart-container storage-chart-container" style={{ flex: 1, minHeight: 0, height: 0 }}>
-        <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
           Loading chart...
         </div>
       </div>
@@ -130,15 +143,11 @@ export default function StorageHistoryChart({ data }: ChartProps) {
   const YAxis = chartComponents.YAxis as any;
   const CartesianGrid = chartComponents.CartesianGrid as any;
   const Tooltip = chartComponents.Tooltip as any;
-  const ResponsiveContainer = chartComponents.ResponsiveContainer as any;
 
   const tooltipContent = (props: any) => {
     if (!props || !props.payload || !props.payload[0] || !props.active) return null;
     const payloadArr = props.payload;
     const firstDatum = payloadArr[0]?.payload ?? {};
-
-    // [TRACE] Stage 4: Storage tooltip payload
-    console.log('[TRACE-TOOLTIP] title=StorageHistory index=', props.label, 'payload_point=', JSON.stringify(firstDatum), 'all_payloads=', JSON.stringify(payloadArr.map((e: any) => ({ name: e.name, value: e.value }))));
 
     const ts = firstDatum?.timestampMs ?? 0;
     const timestamp = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
@@ -154,19 +163,19 @@ export default function StorageHistoryChart({ data }: ChartProps) {
 
   return (
     <div className="chart-container storage-chart-container" style={{ flex: 1, minHeight: 0, height: 0 }}>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
         {(['throughput', 'utilization'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             style={{
-              padding: '4px 12px',
+              padding: '3px 10px',
               borderRadius: 4,
               border: '1px solid var(--border-color)',
               background: activeTab === tab ? 'var(--bg-secondary)' : 'transparent',
               color: activeTab === tab ? 'var(--accent-primary)' : 'var(--text-muted)',
               cursor: 'pointer',
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: activeTab === tab ? 600 : 400,
               fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             }}
@@ -178,15 +187,15 @@ export default function StorageHistoryChart({ data }: ChartProps) {
 
       {hasData ? (
         <>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
             {deviceNames.map((device, i) => (
-              <div key={device} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 12, height: 4, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
-                <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+              <div key={device} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <div style={{ width: 10, height: 3, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
+                <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                   {device}
                 </span>
                 {activeTab !== 'utilization' && (
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+                  <span style={{ fontSize: 8, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                     R/W
                   </span>
                 )}
@@ -194,78 +203,80 @@ export default function StorageHistoryChart({ data }: ChartProps) {
             ))}
           </div>
 
-          <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <ResponsiveContainer>
-              <AreaChart data={chartData}>
-                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-                <XAxis
-                  dataKey="x"
-                  type="number"
-                  domain={[0, STORAGE_BUFFER_SIZE - 1]}
-                  ticks={chartData.map((_, i) => i)}
-                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                  axisLine={{ stroke: chartColors.axis }}
-                  tickFormatter={(tickVal: number) => {
-                    const pt = chartData[Math.round(tickVal)];
-                    return pt ? pt.timeLabel : '';
-                  }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  type="number"
-                  domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
-                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                  axisLine={{ stroke: chartColors.axis }}
-                  tickFormatter={(v: number) => {
-                    if (activeTab === 'throughput') return formatBytesPerSec(v);
-                    return `${v}%`;
-                  }}
-                />
-                <Tooltip
-                  isAnimationActive={false}
-                  animationDuration={0}
-                  content={tooltipContent}
-                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
-                  offset={12}
-                />
-               {deviceNames.map((device, i) => {
-                    const color = seriesColors[i % seriesColors.length];
-                    const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
-                    const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
-                  return (
-                    <g key={device}>
-                      <Area
-                        dataKey={baseKey}
-                        stroke={color}
-                        fill={`${color}20`}
-                        strokeWidth={2}
-                        fillOpacity={0.3}
-                        isAnimationActive={false}
-                        animationDuration={0}
-                        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
-                      />
-                      {writeKey && (
+          <div ref={chartRef} style={{ flex: 1, minHeight: 32, overflow: 'hidden' }}>
+            {chartSize && (
+              <div style={{ width: chartSize.width, height: chartSize.height }}>
+                <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
+                  <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+                  <XAxis
+                    dataKey="x"
+                    type="number"
+                    domain={[0, STORAGE_BUFFER_SIZE - 1]}
+                    ticks={chartData.map((_, i) => i)}
+                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                    axisLine={{ stroke: chartColors.axis }}
+                    tickFormatter={(tickVal: number) => {
+                      const pt = chartData[Math.round(tickVal)];
+                      return pt ? pt.timeLabel : '';
+                    }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    type="number"
+                    domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
+                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                    axisLine={{ stroke: chartColors.axis }}
+                    tickFormatter={(v: number) => {
+                      if (activeTab === 'throughput') return formatBytesPerSec(v);
+                      return `${v}%`;
+                    }}
+                  />
+                  <Tooltip
+                    isAnimationActive={false}
+                    animationDuration={0}
+                    content={tooltipContent}
+                    cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                    offset={12}
+                  />
+                 {deviceNames.map((device, i) => {
+                      const color = seriesColors[i % seriesColors.length];
+                      const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
+                      const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
+                    return (
+                      <g key={device}>
                         <Area
-                          dataKey={writeKey}
+                          dataKey={baseKey}
                           stroke={color}
-                          fill={`${color}10`}
+                          fill={`${color}20`}
                           strokeWidth={2}
-                          strokeDasharray="4 4"
-                          fillOpacity={0.2}
+                          fillOpacity={0.3}
                           isAnimationActive={false}
                           animationDuration={0}
                           activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
                         />
-                      )}
-                    </g>
-                  );
-                })}
-              </AreaChart>
-            </ResponsiveContainer>
+                        {writeKey && (
+                          <Area
+                            dataKey={writeKey}
+                            stroke={color}
+                            fill={`${color}10`}
+                            strokeWidth={2}
+                            strokeDasharray="4 4"
+                            fillOpacity={0.2}
+                            isAnimationActive={false}
+                            animationDuration={0}
+                            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </AreaChart>
+              </div>
+            )}
           </div>
         </>
       ) : (
-        <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
           Waiting for data...
         </div>
       )}

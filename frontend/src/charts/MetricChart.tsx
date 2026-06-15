@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { MetricHistoryPoint } from '../types/metrics';
 import ChartTooltip from '../components/common/ChartTooltip';
 
@@ -9,6 +9,7 @@ interface ChartProps {
   color?: string;
   timeFrame?: string;
   dataKeys?: string[];
+  chartHeight?: number;
 }
 
 function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
@@ -32,7 +33,7 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export default function MetricChart({ accent: _props, title, data, color: _color, timeFrame, dataKeys }: ChartProps) {
+export default function MetricChart({ accent: _props, title, data, color: _color, timeFrame, dataKeys, chartHeight }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
@@ -40,10 +41,27 @@ export default function MetricChart({ accent: _props, title, data, color: _color
     if (_color) return _color;
     return getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#3B82F6';
   });
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     import('recharts').then((recharts) => setChartComponents(recharts));
   }, []);
+
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 1 && r.height > 1) {
+        setChartSize({ width: Math.floor(r.width), height: Math.floor(r.height) });
+      }
+    };
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    updateSize();
+    return () => ro.disconnect();
+  }, [chartComponents, chartHeight]);
 
   useEffect(() => {
     const update = () => {
@@ -69,10 +87,6 @@ export default function MetricChart({ accent: _props, title, data, color: _color
         timeLabel: formatTime(p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp)),
         ...p,
       }));
-      // [TRACE] Stage 3: Chart data (multi-series) — last point
-      if (result.length > 0) {
-        console.log(`[TRACE-CHART] title=${title} mode=multi-series last_point=`, JSON.stringify(result[result.length - 1]));
-      }
       return result;
     }
 
@@ -85,9 +99,6 @@ export default function MetricChart({ accent: _props, title, data, color: _color
         read: p.read != null ? Math.round(p.read * 10) / 10 : null,
         write: p.write != null ? Math.round(p.write * 10) / 10 : null,
       }));
-      if (result.length > 0) {
-        console.log(`[TRACE-CHART] title=${title} mode=read-write last_point=`, JSON.stringify(result[result.length - 1]));
-      }
       return result;
     }
 
@@ -97,12 +108,6 @@ export default function MetricChart({ accent: _props, title, data, color: _color
       timeLabel: formatTime((p as MetricHistoryPoint).timestamp),
       value: p.value != null ? Math.round((p.value as number) * 10) / 10 : null,
     }));
-    // [TRACE] Stage 3: Chart data (single-series) — last point
-    if (result.length > 0) {
-      const last = result[result.length - 1];
-      const origLast = data[data.length - 1] as MetricHistoryPoint;
-      console.log(`[TRACE-CHART] title=${title} mode=single-series orig_value=${origLast.value} -> chart_value=${last.value} point=`, JSON.stringify(last));
-    }
     return result;
   }, [data, dataKeys]);
 
@@ -115,14 +120,14 @@ export default function MetricChart({ accent: _props, title, data, color: _color
 
   if (!chartComponents) {
     return (
-      <div className="chart-container">
+      <div className="chart-container" style={chartHeight ? { minHeight: chartHeight } : undefined}>
         <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span>{title}</span>
           {timeFrame && (
-            <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '12px' }}>{timeFrame}</span>
+         <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px' }}>{timeFrame}</span>
           )}
         </div>
-        <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
           Loading chart...
         </div>
       </div>
@@ -135,7 +140,6 @@ export default function MetricChart({ accent: _props, title, data, color: _color
   const YAxis = chartComponents.YAxis as any;
   const CartesianGrid = chartComponents.CartesianGrid as any;
   const Tooltip = chartComponents.Tooltip as any;
-  const ResponsiveContainer = chartComponents.ResponsiveContainer as any;
 
   const dataMaxX = chartData.length > 0 ? chartData.length - 1 : 0;
 
@@ -143,9 +147,6 @@ export default function MetricChart({ accent: _props, title, data, color: _color
     if (!props || !props.payload || !props.payload[0] || !props.active) return null;
     const payloadArr = props.payload;
     const firstDatum = payloadArr[0]?.payload ?? {};
-
-    // [TRACE] Stage 4: Tooltip payload — what Recharts gives us
-    console.log(`[TRACE-TOOLTIP] title=${title} index=${props.label} payload_point=`, JSON.stringify(firstDatum), 'all_payloads=', JSON.stringify(payloadArr.map((e: any) => ({ name: e.name, value: e.value }))));
 
     const ts = firstDatum?.timestampMs ?? 0;
     const timestamp = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
@@ -168,7 +169,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
   };
 
   return (
-    <div className="chart-container">
+    <div className="chart-container" style={chartHeight ? { minHeight: chartHeight } : undefined}>
       <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span>{title}</span>
         {timeFrame && (
@@ -176,83 +177,85 @@ export default function MetricChart({ accent: _props, title, data, color: _color
         )}
       </div>
       {dataKeys && dataKeys.length > 0 && (
-        <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
             {dataKeys.map((key, i) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 {i === 1 ? (
-                  <div style={{ width: 12, height: 0, borderBottom: `2px dashed ${seriesColors[i % seriesColors.length]}` }} />
+                  <div style={{ width: 10, height: 0, borderBottom: `2px dashed ${seriesColors[i % seriesColors.length]}` }} />
                 ) : (
-                  <div style={{ width: 12, height: 4, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
+                  <div style={{ width: 10, height: 3, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
                 )}
-              <span style={{ fontSize: 10, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+              <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
                 {seriesLabels[key] || key}
               </span>
             </div>
           ))}
         </div>
       )}
-      <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <ResponsiveContainer>
-          <AreaChart data={chartData}>
-            <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-            <XAxis
-              dataKey="x"
-              type="number"
-              domain={[0, dataMaxX]}
-              ticks={chartData.map((_, i) => i)}
-              tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-              axisLine={{ stroke: chartColors.axis }}
-              tickFormatter={(tickVal: number) => {
-                const pt = chartData[Math.round(tickVal)];
-                return pt ? pt.timeLabel : '';
-              }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              type="number"
-              domain={[0, 100]}
-              tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-              axisLine={{ stroke: chartColors.axis }}
-            />
-            <Tooltip
-              isAnimationActive={false}
-              animationDuration={0}
-              content={tooltipContent}
-              cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
-              offset={12}
-            />
-           {dataKeys ? (
-                dataKeys.map((key, i) => {
-                    const keyColor = seriesColors[i % seriesColors.length];
-                    return (
-                      <Area
-                        key={key}
-                        dataKey={key}
-                        stroke={keyColor}
-                        fill={`${keyColor}20`}
-                        strokeWidth={2}
-                        strokeDasharray={i === 1 ? "5 5" : "0"}
-                        fillOpacity={i === 1 ? 0.2 : 0.3}
-                        isAnimationActive={false}
-                        animationDuration={0}
-                        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
-                      />
-                    );
-                })
-            ) : (
-              <Area
-                dataKey="value"
-                stroke={strokeColor}
-                fill={fillColor}
-                strokeWidth={2}
-                fillOpacity={0.3}
+      <div ref={chartRef} style={{ flex: 1, minHeight: chartHeight ? chartHeight - 28 : 32, overflow: 'hidden' }}>
+        {chartSize && (
+          <div style={{ width: chartSize.width, height: chartSize.height }}>
+            <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
+              <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+              <XAxis
+                dataKey="x"
+                type="number"
+                domain={[0, dataMaxX]}
+                ticks={chartData.map((_, i) => i)}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                axisLine={{ stroke: chartColors.axis }}
+                tickFormatter={(tickVal: number) => {
+                  const pt = chartData[Math.round(tickVal)];
+                  return pt ? pt.timeLabel : '';
+                }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                type="number"
+                domain={[0, 100]}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                axisLine={{ stroke: chartColors.axis }}
+              />
+              <Tooltip
                 isAnimationActive={false}
                 animationDuration={0}
-                activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+                content={tooltipContent}
+                cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+               offset={8}
               />
-            )}
-          </AreaChart>
-        </ResponsiveContainer>
+              {dataKeys ? (
+                  dataKeys.map((key, i) => {
+                      const keyColor = seriesColors[i % seriesColors.length];
+                      return (
+                        <Area
+                          key={key}
+                          dataKey={key}
+                          stroke={keyColor}
+                          fill={`${keyColor}20`}
+                          strokeWidth={2}
+                          strokeDasharray={i === 1 ? "5 5" : "0"}
+                          fillOpacity={i === 1 ? 0.2 : 0.3}
+                          isAnimationActive={false}
+                          animationDuration={0}
+                          activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
+                        />
+                      );
+                  })
+              ) : (
+                <Area
+                  dataKey="value"
+                  stroke={strokeColor}
+                  fill={fillColor}
+                  strokeWidth={2}
+                  fillOpacity={0.3}
+                  isAnimationActive={false}
+                  animationDuration={0}
+                  activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+                />
+              )}
+            </AreaChart>
+          </div>
+        )}
       </div>
     </div>
   );

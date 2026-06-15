@@ -12,8 +12,8 @@ export default function StoragePerformanceCard() {
       <PanelErrorBoundary panelName="Storage Performance">
         <div className="metric-card" style={{ gridColumn: '1 / -1', opacity: 0.5 }}>
           <div className="card-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-<Activity size={20} style={{ color: 'var(--accent-primary)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+<Activity size={16} style={{ color: 'var(--accent-primary)' }} />
               <span className="card-title">Storage Performance</span>
             </div>
           </div>

@@ -16,11 +16,15 @@ import { TooltipProvider } from './components/common/TooltipProvider';
 import { useTheme } from './hooks/useTheme';
 import './styles/theme.css';
 import { checkHealth } from './services/api';
+import GpuPage from './pages/GpuPage';
 
 export default function App() {
   const { accent, setAccent, bg, setBg, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activePage, setActivePage] = useState<'overview' | 'gpu'>(() => {
+    return window.location.pathname === '/gpu' ? 'gpu' : 'overview';
+  });
 
   const { data: healthOk } = useQuery<boolean>({
     queryKey: ['health'],
@@ -33,6 +37,25 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 800);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Sync URL with active page
+  useEffect(() => {
+    const path = activePage === 'gpu' ? '/gpu' : '/';
+    window.history.pushState({ page: activePage }, '', path);
+  }, [activePage]);
+
+  // Handle browser back/forward
+  useEffect(() => {
+    const handler = () => {
+      if (window.location.pathname === '/gpu') {
+        setActivePage('gpu');
+      } else {
+        setActivePage('overview');
+      }
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
   }, []);
 
   if (loading) {
@@ -55,6 +78,8 @@ export default function App() {
           showThemePanel={showThemePanel}
           onToggleThemePanel={() => setShowThemePanel(!showThemePanel)}
           healthOk={healthOk}
+          activePage={activePage}
+          onPageChange={setActivePage}
         />
         <ThemePanel
           open={showThemePanel}
@@ -65,24 +90,28 @@ export default function App() {
           onBgChange={setBg}
           current={current}
         />
-        <main className="dashboard-grid">
-          <div className="dashboard-row">
-            <GpuCard accent={current} />
-            <GpuChart accent={current} />
-          </div>
-          <div className="dashboard-row">
-            <CpuCard accent={current} />
-            <CpuChart accent={current} />
-          </div>
-          <div className="dashboard-row">
-            <MemoryCard accent={current} />
-            <MemoryChart accent={current} />
-          </div>
-          <div className="dashboard-row storage-row">
-            <StorageCard accent={current} />
-            <StoragePerformanceCard />
-          </div>
-        </main>
+        {activePage === 'overview' ? (
+          <main className="dashboard-grid">
+            <div className="dashboard-row">
+              <GpuCard accent={current} />
+              <GpuChart accent={current} />
+            </div>
+            <div className="dashboard-row">
+              <CpuCard accent={current} />
+              <CpuChart accent={current} />
+            </div>
+            <div className="dashboard-row">
+              <MemoryCard accent={current} />
+              <MemoryChart accent={current} />
+            </div>
+            <div className="dashboard-row storage-row">
+              <StorageCard accent={current} />
+              <StoragePerformanceCard />
+            </div>
+          </main>
+        ) : (
+          <GpuPage accent={current} />
+        )}
       </div>
     </MetricsProvider>
     </TooltipProvider>
