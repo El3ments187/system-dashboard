@@ -41,21 +41,54 @@ interface AccentTheme {
 }
 
 const ACCENT_THEMES: AccentTheme[] = [
+  /* Blues */
   { id: 'blue',     name: 'Blue',           color: '#3B82F6' },
+  { id: 'sky',      name: 'Sky',            color: '#60A5FA' },
+  { id: 'ice',      name: 'Ice',            color: '#8FD8FF' },
+  { id: 'sapphire', name: 'Sapphire',       color: '#0F52BA' },
+  { id: 'cyber-blue', name: 'Cyber Blue',   color: '#00BFFF' },
+
+  /* Cyans & Teals */
   { id: 'cyan',     name: 'Cyan',           color: '#06B6D4' },
+  { id: 'aqua',     name: 'Aqua',           color: '#7FFFD4' },
   { id: 'teal',     name: 'Teal',           color: '#14B8A6' },
-  { id: 'green',    name: 'Green',          color: '#10B981' },
-  { id: 'lime',     name: 'Lime',           color: '#84CC16' },
-  { id: 'yellow',   name: 'Yellow',         color: '#F5C542' },
+  { id: 'turquoise', name: 'Turquoise',     color: '#40E0D0' },
+
+  /* Greens */
+  { id: 'green',    name: 'Green',          color: '#22C55E' },
+  { id: 'emerald',  name: 'Emerald',        color: '#50C878' },
+  { id: 'mint',     name: 'Mint',           color: '#6EE7B7' },
+  { id: 'terminal', name: 'Terminal Green', color: '#39FF14' },
+
+  /* Yellows & Golds */
+  { id: 'yellow',   name: 'Yellow',         color: '#FACC15' },
   { id: 'amber',    name: 'Amber',          color: '#F59E0B' },
-  { id: 'orange',   name: 'Orange',         color: '#FB923C' },
+  { id: 'gold',     name: 'Gold',           color: '#D4AF37' },
+  { id: 'bronze',   name: 'Bronze',         color: '#CD7F32' },
+
+  /* Oranges & Reds */
+  { id: 'orange',   name: 'Orange',         color: '#F97316' },
+  { id: 'coral',    name: 'Coral',          color: '#FF7F6A' },
   { id: 'red',      name: 'Red',            color: '#EF4444' },
-  { id: 'rose',     name: 'Rose',           color: '#F43F5E' },
+  { id: 'crimson',  name: 'Crimson',        color: '#DC143C' },
+  { id: 'ruby',     name: 'Ruby',           color: '#E0115F' },
+
+  /* Pinks & Magentas */
+  { id: 'rose',     name: 'Rose',           color: '#FB7185' },
   { id: 'pink',     name: 'Pink',           color: '#EC4899' },
+  { id: 'magenta',  name: 'Magenta',        color: '#D946EF' },
+  { id: 'orchid',   name: 'Orchid',         color: '#DA70D6' },
+
+  /* Purples */
   { id: 'purple',   name: 'Purple',         color: '#8B5CF6' },
+  { id: 'lavender', name: 'Lavender',       color: '#B497FF' },
   { id: 'indigo',   name: 'Indigo',         color: '#6366F1' },
-  { id: 'silver',   name: 'Silver',         color: '#E5E7EB' },
-  { id: 'terminal', name: 'Terminal Green', color: '#00FF88' },
+  { id: 'violet',   name: 'Violet',         color: '#8A2BE2' },
+
+  /* Neutrals & Metals */
+  { id: 'silver',   name: 'Silver',         color: '#94A3B8' },
+  { id: 'platinum', name: 'Platinum',       color: '#E5E4E2' },
+  { id: 'copper',   name: 'Copper',         color: '#B87333' },
 ];
 
 /* ---- background theme config ---- */
@@ -67,6 +100,7 @@ interface BackgroundTheme {
 }
 
 const BACKGROUND_THEMES: BackgroundTheme[] = [
+  /* Dark backgrounds */
   { id: 'dark',    name: 'Dark',       background: '#0A0F1A' },
   { id: 'midnight', name: 'Midnight',  background: '#020617' },
   { id: 'ocean',   name: 'Ocean',      background: '#071422' },
@@ -77,11 +111,20 @@ const BACKGROUND_THEMES: BackgroundTheme[] = [
   { id: 'nord',    name: 'Nord',       background: '#2E3440' },
   { id: 'dracula', name: 'Dracula',    background: '#282A36' },
   { id: 'oled',    name: 'OLED Black', background: '#000000' },
+  { id: 'obsidian',name: 'Obsidian',   background: '#0B0B0D' },
+  { id: 'eclipse', name: 'Eclipse',    background: '#060B14' },
+  { id: 'deep-space', name: 'Deep Space', background: '#0A0F1E' },
+  { id: 'matrix',  name: 'Matrix',     background: '#07110A' },
+  { id: 'storm',   name: 'Storm',      background: '#101725' },
+  { id: 'midnight-purple', name: 'Midnight Purple', background: '#120E1C' },
+  { id: 'arctic',  name: 'Arctic',     background: '#0D1726' },
   { id: 'carbon',  name: 'Carbon',     background: '#121212' },
+
+  /* Light backgrounds */
   { id: 'light',   name: 'Light',      background: '#F8FAFC' },
-  { id: 'paper',   name: 'Paper',      background: '#F9FAFB' },
+  { id: 'paper',   name: 'Paper',      background: '#F5F6F8' },
   { id: 'nord-light', name: 'Nord Light', background: '#ECEFF4' },
-  { id: 'cream',   name: 'Cream',      background: '#FFFDF5' },
+  { id: 'cream',   name: 'Cream',      background: '#F7F4ED' },
 ];
 
 /* ---- derived accent colors map ---- */

@@ -1,5 +1,6 @@
 import { useMultiMetrics } from '../hooks/useMultiMetrics';
 import { useStorageMetrics } from '../hooks/useStorageMetrics';
+import { useLiveDataControlsContext } from './LiveDataControlsContext';
 import React, { useContext } from 'react';
 import { StorageHistoryPoint } from '../types/metrics';
 
@@ -31,11 +32,17 @@ interface MetricsContextValue {
   retryMemory: () => void;
   retryGpu: () => void;
   retryStorage: () => void;
+  isPaused: boolean;
+  pause: () => void;
+  resume: () => void;
+  toggle: () => void;
 }
 
 const MetricsContext = React.createContext<MetricsContextValue | null>(null);
 
 export function MetricsProvider({ children }: { children: React.ReactNode }) {
+  const { isPaused, pause, resume, toggle } = useLiveDataControlsContext();
+
   const cpu = useMultiMetrics(
      '/cpu',
      [
@@ -50,6 +57,8 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
      ],
      [true, false, false, false, false, false, false, false],
      500,
+     60000,
+     isPaused,
    );
 
   const memory = useMultiMetrics(
@@ -67,50 +76,53 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
      ],
      [true, false, false, false, false, true],
      1000,
+     60000,
+     isPaused,
    );
 
- const gpu = useMultiMetrics(
-      '/gpu',
-      [
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
-          return data?.utilization_percent ?? null;
-        },
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
-          return data?.temperature_celsius ?? null;
-        },
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
-          return data?.vram_used_gb ?? null;
-        },
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
-          return data?.vram_total_gb ?? null;
-        },
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
-          return data?.power_usage_watts ?? null;
-        },
-        (data: any) => {
-          if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
-          return data?.power_limit_watts ?? null;
-        },
-        (data: any) => {
-          const vramUsed = Array.isArray(data) && data.length > 0 ? data[0]?.vram_used_gb : data?.vram_used_gb;
-          const vramTotal = Array.isArray(data) && data.length > 0 ? data[0]?.vram_total_gb : data?.vram_total_gb;
-          if (vramUsed != null && vramTotal != null && vramTotal > 0) {
-            return (vramUsed / vramTotal) * 100;
-          }
-          return null;
-        },
-      ],
-      [true, true, false, false, false, false, true],
-      500,
-      120000,
-    );
+  const gpu = useMultiMetrics(
+       '/gpu',
+       [
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.utilization_percent ?? null;
+           return data?.utilization_percent ?? null;
+         },
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.temperature_celsius ?? null;
+           return data?.temperature_celsius ?? null;
+         },
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.vram_used_gb ?? null;
+           return data?.vram_used_gb ?? null;
+         },
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.vram_total_gb ?? null;
+           return data?.vram_total_gb ?? null;
+         },
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.power_usage_watts ?? null;
+           return data?.power_usage_watts ?? null;
+         },
+         (data: any) => {
+           if (Array.isArray(data) && data.length > 0) return data[0]?.power_limit_watts ?? null;
+           return data?.power_limit_watts ?? null;
+         },
+         (data: any) => {
+           const vramUsed = Array.isArray(data) && data.length > 0 ? data[0]?.vram_used_gb : data?.vram_used_gb;
+           const vramTotal = Array.isArray(data) && data.length > 0 ? data[0]?.vram_total_gb : data?.vram_total_gb;
+           if (vramUsed != null && vramTotal != null && vramTotal > 0) {
+             return (vramUsed / vramTotal) * 100;
+           }
+           return null;
+         },
+       ],
+       [true, true, false, false, false, false, true],
+       500,
+       120000,
+       isPaused,
+     );
 
-  const storage = useStorageMetrics();
+  const storage = useStorageMetrics(isPaused);
 
   const value: MetricsContextValue = {
     cpuCurrentValues: cpu.currentValues,
@@ -140,6 +152,10 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     retryMemory: memory.retry,
     retryGpu: gpu.retry,
     retryStorage: storage.retry,
+    isPaused,
+    pause,
+    resume,
+    toggle,
   };
 
   return (

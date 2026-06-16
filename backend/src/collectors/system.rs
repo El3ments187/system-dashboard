@@ -2,6 +2,54 @@
 
 use crate::models::metrics::SystemMetrics;
 
+pub fn get_collector_health_state() -> std::collections::HashMap<String, String> {
+    use std::time::Instant;
+
+    let mut collectors = std::collections::HashMap::new();
+    let now = Instant::now();
+
+    // CPU collector
+    if let Ok(content) = std::fs::read_to_string("/proc/loadavg") {
+        let parts: Vec<&str> = content.split_whitespace().collect();
+        if parts.len() >= 3 && parts[0].parse::<f64>().is_ok() {
+            collectors.insert("cpu".to_string(), "healthy".to_string());
+        }
+    } else {
+        collectors.insert("cpu".to_string(), "unavailable".to_string());
+    }
+
+    // Memory collector
+    if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
+        if content.contains("MemTotal") {
+            collectors.insert("memory".to_string(), "healthy".to_string());
+        }
+    } else {
+        collectors.insert("memory".to_string(), "unavailable".to_string());
+    }
+
+    // GPU collector
+    let (_gpu_backend, nvml_available) = crate::collectors::gpu::get_gpu_backend_info();
+    collectors.insert("gpu".to_string(), if nvml_available { "healthy".to_string() } else { "degraded".to_string() });
+
+    // Storage collector
+    if let Ok(content) = std::fs::read_to_string("/proc/diskstats") {
+        if !content.is_empty() {
+            collectors.insert("storage".to_string(), "healthy".to_string());
+        }
+    } else {
+        collectors.insert("storage".to_string(), "unavailable".to_string());
+    }
+
+    // System collector
+    if now.elapsed().as_secs() < 300 {
+        collectors.insert("system".to_string(), "healthy".to_string());
+    } else {
+        collectors.insert("system".to_string(), "degraded".to_string());
+    }
+
+    collectors
+}
+
 pub fn collect_system_metrics() -> SystemMetrics {
     let hostname = get_hostname();
     let uptime = get_uptime();

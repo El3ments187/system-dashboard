@@ -32,6 +32,7 @@ async fn main() {
     println!("    GET {url}/api/metrics/gpu");
     println!("    GET {url}/api/metrics/storage");
     println!("    GET {url}/api/metrics/system");
+    println!("    GET {url}/api/status");
     println!();
     println!("Press Ctrl+C to stop.");
 

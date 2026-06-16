@@ -26,46 +26,31 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
         </button>
         <div className="theme-panel-title">Theme Settings</div>
         <div className="theme-panel-subtitle">Choose an accent color for the dashboard</div>
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24,
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: 12,
-            background: 'var(--bg-card)', borderRadius: 10,
-          }}>
+        <div className="theme-preview-row">
+          <div className="theme-preview-info">
             <div style={{
-              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
               background: `radial-gradient(circle at 30% 30%, ${current.color}, ${current.glow})`,
               border: '2px solid var(--border-color)',
             }} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
                 {presets.find(p => p.value === accent)?.name || 'Blue'}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                 {current.color}
               </div>
             </div>
           </div>
-          <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 10 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-              Live Preview
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 6, background: current.color, border: '1px solid var(--border-color)' }} />
-              <div style={{ width: 32, height: 32, borderRadius: 6, background: current.glow, border: '1px solid var(--border-color)' }} />
-              <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--bg-card)', border: `2px solid ${current.color}` }} />
-              <div style={{
-                width: 32, height: 32, borderRadius: 6, background: `linear-gradient(90deg, ${current.color}, ${current.glow})`,
-                border: '1px solid var(--border-color)',
-              }} />
-            </div>
+          <div className="theme-preview-swatches">
+            <div className="theme-preview-swatch" style={{ background: current.color }} />
+            <div className="theme-preview-swatch" style={{ background: current.glow }} />
+            <div className="theme-preview-swatch" style={{ background: 'var(--bg-card)', border: `2px solid ${current.color}` }} />
+            <div className="theme-preview-swatch gradient" />
           </div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
-          Accent Colors
-        </div>
-        <div className="color-grid">
+        <div className="theme-section-header">Accent Colors</div>
+        <div className="accent-grid">
           {presets.map(preset => (
             <div
               key={preset.value}
@@ -80,10 +65,8 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
-          Background Colors
-        </div>
-        <div className="color-grid" style={{ marginBottom: 16 }}>
+        <div className="theme-section-header">Background Colors</div>
+        <div className="bg-grid">
           {bgPresets.map(bgPreset => (
             <div
               key={bgPreset.value}
@@ -94,14 +77,14 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
                 className="color-preview"
                 style={{
                   background: `linear-gradient(135deg, ${bgPreset.color}, ${bgPreset.color}88)`,
-                  border: bgPreset.name === 'Light' ? '1px solid #ccc' : 'none',
+                  border: ['Light', 'Paper', 'Nord Light', 'Cream'].includes(bgPreset.name) ? '1px solid #ccc' : 'none',
                 }}
               />
               <span className="color-label">{bgPreset.name}</span>
             </div>
           ))}
         </div>
-     </div>
+      </div>
     </>
   );
 }

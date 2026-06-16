@@ -2,20 +2,49 @@
 
 use std::sync::{LazyLock, Mutex};
 use crate::models::metrics::GpuMetrics;
+use super::alerts::CollectorStatus;
 
 static NVML: LazyLock<Mutex<Option<nvml_wrapper::Nvml>>> = LazyLock::new(|| Mutex::new(None));
 
-pub fn collect_gpu_metrics() -> Vec<GpuMetrics> {
+static NVIDIA_SMI_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
+    std::process::Command::new("nvidia-smi")
+        .arg("--query-gpu=name")
+        .arg("--format=csv,noheader")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+});
+
+pub fn get_gpu_backend_info() -> (String, bool) {
+    let guard = NVML.lock().unwrap();
+    match guard.as_ref() {
+        Some(_) => ("nvml".to_string(), true),
+        None => {
+            if *NVIDIA_SMI_AVAILABLE {
+                ("nvidia-smi".to_string(), false)
+            } else {
+                ("none".to_string(), false)
+            }
+        }
+    }
+}
+
+pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
     let mut guard = NVML.lock().unwrap();
-    if guard.is_none() {
+    let is_nvml = guard.is_some();
+    if !is_nvml {
         *guard = nvml_wrapper::Nvml::init().ok();
     }
     match guard.as_ref() {
-        Some(nvml) => gpu_from_nvml(nvml),
+        Some(nvml) => {
+            let metrics = gpu_from_nvml(nvml);
+            (metrics, CollectorStatus::Ok)
+        }
         None => {
             drop(guard);
             eprintln!("[GPU] NVML unavailable. Falling back to nvidia-smi.");
-            smi_from_all()
+            let metrics = smi_from_all();
+            (metrics, CollectorStatus::Partial("NVML unavailable, using fallback".to_string()))
         }
     }
 }

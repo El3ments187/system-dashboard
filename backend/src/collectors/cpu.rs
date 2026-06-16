@@ -2,19 +2,24 @@
 
 use std::sync::{LazyLock, Mutex};
 use crate::models::metrics::CpuMetrics;
+use crate::collectors::alerts::CollectorStatus;
 
 pub static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| {
-    let mut s = sysinfo::System::new();
-    s.refresh_cpu_all();
-    s.refresh_memory();
-    Mutex::new(s)
+    Mutex::new({
+        let mut s = sysinfo::System::new();
+        s.refresh_cpu_all();
+        s.refresh_memory();
+        s
+    })
 });
 
-static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(|| read_physical_cores());
+static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(read_physical_cores);
 
-pub async fn collect_cpu_metrics() -> CpuMetrics {
-    let (avg_util, cores) = read_cpu_utilization().await;
-
+pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
+    let status = read_cpu_utilization().await;
+    
+    let temp = read_cpu_temperature();
+    
     let mut system = SYSTEM.lock().unwrap();
     let len = system.cpus().len();
 
@@ -25,20 +30,28 @@ pub async fn collect_cpu_metrics() -> CpuMetrics {
     let load_avg = sysinfo::System::load_average();
     let (load1, load5, load15) = (load_avg.one, load_avg.five, load_avg.fifteen);
 
-    CpuMetrics {
-        utilization_percent: avg_util,
-        temperature_celsius: read_cpu_temperature(),
+    let metrics = CpuMetrics {
+        utilization_percent: status.avg_util,
+        temperature_celsius: temp,
         physical_cores: *PHYSICAL_CORES,
         threads: len,
         load_1m: load1,
         load_5m: load5,
         load_15m: load15,
-        cores,
+        cores: status.cores,
         frequency_mhz: freq,
-    }
+    };
+
+    (metrics, status.status)
 }
 
-async fn read_cpu_utilization() -> (f64, Vec<crate::models::metrics::CpuCoreInfo>) {
+struct UtilStatus {
+    avg_util: f64,
+    cores: Vec<crate::models::metrics::CpuCoreInfo>,
+    status: CollectorStatus,
+}
+
+async fn read_cpu_utilization() -> UtilStatus {
     let stat1 = read_all_proc_stats();
     if stat1.is_some() {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -64,9 +77,14 @@ async fn read_cpu_utilization() -> (f64, Vec<crate::models::metrics::CpuCoreInfo
                     utilization_percent: pct,
                 }
             }).collect();
-            return (avg_util.clamp(0.0, 100.0), cores);
+            return UtilStatus {
+                avg_util: avg_util.clamp(0.0, 100.0),
+                cores,
+                status: CollectorStatus::Ok,
+            };
         }
     }
+    
     let system = SYSTEM.lock().unwrap();
     let cpus = system.cpus();
     let len = cpus.len();
@@ -84,7 +102,12 @@ async fn read_cpu_utilization() -> (f64, Vec<crate::models::metrics::CpuCoreInfo
         })
         .collect();
     let avg_util = if len > 0 { total / len as f64 } else { 0.0 };
-    (avg_util, cores)
+    
+    UtilStatus {
+        avg_util,
+        cores,
+        status: CollectorStatus::Ok,
+    }
 }
 
 struct CoreStat {

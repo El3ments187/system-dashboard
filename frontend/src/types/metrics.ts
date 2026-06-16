@@ -87,3 +87,18 @@ export interface StorageHistoryPoint {
    write_bytes_per_sec: number | null;
    utilization: number | null;
 }
+
+export enum AlertSeverity {
+  Info = 'info',
+  Warning = 'warning',
+  Error = 'error',
+}
+
+export interface Alert {
+  id: string;
+  timestamp: string;
+  severity: AlertSeverity;
+  subsystem: string;
+  message: string;
+}
+

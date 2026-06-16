@@ -8,7 +8,7 @@ interface ChartProps {
 
 function getSeriesColors(): string[] {
   const cs = getComputedStyle(document.documentElement);
-  const primary = cs.getPropertyValue('--accent-primary').trim() || '#3B82F6';
+  const primary = cs.getPropertyValue('--accent-primary').trim() || '#6366F1';
   const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
   return [primary, secondary];
 }

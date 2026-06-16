@@ -10,6 +10,7 @@ export function useMetrics<T>(
   endpoint: string,
   valueExtractor: (data: T) => number | null,
   intervalMs = 1000,
+  isPaused?: boolean,
 ): {
   currentValue: number | null;
   history: MetricHistoryPoint[];
@@ -65,13 +66,15 @@ export function useMetrics<T>(
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [intervalMs, bufferSize]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, intervalMs);
-    return () => clearInterval(interval);
-  }, [fetchData, intervalMs]);
+    if (!isPaused) {
+      const interval = setInterval(fetchData, intervalMs);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, intervalMs, isPaused]);
 
   return { currentValue, history, loading, error };
 }
@@ -89,6 +92,7 @@ export function useMultiMetrics<T>(
   trackHistory?: Array<boolean>,
   intervalMs = 1000,
   bufferDurationMs = 60000,
+  isPaused?: boolean,
 ): {
   currentValues: Array<number | null>;
   histories: Array<MetricHistoryPoint[] | null>;
@@ -183,7 +187,7 @@ export function useMultiMetrics<T>(
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [intervalMs, bufferSize]);
 
   const retry = useCallback(() => {
     fetchData();
@@ -191,9 +195,11 @@ export function useMultiMetrics<T>(
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, intervalMs);
-    return () => clearInterval(interval);
-  }, [fetchData, intervalMs]);
+    if (!isPaused) {
+      const interval = setInterval(fetchData, intervalMs);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, intervalMs, isPaused]);
 
   return { currentValues, histories, rawData, loading, error, retry };
 }

@@ -2,8 +2,9 @@
 
 use crate::collectors::cpu::SYSTEM;
 use crate::models::metrics::MemoryMetrics;
+use crate::collectors::alerts::CollectorStatus;
 
-pub fn collect_memory_metrics() -> MemoryMetrics {
+pub fn collect_memory_metrics() -> (MemoryMetrics, CollectorStatus) {
     let mut system = SYSTEM.lock().unwrap();
     system.refresh_memory();
     let total = system.total_memory();
@@ -14,13 +15,15 @@ pub fn collect_memory_metrics() -> MemoryMetrics {
     let swap_total = system.total_swap();
     let swap_used = system.used_swap();
 
-    MemoryMetrics {
+    let metrics = MemoryMetrics {
         total_gb: bytes_to_gb(total),
         used_gb: bytes_to_gb(used),
         utilization_percent: utilization,
         swap_total_gb: bytes_to_gb(swap_total),
         swap_used_gb: bytes_to_gb(swap_used),
-    }
+    };
+
+    (metrics, CollectorStatus::Ok)
 }
 
 fn bytes_to_gb(bytes: u64) -> f64 {

@@ -134,6 +134,11 @@
   min-height: 0;
 }
 
+/* GPU summary card - clean bottom edge, no overflow artifact */
+.gpu-col-left .gpu-summary-card {
+  overflow: hidden !important;
+}
+
 /* Storage row (2-column layout) */
 .storage-row {
   gap: 12px;
@@ -367,14 +372,17 @@ main {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 480px;
+  width: 440px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   z-index: 201;
-  padding: 24px;
+  padding: 14px;
   transform: translateX(100%);
   transition: var(--transition-normal);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 400px;
 }
 
 .theme-panel.open {
@@ -382,22 +390,22 @@ main {
 }
 
 .theme-panel-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .theme-panel-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 24px;
+  margin-bottom: 8px;
 }
 
 .theme-panel-close {
   position: absolute;
-  top: 24px;
-  right: 24px;
+  top: 16px;
+  right: 16px;
   width: 28px;
   height: 28px;
   display: flex;
@@ -413,24 +421,91 @@ main {
   background: var(--bg-card);
 }
 
-.color-grid {
+/* Compact preview section */
+.theme-preview-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
+.theme-preview-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+}
+
+.theme-preview-swatches {
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-preview-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.theme-preview-swatch.gradient {
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-glow));
+  border: 1px solid var(--border-color);
+}
+
+/* Section headers */
+.theme-section-header {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.theme-section-header:first-child {
+  margin-top: 6px;
+}
+
+/* Accent colors grid - 7 columns */
+.accent-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Background colors grid - 5 columns */
+.bg-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Color option cards */
 .color-option {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   cursor: pointer;
-  padding: 12px 8px;
-  border-radius: var(--radius-md);
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   transition: var(--transition-fast);
   border: 2px solid transparent;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
 }
 
 .color-option:hover {
@@ -443,10 +518,11 @@ main {
 }
 
 .color-preview {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   transition: var(--transition-fast);
+  flex-shrink: 0;
 }
 
 .color-option:hover .color-preview {
@@ -454,10 +530,16 @@ main {
 }
 
 .color-label {
-  font-size: 11px;
+  font-size: 9px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Card components */

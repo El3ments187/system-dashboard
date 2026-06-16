@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { getSystemMetrics } from '../services/api';
 import { SystemMetrics } from '../types/metrics';
-import { Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff, Pause, Play, Bell, Trash2 } from 'lucide-react';
+import { useLiveDataControlsContext } from '../context/LiveDataControlsContext';
+import { useAlertsContext, AlertSeverity } from '../context/AlertsContext';
+import { useFetchAlerts } from '../hooks/useFetchAlerts';
+import { useEffect, useRef, useState, useMemo } from 'react';
 
 interface HeaderProps {
   accent: { color: string; glow: string };
@@ -12,6 +16,18 @@ interface HeaderProps {
   onPageChange?: (page: 'overview' | 'gpu') => void;
 }
 
+const severityColors: Record<AlertSeverity, string> = {
+  [AlertSeverity.Info]: 'var(--info)',
+  [AlertSeverity.Warning]: 'var(--warning)',
+  [AlertSeverity.Error]: 'var(--danger)',
+};
+
+const severityBgColors: Record<AlertSeverity, string> = {
+  [AlertSeverity.Info]: 'var(--info)20',
+  [AlertSeverity.Warning]: 'var(--warning)20',
+  [AlertSeverity.Error]: 'var(--danger)20',
+};
+
 export default function Header({ accent, onToggleThemePanel, healthOk, activePage = 'overview', onPageChange }: HeaderProps) {
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ['metrics', 'system'],
@@ -19,6 +35,42 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
     staleTime: 5000,
     refetchInterval: 10000,
   });
+
+  const { isPaused, toggle: toggleLiveData } = useLiveDataControlsContext();
+  const { addAlert, alerts: frontendAlerts, clearAlerts } = useAlertsContext();
+  const { alerts: backendAlerts, refetch: refetchAlerts } = useFetchAlerts();
+  const alerts = useMemo(() => {
+    const backendIds = new Set(backendAlerts.map(a => a.id));
+    const merged = [...backendAlerts];
+    for (const a of frontendAlerts) {
+      if (!backendIds.has(a.id)) merged.push(a);
+    }
+    return merged;
+  }, [backendAlerts, frontendAlerts]);
+  const [showAlerts, setShowAlerts] = useState(false);
+
+  useEffect(() => {
+    if (showAlerts) {
+      refetchAlerts();
+    }
+  }, [showAlerts, refetchAlerts]);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (healthOk === false) {
+      addAlert(AlertSeverity.Error, 'backend', 'Backend connection lost');
+    }
+  }, [healthOk, addAlert]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowAlerts(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const uptime = (() => {
     if (!system) return '0m';
@@ -105,6 +157,177 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
           </div>
         </div>
         <div className="header-right">
+          <button
+            className="live-toggle-btn"
+            onClick={toggleLiveData}
+            style={{
+              background: isPaused ? 'var(--warning)20' : 'var(--success)20',
+              color: isPaused ? 'var(--warning)' : 'var(--success)',
+              border: `1px solid ${isPaused ? 'var(--warning)40' : 'var(--success)40'}`,
+            }}
+            title={isPaused ? 'Resume Live Updates' : 'Pause Live Updates'}
+          >
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%', background: isPaused ? 'var(--warning)' : 'var(--success)',
+              display: 'inline-block', marginRight: 4,
+              animation: isPaused ? 'none' : 'pulse 2s infinite',
+            }} />
+            {isPaused ? 'PAUSED' : 'LIVE'}
+            {isPaused ? <Play size={12} style={{ marginLeft: 4 }} /> : <Pause size={12} style={{ marginLeft: 4 }} />}
+          </button>
+          <div style={{ position: 'relative' }} ref={panelRef}>
+            <button
+              className="alerts-btn"
+              onClick={() => setShowAlerts(!showAlerts)}
+              style={{
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+              title="Alerts"
+            >
+              <Bell size={14} />
+              {alerts.length > 0 && (
+                <span style={{
+                  background: 'var(--danger)',
+                  color: 'white',
+                  borderRadius: 10,
+                  padding: '1px 6px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  minWidth: 16,
+                  textAlign: 'center',
+                }}>
+                  {alerts.length > 99 ? '99+' : alerts.length}
+                </span>
+              )}
+            </button>
+            {showAlerts && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                width: 380,
+                maxHeight: 480,
+                background: 'var(--surface)',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                overflow: 'hidden',
+                zIndex: 100,
+              }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '10px 12px',
+                  borderBottom: '1px solid var(--border)',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Alerts</span>
+                  <button
+                    onClick={clearAlerts}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                    }}
+                    title="Clear Alerts"
+                  >
+                    <Trash2 size={12} />
+                    Clear
+                  </button>
+                </div>
+                <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                  {alerts.length === 0 && (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: 24,
+                      color: 'var(--text-secondary)',
+                      fontSize: 12,
+                    }}>
+                      No alerts
+                    </div>
+                  )}
+                  {alerts.slice().reverse().map(alert => (
+                    <div
+                      key={alert.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 8,
+                        padding: '8px 12px',
+                        borderBottom: '1px solid var(--border)',
+                        background: severityBgColors[alert.severity],
+                      }}
+                    >
+                      <span style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: severityColors[alert.severity],
+                        flexShrink: 0,
+                        marginTop: 3,
+                      }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: 2,
+                        }}>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: severityColors[alert.severity],
+                            textTransform: 'uppercase',
+                          }}>
+                            {alert.subsystem}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                            {new Date(alert.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                          {alert.message}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const url = `/api/alerts?severity=${alert.severity}&subsystem=${alert.subsystem}&message=${encodeURIComponent(alert.message)}`;
+                          if (url) {
+                            // close button only - alert removal handled by context
+                          }
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          padding: 2,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button className="theme-toggle-btn" onClick={onToggleThemePanel} title="Theme Settings">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="5" />

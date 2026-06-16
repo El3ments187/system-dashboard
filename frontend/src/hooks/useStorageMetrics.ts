@@ -4,7 +4,7 @@ import { DeviceStorageInfo, StorageHistoryPoint } from '../types/metrics';
 // Fixed rolling buffer size for 60s window at 500ms polling
 const STORAGE_BUFFER_SIZE = 120;
 
-export function useStorageMetrics(): {
+export function useStorageMetrics(isPaused?: boolean): {
   storageDevices: DeviceStorageInfo[];
   storageHistories: Map<string, StorageHistoryPoint[]>;
   loading: boolean;
@@ -100,9 +100,11 @@ export function useStorageMetrics(): {
 
   useEffect(() => {
     fetchStorage();
-    const interval = setInterval(fetchStorage, 500);
-    return () => clearInterval(interval);
-  }, [fetchStorage]);
+    if (!isPaused) {
+      const interval = setInterval(fetchStorage, 500);
+      return () => clearInterval(interval);
+    }
+  }, [fetchStorage, isPaused]);
 
   const retry = useCallback(() => {
     fetchStorage();

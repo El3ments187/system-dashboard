@@ -12,6 +12,8 @@ import GpuChart from './charts/GpuChart';
 import StorageCard from './components/cards/StorageCard';
 import StoragePerformanceCard from './components/cards/StoragePerformanceCard';
 import { MetricsProvider } from './context/MetricsContext';
+import { LiveDataControlsProvider } from './context/LiveDataControlsContext';
+import { AlertsProvider } from './context/AlertsContext';
 import { TooltipProvider } from './components/common/TooltipProvider';
 import { useTheme } from './hooks/useTheme';
 import './styles/theme.css';
@@ -71,8 +73,10 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <MetricsProvider>
-        <div className="app-root">
+      <LiveDataControlsProvider>
+        <AlertsProvider>
+          <MetricsProvider>
+            <div className="app-root">
         <Header
           accent={current}
           showThemePanel={showThemePanel}
@@ -112,8 +116,10 @@ export default function App() {
         ) : (
           <GpuPage accent={current} />
         )}
-      </div>
-    </MetricsProvider>
+           </div>
+          </MetricsProvider>
+        </AlertsProvider>
+      </LiveDataControlsProvider>
     </TooltipProvider>
   );
 }

@@ -24,7 +24,7 @@ function getChartColors(): { grid: string; axis: string; crosshair: string; dotS
 
 function getSeriesColors(): string[] {
   const cs = getComputedStyle(document.documentElement);
-  const primary = cs.getPropertyValue('--accent-primary').trim() || '#3B82F6';
+  const primary = cs.getPropertyValue('--accent-primary').trim() || '#6366F1';
    const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
   return [primary, secondary];
 }
@@ -39,7 +39,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
   const [strokeColor, setStrokeColor] = useState(() => {
     if (_color) return _color;
-    return getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#3B82F6';
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366F1';
   });
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
@@ -68,7 +68,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
       setChartColors(getChartColors());
       setSeriesColors(getSeriesColors());
       if (!_color) {
-        setStrokeColor(getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#3B82F6');
+        setStrokeColor(getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366F1');
       }
     };
     update();
@@ -120,7 +120,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
 
   if (!chartComponents) {
     return (
-      <div className="chart-container" style={chartHeight ? { minHeight: chartHeight } : undefined}>
+      <div className="chart-container" style={{ flex: 1, minHeight: 0 }}>
         <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span>{title}</span>
           {timeFrame && (
@@ -169,7 +169,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
   };
 
   return (
-    <div className="chart-container" style={chartHeight ? { minHeight: chartHeight } : undefined}>
+    <div className="chart-container" style={{ flex: 1, minHeight: 0 }}>
       <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span>{title}</span>
         {timeFrame && (
@@ -192,7 +192,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
           ))}
         </div>
       )}
-      <div ref={chartRef} style={{ flex: 1, minHeight: chartHeight ? chartHeight - 28 : 32, overflow: 'hidden' }}>
+      <div ref={chartRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {chartSize && (
           <div style={{ width: chartSize.width, height: chartSize.height }}>
             <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>

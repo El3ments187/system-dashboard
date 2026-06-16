@@ -1,6 +1,7 @@
 //! Storage metrics collector using /proc/mounts, statvfs, and /proc/diskstats.
 
 use crate::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
+use super::alerts::CollectorStatus;
 use libc::statvfs as c_statvfs;
 use std::collections::BTreeMap;
 
@@ -339,7 +340,7 @@ fn current_stats() -> std::collections::HashMap<String, DiskStat> {
     read_disk_stats()
 }
 
-pub fn collect_storage_metrics() -> Vec<StorageMetrics> {
+pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
     let mounts = read_proc_mounts();
     let mut result = Vec::new();
 
@@ -378,7 +379,7 @@ pub fn collect_storage_metrics() -> Vec<StorageMetrics> {
         });
     }
 
-    result
+    (result, CollectorStatus::Ok)
 }
 
 pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {

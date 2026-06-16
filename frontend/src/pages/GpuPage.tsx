@@ -4,7 +4,6 @@ import PanelErrorBoundary from '../components/common/PanelErrorBoundary';
 import PanelErrorState from '../components/common/PanelErrorState';
 import { Gpu, Thermometer, Zap, Cpu, HardDrive, Activity, Fan } from 'lucide-react';
 
-const GPU_CHART_HEIGHT = 260;
 const GPU_HISTORY_LABEL = '(Last 2m)';
 
 interface GpuPageProps {
@@ -101,7 +100,7 @@ function GpuSummaryCard({ gpu, accent, index }: { gpu: any; accent: { color: str
   const { color: statusColor, label: statusLabel } = getStatusColor(gpu.temperature_celsius, gpu.utilization_percent);
 
   return (
-    <div className="metric-card" style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, flex: 1, minHeight: 0 }}>
+    <div className="metric-card gpu-summary-card" style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, flex: 1, minHeight: 0 }}>
       {/* Header */}
       <div className="card-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -225,12 +224,12 @@ function GpuRow({ gpu, index, accent, hasHistory, gpuHistory, gpuVramUtilHistory
       </div>
 
       {/* Right column - charts stack */}
-      <div className="gpu-charts" style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+      <div className="gpu-charts" style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minHeight: 0 }}>
         {hasHistory && (
           <>
-            <MetricChart accent={accent} title="GPU Utilization History" data={gpuHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
-            <MetricChart accent={accent} title="VRAM Utilization History" data={gpuVramUtilHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
-            <MetricChart accent={accent} title="GPU Temperature History" data={gpuTemperatureHistory} timeFrame={GPU_HISTORY_LABEL} chartHeight={GPU_CHART_HEIGHT} />
+            <MetricChart accent={accent} title="GPU Utilization History" data={gpuHistory} timeFrame={GPU_HISTORY_LABEL} />
+            <MetricChart accent={accent} title="VRAM Utilization History" data={gpuVramUtilHistory} timeFrame={GPU_HISTORY_LABEL} />
+            <MetricChart accent={accent} title="GPU Temperature History" data={gpuTemperatureHistory} timeFrame={GPU_HISTORY_LABEL} />
           </>
         )}
       </div>
