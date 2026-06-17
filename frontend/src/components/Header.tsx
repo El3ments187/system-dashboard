@@ -12,8 +12,8 @@ interface HeaderProps {
   showThemePanel: boolean;
   onToggleThemePanel: () => void;
   healthOk?: boolean;
-  activePage?: 'overview' | 'gpu';
-  onPageChange?: (page: 'overview' | 'gpu') => void;
+  activePage?: 'overview' | 'gpu' | 'cpu';
+  onPageChange?: (page: 'overview' | 'gpu' | 'cpu') => void;
 }
 
 const severityColors: Record<AlertSeverity, string> = {
@@ -98,7 +98,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
           </div>
           <span className="header-title">System Dashboard</span>
           <nav style={{ display: 'flex', gap: 3, marginLeft: 12, alignItems: 'center' }}>
-            {(['overview', 'gpu'] as const).map((page) => (
+            {(['overview', 'gpu', 'cpu'] as const).map((page) => (
               <button
                 key={page}
                 onClick={() => onPageChange?.(page)}
@@ -127,7 +127,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
                   }
                 }}
               >
-                {page === 'overview' ? 'Overview' : 'GPU'}
+                {page === 'overview' ? 'Overview' : page === 'gpu' ? 'GPU' : 'CPU'}
               </button>
             ))}
           </nav>

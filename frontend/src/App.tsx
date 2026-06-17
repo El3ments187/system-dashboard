@@ -19,13 +19,16 @@ import { useTheme } from './hooks/useTheme';
 import './styles/theme.css';
 import { checkHealth } from './services/api';
 import GpuPage from './pages/GpuPage';
+import CpuPage from './pages/CpuPage';
 
 export default function App() {
   const { accent, setAccent, bg, setBg, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activePage, setActivePage] = useState<'overview' | 'gpu'>(() => {
-    return window.location.pathname === '/gpu' ? 'gpu' : 'overview';
+  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu'>(() => {
+    if (window.location.pathname === '/gpu') return 'gpu';
+    if (window.location.pathname === '/cpu') return 'cpu';
+    return 'overview';
   });
 
   const { data: healthOk } = useQuery<boolean>({
@@ -43,7 +46,7 @@ export default function App() {
 
   // Sync URL with active page
   useEffect(() => {
-    const path = activePage === 'gpu' ? '/gpu' : '/';
+    const path = activePage === 'overview' ? '/' : `/${activePage}`;
     window.history.pushState({ page: activePage }, '', path);
   }, [activePage]);
 
@@ -52,6 +55,8 @@ export default function App() {
     const handler = () => {
       if (window.location.pathname === '/gpu') {
         setActivePage('gpu');
+      } else if (window.location.pathname === '/cpu') {
+        setActivePage('cpu');
       } else {
         setActivePage('overview');
       }
@@ -113,8 +118,10 @@ export default function App() {
               <StoragePerformanceCard />
             </div>
           </main>
-        ) : (
+        ) : activePage === 'gpu' ? (
           <GpuPage accent={current} />
+        ) : (
+          <CpuPage accent={current} />
         )}
            </div>
           </MetricsProvider>

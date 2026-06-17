@@ -10,13 +10,15 @@ html {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  min-height: 100vh;
-  overflow: auto;
+  height: 100dvh;
+  overflow: hidden;
   transition:
     background-color 250ms ease,
     border-color 250ms ease,
@@ -25,7 +27,8 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 /* Scrollbar styling */

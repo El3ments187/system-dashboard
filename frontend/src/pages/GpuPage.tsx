@@ -245,7 +245,7 @@ export default function GpuPage({ accent }: GpuPageProps) {
 
   if (gpuError) {
     return (
-      <main className="dashboard-grid" style={{ padding: 24 }}>
+      <main className="dashboard-grid">
         <PanelErrorBoundary panelName="GPU">
           <PanelErrorState panelName="GPU" error={new Error(gpuError)} errorInfo={null} onRetry={retryGpu} />
         </PanelErrorBoundary>
@@ -256,7 +256,7 @@ export default function GpuPage({ accent }: GpuPageProps) {
   const hasHistory = gpuHistory && gpuHistory.length > 0;
 
   return (
-    <main className="dashboard-grid" style={{ padding: 24 }}>
+    <main className="dashboard-grid">
       {gpuData.length > 0 ? (
         gpuData.map((gpu: any, i: number) => (
           <GpuRow

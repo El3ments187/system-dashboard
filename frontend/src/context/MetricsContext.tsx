@@ -1,11 +1,65 @@
 import { useMultiMetrics } from '../hooks/useMultiMetrics';
 import { useStorageMetrics } from '../hooks/useStorageMetrics';
 import { useLiveDataControlsContext } from './LiveDataControlsContext';
-import React, { useContext } from 'react';
-import { StorageHistoryPoint } from '../types/metrics';
+import React, { useContext, useState, useEffect, useRef } from 'react';
+import { StorageHistoryPoint, MetricHistoryPoint } from '../types/metrics';
+
+/**
+ * Hook for tracking per-core CPU utilization histories.
+ * Extracts core data from raw CPU metrics without duplicate API calls.
+ */
+function usePerCoreHistory(rawData: any | null, isPaused?: boolean): Array<MetricHistoryPoint[] | null> {
+  const [histories, setHistories] = useState<Array<MetricHistoryPoint[] | null>>(() => []);
+  const rawDataRef = useRef(rawData);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    rawDataRef.current = rawData;
+    isPausedRef.current = isPaused;
+  }, [rawData, isPaused]);
+
+  // Initialize histories when cores become available
+  useEffect(() => {
+    if (rawData?.cores && Array.isArray(rawData.cores)) {
+      const numCores = rawData.cores.length;
+      if (histories.length !== numCores) {
+        const now = new Date();
+        setHistories(
+          Array.from({ length: numCores }, () => {
+            return Array.from({ length: 120 }, (_, j) => ({
+              slot: j,
+              timestamp: new Date(now.getTime() - (120 - j) * 500),
+              value: 0,
+            }));
+          })
+        );
+      }
+    }
+  }, [rawData?.cores?.length]);
+
+  // Update histories when raw data changes
+  useEffect(() => {
+    if (!rawData?.cores || !Array.isArray(rawData.cores) || isPausedRef.current) return;
+
+    const cores = rawData.cores;
+    setHistories(prev => {
+      if (prev.length !== cores.length) return prev;
+      return prev.map((h, i) => {
+        if (!h) return null;
+        const newValue = cores[i]?.utilization_percent ?? 0;
+        const next = [...h.slice(1), { slot: 119, timestamp: new Date(), value: newValue }]
+          .map((p, idx) => ({ ...p, slot: idx }));
+        return next;
+      });
+    });
+  }, [rawData?.cores]);
+
+  return histories;
+}
 
 interface MetricsContextValue {
   cpuCurrentValues: Array<number | null>;
+  cpuRawData: any;
   memoryCurrentValues: Array<number | null>;
   gpuCurrentValues: Array<number | null>;
   gpuRawData: any;
@@ -13,11 +67,14 @@ interface MetricsContextValue {
   memoryHistories: Array<any | null>;
   gpuHistories: Array<any | null>;
   cpuHistory: any | null;
+  cpuTemperatureHistory: any | null;
   memoryHistory: any | null;
   swapHistory: any | null;
   gpuHistory: any | null;
   gpuTemperatureHistory: any | null;
   gpuVramUtilHistory: any | null;
+  perCoreCpuHistories: Array<any | null>;
+  cpuMaxFrequency: number;
   cpuLoading: boolean;
   memoryLoading: boolean;
   gpuLoading: boolean;
@@ -44,22 +101,25 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
   const { isPaused, pause, resume, toggle } = useLiveDataControlsContext();
 
   const cpu = useMultiMetrics(
-     '/cpu',
-     [
-       (data: any) => data?.utilization_percent ?? null,
-       (data: any) => data?.temperature_celsius ?? null,
-       (data: any) => data?.frequency_mhz ?? null,
-       (data: any) => data?.physical_cores ?? null,
-       (data: any) => data?.threads ?? null,
-       (data: any) => data?.load_1m ?? null,
-       (data: any) => data?.load_5m ?? null,
-       (data: any) => data?.load_15m ?? null,
-     ],
-     [true, false, false, false, false, false, false, false],
-     500,
-     60000,
-     isPaused,
-   );
+      '/cpu',
+      [
+        (data: any) => data?.utilization_percent ?? null,
+        (data: any) => data?.temperature_celsius ?? null,
+        (data: any) => data?.frequency_mhz ?? null,
+        (data: any) => data?.physical_cores ?? null,
+        (data: any) => data?.threads ?? null,
+        (data: any) => data?.load_1m ?? null,
+        (data: any) => data?.load_5m ?? null,
+        (data: any) => data?.load_15m ?? null,
+      ],
+      [true, true, false, false, false, false, false, false],
+      500,
+      60000,
+      isPaused,
+    );
+
+   // Track per-core histories from raw CPU data without duplicate API calls
+   const perCoreHistories = usePerCoreHistory(cpu.rawData, isPaused);
 
   const memory = useMultiMetrics(
      '/memory',
@@ -124,39 +184,43 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
 
   const storage = useStorageMetrics(isPaused);
 
-  const value: MetricsContextValue = {
-    cpuCurrentValues: cpu.currentValues,
-    memoryCurrentValues: memory.currentValues,
-    gpuCurrentValues: gpu.currentValues,
-    gpuRawData: gpu.rawData,
-    cpuHistories: cpu.histories,
-    memoryHistories: memory.histories,
-    gpuHistories: gpu.histories,
-    cpuHistory: cpu.histories?.[0] ?? null,
-    memoryHistory: memory.histories?.[0] ?? null,
-    swapHistory: memory.histories?.[5] ?? null,
-    gpuHistory: gpu.histories?.[0] ?? null,
-     gpuTemperatureHistory: gpu.histories?.[1] ?? null,
-     gpuVramUtilHistory: gpu.histories?.[6] ?? null,
-    cpuLoading: cpu.loading,
-    memoryLoading: memory.loading,
-    gpuLoading: gpu.loading,
-    cpuError: cpu.error,
-    memoryError: memory.error,
-    gpuError: gpu.error,
-    storageDevices: storage.storageDevices,
-    storageHistories: storage.storageHistories,
-    storageLoading: storage.loading,
-    storageError: storage.error,
-    retryCpu: cpu.retry,
-    retryMemory: memory.retry,
-    retryGpu: gpu.retry,
-    retryStorage: storage.retry,
-    isPaused,
-    pause,
-    resume,
-    toggle,
-  };
+ const value: MetricsContextValue = {
+      cpuCurrentValues: cpu.currentValues,
+      cpuRawData: cpu.rawData,
+      memoryCurrentValues: memory.currentValues,
+     gpuCurrentValues: gpu.currentValues,
+     gpuRawData: gpu.rawData,
+     cpuHistories: cpu.histories,
+     memoryHistories: memory.histories,
+     gpuHistories: gpu.histories,
+     cpuHistory: cpu.histories?.[0] ?? null,
+     cpuTemperatureHistory: cpu.histories?.[1] ?? null,
+     memoryHistory: memory.histories?.[0] ?? null,
+     swapHistory: memory.histories?.[5] ?? null,
+     gpuHistory: gpu.histories?.[0] ?? null,
+      gpuTemperatureHistory: gpu.histories?.[1] ?? null,
+      gpuVramUtilHistory: gpu.histories?.[6] ?? null,
+     perCoreCpuHistories: perCoreHistories,
+     cpuMaxFrequency: cpu.currentValues?.[2] ?? 0,
+     cpuLoading: cpu.loading,
+     memoryLoading: memory.loading,
+     gpuLoading: gpu.loading,
+     cpuError: cpu.error,
+     memoryError: memory.error,
+     gpuError: gpu.error,
+     storageDevices: storage.storageDevices,
+     storageHistories: storage.storageHistories,
+     storageLoading: storage.loading,
+     storageError: storage.error,
+     retryCpu: cpu.retry,
+     retryMemory: memory.retry,
+     retryGpu: gpu.retry,
+     retryStorage: storage.retry,
+     isPaused,
+     pause,
+     resume,
+     toggle,
+   };
 
   return (
     <MetricsContext.Provider value={value}>

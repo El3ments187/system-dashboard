@@ -10,6 +10,18 @@ interface ChartProps {
   timeFrame?: string;
   dataKeys?: string[];
   chartHeight?: number;
+  yDomain?: [number, number];
+  yAxisTickValues?: number[];
+  unit?: string;
+  style?: React.CSSProperties;
+  chartType?: 'area' | 'bar';
+  // Dual-axis support
+  dualData?: MetricHistoryPoint[];
+  dualYDomain?: [number, number];
+  dualYAxisTickValues?: number[];
+  dualUnit?: string;
+  primaryLabel?: string;
+  secondaryLabel?: string;
 }
 
 function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
@@ -33,7 +45,14 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export default function MetricChart({ accent: _props, title, data, color: _color, timeFrame, dataKeys, chartHeight }: ChartProps) {
+function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
+  if (!p) return 0;
+  if (typeof p.timestamp === 'number') return p.timestamp;
+  if (p.timestamp instanceof Date) return p.timestamp.getTime();
+  return new Date(String(p.timestamp)).getTime();
+}
+
+export default function MetricChart({ title, data, color: _color, timeFrame, dataKeys, chartHeight, yDomain, yAxisTickValues, unit, style, chartType = 'area', dualData, dualYDomain, dualYAxisTickValues, dualUnit, primaryLabel, secondaryLabel }: ChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
@@ -75,7 +94,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
     return () => observer.disconnect();
-  }, []);
+  }, [_color]);
 
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -102,14 +121,31 @@ export default function MetricChart({ accent: _props, title, data, color: _color
       return result;
     }
 
+    // Dual-axis mode: merge primary and secondary data
+    if (dualData && dualData.length > 0) {
+      const maxLen = Math.max(data.length, dualData.length);
+      const result = Array.from({ length: maxLen }, (_, idx) => {
+        const p = data[idx] as MetricHistoryPoint | undefined;
+        const d = dualData[idx] as MetricHistoryPoint | undefined;
+        return {
+          x: idx,
+          timestampMs: resolveTimestampMs(p),
+          timeLabel: p ? formatTime((p as MetricHistoryPoint).timestamp) : '',
+          value: p?.value != null ? Math.round((p.value as number) * 10) / 10 : null,
+          dualValue: d?.value != null ? Math.round((d.value as number) * 10) / 10 : null,
+        };
+      });
+      return result;
+    }
+
     const result = data.map((p, idx) => ({
       x: idx,
-      timestampMs: typeof p.timestamp === 'number' ? p.timestamp : p.timestamp instanceof Date ? p.timestamp.getTime() : new Date(String(p.timestamp)).getTime(),
+      timestampMs: resolveTimestampMs(p as MetricHistoryPoint),
       timeLabel: formatTime((p as MetricHistoryPoint).timestamp),
       value: p.value != null ? Math.round((p.value as number) * 10) / 10 : null,
     }));
     return result;
-  }, [data, dataKeys]);
+  }, [data, dataKeys, dualData]);
 
   const fillColor = `${strokeColor}20`;
 
@@ -120,7 +156,7 @@ export default function MetricChart({ accent: _props, title, data, color: _color
 
   if (!chartComponents) {
     return (
-      <div className="chart-container" style={{ flex: 1, minHeight: 0 }}>
+      <div className="chart-container" style={{ flex: 1, minHeight: 0, ...style }}>
         <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span>{title}</span>
           {timeFrame && (
@@ -136,12 +172,76 @@ export default function MetricChart({ accent: _props, title, data, color: _color
 
   const AreaChart = chartComponents.AreaChart as any;
   const Area = chartComponents.Area as any;
+  const BarChart = chartComponents.BarChart as any;
+  const Bar = chartComponents.Bar as any;
   const XAxis = chartComponents.XAxis as any;
   const YAxis = chartComponents.YAxis as any;
   const CartesianGrid = chartComponents.CartesianGrid as any;
   const Tooltip = chartComponents.Tooltip as any;
 
   const dataMaxX = chartData.length > 0 ? chartData.length - 1 : 0;
+
+  const renderAreaElements = (A: any) => {
+    if (dualData && dualData.length > 0) {
+      return (
+        <>
+          <A
+            yAxisId="left"
+            dataKey="value"
+            stroke={strokeColor}
+            fill={fillColor}
+            strokeWidth={2}
+            fillOpacity={0.3}
+            isAnimationActive={false}
+            animationDuration={0}
+            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+          />
+          <A
+            yAxisId="right"
+            dataKey="dualValue"
+            stroke={seriesColors[1]}
+            fill={`${seriesColors[1]}20`}
+            strokeWidth={2}
+            fillOpacity={0.2}
+            isAnimationActive={false}
+            animationDuration={0}
+            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: seriesColors[1] }}
+          />
+        </>
+      );
+    }
+    if (dataKeys) {
+      return dataKeys.map((key: string, i: number) => {
+        const keyColor = seriesColors[i % seriesColors.length];
+        return (
+          <A
+            key={key}
+            dataKey={key}
+            stroke={keyColor}
+            fill={`${keyColor}20`}
+            strokeWidth={2}
+            strokeDasharray={i === 1 ? "5 5" : "0"}
+            fillOpacity={i === 1 ? 0.2 : 0.3}
+            isAnimationActive={false}
+            animationDuration={0}
+            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
+          />
+        );
+      });
+    }
+    return (
+      <A
+        dataKey="value"
+        stroke={strokeColor}
+        fill={fillColor}
+        strokeWidth={2}
+        fillOpacity={0.3}
+        isAnimationActive={false}
+        animationDuration={0}
+        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+      />
+    );
+  };
 
   const tooltipContent = (props: any) => {
     if (!props || !props.payload || !props.payload[0] || !props.active) return null;
@@ -150,6 +250,16 @@ export default function MetricChart({ accent: _props, title, data, color: _color
 
     const ts = firstDatum?.timestampMs ?? 0;
     const timestamp = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+
+    // Dual-axis mode tooltip
+    if (dualData && dualData.length > 0) {
+      const primaryVal = firstDatum?.value;
+      const secondaryVal = firstDatum?.dualValue;
+      return <ChartTooltip timestamp={timestamp} series={[
+        { name: primaryLabel || title, value: primaryVal != null ? `${primaryVal}${unit || '%'}` : 'N/A', color: strokeColor },
+        { name: secondaryLabel || 'Secondary', value: secondaryVal != null ? `${secondaryVal}${dualUnit || ''}` : 'N/A', color: seriesColors[1] },
+      ]} />;
+    }
 
     if (dataKeys) {
       const series = payloadArr.map((entry: any, i: number) => ({
@@ -163,13 +273,13 @@ export default function MetricChart({ accent: _props, title, data, color: _color
     const val = payloadArr[0]?.value;
     return <ChartTooltip timestamp={timestamp} series={[{
       name: title,
-      value: val != null ? `${val}%` : 'N/A',
+      value: val != null ? `${val}${unit || '%'}` : 'N/A',
       color: strokeColor,
     }]} />;
   };
 
   return (
-    <div className="chart-container" style={{ flex: 1, minHeight: 0 }}>
+    <div className="chart-container" style={{ flex: 1, minHeight: 0, ...style }}>
       <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span>{title}</span>
         {timeFrame && (
@@ -192,68 +302,118 @@ export default function MetricChart({ accent: _props, title, data, color: _color
           ))}
         </div>
       )}
+      {dualData && dualData.length > 0 && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <div style={{ width: 10, height: 3, borderRadius: 2, background: strokeColor }} />
+            <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+              {primaryLabel || title}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <div style={{ width: 10, height: 3, borderRadius: 2, background: seriesColors[1] }} />
+            <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+              {secondaryLabel || 'Secondary'}
+            </span>
+          </div>
+        </div>
+      )}
       <div ref={chartRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {chartSize && (
           <div style={{ width: chartSize.width, height: chartSize.height }}>
-            <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
-              <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-              <XAxis
-                dataKey="x"
-                type="number"
-                domain={[0, dataMaxX]}
-                ticks={chartData.map((_, i) => i)}
-                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={{ stroke: chartColors.axis }}
-                tickFormatter={(tickVal: number) => {
-                  const pt = chartData[Math.round(tickVal)];
-                  return pt ? pt.timeLabel : '';
-                }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                type="number"
-                domain={[0, 100]}
-                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={{ stroke: chartColors.axis }}
-              />
-              <Tooltip
-                isAnimationActive={false}
-                animationDuration={0}
-                content={tooltipContent}
-                cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
-               offset={8}
-              />
-              {dataKeys ? (
-                  dataKeys.map((key, i) => {
-                      const keyColor = seriesColors[i % seriesColors.length];
-                      return (
-                        <Area
-                          key={key}
-                          dataKey={key}
-                          stroke={keyColor}
-                          fill={`${keyColor}20`}
-                          strokeWidth={2}
-                          strokeDasharray={i === 1 ? "5 5" : "0"}
-                          fillOpacity={i === 1 ? 0.2 : 0.3}
-                          isAnimationActive={false}
-                          animationDuration={0}
-                          activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
-                        />
-                      );
-                  })
-              ) : (
-                <Area
-                  dataKey="value"
-                  stroke={strokeColor}
-                  fill={fillColor}
-                  strokeWidth={2}
-                  fillOpacity={0.3}
+            {chartType === 'bar' ? (
+              <BarChart data={chartData} width={chartSize.width} height={chartSize.height} barGap={2}>
+                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+                <XAxis
+                  dataKey="x"
+                  type="number"
+                  domain={[0, dataMaxX]}
+                  ticks={chartData.map((_, i) => i)}
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  axisLine={{ stroke: chartColors.axis }}
+                  tickFormatter={(tickVal: number) => {
+                    const pt = chartData[Math.round(tickVal)];
+                    return pt ? pt.timeLabel : '';
+                  }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  type="number"
+                  domain={yDomain || [0, 100]}
+                  tickValues={yAxisTickValues}
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  axisLine={{ stroke: chartColors.axis }}
+                />
+                <Tooltip
                   isAnimationActive={false}
                   animationDuration={0}
-                  activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+                  content={tooltipContent}
+                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                  offset={8}
                 />
-              )}
-            </AreaChart>
+                <Bar
+                  dataKey="value"
+                  fill={strokeColor}
+                  radius={[2, 2, 0, 0]}
+                  isAnimationActive={false}
+                  animationDuration={0}
+                />
+              </BarChart>
+            ) : (
+              <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
+                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+                <XAxis
+                  dataKey="x"
+                  type="number"
+                  domain={[0, dataMaxX]}
+                  ticks={chartData.map((_, i) => i)}
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  axisLine={{ stroke: chartColors.axis }}
+                  tickFormatter={(tickVal: number) => {
+                    const pt = chartData[Math.round(tickVal)];
+                    return pt ? pt.timeLabel : '';
+                  }}
+                  interval="preserveStartEnd"
+                />
+                {dualData && dualData.length > 0 ? (
+                  <>
+                    <YAxis
+                      yAxisId="left"
+                      type="number"
+                      domain={yDomain || [0, 100]}
+                      tickValues={yAxisTickValues}
+                      tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                      axisLine={{ stroke: chartColors.axis }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      type="number"
+                      orientation="right"
+                      domain={dualYDomain || [0, 100]}
+                      tickValues={dualYAxisTickValues}
+                      tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                      axisLine={{ stroke: chartColors.axis }}
+                    />
+                  </>
+                ) : (
+                  <YAxis
+                    type="number"
+                    domain={yDomain || [0, 100]}
+                    tickValues={yAxisTickValues}
+                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                    axisLine={{ stroke: chartColors.axis }}
+                  />
+                )}
+                <Tooltip
+                  isAnimationActive={false}
+                  animationDuration={0}
+                  content={tooltipContent}
+                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                 offset={8}
+                />
+                {renderAreaElements(Area)}
+              </AreaChart>
+            )}
           </div>
         )}
       </div>

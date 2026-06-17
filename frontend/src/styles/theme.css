@@ -95,7 +95,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
+  padding: 12px;
   flex: 1;
   min-height: 0;
   animation: fadeIn 400ms ease;
@@ -213,6 +213,72 @@
   font-size: 11px !important;
 }
 
+/* CPU page two-column layout */
+.cpu-row {
+  display: grid !important;
+  grid-template-columns: 320px 1fr !important;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.cpu-row > :first-child {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.cpu-row > :last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* CPU left column card must fill the full row height */
+.cpu-col-left .metric-card {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+/* CPU charts container - match GPU page layout */
+.cpu-charts {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* CPU metrics grid - compact layout */
+.cpu-metrics-grid {
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px !important;
+  margin-top: 0 !important;
+  padding-top: 6px !important;
+}
+
+.cpu-metrics-grid .card-detail-item {
+  font-size: 11px !important;
+  padding: 2px 0;
+}
+
+.cpu-metrics-grid .card-detail-label {
+  width: auto !important;
+  flex-shrink: 0;
+  font-size: 11px !important;
+}
+
+.cpu-metrics-grid .card-detail-value {
+  font-size: 11px !important;
+}
+
 @media (min-width: 2560px) {
   .dashboard-grid {
     padding: 32px;
@@ -248,7 +314,7 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  height: 100dvh;
 }
 
 .loading-spinner {
@@ -262,10 +328,11 @@ main {
 
 /* App root */
 .app-root {
-  min-height: 100vh;
+  height: 100dvh;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header */
@@ -276,8 +343,7 @@ main {
   padding: 10px 20px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 100;
 }
 
