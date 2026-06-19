@@ -4,9 +4,141 @@ use crate::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
 use super::alerts::CollectorStatus;
 use libc::statvfs as c_statvfs;
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 // History buffer size for storage metrics
 const STORAGE_HISTORY_SIZE: usize = 120;
+
+static NVME_CLI_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
+    std::process::Command::new("nvme")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+});
+
+static SMARTCTL_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
+    std::process::Command::new("smartctl")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+});
+
+fn is_nvme_device(name: &str) -> bool {
+    name.starts_with("nvme")
+}
+
+fn nvme_controller_name(device: &str) -> Option<String> {
+    let name = device.trim_start_matches("/dev/");
+    if !name.starts_with("nvme") {
+        return None;
+    }
+    let nvme_prefix = "nvme";
+    let after_nvme = &name[nvme_prefix.len()..];
+    if let Some(n_pos) = after_nvme.find('n') {
+        Some(format!("{}{}", nvme_prefix, &after_nvme[..n_pos]))
+    } else {
+        Some(name.to_string())
+    }
+}
+
+fn collect_temperature_nvme_cli(controller: &str) -> Option<f64> {
+    if !*NVME_CLI_AVAILABLE {
+        return None;
+    }
+    let output = std::process::Command::new("nvme")
+        .args(["smart-log", "-o", "json", &format!("/dev/{}", controller)])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    let temperature_millicelsius = parsed.get(controller)
+        .and_then(|c| c.get("temperature"))
+        .and_then(|t| t.get("value"))
+        .and_then(|v| v.as_u64())?;
+    Some(temperature_millicelsius as f64 / 1000.0)
+}
+
+fn collect_temperature_smartctl(device_path: &str) -> Option<f64> {
+    if !*SMARTCTL_AVAILABLE {
+        return None;
+    }
+    let output = std::process::Command::new("smartctl")
+        .args(["-A", "-j", device_path])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    let temp_key = parsed["smart_health"]
+        .as_object()?
+        .keys()
+        .find(|k| k.contains("Temperature_Celsius") || k.contains("temperature"))?;
+    parsed["smart_health"][temp_key]["value"].as_f64()
+}
+
+fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
+    let nvme_dir = format!("/sys/class/nvme/{}", controller);
+    let entries = std::fs::read_dir(&nvme_dir).ok()?;
+    for entry in entries {
+        let entry = entry.ok()?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("hwmon") {
+            let temp_input = entry.path().join("temp1_input");
+            if let Ok(content) = std::fs::read_to_string(&temp_input) {
+                if let Ok(millicelsius) = content.trim().parse::<i64>() {
+                    return Some(millicelsius as f64 / 1000.0);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn collect_device_temperature(device_name: &str) -> Option<f64> {
+    let clean_name = device_name.trim_start_matches("/dev/");
+
+    if is_nvme_device(clean_name) {
+        if let Some(controller) = nvme_controller_name(clean_name) {
+            if let Some(temp) = collect_temperature_nvme_cli(&controller) {
+                return Some(temp);
+            }
+            if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{}", clean_name)) {
+                return Some(temp);
+            }
+            if let Some(temp) = collect_temperature_sysfs(&controller) {
+                return Some(temp);
+            }
+        }
+    } else {
+        if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{}", clean_name)) {
+            return Some(temp);
+        }
+        let block_dir = format!("/sys/block/{}", clean_name);
+        if let Ok(entries) = std::fs::read_dir(&block_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("hwmon") {
+                        let temp_input = entry.path().join("temp1_input");
+                        if let Ok(content) = std::fs::read_to_string(&temp_input) {
+                            if let Ok(millicelsius) = content.trim().parse::<i64>() {
+                                return Some(millicelsius as f64 / 1000.0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 /// A single history data point for a storage device
 #[derive(serde::Serialize, Clone)]
@@ -481,10 +613,13 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
     device_map.into_iter()
         .map(|(device, mounts)| {
             let io = io_map.get(&device).cloned();
+            let dev_name = device.trim_start_matches("/dev/");
+            let temperature = collect_device_temperature(dev_name);
             DeviceStorageInfo {
                 device,
                 mounts,
                 io_stats: io,
+                temperature_celsius: temperature,
             }
         })
         .collect()

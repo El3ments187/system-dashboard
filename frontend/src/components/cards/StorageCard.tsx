@@ -54,6 +54,12 @@ function getDeviceStateColor(state: string): string {
   }
 }
 
+function getTempColor(temp: number): string {
+  if (temp >= 65) return 'var(--danger)';
+  if (temp >= 50) return 'var(--warning)';
+  return 'var(--success)';
+}
+
 interface StorageMount {
   device: string;
   mount_point: string;
@@ -77,6 +83,7 @@ interface DeviceStorageInfo {
     write_iops: number;
   } | null;
   mounts: StorageMount[];
+  temperature_celsius?: number | null;
 }
 
 export default function StorageCard(_props: CardProps) {
@@ -206,14 +213,24 @@ export default function StorageCard(_props: CardProps) {
 
             return (
             <div key={di} style={{ marginBottom: di === devices.length - 1 ? 0 : 6, borderBottom: di === devices.length - 1 ? 'none' : '1px solid var(--border-color)', paddingBottom: 6 }}>
-              {/* Device header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                <div style={{ width: 3, height: 14, borderRadius: 2, background: 'var(--accent-primary)', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {device.device}
+             {/* Device header — 2-col grid so temperature aligns with W: column */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '3px 6px', marginBottom: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ width: 3, height: 14, borderRadius: 2, background: 'var(--accent-primary)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {device.device}
+                  </span>
+                </div>
+                <span style={{ fontSize: 9, color: device.temperature_celsius != null ? getTempColor(device.temperature_celsius) : 'var(--text-muted)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                  onMouseEnter={(e) => tooltip.setCardTooltip({ title: 'Device Temperature', description: `${device.device} temperature in Celsius`, unit: '°C' }, e)}
+                  onMouseLeave={() => tooltip.setCardTooltip(null)}
+                >
+                  {device.temperature_celsius != null
+                    ? `${Math.round(device.temperature_celsius)}°C`
+                    : 'N/A'}
                 </span>
               </div>
-             {/* Performance metrics — grouped by type with explicit labels */}
+              {/* Performance metrics — grouped by type with explicit labels */}
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '3px 6px', marginBottom: 3 }}>
                    <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
                       onMouseEnter={(e) => { const desc = getMetricDescription('storage_read_throughput'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
@@ -240,14 +257,14 @@ export default function StorageCard(_props: CardProps) {
                       W: {io ? formatIops(io.write_iops) : 'N/A'} IOPS
                     </span>
                  </div>
-              {/* Status row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: stateColor }} />
-                <span style={{ fontSize: 9, color: stateColor }}>{deviceState}</span>
-                <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>
-                  {device.mounts.length} mount{device.mounts.length > 1 ? 's' : ''}
-                </span>
-              </div>
+             {/* Status row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: stateColor }} />
+                  <span style={{ fontSize: 9, color: stateColor }}>{deviceState}</span>
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>
+                    {device.mounts.length} mount{device.mounts.length > 1 ? 's' : ''}
+                  </span>
+                </div>
               {/* Mount rows */}
               {device.mounts.map((mount, mi) => (
                 <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0 3px 12px', marginBottom: 3 }}>

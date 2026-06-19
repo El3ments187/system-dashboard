@@ -57,6 +57,7 @@ export interface DeviceStorageInfo {
   device: string;
   io_stats: DiskIOStats | null;
   mounts: StorageMetrics[];
+  temperature_celsius?: number | null;
 }
 
 export interface SystemMetrics {

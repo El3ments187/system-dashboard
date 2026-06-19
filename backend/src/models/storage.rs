@@ -33,4 +33,6 @@ pub struct DeviceStorageInfo {
     pub device: String,
     pub mounts: Vec<StorageMetrics>,
     pub io_stats: Option<DiskIOStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature_celsius: Option<f64>,
 }
