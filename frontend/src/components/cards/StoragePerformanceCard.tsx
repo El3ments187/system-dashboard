@@ -51,10 +51,7 @@ export default function StoragePerformanceCard() {
             <Activity size={20} style={{ color: 'var(--accent-primary)' }} />
             <span className="card-title">Storage Performance</span>
           </div>
-          <div className="card-status">
-            <div className="status-dot" style={{ background: 'var(--success)' }} />
-            <span style={{ color: 'var(--success)' }}>Real-time</span>
-          </div>
+          <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '12px' }}>(Last 60s)</span>
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
