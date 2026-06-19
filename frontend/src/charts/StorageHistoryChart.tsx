@@ -206,31 +206,32 @@ export default function StorageHistoryChart({ data }: ChartProps) {
           <div ref={chartRef} style={{ flex: 1, minHeight: 32, overflow: 'hidden' }}>
             {chartSize && (
               <div style={{ width: chartSize.width, height: chartSize.height }}>
-                <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
-                  <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    domain={[0, STORAGE_BUFFER_SIZE - 1]}
-                    ticks={chartData.map((_, i) => i)}
-                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                    axisLine={{ stroke: chartColors.axis }}
-                    tickFormatter={(tickVal: number) => {
-                      const pt = chartData[Math.round(tickVal)];
-                      return pt ? pt.timeLabel : '';
-                    }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    type="number"
-                    domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
-                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                    axisLine={{ stroke: chartColors.axis }}
-                    tickFormatter={(v: number) => {
-                      if (activeTab === 'throughput') return formatBytesPerSec(v);
-                      return `${v}%`;
-                    }}
-                  />
+                <AreaChart data={chartData} width={chartSize.width} height={chartSize.height} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                   <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+                   <XAxis
+                     dataKey="x"
+                     type="number"
+                     domain={[0, STORAGE_BUFFER_SIZE - 1]}
+                     ticks={chartData.map((_, i) => i)}
+                     tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                     axisLine={{ stroke: chartColors.axis }}
+                     tickFormatter={(tickVal: number) => {
+                       const pt = chartData[Math.round(tickVal)];
+                       return pt ? pt.timeLabel : '';
+                     }}
+                     interval="equidistantPreserveStart"
+                   />
+                   <YAxis
+                     width={28}
+                     type="number"
+                     domain={activeTab === 'utilization' ? [0, 100] : [0, 'dataMax']}
+                     tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                     axisLine={{ stroke: chartColors.axis }}
+                     tickFormatter={(v: number) => {
+                       if (activeTab === 'throughput') return formatBytesPerSec(v);
+                       return `${v}%`;
+                     }}
+                   />
                   <Tooltip
                     isAnimationActive={false}
                     animationDuration={0}

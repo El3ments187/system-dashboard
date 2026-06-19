@@ -241,24 +241,25 @@ export default function PerCoreCpuChart({ accent: _props, title, data, timeFrame
       <div ref={chartRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {chartSize && (
           <div style={{ width: chartSize.width, height: chartSize.height }}>
-            <LineChart data={seriesData} width={chartSize.width} height={chartSize.height}>
-              <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-              <XAxis
-                dataKey="x"
-                type="number"
-                domain={[0, dataMaxX]}
-                ticks={chartData.map((_val: any, i: number) => i)}
-                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={{ stroke: chartColors.axis }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                type="number"
-                domain={[0, 100]}
-                tickValues={[0, 25, 50, 75, 100]}
-                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={{ stroke: chartColors.axis }}
-              />
+            <LineChart data={seriesData} width={chartSize.width} height={chartSize.height} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+               <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+               <XAxis
+                 dataKey="x"
+                 type="number"
+                 domain={[0, dataMaxX]}
+                 ticks={chartData.map((_val: any, i: number) => i)}
+                 tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                 axisLine={{ stroke: chartColors.axis }}
+                 interval="equidistantPreserveStart"
+               />
+               <YAxis
+                 width={28}
+                 type="number"
+                 domain={[0, 100]}
+                 tickValues={[0, 25, 50, 75, 100]}
+                 tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                 axisLine={{ stroke: chartColors.axis }}
+               />
               <Tooltip
                 isAnimationActive={false}
                 animationDuration={0}

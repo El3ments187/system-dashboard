@@ -322,7 +322,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
         {chartSize && (
           <div style={{ width: chartSize.width, height: chartSize.height }}>
             {chartType === 'bar' ? (
-              <BarChart data={chartData} width={chartSize.width} height={chartSize.height} barGap={2}>
+              <BarChart data={chartData} width={chartSize.width} height={chartSize.height} barGap={2} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="x"
@@ -335,9 +335,10 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                     const pt = chartData[Math.round(tickVal)];
                     return pt ? pt.timeLabel : '';
                   }}
-                  interval="preserveStartEnd"
+                  interval="equidistantPreserveStart"
                 />
                 <YAxis
+                  width={28}
                   type="number"
                   domain={yDomain || [0, 100]}
                   tickValues={yAxisTickValues}
@@ -360,7 +361,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                 />
               </BarChart>
             ) : (
-              <AreaChart data={chartData} width={chartSize.width} height={chartSize.height}>
+              <AreaChart data={chartData} width={chartSize.width} height={chartSize.height} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="x"
@@ -373,11 +374,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                     const pt = chartData[Math.round(tickVal)];
                     return pt ? pt.timeLabel : '';
                   }}
-                  interval="preserveStartEnd"
+                  interval="equidistantPreserveStart"
                 />
                 {dualData && dualData.length > 0 ? (
                   <>
                     <YAxis
+                      width={28}
                       yAxisId="left"
                       type="number"
                       domain={yDomain || [0, 100]}
@@ -386,6 +388,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                       axisLine={{ stroke: chartColors.axis }}
                     />
                     <YAxis
+                      width={28}
                       yAxisId="right"
                       type="number"
                       orientation="right"
@@ -397,6 +400,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                   </>
                 ) : (
                   <YAxis
+                    width={28}
                     type="number"
                     domain={yDomain || [0, 100]}
                     tickValues={yAxisTickValues}
