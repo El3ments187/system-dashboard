@@ -3,14 +3,9 @@
 // Starts an Axum HTTP server on port 3001 that serves REST API endpoints
 // for real-time system metrics polling.
 
-mod api;
-mod collectors;
-mod models;
-mod error;
-
-use std::net::Ipv4Addr;
 use axum::serve;
-use crate::api::routes::create_router;
+use std::net::Ipv4Addr;
+use system_dashboard::api::routes::create_router;
 
 #[tokio::main]
 async fn main() {

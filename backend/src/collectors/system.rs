@@ -3,10 +3,7 @@
 use crate::models::metrics::SystemMetrics;
 
 pub fn get_collector_health_state() -> std::collections::HashMap<String, String> {
-    use std::time::Instant;
-
     let mut collectors = std::collections::HashMap::new();
-    let now = Instant::now();
 
     // CPU collector
     if let Ok(content) = std::fs::read_to_string("/proc/loadavg") {
@@ -29,7 +26,14 @@ pub fn get_collector_health_state() -> std::collections::HashMap<String, String>
 
     // GPU collector
     let (_gpu_backend, nvml_available) = crate::collectors::gpu::get_gpu_backend_info();
-    collectors.insert("gpu".to_string(), if nvml_available { "healthy".to_string() } else { "degraded".to_string() });
+    collectors.insert(
+        "gpu".to_string(),
+        if nvml_available {
+            "healthy".to_string()
+        } else {
+            "degraded".to_string()
+        },
+    );
 
     // Storage collector
     if let Ok(content) = std::fs::read_to_string("/proc/diskstats") {
@@ -40,12 +44,8 @@ pub fn get_collector_health_state() -> std::collections::HashMap<String, String>
         collectors.insert("storage".to_string(), "unavailable".to_string());
     }
 
-    // System collector
-    if now.elapsed().as_secs() < 300 {
-        collectors.insert("system".to_string(), "healthy".to_string());
-    } else {
-        collectors.insert("system".to_string(), "degraded".to_string());
-    }
+    // System collector - metadata only, always healthy
+    collectors.insert("system".to_string(), "healthy".to_string());
 
     collectors
 }
@@ -69,16 +69,24 @@ pub fn collect_system_metrics() -> SystemMetrics {
 }
 
 fn get_hostname() -> String {
-    std::env::var("HOSTNAME").unwrap_or_else(|_| {
-        std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "unknown".to_string())
-    }).trim().to_string()
+    std::env::var("HOSTNAME")
+        .unwrap_or_else(|_| {
+            std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "unknown".to_string())
+        })
+        .trim()
+        .to_string()
 }
 
 fn get_uptime() -> f64 {
     if let Ok(content) = std::fs::read_to_string("/proc/uptime")
-        && let Ok(uptime) = content.split_whitespace().next().unwrap_or("0").parse::<f64>() {
-            return uptime;
-        }
+        && let Ok(uptime) = content
+            .split_whitespace()
+            .next()
+            .unwrap_or("0")
+            .parse::<f64>()
+    {
+        return uptime;
+    }
     0.0
 }
 
@@ -98,10 +106,17 @@ fn format_uptime(seconds: f64) -> String {
 }
 
 fn get_kernel() -> String {
-    std::fs::read_to_string("/proc/version").ok().map(|v| {
-        let parts: Vec<&str> = v.split_whitespace().collect();
-        if parts.len() > 2 { parts[2].to_string() } else { "unknown".to_string() }
-    }).unwrap_or_else(|| "unknown".to_string())
+    std::fs::read_to_string("/proc/version")
+        .ok()
+        .map(|v| {
+            let parts: Vec<&str> = v.split_whitespace().collect();
+            if parts.len() > 2 {
+                parts[2].to_string()
+            } else {
+                "unknown".to_string()
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn get_os_name() -> String {

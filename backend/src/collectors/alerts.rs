@@ -32,10 +32,8 @@ pub struct AlertResponse {
     pub alerts: Vec<Alert>,
 }
 
-
-
-use std::sync::{Mutex, LazyLock};
 use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex};
 
 static ALERT_COUNTER: Mutex<u64> = Mutex::new(0);
 static SENT_ALERTS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -268,7 +266,7 @@ pub fn check_all_alerts(
     }
 
     // GPU collector status alerts (deduplicated)
-    for alert in check_gpu_collector_status(gpu_status.clone()) {
+    for alert in check_gpu_collector_status(gpu_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -276,7 +274,7 @@ pub fn check_all_alerts(
     }
 
     // CPU collector status alerts (deduplicated)
-    for alert in check_cpu_collector_status(cpu_status.clone()) {
+    for alert in check_cpu_collector_status(cpu_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -284,7 +282,7 @@ pub fn check_all_alerts(
     }
 
     // Memory collector status alerts (deduplicated)
-    for alert in check_memory_collector_status(mem_status.clone()) {
+    for alert in check_memory_collector_status(mem_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -292,7 +290,7 @@ pub fn check_all_alerts(
     }
 
     // Storage collector status alerts (deduplicated)
-    for alert in check_storage_collector_status(storages_status.clone()) {
+    for alert in check_storage_collector_status(storages_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);

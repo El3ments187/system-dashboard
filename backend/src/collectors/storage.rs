@@ -1,7 +1,7 @@
 //! Storage metrics collector using /proc/mounts, statvfs, and /proc/diskstats.
 
-use crate::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
 use super::alerts::CollectorStatus;
+use crate::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
 use libc::statvfs as c_statvfs;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -25,11 +25,11 @@ static SMARTCTL_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
         .unwrap_or(false)
 });
 
-fn is_nvme_device(name: &str) -> bool {
+pub fn is_nvme_device(name: &str) -> bool {
     name.starts_with("nvme")
 }
 
-fn nvme_controller_name(device: &str) -> Option<String> {
+pub fn nvme_controller_name(device: &str) -> Option<String> {
     let name = device.trim_start_matches("/dev/");
     if !name.starts_with("nvme") {
         return None;
@@ -56,7 +56,8 @@ fn collect_temperature_nvme_cli(controller: &str) -> Option<f64> {
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).ok()?;
-    let temperature_millicelsius = parsed.get(controller)
+    let temperature_millicelsius = parsed
+        .get(controller)
         .and_then(|c| c.get("temperature"))
         .and_then(|t| t.get("value"))
         .and_then(|v| v.as_u64())?;
@@ -91,10 +92,10 @@ fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with("hwmon") {
             let temp_input = entry.path().join("temp1_input");
-            if let Ok(content) = std::fs::read_to_string(&temp_input) {
-                if let Ok(millicelsius) = content.trim().parse::<i64>() {
-                    return Some(millicelsius as f64 / 1000.0);
-                }
+            if let Ok(content) = std::fs::read_to_string(&temp_input)
+                && let Ok(millicelsius) = content.trim().parse::<i64>()
+            {
+                return Some(millicelsius as f64 / 1000.0);
             }
         }
     }
@@ -122,16 +123,14 @@ fn collect_device_temperature(device_name: &str) -> Option<f64> {
         }
         let block_dir = format!("/sys/block/{}", clean_name);
         if let Ok(entries) = std::fs::read_dir(&block_dir) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.starts_with("hwmon") {
-                        let temp_input = entry.path().join("temp1_input");
-                        if let Ok(content) = std::fs::read_to_string(&temp_input) {
-                            if let Ok(millicelsius) = content.trim().parse::<i64>() {
-                                return Some(millicelsius as f64 / 1000.0);
-                            }
-                        }
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("hwmon") {
+                    let temp_input = entry.path().join("temp1_input");
+                    if let Ok(content) = std::fs::read_to_string(&temp_input)
+                        && let Ok(millicelsius) = content.trim().parse::<i64>()
+                    {
+                        return Some(millicelsius as f64 / 1000.0);
                     }
                 }
             }
@@ -142,17 +141,17 @@ fn collect_device_temperature(device_name: &str) -> Option<f64> {
 
 /// A single history data point for a storage device
 #[derive(serde::Serialize, Clone)]
-pub(crate) struct StorageHistoryPoint {
-    device: String,
-    slot: usize,
-    timestamp: String,
-    read_bytes_per_sec: f64,
-    write_bytes_per_sec: f64,
-    read_iops: f64,
-    write_iops: f64,
-    utilization: f64,
-    read_latency_ms: f64,
-    write_latency_ms: f64,
+pub struct StorageHistoryPoint {
+    pub device: String,
+    pub slot: usize,
+    pub timestamp: String,
+    pub read_bytes_per_sec: f64,
+    pub write_bytes_per_sec: f64,
+    pub read_iops: f64,
+    pub write_iops: f64,
+    pub utilization: f64,
+    pub read_latency_ms: f64,
+    pub write_latency_ms: f64,
 }
 
 /// Rolling history buffer for a single device
@@ -201,14 +200,15 @@ fn is_pseudo(fs: &str) -> bool {
     PSEUDO_FS.contains(&fs)
 }
 
-fn is_loop_device(name: &str) -> bool {
+pub fn is_loop_device(name: &str) -> bool {
     name.starts_with("loop")
 }
 
-fn is_partition_device(name: &str) -> bool {
+pub fn is_partition_device(name: &str) -> bool {
     // NVMe partitions: nvme0n1p1, nvme1n1p2 (base device + 'p' + partition number)
     let chars: Vec<char> = name.chars().collect();
-    if chars.len() >= 2 && chars[chars.len() - 2] == 'p'
+    if chars.len() >= 2
+        && chars[chars.len() - 2] == 'p'
         && chars.last().unwrap().is_ascii_digit()
         && chars[chars.len() - 3].is_ascii_digit()
     {
@@ -246,11 +246,12 @@ fn is_partition_device(name: &str) -> bool {
     false
 }
 
-fn base_device(device: &str) -> String {
+pub fn base_device(device: &str) -> String {
     // Strip partition suffix: /dev/nvme0n1p5 -> /dev/nvme0n1
     // /dev/sda1 -> /dev/sda
     let chars: Vec<char> = device.chars().collect();
-    if chars.len() >= 2 && chars[chars.len() - 2] == 'p'
+    if chars.len() >= 2
+        && chars[chars.len() - 2] == 'p'
         && chars.last().unwrap().is_ascii_digit()
         && chars[chars.len() - 3].is_ascii_digit()
     {
@@ -329,20 +330,23 @@ fn read_disk_stats() -> std::collections::HashMap<String, DiskStat> {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 14 {
                 let name = parts[2].to_string();
-                stats.insert(name.clone(), DiskStat {
-                    name,
-                    reads_completed: parts[3].parse().unwrap_or(0),
-                    _reads_merged: parts[4].parse().unwrap_or(0),
-                    sectors_read: parts[5].parse().unwrap_or(0),
-                    ms_read: parts[6].parse().unwrap_or(0),
-                    writes_completed: parts[7].parse().unwrap_or(0),
-                    _writes_merged: parts[8].parse().unwrap_or(0),
-                    sectors_written: parts[9].parse().unwrap_or(0),
-                    ms_written: parts[10].parse().unwrap_or(0),
-                    _io_in_progress: parts[11].parse().unwrap_or(0),
-                    ms_io: parts[12].parse().unwrap_or(0),
-                    _weighted_ms: parts[13].parse().unwrap_or(0),
-                });
+                stats.insert(
+                    name.clone(),
+                    DiskStat {
+                        name,
+                        reads_completed: parts[3].parse().unwrap_or(0),
+                        _reads_merged: parts[4].parse().unwrap_or(0),
+                        sectors_read: parts[5].parse().unwrap_or(0),
+                        ms_read: parts[6].parse().unwrap_or(0),
+                        writes_completed: parts[7].parse().unwrap_or(0),
+                        _writes_merged: parts[8].parse().unwrap_or(0),
+                        sectors_written: parts[9].parse().unwrap_or(0),
+                        ms_written: parts[10].parse().unwrap_or(0),
+                        _io_in_progress: parts[11].parse().unwrap_or(0),
+                        ms_io: parts[12].parse().unwrap_or(0),
+                        _weighted_ms: parts[13].parse().unwrap_or(0),
+                    },
+                );
             }
         }
     }
@@ -362,7 +366,8 @@ struct DiskStatsSnapshot {
     timestamp: std::time::Instant,
 }
 
-static LAST_SNAPSHOT: std::sync::Mutex<std::collections::BTreeMap<String, DiskStatsSnapshot>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+static LAST_SNAPSHOT: std::sync::Mutex<std::collections::BTreeMap<String, DiskStatsSnapshot>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 static STORAGE_HISTORY: std::sync::Mutex<Option<StorageHistoryState>> = std::sync::Mutex::new(None);
 
@@ -411,7 +416,11 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
             0.0
         };
         // Compute write latency from ms_written delta per write I/O
-        let prev_w = prev_snap.prev_ms_written.get(disk_name).copied().unwrap_or(0);
+        let prev_w = prev_snap
+            .prev_ms_written
+            .get(disk_name)
+            .copied()
+            .unwrap_or(0);
         let write_latency = if elapsed > 0.0 && write_delta > 0.0 {
             (current.ms_written.wrapping_sub(prev_w)) as f64 / write_delta
         } else {
@@ -445,26 +454,50 @@ fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
         if let Some(s) = guard.get_mut(disk_name) {
             s.reads.insert(disk_name.clone(), current.reads_completed);
             s.writes.insert(disk_name.clone(), current.writes_completed);
-            s.read_sectors.insert(disk_name.clone(), current.sectors_read);
-            s.write_sectors.insert(disk_name.clone(), current.sectors_written);
+            s.read_sectors
+                .insert(disk_name.clone(), current.sectors_read);
+            s.write_sectors
+                .insert(disk_name.clone(), current.sectors_written);
             s.prev_ms_io.insert(disk_name.clone(), current.ms_io);
             s.prev_ms_read.insert(disk_name.clone(), current.ms_read);
-            s.prev_ms_written.insert(disk_name.clone(), current.ms_written);
+            s.prev_ms_written
+                .insert(disk_name.clone(), current.ms_written);
             s.timestamp = std::time::Instant::now();
         }
 
         Some(io)
     } else {
-        guard.insert(disk_name.clone(), DiskStatsSnapshot {
-            timestamp: std::time::Instant::now(),
-            reads: std::collections::HashMap::from([(disk_name.clone(), current.reads_completed)]),
-            writes: std::collections::HashMap::from([(disk_name.clone(), current.writes_completed)]),
-            read_sectors: std::collections::HashMap::from([(disk_name.clone(), current.sectors_read)]),
-            write_sectors: std::collections::HashMap::from([(disk_name.clone(), current.sectors_written)]),
-            prev_ms_io: std::collections::HashMap::from([(disk_name.clone(), current.ms_io)]),
-            prev_ms_read: std::collections::HashMap::from([(disk_name.clone(), current.ms_read)]),
-            prev_ms_written: std::collections::HashMap::from([(disk_name.clone(), current.ms_written)]),
-        });
+        guard.insert(
+            disk_name.clone(),
+            DiskStatsSnapshot {
+                timestamp: std::time::Instant::now(),
+                reads: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.reads_completed,
+                )]),
+                writes: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.writes_completed,
+                )]),
+                read_sectors: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.sectors_read,
+                )]),
+                write_sectors: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.sectors_written,
+                )]),
+                prev_ms_io: std::collections::HashMap::from([(disk_name.clone(), current.ms_io)]),
+                prev_ms_read: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.ms_read,
+                )]),
+                prev_ms_written: std::collections::HashMap::from([(
+                    disk_name.clone(),
+                    current.ms_written,
+                )]),
+            },
+        );
         None
     }
 }
@@ -517,8 +550,10 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
 pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
     let mounts = read_proc_mounts();
     let disk_stats = read_disk_stats();
-    let mut device_map: std::collections::BTreeMap<String, Vec<StorageMetrics>> = std::collections::BTreeMap::new();
-    let mut io_map: std::collections::BTreeMap<String, DiskIOStats> = std::collections::BTreeMap::new();
+    let mut device_map: std::collections::BTreeMap<String, Vec<StorageMetrics>> =
+        std::collections::BTreeMap::new();
+    let mut io_map: std::collections::BTreeMap<String, DiskIOStats> =
+        std::collections::BTreeMap::new();
 
     // Initialize LAST_SNAPSHOT before compute_io_stats calls so the first valid computation has a proper baseline
     let mut snap_guard = LAST_SNAPSHOT.lock().unwrap();
@@ -529,16 +564,19 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
             if is_partition_device(&name) {
                 continue;
             }
-            snap_guard.insert(name.clone(), DiskStatsSnapshot {
-                timestamp: ts,
-                reads: std::collections::HashMap::new(),
-                writes: std::collections::HashMap::new(),
-                read_sectors: std::collections::HashMap::new(),
-                write_sectors: std::collections::HashMap::new(),
-                prev_ms_io: std::collections::HashMap::new(),
-                prev_ms_read: std::collections::HashMap::new(),
-                prev_ms_written: std::collections::HashMap::new(),
-            });
+            snap_guard.insert(
+                name.clone(),
+                DiskStatsSnapshot {
+                    timestamp: ts,
+                    reads: std::collections::HashMap::new(),
+                    writes: std::collections::HashMap::new(),
+                    read_sectors: std::collections::HashMap::new(),
+                    write_sectors: std::collections::HashMap::new(),
+                    prev_ms_io: std::collections::HashMap::new(),
+                    prev_ms_read: std::collections::HashMap::new(),
+                    prev_ms_written: std::collections::HashMap::new(),
+                },
+            );
             if let Some(s) = snap_guard.get_mut(&name) {
                 s.reads.insert(name.clone(), stat.reads_completed);
                 s.writes.insert(name.clone(), stat.writes_completed);
@@ -553,7 +591,8 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
     drop(snap_guard);
 
     // Compute IO stats for base devices only (kernel already includes partition I/O in parent counters)
-    let mut aggregated_io: std::collections::BTreeMap<String, DiskIOStats> = std::collections::BTreeMap::new();
+    let mut aggregated_io: std::collections::BTreeMap<String, DiskIOStats> =
+        std::collections::BTreeMap::new();
     for (name, raw) in &disk_stats {
         if is_loop_device(name) {
             continue;
@@ -590,7 +629,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
             0.0
         };
 
-       let dev = base_device(&mount.device);
+        let dev = base_device(&mount.device);
         let metrics = StorageMetrics {
             device: mount.device,
             mount_point: mount.mount_point,
@@ -610,7 +649,8 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
         }
     }
 
-    device_map.into_iter()
+    device_map
+        .into_iter()
         .map(|(device, mounts)| {
             let io = io_map.get(&device).cloned();
             let dev_name = device.trim_start_matches("/dev/");
@@ -627,7 +667,9 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
 
 /// Collect storage history data points for all devices
 pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
     let mut result = Vec::new();
 
     // Get current IO stats — use base devices only (kernel includes partition I/O in parent)
@@ -637,10 +679,20 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     let current_io: BTreeMap<String, (u64, u64, u64, u64)> = disk_stats
         .iter()
         .filter(|(_, stat)| !is_loop_device(&stat.name) && !is_partition_device(&stat.name))
-        .map(|(_, stat)| (stat.name.clone(), (stat.reads_completed, stat.writes_completed, stat.sectors_read, stat.sectors_written)))
+        .map(|(_, stat)| {
+            (
+                stat.name.clone(),
+                (
+                    stat.reads_completed,
+                    stat.writes_completed,
+                    stat.sectors_read,
+                    stat.sectors_written,
+                ),
+            )
+        })
         .collect();
 
-      let mut history_guard = STORAGE_HISTORY.lock().unwrap();
+    let mut history_guard = STORAGE_HISTORY.lock().unwrap();
 
     // Initialize if needed
     let state = history_guard.get_or_insert_with(init_storage_history);
@@ -648,17 +700,22 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     state.last_timestamp = std::time::Instant::now();
 
     // Track which devices are currently active
-    let active_devices: std::collections::HashSet<String> =
-        current_io.keys().cloned().collect();
+    let active_devices: std::collections::HashSet<String> = current_io.keys().cloned().collect();
 
     // Remove stale devices no longer in current_io
-    state.buffers.retain(|device, _| active_devices.contains(device));
+    state
+        .buffers
+        .retain(|device, _| active_devices.contains(device));
 
     for (device, (reads, writes, _, _)) in &current_io {
         if is_loop_device(device) {
             continue;
         }
-        let prev = state.last_io_stats.get(device).copied().unwrap_or((*reads, *writes));
+        let prev = state
+            .last_io_stats
+            .get(device)
+            .copied()
+            .unwrap_or((*reads, *writes));
 
         let read_delta = ((*reads) as i64 - prev.0 as i64).max(0) as f64;
         let write_delta = ((*writes) as i64 - prev.1 as i64).max(0) as f64;
@@ -714,16 +771,21 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
                 0.0
             }
         };
-        state.prev_ms_io.insert(device.clone(), disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0));
+        state.prev_ms_io.insert(
+            device.clone(),
+            disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0),
+        );
         state.prev_ms_read.insert(device.clone(), cur_read);
         state.prev_ms_written.insert(device.clone(), cur_written);
 
         // Update buffer
-        let buffer = state.buffers
-            .entry(device.to_string())
-            .or_insert_with(|| DeviceHistoryBuffer {
-                slots: vec!(None; STORAGE_HISTORY_SIZE),
-            });
+        let buffer =
+            state
+                .buffers
+                .entry(device.to_string())
+                .or_insert_with(|| DeviceHistoryBuffer {
+                    slots: vec![None; STORAGE_HISTORY_SIZE],
+                });
 
         // Circular buffer: shift all existing data one slot forward
         for i in (1..STORAGE_HISTORY_SIZE).rev() {
@@ -742,7 +804,9 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
             write_latency_ms,
         });
 
-        state.last_io_stats.insert(device.to_string(), (*reads, *writes));
+        state
+            .last_io_stats
+            .insert(device.to_string(), (*reads, *writes));
     }
 
     // Collect all non-None slots from each device's buffer
@@ -752,12 +816,13 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
         let mut slot_idx: usize = 0;
         for i in (0..STORAGE_HISTORY_SIZE).rev() {
             if let Some(data) = &buffer.slots[i]
-                && data.device == *device {
-                    let mut cloned = data.clone();
-                    cloned.slot = slot_idx;
-                    slot_idx += 1;
-                    result.push(cloned);
-                }
+                && data.device == *device
+            {
+                let mut cloned = data.clone();
+                cloned.slot = slot_idx;
+                slot_idx += 1;
+                result.push(cloned);
+            }
         }
     }
 

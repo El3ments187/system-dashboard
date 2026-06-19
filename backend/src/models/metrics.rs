@@ -64,5 +64,3 @@ pub struct ApiResponse<T> {
     pub data: T,
     pub timestamp: String,
 }
-
-

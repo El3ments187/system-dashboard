@@ -1,8 +1,8 @@
 //! Memory metrics collector using sysinfo.
 
+use crate::collectors::alerts::CollectorStatus;
 use crate::collectors::cpu::SYSTEM;
 use crate::models::metrics::MemoryMetrics;
-use crate::collectors::alerts::CollectorStatus;
 
 pub fn collect_memory_metrics() -> (MemoryMetrics, CollectorStatus) {
     let mut system = SYSTEM.lock().unwrap();
@@ -10,7 +10,11 @@ pub fn collect_memory_metrics() -> (MemoryMetrics, CollectorStatus) {
     let total = system.total_memory();
     let available = system.available_memory();
     let used = total - available;
-    let utilization = if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
+    let utilization = if total > 0 {
+        (used as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
 
     let swap_total = system.total_swap();
     let swap_used = system.used_swap();

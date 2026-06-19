@@ -1,8 +1,8 @@
 //! GPU metrics collector for NVIDIA GPUs using nvml-wrapper.
 
-use std::sync::{LazyLock, Mutex};
-use crate::models::metrics::GpuMetrics;
 use super::alerts::CollectorStatus;
+use crate::models::metrics::GpuMetrics;
+use std::sync::{LazyLock, Mutex};
 
 static NVML: LazyLock<Mutex<Option<nvml_wrapper::Nvml>>> = LazyLock::new(|| Mutex::new(None));
 
@@ -44,7 +44,10 @@ pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
             drop(guard);
             eprintln!("[GPU] NVML unavailable. Falling back to nvidia-smi.");
             let metrics = smi_from_all();
-            (metrics, CollectorStatus::Partial("NVML unavailable, using fallback".to_string()))
+            (
+                metrics,
+                CollectorStatus::Partial("NVML unavailable, using fallback".to_string()),
+            )
         }
     }
 }
@@ -90,24 +93,44 @@ fn one_gpu(device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMe
         .map(|u| u.gpu as f64)
         .unwrap_or(0.0);
 
-    let mem = device.memory_info().map(|m| {
-        let used = m.used as f64 / (1024.0 * 1024.0 * 1024.0);
-        let total = m.total as f64 / (1024.0 * 1024.0 * 1024.0);
-        (used, total)
-    }).unwrap_or((0.0, 0.0));
+    let mem = device
+        .memory_info()
+        .map(|m| {
+            let used = m.used as f64 / (1024.0 * 1024.0 * 1024.0);
+            let total = m.total as f64 / (1024.0 * 1024.0 * 1024.0);
+            (used, total)
+        })
+        .unwrap_or((0.0, 0.0));
 
-    let power = device.power_usage().ok().map(|p| {
-        (p as f64 / 1000.0, device.enforced_power_limit().ok().map(|pl| pl as f64 / 1000.0).unwrap_or(0.0))
-    }).unwrap_or((0.0, 0.0));
+    let power = device
+        .power_usage()
+        .ok()
+        .map(|p| {
+            (
+                p as f64 / 1000.0,
+                device
+                    .enforced_power_limit()
+                    .ok()
+                    .map(|pl| pl as f64 / 1000.0)
+                    .unwrap_or(0.0),
+            )
+        })
+        .unwrap_or((0.0, 0.0));
 
-    let fan = device.fan_speed_rpm(0).ok().map(|f| f as f64).unwrap_or(0.0);
+    let fan = device
+        .fan_speed_rpm(0)
+        .ok()
+        .map(|f| f as f64)
+        .unwrap_or(0.0);
 
-    let clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
+    let clock = device
+        .clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
         .ok()
         .filter(|c| *c > 0)
         .map(|c| c as f64);
 
-    let mem_clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Memory)
+    let mem_clock = device
+        .clock_info(nvml_wrapper::enum_wrappers::device::Clock::Memory)
         .ok()
         .filter(|c| *c > 0)
         .map(|c| c as f64);
@@ -161,7 +184,7 @@ fn smi_from_all() -> Vec<GpuMetrics> {
     }
 }
 
-fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
+pub fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
     let gpu_blocks: Vec<&str> = xml
         .split("<gpu>")
         .skip(1)
@@ -191,10 +214,8 @@ fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
             let vram_total = extract_tag_float(gpu, "total")
                 .map(|v| v / 1024.0)
                 .unwrap_or(0.0);
-            let power = extract_tag_float(gpu, "power_draw[0].current")
-                .unwrap_or(0.0);
-            let power_limit = extract_tag_float(gpu, "power_limit[0].current")
-                .unwrap_or(0.0);
+            let power = extract_tag_float(gpu, "power_draw[0].current").unwrap_or(0.0);
+            let power_limit = extract_tag_float(gpu, "power_limit[0].current").unwrap_or(0.0);
             let clock = extract_tag_float(gpu, "gpu_clock_freq");
             let mem_clock = extract_tag_float(gpu, "mem_clock_freq");
             let fan = extract_tag_float(gpu, "fan_speed[0].current")
@@ -218,7 +239,7 @@ fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
         .collect()
 }
 
-fn extract_tag(xml: &str, tag: &str) -> Option<String> {
+pub fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
     if let Some(start) = xml.find(&open) {
@@ -234,10 +255,9 @@ fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     None
 }
 
-fn extract_tag_float(xml: &str, tag: &str) -> Option<f64> {
-    extract_tag(xml, tag)
-        .and_then(|s| {
-            let parts: Vec<&str> = s.split_whitespace().collect();
-            parts.first().and_then(|p| p.parse().ok())
-        })
+pub fn extract_tag_float(xml: &str, tag: &str) -> Option<f64> {
+    extract_tag(xml, tag).and_then(|s| {
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        parts.first().and_then(|p| p.parse().ok())
+    })
 }
