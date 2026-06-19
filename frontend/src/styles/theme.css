@@ -139,11 +139,31 @@
   overflow: hidden !important;
 }
 
+/* Overview rows: GPU/CPU/Memory cards need less height than their natural
+   content (~144-165px), while the Storage card needs more (~251px, due to
+   two devices each listing multiple mounts). Equal flex:1 shares starve the
+   Storage row. Basis values reflect measured natural content heights plus a
+   safety margin; min-height is the hard floor matching the bare content size. */
+.overview-gpu-row {
+  flex: 1 1 210px;
+  min-height: 150px;
+}
+
+.overview-cpu-row {
+  flex: 1 1 230px;
+  min-height: 170px;
+}
+
+.overview-memory-row {
+  flex: 1 1 210px;
+  min-height: 150px;
+}
+
 /* Storage row (2-column layout) */
 .storage-row {
   gap: 12px;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 320px;
+  min-height: 260px;
   align-items: stretch;
 }
 
@@ -154,7 +174,10 @@
 }
 
 .storage-row > .metric-card:last-child {
-  flex: 0 0 60%;
+  /* flex:1 (not a rigid 60% basis) so this absorbs the row gap and aligns
+     with the first child's right edge, matching how chart-container's
+     inline flex:1 keeps the GPU/CPU/Memory rows from overflowing. */
+  flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
 }

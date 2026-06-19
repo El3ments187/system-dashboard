@@ -101,15 +101,15 @@ export default function App() {
         />
         {activePage === 'overview' ? (
           <main className="dashboard-grid">
-            <div className="dashboard-row">
+            <div className="dashboard-row overview-gpu-row">
               <GpuCard accent={current} />
               <GpuChart accent={current} />
             </div>
-            <div className="dashboard-row">
+            <div className="dashboard-row overview-cpu-row">
               <CpuCard accent={current} />
               <CpuChart accent={current} />
             </div>
-            <div className="dashboard-row">
+            <div className="dashboard-row overview-memory-row">
               <MemoryCard accent={current} />
               <MemoryChart accent={current} />
             </div>
