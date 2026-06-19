@@ -43,7 +43,17 @@ function usePerCoreHistory(rawData: any | null, isPaused?: boolean): Array<Metri
 
     const cores = rawData.cores;
     setHistories(prev => {
-      if (prev.length !== cores.length) return prev;
+      // Reinitialize if core count changed
+      if (prev.length !== cores.length) {
+        const now = new Date();
+        return Array.from({ length: cores.length }, () => {
+          return Array.from({ length: 120 }, (_, j) => ({
+            slot: j,
+            timestamp: new Date(now.getTime() - (120 - j) * 500),
+            value: 0,
+          }));
+        });
+      }
       return prev.map((h, i) => {
         if (!h) return null;
         const newValue = cores[i]?.utilization_percent ?? 0;

@@ -29,18 +29,23 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  // HSL to RGB conversion
   h = ((h % 360) + 360) % 360;
   s /= 100;
   l /= 100;
-  // Simplified HSL to RGB
-  const r = Math.round((1 - s) * l * 255);
-  const g = Math.round(((h < 120 ? (h / 120) : (240 - h) / 120)) * (1 - Math.abs(s - 0.5) * 2) * l * 255);
-  const b = Math.round(((h > 240 ? ((h - 240) / 120) : (120 - h) / 120)) * (1 - Math.abs(s - 0.5) * 2) * l * 255);
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
   return [
-    Math.max(0, Math.min(255, r)),
-    Math.max(0, Math.min(255, g)),
-    Math.max(0, Math.min(255, b)),
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255),
   ];
 }
 
@@ -53,36 +58,31 @@ function getCoreColors(count: number): string[] {
   const g = parseInt(accent.slice(3, 5), 16);
   const b = parseInt(accent.slice(5, 7), 16);
   
-  // Convert RGB to HSL (simplified)
-  const maxRgb = Math.max(r, g, b) / 255;
-  const minRgb = Math.min(r, g, b) / 255;
-  
+  // Convert RGB to HSL
+  const rN = r / 255, gN = g / 255, bN = b / 255;
+  const maxC = Math.max(rN, gN, bN);
+  const minC = Math.min(rN, gN, bN);
+  const delta = maxC - minC;
+
   let h = 0;
-  if (maxRgb > minRgb) {
-    const maxIdx = [r, g, b].indexOf(maxRgb * 255);
-    const minIdx = [r, g, b].indexOf(minRgb * 255);
-    if (maxIdx === 0 && minIdx === 1) h = 60;
-    else if (maxIdx === 1 && minIdx === 2) h = 180;
-    else if (maxIdx === 2 && minIdx === 0) h = 300;
-    else if (maxIdx === 0 && minIdx === 2) h = 0;
-    else if (maxIdx === 2 && minIdx === 1) h = 120;
-    else if (maxIdx === 1 && minIdx === 0) h = 240;
-    else h = 60 + maxIdx * 60;
-  } else {
-    h = 0; // achromatic
+  if (delta > 0) {
+    if (maxC === rN) h = 60 * (((gN - bN) / delta) % 6);
+    else if (maxC === gN) h = 60 * (((bN - rN) / delta) + 2);
+    else h = 60 * (((rN - gN) / delta) + 4);
   }
-  
-  const s = maxRgb > 0 ? ((maxRgb - minRgb) / maxRgb) * 100 : 0;
-  const l = (minRgb + maxRgb) / 2 * 100;
+  if (h < 0) h += 360;
+
+  const l = (maxC + minC) / 2;
+  const s = delta > 0 ? delta / (1 - Math.abs(2 * l - 1)) : 0;
   
   const colors: string[] = [];
   for (let i = 0; i < count; i++) {
     // Distribute hues evenly, offset by accent hue
     const hue = (h + (i * 360) / count) % 360;
     // Keep saturation moderate-high for dark theme readability
-    const sat = Math.max(40, Math.min(90, s + (i % 2 === 0 ? 10 : -10)));
+    const sat = Math.max(40, Math.min(90, s * 100 + (i % 2 === 0 ? 10 : -10)));
     // Keep lightness consistent for dark themes
-    const lightness = Math.max(35, Math.min(70, l));
+    const lightness = Math.max(35, Math.min(70, l * 100));
     colors.push(hslToHex(hue, sat, lightness));
   }
   return colors;

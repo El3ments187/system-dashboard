@@ -11,6 +11,7 @@ interface PanelErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  panelName: string;
 }
 
 /**
@@ -25,12 +26,16 @@ export default class PanelErrorBoundary extends Component<PanelErrorBoundaryProp
       hasError: false,
       error: null,
       errorInfo: null,
+      panelName: props.panelName,
     };
   }
 
-  static getDerivedStateFromProps(_nextProps: PanelErrorBoundaryProps) {
-    // Reset error state when panel name changes (retry scenario)
-    return { hasError: false, error: null, errorInfo: null };
+  static getDerivedStateFromProps(nextProps: PanelErrorBoundaryProps, prevState: PanelErrorBoundaryState) {
+    // Reset error state only when panel name changes (retry scenario)
+    if (prevState.panelName !== nextProps.panelName) {
+      return { hasError: false, error: null, errorInfo: null, panelName: nextProps.panelName };
+    }
+    return null;
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {

@@ -31,6 +31,24 @@ export default function GpuCard({ accent }: { accent: { color: string; glow: str
   else if (status === 'warn') statusLabel = 'Warning';
   else statusLabel = 'Critical';
 
+  if (gpuLoading) {
+    return (
+      <PanelErrorBoundary panelName="GPU">
+        <div className="metric-card" style={{ opacity: 0.5 }}>
+          <div className="card-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Monitor size={16} style={{ color: accent.color }} />
+              <span className="card-title">GPU</span>
+            </div>
+          </div>
+          <div style={{ padding: 8, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="skeleton" style={{ height: 200, width: '100%' }} />
+          </div>
+        </div>
+      </PanelErrorBoundary>
+    );
+  }
+
   if (gpuError) {
     return (
       <PanelErrorBoundary panelName="GPU">

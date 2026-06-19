@@ -37,6 +37,24 @@ export default function CpuCard({ accent }: CardProps) {
   else if (status === 'warn') statusLabel = 'Warning';
   else statusLabel = 'Critical';
 
+  if (cpuLoading) {
+    return (
+      <PanelErrorBoundary panelName="CPU">
+        <div className="metric-card" style={{ opacity: 0.5 }}>
+          <div className="card-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Cpu size={16} style={{ color: accent.color }} />
+              <span className="card-title">CPU</span>
+            </div>
+          </div>
+          <div style={{ padding: 8, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="skeleton" style={{ height: 200, width: '100%' }} />
+          </div>
+        </div>
+      </PanelErrorBoundary>
+    );
+  }
+
   if (cpuError) {
     return (
       <PanelErrorBoundary panelName="CPU">
