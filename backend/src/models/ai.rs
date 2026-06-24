@@ -1,0 +1,322 @@
+//! AI metrics data models for llama-server, OpenWebUI, and OpenCode monitoring.
+
+use serde::{Deserialize, Serialize};
+
+/// Status of an AI service
+#[derive(Debug, Serialize, Clone)]
+pub struct AiServiceStatus {
+    pub name: String,
+    pub endpoint: String,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+/// Token usage for a single model in llama-server
+#[derive(Debug, Serialize, Clone)]
+pub struct AiTokenUsage {
+    pub total_tokens: i64,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cached_tokens: i64,
+}
+
+/// KV cache statistics for a single GPU in llama-server
+#[derive(Debug, Serialize, Clone)]
+pub struct AiKvCacheStats {
+    pub gpu_cache_usage_pct: f64,
+    pub free_gpu_memory_mb: f64,
+    pub used_gpu_memory_mb: f64,
+}
+
+/// KV cache stats per GPU for OpenWebUI /api/v1/chat/history
+#[derive(Debug, Serialize, Clone)]
+pub struct AiGpuCacheStats {
+    pub gpu_id: i32,
+    pub total_memory_mb: f64,
+    pub used_memory_mb: f64,
+    pub free_memory_mb: f64,
+}
+
+/// OpenWebUI chat history entry
+#[derive(Debug, Serialize, Clone)]
+pub struct AiChatHistoryEntry {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
+/// OpenWebUI /api/v1/models response model item
+#[derive(Debug, Serialize, Clone)]
+pub struct AiModelItem {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// OpenWebUI /api/v1/models response
+#[derive(Debug, Serialize, Clone)]
+pub struct AiModelList {
+    pub models: Vec<AiModelItem>,
+}
+
+/// OpenWebUI /api/v1/health response
+#[derive(Debug, Serialize, Clone)]
+pub struct AiOpenWebuiHealth {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+/// OpenCode /api/health response
+#[derive(Debug, Serialize, Clone)]
+pub struct AiOpencodeHealth {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+/// Per-process CPU and memory metrics
+#[derive(Debug, Serialize, Clone)]
+pub struct ProcessMetrics {
+    pub pid: u32,
+    pub cpu_percent: f64,
+    pub memory_kb: u64,
+    pub uptime_seconds: f64,
+}
+
+/// Parsed Prometheus metrics from llama-server /metrics endpoint
+#[derive(Debug, Clone, Default)]
+pub struct LlamaMetrics {
+    pub prompt_tokens_total: f64,
+    pub prompt_seconds_total: f64,
+    pub tokens_predicted_total: f64,
+    pub tokens_predicted_seconds_total: f64,
+    pub n_decode_total: f64,
+    pub n_tokens_max: f64,
+    pub prompt_tokens_per_second: f64,
+    pub predicted_tokens_per_second: f64,
+    pub requests_processing: f64,
+    pub requests_deferred: f64,
+    pub n_busy_slots_per_decode: f64,
+}
+
+/// Parsed /props endpoint from llama-server
+#[derive(Debug, Clone, Default)]
+pub struct LlamaProps {
+    pub model_alias: Option<String>,
+    pub model_path: Option<String>,
+    pub n_ctx: Option<u32>,
+    pub total_slots: Option<u32>,
+    pub build_info: Option<String>,
+    pub endpoint_metrics: Option<bool>,
+    pub webui: Option<bool>,
+    pub vision: Option<bool>,
+    pub video: Option<bool>,
+    pub audio: Option<bool>,
+    pub temperature: Option<f64>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<f64>,
+    pub repeat_penalty: Option<f64>,
+}
+
+/// ComfyUI workflow and queue info
+#[derive(Debug, Serialize, Clone)]
+pub struct AiComfyUiInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_size: Option<usize>,
+}
+
+/// Complete AI metrics snapshot
+#[derive(Debug, Serialize, Clone)]
+pub struct AiMetrics {
+    /// Service status objects (for detailed view)
+    pub llama_server: AiServiceStatus,
+    pub openwebui: AiServiceStatus,
+    pub opencode: AiServiceStatus,
+    pub comfyui: AiServiceStatus,
+
+    /// Computed status strings (for frontend compatibility)
+    #[serde(rename = "llama_server_status")]
+    pub llama_server_status_str: String,
+    #[serde(rename = "openwebui_status")]
+    pub openwebui_status_str: String,
+    #[serde(rename = "opencode_status")]
+    pub opencode_status_str: String,
+    #[serde(rename = "comfyui_status")]
+    pub comfyui_status_str: String,
+
+    /// Computed utilization metrics from /metrics endpoint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_utilization_percent: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kv_cache_usage_percent: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_buffer_usage_percent: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_cached: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_tokens_sent: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_time_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_queue_size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_prompts: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub swap_pending_slots: Option<i64>,
+
+    /// Raw token usage and KV cache stats (for detailed view)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<AiTokenUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kv_cache_stats: Option<Vec<AiKvCacheStats>>,
+
+    /// OpenWebUI data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_history_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<AiModelItem>>,
+
+    /// Latency from health check
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llama_server_latency_ms: Option<f64>,
+
+    /// Operational metrics from /metrics endpoint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gen_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_requests: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queued_requests: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub busy_slots: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context: Option<u32>,
+
+    /// Props from /props endpoint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_slots: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_info: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_metrics: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webui: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_penalty: Option<f64>,
+
+    /// Per-process metrics for llama-server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llama_server_process: Option<ProcessMetrics>,
+
+    /// Per-process metrics for OpenWebUI
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openwebui_process: Option<ProcessMetrics>,
+
+    /// Per-process metrics for OpenCode
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opencode_process: Option<ProcessMetrics>,
+
+    /// Per-process metrics for ComfyUI
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comfyui_process: Option<ProcessMetrics>,
+
+    /// ComfyUI workflow/queue info
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comfyui_info: Option<AiComfyUiInfo>,
+}
+
+/// Directory entry from filesystem browse
+#[derive(Debug, Serialize, Clone)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// Git repository information
+#[derive(Debug, Serialize, Clone)]
+pub struct GitInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_hash: Option<String>,
+}
+
+/// Build directory status
+#[derive(Debug, Serialize, Clone)]
+pub struct BuildDirStatus {
+    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<String>,
+}
+
+/// Detected llama.cpp executable info
+#[derive(Debug, Serialize, Clone)]
+pub struct ExecutableInfo {
+    pub name: String,
+    pub path: String,
+    pub exists: bool,
+}
+
+/// Saved command for terminal execution
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedCommand {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// History point for AI metrics over time
+#[derive(Debug, Serialize, Clone)]
+pub struct AiHistoryPoint {
+    pub timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llama_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openwebui_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opencode_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comfyui_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kv_cache_max_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gen_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_requests: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queued_requests: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u32>,
+}

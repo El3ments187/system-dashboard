@@ -237,13 +237,94 @@ pub fn check_storage_collector_status(status: CollectorStatus) -> Vec<Alert> {
     alerts
 }
 
+/// Check AI metrics for service availability failures.
+pub fn check_ai_collector_status(status: CollectorStatus) -> Vec<Alert> {
+    let mut alerts = Vec::new();
+
+    match &status {
+        CollectorStatus::Error(msg) => {
+            alerts.push(Alert {
+                id: next_alert_id(),
+                severity: AlertSeverity::Error,
+                subsystem: "ai".to_string(),
+                message: format!("AI collector failed: {}", msg),
+            });
+        }
+        CollectorStatus::Partial(msg) => {
+            alerts.push(Alert {
+                id: next_alert_id(),
+                severity: AlertSeverity::Warning,
+                subsystem: "ai".to_string(),
+                message: format!("AI collector returned partial data: {}", msg),
+            });
+        }
+        CollectorStatus::Ok => {}
+    }
+
+    alerts
+}
+
+/// Check AI service availability and generate alerts for unavailable services.
+pub fn check_ai_service_availability(
+    llama_available: bool,
+    openwebui_available: bool,
+    opencode_available: bool,
+    comfyui_available: bool,
+) -> Vec<Alert> {
+    let mut alerts = Vec::new();
+
+    if !llama_available {
+        alerts.push(Alert {
+            id: next_alert_id(),
+            severity: AlertSeverity::Warning,
+            subsystem: "ai".to_string(),
+            message: "llama-server is unavailable".to_string(),
+        });
+    }
+
+    if !openwebui_available {
+        alerts.push(Alert {
+            id: next_alert_id(),
+            severity: AlertSeverity::Warning,
+            subsystem: "ai".to_string(),
+            message: "OpenWebUI is unavailable".to_string(),
+        });
+    }
+
+    if !opencode_available {
+        alerts.push(Alert {
+            id: next_alert_id(),
+            severity: AlertSeverity::Warning,
+            subsystem: "ai".to_string(),
+            message: "OpenCode is unavailable".to_string(),
+        });
+    }
+
+    if !comfyui_available {
+        alerts.push(Alert {
+            id: next_alert_id(),
+            severity: AlertSeverity::Warning,
+            subsystem: "ai".to_string(),
+            message: "ComfyUI is unavailable".to_string(),
+        });
+    }
+
+    alerts
+}
+
 /// Check all metrics and return combined alerts for failures only.
+#[allow(clippy::too_many_arguments)]
 pub fn check_all_alerts(
     cpu_status: CollectorStatus,
     mem_status: CollectorStatus,
     gpu: Option<&crate::models::metrics::GpuMetrics>,
     gpu_status: CollectorStatus,
     storages_status: CollectorStatus,
+    ai_collector_status: CollectorStatus,
+    llama_available: bool,
+    openwebui_available: bool,
+    opencode_available: bool,
+    comfyui_available: bool,
 ) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
@@ -291,6 +372,24 @@ pub fn check_all_alerts(
 
     // Storage collector status alerts (deduplicated)
     for alert in check_storage_collector_status(storages_status) {
+        if !is_already_sent(&alert.subsystem, &alert.message) {
+            mark_as_sent(&alert.subsystem, &alert.message);
+            alerts.push(alert);
+        }
+    }
+
+    // AI collector status alerts (deduplicated)
+    for alert in check_ai_collector_status(ai_collector_status) {
+        if !is_already_sent(&alert.subsystem, &alert.message) {
+            mark_as_sent(&alert.subsystem, &alert.message);
+            alerts.push(alert);
+        }
+    }
+
+    // AI service availability alerts (deduplicated)
+    for alert in
+        check_ai_service_availability(llama_available, openwebui_available, opencode_available, comfyui_available)
+    {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);

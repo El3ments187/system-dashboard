@@ -1,5 +1,6 @@
 import { useMultiMetrics } from '../hooks/useMultiMetrics';
 import { useStorageMetrics } from '../hooks/useStorageMetrics';
+import { useAiMetrics } from '../hooks/useAiMetrics';
 import { useLiveDataControlsContext } from './LiveDataControlsContext';
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { StorageHistoryPoint, MetricHistoryPoint } from '../types/metrics';
@@ -95,6 +96,15 @@ interface MetricsContextValue {
   storageHistories: Map<string, StorageHistoryPoint[]>;
   storageLoading: boolean;
   storageError: string | null;
+  aiCurrentMetrics: any | null;
+  aiGenTpsHistory: MetricHistoryPoint[] | null;
+  aiPromptTpsHistory: MetricHistoryPoint[] | null;
+  aiActiveRequestsHistory: MetricHistoryPoint[] | null;
+  aiQueuedRequestsHistory: MetricHistoryPoint[] | null;
+  aiContextTokensHistory: MetricHistoryPoint[] | null;
+  aiLoading: boolean;
+  aiError: string | null;
+  retryAi: () => void;
   retryCpu: () => void;
   retryMemory: () => void;
   retryGpu: () => void;
@@ -192,9 +202,11 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
        isPaused,
      );
 
-  const storage = useStorageMetrics(isPaused);
+ const storage = useStorageMetrics(isPaused);
 
- const value: MetricsContextValue = {
+  const ai = useAiMetrics(isPaused);
+
+  const value: MetricsContextValue = {
       cpuCurrentValues: cpu.currentValues,
       cpuRawData: cpu.rawData,
       memoryCurrentValues: memory.currentValues,
@@ -219,10 +231,19 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
      memoryError: memory.error,
      gpuError: gpu.error,
      storageDevices: storage.storageDevices,
-     storageHistories: storage.storageHistories,
-     storageLoading: storage.loading,
-     storageError: storage.error,
-     retryCpu: cpu.retry,
+      storageHistories: storage.storageHistories,
+      storageLoading: storage.loading,
+      storageError: storage.error,
+      aiCurrentMetrics: ai.currentMetrics,
+      aiGenTpsHistory: ai.genTpsHistory,
+      aiPromptTpsHistory: ai.promptTpsHistory,
+      aiActiveRequestsHistory: ai.activeRequestsHistory,
+      aiQueuedRequestsHistory: ai.queuedRequestsHistory,
+      aiContextTokensHistory: ai.contextTokensHistory,
+      aiLoading: ai.loading,
+      aiError: ai.error,
+      retryAi: ai.retry,
+      retryCpu: cpu.retry,
      retryMemory: memory.retry,
      retryGpu: gpu.retry,
      retryStorage: storage.retry,

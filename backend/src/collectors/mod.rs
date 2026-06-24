@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod alerts;
 pub mod cpu;
 pub mod gpu;

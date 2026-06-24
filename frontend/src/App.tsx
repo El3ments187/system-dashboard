@@ -20,14 +20,18 @@ import './styles/theme.css';
 import { checkHealth } from './services/api';
 import GpuPage from './pages/GpuPage';
 import CpuPage from './pages/CpuPage';
+import AiPage from './pages/AiPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   const { accent, setAccent, bg, setBg, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu'>(() => {
+  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'ai' | 'settings'>(() => {
     if (window.location.pathname === '/gpu') return 'gpu';
     if (window.location.pathname === '/cpu') return 'cpu';
+    if (window.location.pathname === '/ai') return 'ai';
+    if (window.location.pathname === '/settings') return 'settings';
     return 'overview';
   });
 
@@ -50,6 +54,20 @@ export default function App() {
     window.history.pushState({ page: activePage }, '', path);
   }, [activePage]);
 
+  // Handle settings page navigation
+  useEffect(() => {
+    if (window.location.pathname === '/settings') {
+      setActivePage('settings');
+    }
+  }, []);
+
+  // Handle AI page navigation
+  useEffect(() => {
+    if (window.location.pathname === '/ai') {
+      setActivePage('ai');
+    }
+  }, []);
+
   // Handle browser back/forward
   useEffect(() => {
     const handler = () => {
@@ -57,6 +75,10 @@ export default function App() {
         setActivePage('gpu');
       } else if (window.location.pathname === '/cpu') {
         setActivePage('cpu');
+      } else if (window.location.pathname === '/ai') {
+        setActivePage('ai');
+      } else if (window.location.pathname === '/settings') {
+        setActivePage('settings');
       } else {
         setActivePage('overview');
       }
@@ -120,8 +142,12 @@ export default function App() {
           </main>
         ) : activePage === 'gpu' ? (
           <GpuPage accent={current} />
-        ) : (
+        ) : activePage === 'cpu' ? (
           <CpuPage accent={current} />
+        ) : activePage === 'settings' ? (
+          <SettingsPage accent={current} />
+        ) : (
+          <AiPage />
         )}
            </div>
           </MetricsProvider>

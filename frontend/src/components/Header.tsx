@@ -12,8 +12,8 @@ interface HeaderProps {
   showThemePanel: boolean;
   onToggleThemePanel: () => void;
   healthOk?: boolean;
-  activePage?: 'overview' | 'gpu' | 'cpu';
-  onPageChange?: (page: 'overview' | 'gpu' | 'cpu') => void;
+  activePage?: 'overview' | 'gpu' | 'cpu' | 'ai' | 'settings';
+  onPageChange?: (page: 'overview' | 'gpu' | 'cpu' | 'ai' | 'settings') => void;
 }
 
 const severityColors: Record<AlertSeverity, string> = {
@@ -29,6 +29,7 @@ const severityBgColors: Record<AlertSeverity, string> = {
 };
 
 export default function Header({ accent, onToggleThemePanel, healthOk, activePage = 'overview', onPageChange }: HeaderProps) {
+  const pages: Array<'overview' | 'gpu' | 'cpu' | 'ai' | 'settings'> = ['overview', 'gpu', 'cpu', 'ai', 'settings'];
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ['metrics', 'system'],
     queryFn: getSystemMetrics,
@@ -98,7 +99,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
           </div>
           <span className="header-title">System Dashboard</span>
           <nav style={{ display: 'flex', gap: 3, marginLeft: 12, alignItems: 'center' }}>
-            {(['overview', 'gpu', 'cpu'] as const).map((page) => (
+            {pages.map((page) => (
               <button
                 key={page}
                 onClick={() => onPageChange?.(page)}
@@ -127,7 +128,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
                   }
                 }}
               >
-                {page === 'overview' ? 'Overview' : page === 'gpu' ? 'GPU' : 'CPU'}
+                {page === 'overview' ? 'Overview' : page === 'gpu' ? 'GPU' : page === 'cpu' ? 'CPU' : page === 'ai' ? 'AI' : 'Settings'}
               </button>
             ))}
           </nav>

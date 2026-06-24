@@ -455,6 +455,10 @@ mod alerts {
             None,
             CollectorStatus::Ok,
             CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            true,
+            true,
+            true,
         );
         for alert in &alerts {
             assert_eq!(alert.subsystem, "gpu");
@@ -470,6 +474,10 @@ mod alerts {
             None,
             CollectorStatus::Ok,
             CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            true,
+            true,
+            true,
         );
         let cpu_alerts: Vec<&Alert> = alerts.iter().filter(|a| a.subsystem == "cpu").collect();
         assert!(!cpu_alerts.is_empty());
@@ -502,6 +510,10 @@ mod alerts {
             None,
             CollectorStatus::Error("e3".to_string()),
             CollectorStatus::Error("e4".to_string()),
+            CollectorStatus::Ok,
+            true,
+            true,
+            true,
         );
         let ids: Vec<u64> = alerts.iter().map(|a| a.id).collect();
         let unique_ids: std::collections::HashSet<u64> = ids.iter().copied().collect();
@@ -1448,5 +1460,431 @@ mod api_serialization {
         };
         let json = serde_json::to_string(&m);
         assert!(json.is_ok());
+    }
+}
+
+// ============================================================================
+// AI metrics model serialization tests
+// ============================================================================
+
+#[cfg(test)]
+mod ai_model_serialization {
+    use system_dashboard::models::ai::{
+        AiHistoryPoint, AiKvCacheStats, AiMetrics, AiModelItem, AiOpenWebuiHealth,
+        AiOpencodeHealth, AiServiceStatus, AiTokenUsage,
+    };
+
+    #[test]
+    fn test_ai_service_status_serializes() {
+        let status = AiServiceStatus {
+            name: "llama-server".to_string(),
+            endpoint: "http://localhost:8081".to_string(),
+            available: true,
+            error_message: None,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("llama-server"));
+        assert!(json.contains("true"));
+    }
+
+    #[test]
+    fn test_ai_service_status_with_error_serializes() {
+        let status = AiServiceStatus {
+            name: "OpenWebUI".to_string(),
+            endpoint: "http://localhost:3000".to_string(),
+            available: false,
+            error_message: Some("Connection refused".to_string()),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("OpenWebUI"));
+        assert!(json.contains("false"));
+        assert!(json.contains("Connection refused"));
+    }
+
+    #[test]
+    fn test_ai_token_usage_serializes() {
+        let usage = AiTokenUsage {
+            total_tokens: 180,
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            cached_tokens: 30,
+        };
+        let json = serde_json::to_string(&usage).unwrap();
+        assert!(json.contains("100"));
+        assert!(json.contains("completion_tokens"));
+    }
+
+    #[test]
+    fn test_ai_kv_cache_stats_serializes() {
+        let stats = AiKvCacheStats {
+            gpu_cache_usage_pct: 75.5,
+            free_gpu_memory_mb: 1024.0,
+            used_gpu_memory_mb: 3072.0,
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("75.5"));
+    }
+
+    #[test]
+    fn test_ai_model_item_serializes() {
+        let item = AiModelItem {
+            id: "model-1".to_string(),
+            name: "Llama 3".to_string(),
+            description: Some("A large language model".to_string()),
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("model-1"));
+        assert!(json.contains("Llama 3"));
+    }
+
+    #[test]
+    fn test_ai_model_item_without_description_serializes() {
+        let item = AiModelItem {
+            id: "model-2".to_string(),
+            name: "Mistral".to_string(),
+            description: None,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("Mistral"));
+        assert!(!json.contains("description"));
+    }
+
+    #[test]
+    fn test_ai_history_point_serializes() {
+        let point = AiHistoryPoint {
+            timestamp: "2024-01-01 00:00:00 UTC".to_string(),
+            llama_available: Some(true),
+            openwebui_available: Some(true),
+            opencode_available: Some(false),
+            kv_cache_max_pct: Some(75.5),
+        };
+        let json = serde_json::to_string(&point).unwrap();
+        assert!(json.contains("2024-01-01"));
+        assert!(json.contains("true"));
+        assert!(json.contains("false"));
+    }
+
+    #[test]
+    fn test_ai_history_point_without_optional_fields_serializes() {
+        let point = AiHistoryPoint {
+            timestamp: "2024-01-01 00:00:00 UTC".to_string(),
+            llama_available: None,
+            openwebui_available: None,
+            opencode_available: None,
+            kv_cache_max_pct: None,
+        };
+        let json = serde_json::to_string(&point).unwrap();
+        assert!(json.contains("2024-01-01"));
+        assert!(!json.contains("llama_available"));
+    }
+
+    #[test]
+    fn test_ai_metrics_serializes_with_all_fields() {
+        let metrics = AiMetrics {
+            llama_server: AiServiceStatus {
+                name: "llama-server".to_string(),
+                endpoint: "http://localhost:8081".to_string(),
+                available: true,
+                error_message: None,
+            },
+            openwebui: AiServiceStatus {
+                name: "OpenWebUI".to_string(),
+                endpoint: "http://localhost:3000".to_string(),
+                available: true,
+                error_message: None,
+            },
+            opencode: AiServiceStatus {
+                name: "OpenCode".to_string(),
+                endpoint: "http://localhost:4000".to_string(),
+                available: true,
+                error_message: None,
+            },
+            llama_server_status_str: "online".to_string(),
+            openwebui_status_str: "online".to_string(),
+            opencode_status_str: "online".to_string(),
+            llm_utilization_percent: Some(75.0),
+            kv_cache_usage_percent: Some(75.5),
+            prompt_buffer_usage_percent: Some(50.0),
+            tokens_cached: Some(30),
+            total_tokens_sent: Some(180),
+            server_time_ms: Some(12.5),
+            prompt_queue_size: Some(2),
+            running_prompts: Some(1),
+            swap_pending_slots: None,
+            token_usage: Some(AiTokenUsage {
+                total_tokens: 180,
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                cached_tokens: 30,
+            }),
+            kv_cache_stats: Some(vec![AiKvCacheStats {
+                gpu_cache_usage_pct: 75.5,
+                free_gpu_memory_mb: 1024.0,
+                used_gpu_memory_mb: 3072.0,
+            }]),
+            chat_history_count: Some(42),
+            models: Some(vec![AiModelItem {
+                id: "model-1".to_string(),
+                name: "Llama 3".to_string(),
+                description: Some("Test model".to_string()),
+            }]),
+            llama_server_latency_ms: Some(5.0),
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains("llama-server"));
+        assert!(json.contains("OpenWebUI"));
+        assert!(json.contains("OpenCode"));
+        assert!(json.contains("42"));
+    }
+
+    #[test]
+    fn test_ai_metrics_serializes_with_none_fields() {
+        let metrics = AiMetrics {
+            llama_server: AiServiceStatus {
+                name: "llama-server".to_string(),
+                endpoint: "http://localhost:8081".to_string(),
+                available: false,
+                error_message: Some("Connection failed".to_string()),
+            },
+            openwebui: AiServiceStatus {
+                name: "OpenWebUI".to_string(),
+                endpoint: "http://localhost:3000".to_string(),
+                available: false,
+                error_message: Some("Connection failed".to_string()),
+            },
+            opencode: AiServiceStatus {
+                name: "OpenCode".to_string(),
+                endpoint: "http://localhost:4000".to_string(),
+                available: false,
+                error_message: Some("Connection failed".to_string()),
+            },
+            llama_server_status_str: "offline".to_string(),
+            openwebui_status_str: "offline".to_string(),
+            opencode_status_str: "offline".to_string(),
+            llm_utilization_percent: None,
+            kv_cache_usage_percent: None,
+            prompt_buffer_usage_percent: None,
+            tokens_cached: None,
+            total_tokens_sent: None,
+            server_time_ms: None,
+            prompt_queue_size: None,
+            running_prompts: None,
+            swap_pending_slots: None,
+            token_usage: None,
+            kv_cache_stats: None,
+            chat_history_count: None,
+            models: None,
+            llama_server_latency_ms: None,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains("llama-server"));
+        assert!(!json.contains("token_usage"));
+        assert!(!json.contains("kv_cache_stats"));
+    }
+
+    #[test]
+    fn test_ai_openwebui_health_serializes() {
+        let health = AiOpenWebuiHealth {
+            version: Some("v0.5.0".to_string()),
+            status: Some("healthy".to_string()),
+        };
+        let json = serde_json::to_string(&health).unwrap();
+        assert!(json.contains("v0.5.0"));
+    }
+
+    #[test]
+    fn test_ai_opencode_health_serializes() {
+        let health = AiOpencodeHealth {
+            version: None,
+            status: Some("ok".to_string()),
+        };
+        let json = serde_json::to_string(&health).unwrap();
+        assert!(json.contains("ok"));
+    }
+
+    #[test]
+    fn test_ai_metrics_extreme_values_serializes() {
+        let metrics = AiMetrics {
+            llama_server: AiServiceStatus {
+                name: "llama-server".to_string(),
+                endpoint: "http://localhost:8081".to_string(),
+                available: true,
+                error_message: None,
+            },
+            openwebui: AiServiceStatus {
+                name: "OpenWebUI".to_string(),
+                endpoint: "http://localhost:3000".to_string(),
+                available: true,
+                error_message: None,
+            },
+            opencode: AiServiceStatus {
+                name: "OpenCode".to_string(),
+                endpoint: "http://localhost:4000".to_string(),
+                available: true,
+                error_message: None,
+            },
+            llama_server_status_str: "online".to_string(),
+            openwebui_status_str: "online".to_string(),
+            opencode_status_str: "online".to_string(),
+            llm_utilization_percent: Some(f64::MAX),
+            kv_cache_usage_percent: Some(f64::MAX),
+            prompt_buffer_usage_percent: Some(f64::MAX),
+            tokens_cached: Some(i64::MAX),
+            total_tokens_sent: Some(i64::MAX),
+            server_time_ms: Some(f64::MAX),
+            prompt_queue_size: Some(i64::MAX),
+            running_prompts: Some(i64::MAX),
+            swap_pending_slots: Some(i64::MAX),
+            token_usage: Some(AiTokenUsage {
+                total_tokens: i64::MAX,
+                prompt_tokens: i64::MAX,
+                completion_tokens: i64::MIN,
+                cached_tokens: 0,
+            }),
+            kv_cache_stats: Some(vec![AiKvCacheStats {
+                gpu_cache_usage_pct: f64::MAX,
+                free_gpu_memory_mb: f64::MIN,
+                used_gpu_memory_mb: f64::MAX,
+            }]),
+            chat_history_count: Some(usize::MAX),
+            models: Some(vec![AiModelItem {
+                id: String::from_utf8(vec![b'a'; 1000]).unwrap(),
+                name: String::from_utf8(vec![b'b'; 1000]).unwrap(),
+                description: None,
+            }]),
+            llama_server_latency_ms: Some(f64::MAX),
+        };
+        let json = serde_json::to_string(&metrics);
+        assert!(json.is_ok());
+    }
+}
+
+// ============================================================================
+// AI alert generation tests
+// ============================================================================
+
+#[cfg(test)]
+mod ai_alerts {
+    use super::*;
+
+    #[test]
+    fn test_ai_collector_status_ok_no_alerts() {
+        clear_alert_tracking();
+        let alerts =
+            system_dashboard::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
+        assert!(alerts.is_empty());
+    }
+
+    #[test]
+    fn test_ai_collector_status_error_generates_alert() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_ai_collector_status(
+            CollectorStatus::Error("llama-server down".to_string()),
+        );
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].severity, AlertSeverity::Error);
+        assert_eq!(alerts[0].subsystem, "ai");
+    }
+
+    #[test]
+    fn test_ai_collector_status_partial_generates_warning() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_ai_collector_status(
+            CollectorStatus::Partial("All AI services unavailable".to_string()),
+        );
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].severity, AlertSeverity::Warning);
+        assert_eq!(alerts[0].subsystem, "ai");
+    }
+
+    #[test]
+    fn test_ai_service_availability_checks() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+            false, // llama available
+            false, // openwebui available
+            false, // opencode available
+        );
+        assert!(!alerts.is_empty());
+        assert_eq!(alerts[0].subsystem, "ai");
+    }
+
+    #[test]
+    fn test_ai_service_availability_with_one_available() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+            true,  // llama available
+            false, // openwebui unavailable
+            false, // opencode unavailable
+        );
+        assert_eq!(alerts.len(), 2);
+    }
+
+    #[test]
+    fn test_ai_alert_deduplication() {
+        clear_alert_tracking();
+        let alerts1 = system_dashboard::collectors::alerts::check_ai_collector_status(
+            CollectorStatus::Error("same error".to_string()),
+        );
+        assert_eq!(alerts1.len(), 1);
+
+        clear_alert_tracking();
+        let alerts2 = system_dashboard::collectors::alerts::check_ai_collector_status(
+            CollectorStatus::Error("same error".to_string()),
+        );
+        assert_eq!(alerts2.len(), 1);
+    }
+
+    #[test]
+    fn test_ai_check_all_alerts_with_ai_error() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_all_alerts(
+            CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            None,
+            CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            true,
+            true,
+            true,
+        );
+        // Should not have AI alerts when all services are OK
+        let ai_alerts: Vec<&Alert> = alerts.iter().filter(|a| a.subsystem == "ai").collect();
+        assert!(ai_alerts.is_empty());
+    }
+
+    #[test]
+    fn test_ai_check_all_alerts_with_all_services_unavailable() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_all_alerts(
+            CollectorStatus::Ok,
+            CollectorStatus::Ok,
+            None,
+            CollectorStatus::Ok,
+            CollectorStatus::Partial("All AI services unavailable".to_string()),
+            CollectorStatus::Partial("All AI services unavailable".to_string()),
+            false,
+            false,
+            false,
+        );
+        let ai_alerts: Vec<&Alert> = alerts.iter().filter(|a| a.subsystem == "ai").collect();
+        assert!(!ai_alerts.is_empty());
+    }
+
+    #[test]
+    fn test_ai_alert_ids_are_unique() {
+        clear_alert_tracking();
+        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+            false, // llama unavailable
+            false, // openwebui unavailable
+            false, // opencode unavailable
+        );
+        assert_eq!(alerts.len(), 3);
+        // All three alerts should have unique IDs
+        let ids: Vec<u64> = alerts.iter().map(|a| a.id).collect();
+        assert_ne!(ids[0], ids[1]);
+        assert_ne!(ids[1], ids[2]);
+        assert_ne!(ids[0], ids[2]);
     }
 }

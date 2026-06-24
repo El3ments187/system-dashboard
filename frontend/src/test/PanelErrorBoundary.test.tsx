@@ -1,9 +1,10 @@
+/// <reference types="vitest" />
 import { render, screen } from '@testing-library/react';
 import PanelErrorBoundary from '../components/common/PanelErrorBoundary';
 import PanelErrorState from '../components/common/PanelErrorState';
 
 // Mock child that throws
-function ThrowChild() {
+function ThrowChild(): React.JSX.Element {
   throw new Error('Test error');
 }
 

@@ -13,10 +13,12 @@ vi.mock('recharts', () => ({
 }));
 
 // Mock ResizeObserver
-global.ResizeObserver = class MockResizeObserver {
+class MockResizeObserver implements ResizeObserver {
   observe() {}
   disconnect() {}
-};
+  unobserve() {}
+}
+global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
 describe('PerCoreCpuChart', () => {
   const mockHistory: MetricHistoryPoint[] = Array.from({ length: 120 }, (_, i) => ({
