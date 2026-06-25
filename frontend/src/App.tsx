@@ -20,6 +20,7 @@ import './styles/theme.css';
 import { checkHealth } from './services/api';
 import GpuPage from './pages/GpuPage';
 import CpuPage from './pages/CpuPage';
+import LlamaCppPage from './pages/LlamaCppPage';
 import AiPage from './pages/AiPage';
 import AiTerminalViewer from './pages/AiTerminalViewer';
 import SettingsPage from './pages/SettingsPage';
@@ -28,9 +29,10 @@ export default function App() {
   const { accent, setAccent, bg, setBg, accentMode, setAccentMode, resetTheme, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings'>(() => {
+  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'llama-cpp' | 'ai' | 'terminal' | 'settings'>(() => {
     if (window.location.pathname === '/gpu') return 'gpu';
     if (window.location.pathname === '/cpu') return 'cpu';
+    if (window.location.pathname === '/llama-cpp') return 'llama-cpp';
     if (window.location.pathname === '/ai/terminal') return 'terminal';
     if (window.location.pathname === '/ai') return 'ai';
     if (window.location.pathname === '/settings') return 'settings';
@@ -52,7 +54,7 @@ export default function App() {
 
   // Sync URL with active page (preserve query params for terminal to keep pts param)
   useEffect(() => {
-    const path = activePage === 'overview' ? '/' : activePage === 'terminal' ? '/ai/terminal' : `/${activePage}`;
+    const path = activePage === 'overview' ? '/' : activePage === 'terminal' ? '/ai/terminal' : activePage === 'llama-cpp' ? '/llama-cpp' : `/${activePage}`;
     const search = activePage === 'terminal' ? window.location.search : '';
     window.history.pushState({ page: activePage }, '', path + search);
   }, [activePage]);
@@ -64,6 +66,8 @@ export default function App() {
         setActivePage('gpu');
       } else if (window.location.pathname === '/cpu') {
         setActivePage('cpu');
+      } else if (window.location.pathname === '/llama-cpp') {
+        setActivePage('llama-cpp');
       } else if (window.location.pathname === '/ai/terminal') {
         setActivePage('terminal');
       } else if (window.location.pathname === '/ai') {
@@ -140,11 +144,13 @@ export default function App() {
           <GpuPage accent={current} />
         ) : activePage === 'cpu' ? (
           <CpuPage accent={current} />
+        ) : activePage === 'llama-cpp' ? (
+          <LlamaCppPage />
         ) : activePage === 'settings' ? (
           <SettingsPage accent={current} />
-        ) : (
+        ) : activePage === 'ai' ? (
           <AiPage />
-        )}
+        ) : null}
            </div>
           </MetricsProvider>
         </AlertsProvider>

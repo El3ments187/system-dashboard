@@ -11,7 +11,7 @@ function getWsUrl(): string {
   const params = new URLSearchParams(window.location.search);
   const ptsName = params.get('pts');
   if (!ptsName) {
-    window.location.href = '/ai?error=no_pts';
+    window.location.href = '/llama-cpp?error=no_pts';
     return '';
   }
   return `${WS_BASE}/api/ai/terminal/ws/${encodeURIComponent(ptsName)}`;
@@ -240,7 +240,7 @@ export default function AiTerminalViewer() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 11, color: '#f44747' }}>{error}</span>
             <button
-              onClick={() => { cleanup(); window.location.href = '/ai'; }}
+              onClick={() => { cleanup(); window.location.href = '/llama-cpp'; }}
               style={{
                 background: '#2a2a2a', border: 'none', color: '#fff', cursor: 'pointer',
                 fontSize: 11, padding: '4px 8px', borderRadius: 4, fontWeight: 500,

@@ -12,8 +12,8 @@ interface HeaderProps {
   showThemePanel: boolean;
   onToggleThemePanel: () => void;
   healthOk?: boolean;
-  activePage?: 'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings';
-  onPageChange?: (page: 'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings') => void;
+  activePage?: 'overview' | 'gpu' | 'cpu' | 'llama-cpp' | 'ai' | 'terminal' | 'settings';
+  onPageChange?: (page: 'overview' | 'gpu' | 'cpu' | 'llama-cpp' | 'ai' | 'terminal' | 'settings') => void;
 }
 
 const severityColors: Record<AlertSeverity, string> = {
@@ -29,7 +29,7 @@ const severityBgColors: Record<AlertSeverity, string> = {
 };
 
 export default function Header({ accent, onToggleThemePanel, healthOk, activePage = 'overview', onPageChange }: HeaderProps) {
-  const pages: Array<'overview' | 'gpu' | 'cpu' | 'ai' | 'settings'> = ['overview', 'gpu', 'cpu', 'ai', 'settings'];
+  const pages: Array<'overview' | 'gpu' | 'cpu' | 'llama-cpp' | 'ai' | 'settings'> = ['overview', 'gpu', 'cpu', 'llama-cpp', 'ai', 'settings'];
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ['metrics', 'system'],
     queryFn: getSystemMetrics,
@@ -128,7 +128,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
                   }
                 }}
               >
-                {page === 'overview' ? 'Overview' : page === 'gpu' ? 'GPU' : page === 'cpu' ? 'CPU' : page === 'ai' ? 'AI' : 'Settings'}
+                {page === 'overview' ? 'Overview' : page === 'gpu' ? 'GPU' : page === 'cpu' ? 'CPU' : page === 'llama-cpp' ? 'llama.cpp' : page === 'ai' ? 'AI' : 'Settings'}
               </button>
             ))}
           </nav>
