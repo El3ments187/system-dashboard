@@ -1,18 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import { ArrowLeft, Loader2, X } from 'lucide-react';
-import { ptyKillTerminal } from '../services/api';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Terminal as XTerm } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { ArrowLeft, Loader2, X } from "lucide-react";
+import { ptyKillTerminal } from "../services/api";
 
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+const WS_BASE = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 
 function getWsUrl(): string {
   const params = new URLSearchParams(window.location.search);
-  const ptsName = params.get('pts');
+  const ptsName = params.get("pts");
   if (!ptsName) {
-    window.location.href = '/llama-cpp?error=no_pts';
-    return '';
+    window.location.href = "/llama-cpp?error=no_pts";
+    return "";
   }
   return `${WS_BASE}/api/ai/terminal/ws/${encodeURIComponent(ptsName)}`;
 }
@@ -28,7 +28,7 @@ export default function AiTerminalViewer() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectRef = useRef<() => void>(() => {});
 
-  const ptsName = new URLSearchParams(window.location.search).get('pts');
+  const ptsName = new URLSearchParams(window.location.search).get("pts");
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -70,13 +70,13 @@ export default function AiTerminalViewer() {
 
     ws.onmessage = (event) => {
       const term = xtermRef.current;
-      if (term && typeof event.data === 'string') {
+      if (term && typeof event.data === "string") {
         term.write(event.data);
       }
     };
 
     ws.onerror = () => {
-      setError('WebSocket error');
+      setError("WebSocket error");
       setConnecting(false);
     };
 
@@ -84,14 +84,16 @@ export default function AiTerminalViewer() {
     ws.onclose = (event) => {
       setConnected(false);
       setConnecting(false);
-      
+
       // If connection closed immediately with code 1001 (abort) or 1006, it's likely no active session
       if (event.code === 1001 || event.code === 1006 || closeCount >= 3) {
-        setError('Terminal session not found. Go back and open a terminal first.');
+        setError(
+          "Terminal session not found. Go back and open a terminal first.",
+        );
         cleanup();
         return;
       }
-      
+
       closeCount++;
       // Auto-reconnect after 2 seconds
       reconnectTimerRef.current = setTimeout(() => {
@@ -108,34 +110,35 @@ export default function AiTerminalViewer() {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace',
+      fontFamily:
+        '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace',
       theme: {
-        background: '#0a0a0a',
-        foreground: '#d4d4d4',
-        cursor: '#ffffff',
-        selectionBackground: '#264f78',
-        black: '#1e1e1e',
-        red: '#f44747',
-        green: '#49D0F5',
-        yellow: '#CAAF51',
-        blue: '#3A8CFD',
-        magenta: '#DE73BF',
-        cyan: '#69DFDF',
-        white: '#d4d4d4',
-        brightBlack: '#666666',
-        brightRed: '#f44747',
-        brightGreen: '#49D0F5',
-        brightYellow: '#CAAF51',
-        brightBlue: '#3A8CFD',
-        brightMagenta: '#DE73BF',
-        brightCyan: '#69DFDF',
-        brightWhite: '#ffffff',
+        background: "#0a0a0a",
+        foreground: "#d4d4d4",
+        cursor: "#ffffff",
+        selectionBackground: "#264f78",
+        black: "#1e1e1e",
+        red: "#f44747",
+        green: "#49D0F5",
+        yellow: "#CAAF51",
+        blue: "#3A8CFD",
+        magenta: "#DE73BF",
+        cyan: "#69DFDF",
+        white: "#d4d4d4",
+        brightBlack: "#666666",
+        brightRed: "#f44747",
+        brightGreen: "#49D0F5",
+        brightYellow: "#CAAF51",
+        brightBlue: "#3A8CFD",
+        brightMagenta: "#DE73BF",
+        brightCyan: "#69DFDF",
+        brightWhite: "#ffffff",
       },
     });
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
-    
+
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
     term.open(terminalRef.current!);
@@ -154,9 +157,9 @@ export default function AiTerminalViewer() {
     // Handle resize
     term.onResize(({ cols, rows }) => {
       const params = new URLSearchParams(window.location.search);
-      const ptsName = params.get('pts');
+      const ptsName = params.get("pts");
       if (ptsName && wsRef.current?.readyState === WebSocket.OPEN) {
-        const resizeMsg = JSON.stringify({ type: 'resize', rows, cols });
+        const resizeMsg = JSON.stringify({ type: "resize", rows, cols });
         wsRef.current.send(resizeMsg);
       }
     });
@@ -181,8 +184,8 @@ export default function AiTerminalViewer() {
         } catch {}
       }
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   // Handle back button
@@ -190,29 +193,56 @@ export default function AiTerminalViewer() {
     const handlePopState = () => {
       cleanup();
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [cleanup]);
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: '#0a0a0a', display: 'flex', flexDirection: 'column',
-    }}>
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "#0a0a0a",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       {/* Top bar */}
-      <div style={{
-        height: 36, background: '#1a1a1a', borderBottom: '1px solid #2a2a2a',
-        display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0,
-      }}>
+      <div
+        style={{
+          height: 36,
+          background: "#1a1a1a",
+          borderBottom: "1px solid #2a2a2a",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 12px",
+          gap: 8,
+          flexShrink: 0,
+        }}
+      >
         <button
-          onClick={() => { cleanup(); window.history.back(); }}
+          onClick={() => {
+            cleanup();
+            window.history.back();
+          }}
           style={{
-            display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
-            color: '#999', cursor: 'pointer', fontSize: 12, fontWeight: 500, padding: '4px 8px',
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            background: "none",
+            border: "none",
+            color: "#999",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 500,
+            padding: "4px 8px",
             borderRadius: 4,
           }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#999')}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#999")}
         >
           <ArrowLeft size={14} /> Back
         </button>
@@ -221,29 +251,48 @@ export default function AiTerminalViewer() {
           onClick={closeTerminal}
           title="Close terminal and tab"
           style={{
-            display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
-            color: '#999', cursor: 'pointer', fontSize: 11, fontWeight: 500, padding: '4px 8px',
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            background: "none",
+            border: "none",
+            color: "#999",
+            cursor: "pointer",
+            fontSize: 11,
+            fontWeight: 500,
+            padding: "4px 8px",
             borderRadius: 4,
           }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#f44747')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#999')}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#f44747")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#999")}
         >
           <X size={14} /> Close
         </button>
         {connecting && !connected && (
-          <Loader2 size={14} className="spin" style={{ color: '#666' }} />
+          <Loader2 size={14} className="spin" style={{ color: "#666" }} />
         )}
         {connected && (
-          <span style={{ fontSize: 11, color: '#49D0F5', fontWeight: 600 }}>Connected</span>
+          <span style={{ fontSize: 11, color: "#49D0F5", fontWeight: 600 }}>
+            Connected
+          </span>
         )}
         {!connected && !connecting && error && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: '#f44747' }}>{error}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "#f44747" }}>{error}</span>
             <button
-              onClick={() => { cleanup(); window.location.href = '/llama-cpp'; }}
+              onClick={() => {
+                cleanup();
+                window.location.href = "/llama-cpp";
+              }}
               style={{
-                background: '#2a2a2a', border: 'none', color: '#fff', cursor: 'pointer',
-                fontSize: 11, padding: '4px 8px', borderRadius: 4, fontWeight: 500,
+                background: "#2a2a2a",
+                border: "none",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 11,
+                padding: "4px 8px",
+                borderRadius: 4,
+                fontWeight: 500,
               }}
             >
               Go Back
@@ -253,7 +302,10 @@ export default function AiTerminalViewer() {
       </div>
 
       {/* Terminal */}
-      <div ref={terminalRef} style={{ flex: 1, overflow: 'hidden', padding: 0 }} />
+      <div
+        ref={terminalRef}
+        style={{ flex: 1, overflow: "hidden", padding: 0 }}
+      />
     </div>
   );
 }

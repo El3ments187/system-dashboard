@@ -1,28 +1,95 @@
-import { useMetricsContext } from '../context/MetricsContext';
-import LlamaCppCard from '../components/cards/LlamaCppCard';
-import Sparkline from '../components/shared/Sparkline';
-import { Cpu, MemoryStick, Gauge, Database, Thermometer } from 'lucide-react';
+import { useMetricsContext } from "../context/MetricsContext";
+import LlamaCppCard from "../components/cards/LlamaCppCard";
+import Sparkline from "../components/shared/Sparkline";
+import { Cpu, MemoryStick, Gauge, Database, Thermometer } from "lucide-react";
 
-function FooterStat({ icon, label, value, color, history }: { icon: React.ReactNode; label: string; value: string; color: string; history?: any }) {
+function FooterStat({
+  icon,
+  label,
+  value,
+  color,
+  history,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  color: string;
+  history?: any;
+}) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-      <span style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%',
-        background: `color-mix(in srgb, ${color} 18%, transparent)`, color, flexShrink: 0,
-      }}>{icon}</span>
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0 }}>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{label}</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{value}</span>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          background: `color-mix(in srgb, ${color} 18%, transparent)`,
+          color,
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </span>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </span>
+        <span
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: "var(--text-primary)",
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {value}
+        </span>
       </div>
-      {history && <div style={{ flex: 1, minWidth: 0, height: 32 }}><Sparkline data={history} color={color} width={160} height={32} /></div>}
+      {history && (
+        <div style={{ flex: 1, minWidth: 0, height: 32 }}>
+          <Sparkline data={history} color={color} width={160} height={32} />
+        </div>
+      )}
     </div>
   );
 }
 
 export default function LlamaCppPage() {
   const {
-    cpuCurrentValues, memoryCurrentValues, gpuCurrentValues,
-    cpuHistory, memoryHistory, gpuHistory, gpuVramUtilHistory,
+    cpuCurrentValues,
+    memoryCurrentValues,
+    gpuCurrentValues,
+    cpuHistory,
+    memoryHistory,
+    gpuHistory,
+    gpuVramUtilHistory,
   } = useMetricsContext();
 
   const cpuPct = cpuCurrentValues[0];
@@ -35,25 +102,79 @@ export default function LlamaCppPage() {
   const vramTotal = gpuCurrentValues[3];
 
   return (
-    <main style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 6, padding: 8, overflow: 'hidden' }}>
-      <div style={{
-        display: 'flex',
+    <main
+      style={{
+        display: "flex",
+        flexDirection: "column",
         flex: 1,
         minHeight: 0,
-      }}>
+        gap: 6,
+        padding: 8,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
         <LlamaCppCard />
       </div>
 
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0,
-        borderTop: '1px solid var(--border-color)',
-        padding: '10px 4px 2px',
-      }}>
-        <FooterStat icon={<Cpu size={13} />} label="CPU" value={cpuPct != null ? `${cpuPct.toFixed(1)}%` : '\u2014'} color="var(--success)" history={cpuHistory} />
-        <FooterStat icon={<MemoryStick size={13} />} label="RAM" value={memUsed != null && memTotal != null ? `${memUsed.toFixed(1)} / ${memTotal.toFixed(1)} GB (${memPct?.toFixed(0) ?? '\u2014'}%)` : '\u2014'} color="var(--warning)" history={memoryHistory} />
-        <FooterStat icon={<Gauge size={13} />} label="GPU" value={gpuPct != null ? `${gpuPct.toFixed(0)}%` : '\u2014'} color="var(--accent-primary)" history={gpuHistory} />
-        <FooterStat icon={<Database size={13} />} label="VRAM" value={vramUsed != null && vramTotal != null ? `${vramUsed.toFixed(1)} / ${vramTotal.toFixed(1)} GB` : '\u2014'} color="var(--accent-primary)" history={gpuVramUtilHistory} />
-        <FooterStat icon={<Thermometer size={13} />} label="GPU Temp" value={gpuTemp != null ? `${gpuTemp.toFixed(0)}\u00b0C` : '\u2014'} color="var(--danger)" />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 20,
+          flexShrink: 0,
+          borderTop: "1px solid var(--border-color)",
+          padding: "10px 4px 2px",
+        }}
+      >
+        <FooterStat
+          icon={<Cpu size={13} />}
+          label="CPU"
+          value={cpuPct != null ? `${cpuPct.toFixed(1)}%` : "\u2014"}
+          color="var(--success)"
+          history={cpuHistory}
+        />
+        <FooterStat
+          icon={<MemoryStick size={13} />}
+          label="RAM"
+          value={
+            memUsed != null && memTotal != null
+              ? `${memUsed.toFixed(1)} / ${memTotal.toFixed(1)} GB (${memPct?.toFixed(0) ?? "\u2014"}%)`
+              : "\u2014"
+          }
+          color="var(--warning)"
+          history={memoryHistory}
+        />
+        <FooterStat
+          icon={<Gauge size={13} />}
+          label="GPU"
+          value={gpuPct != null ? `${gpuPct.toFixed(0)}%` : "\u2014"}
+          color="var(--accent-primary)"
+          history={gpuHistory}
+        />
+        <FooterStat
+          icon={<Database size={13} />}
+          label="VRAM"
+          value={
+            vramUsed != null && vramTotal != null
+              ? `${vramUsed.toFixed(1)} / ${vramTotal.toFixed(1)} GB`
+              : "\u2014"
+          }
+          color="var(--accent-primary)"
+          history={gpuVramUtilHistory}
+        />
+        <FooterStat
+          icon={<Thermometer size={13} />}
+          label="GPU Temp"
+          value={gpuTemp != null ? `${gpuTemp.toFixed(0)}\u00b0C` : "\u2014"}
+          color="var(--danger)"
+        />
       </div>
     </main>
   );
