@@ -793,6 +793,7 @@ main {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .card-value {
@@ -802,6 +803,7 @@ main {
   line-height: 1;
   margin-bottom: 2px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .card-unit {
@@ -840,12 +842,14 @@ main {
   display: inline-block;
   width: 56px;
   flex-shrink: 0;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .card-detail-value {
   color: var(--text-secondary);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   text-align: right;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .card-filler {
@@ -929,6 +933,7 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .chart-area {
@@ -1013,12 +1018,14 @@ main {
   letter-spacing: 0.5px;
   color: var(--text-primary);
   text-transform: uppercase;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .settings-card-subtitle {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .settings-card-body {
@@ -1053,6 +1060,7 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.4px;
   margin-bottom: 8px;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .settings-input {
@@ -1066,6 +1074,7 @@ main {
   font-family: inherit;
   transition: var(--transition-fast);
   min-width: 0;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .settings-input:focus {
@@ -1094,6 +1103,7 @@ main {
   color: var(--text-primary);
   transition: var(--transition-fast);
   white-space: nowrap;
+  text-shadow: var(--text-shadow-sm);
 }
 
 .settings-btn:hover:not(:disabled) {
@@ -1117,6 +1127,15 @@ main {
   background-size: var(--accent-fill-size);
   color: #fff;
   box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* Text shadow utilities for consistent readability across themes */
+.text-shadow-sm {
+  text-shadow: var(--text-shadow-sm);
+}
+
+.text-shadow-md {
+  text-shadow: var(--text-shadow-md);
 }
 
 /* Disable chart animation/morphing */

@@ -21,15 +21,17 @@ import { checkHealth } from './services/api';
 import GpuPage from './pages/GpuPage';
 import CpuPage from './pages/CpuPage';
 import AiPage from './pages/AiPage';
+import AiTerminalViewer from './pages/AiTerminalViewer';
 import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   const { accent, setAccent, bg, setBg, accentMode, setAccentMode, resetTheme, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'ai' | 'settings'>(() => {
+  const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings'>(() => {
     if (window.location.pathname === '/gpu') return 'gpu';
     if (window.location.pathname === '/cpu') return 'cpu';
+    if (window.location.pathname === '/ai/terminal') return 'terminal';
     if (window.location.pathname === '/ai') return 'ai';
     if (window.location.pathname === '/settings') return 'settings';
     return 'overview';
@@ -48,25 +50,12 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Sync URL with active page
+  // Sync URL with active page (preserve query params for terminal to keep pts param)
   useEffect(() => {
-    const path = activePage === 'overview' ? '/' : `/${activePage}`;
-    window.history.pushState({ page: activePage }, '', path);
+    const path = activePage === 'overview' ? '/' : activePage === 'terminal' ? '/ai/terminal' : `/${activePage}`;
+    const search = activePage === 'terminal' ? window.location.search : '';
+    window.history.pushState({ page: activePage }, '', path + search);
   }, [activePage]);
-
-  // Handle settings page navigation
-  useEffect(() => {
-    if (window.location.pathname === '/settings') {
-      setActivePage('settings');
-    }
-  }, []);
-
-  // Handle AI page navigation
-  useEffect(() => {
-    if (window.location.pathname === '/ai') {
-      setActivePage('ai');
-    }
-  }, []);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -75,6 +64,8 @@ export default function App() {
         setActivePage('gpu');
       } else if (window.location.pathname === '/cpu') {
         setActivePage('cpu');
+      } else if (window.location.pathname === '/ai/terminal') {
+        setActivePage('terminal');
       } else if (window.location.pathname === '/ai') {
         setActivePage('ai');
       } else if (window.location.pathname === '/settings') {
@@ -124,7 +115,9 @@ export default function App() {
           current={current}
           onReset={resetTheme}
         />
-        {activePage === 'overview' ? (
+        {activePage === 'terminal' ? (
+          <AiTerminalViewer />
+        ) : activePage === 'overview' ? (
           <main className="dashboard-grid">
             <div className="dashboard-row overview-gpu-row">
               <GpuCard accent={current} />

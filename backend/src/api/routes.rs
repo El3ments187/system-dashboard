@@ -1,12 +1,13 @@
 //! API route handlers.
 
 use axum::Json;
+use axum::extract::ws::{Message, WebSocket};
 use axum::routing::{delete, get, post};
+use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::api::ai_management as ai_mgmt;
-use crate::models::ai::SavedCommand;
 use crate::api::settings::{
     AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, test_connection,
 };
@@ -19,6 +20,7 @@ use crate::collectors::storage::{
     collect_storage_by_device, collect_storage_history, collect_storage_metrics,
 };
 use crate::collectors::system::collect_system_metrics;
+use crate::models::ai::SavedCommand;
 
 fn safe_serialize<T: serde::Serialize>(data: &T) -> Value {
     serde_json::to_value(data).unwrap_or_else(|_| json!({"error": "serialization failed"}))
@@ -54,6 +56,11 @@ pub fn create_router() -> axum::Router {
         .route("/api/ai/terminal/output", get(terminal_output_handler))
         .route("/api/ai/terminal/resize", post(terminal_resize_handler))
         .route("/api/ai/terminal/kill", post(terminal_kill_handler))
+        .route(
+            "/api/ai/terminal/history/{pts_name}",
+            get(terminal_history_handler),
+        )
+        .route("/api/ai/terminal/ws/{pts_name}", get(terminal_ws_handler))
         .route(
             "/api/ai/commands",
             get(list_commands_handler)
@@ -324,9 +331,7 @@ async fn browse_directory_handler(
     Json(json!({ "data": safe_serialize(&entries) }))
 }
 
-async fn spawn_terminal_handler(
-    Json(req): Json<serde_json::Value>,
-) -> axum::response::Json<Value> {
+async fn spawn_terminal_handler(Json(req): Json<serde_json::Value>) -> axum::response::Json<Value> {
     let dir = req.get("dir").and_then(|v| v.as_str()).unwrap_or("");
     match ai_mgmt::spawn_terminal(dir) {
         Ok(resp) => Json(json!({ "data": safe_serialize(&resp), "success": true })),
@@ -390,9 +395,7 @@ async fn update_command_handler(
     Json(json!({ "data": safe_serialize(&commands.iter().find(|c| c.id == req.id).unwrap()) }))
 }
 
-async fn delete_command_handler(
-    Json(req): Json<serde_json::Value>,
-) -> axum::response::Json<Value> {
+async fn delete_command_handler(Json(req): Json<serde_json::Value>) -> axum::response::Json<Value> {
     let id = req.get("id").and_then(|v| v.as_str()).map(String::from);
     if let Some(id) = id {
         let mut commands = ai_mgmt::load_commands();
@@ -404,10 +407,11 @@ async fn delete_command_handler(
     Json(json!({ "success": true }))
 }
 
-async fn terminal_input_handler(
-    Json(req): Json<serde_json::Value>,
-) -> axum::response::Json<Value> {
-    let pts = req.get("pts").and_then(|v| v.as_str()).unwrap_or("/dev/ptmx0");
+async fn terminal_input_handler(Json(req): Json<serde_json::Value>) -> axum::response::Json<Value> {
+    let pts = req
+        .get("pts")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/dev/ptmx0");
     let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
     match ai_mgmt::write_terminal_input(pts, input) {
         Ok(_) => Json(json!({ "success": true })),
@@ -428,21 +432,133 @@ async fn terminal_output_handler(
 async fn terminal_resize_handler(
     Json(req): Json<serde_json::Value>,
 ) -> axum::response::Json<Value> {
-    let pts = req.get("pts").and_then(|v| v.as_str()).unwrap_or("/dev/ptmx0");
-    let rows = req.get("rows").and_then(|v| v.as_u64()).map(|r| r as u16).unwrap_or(24);
-    let cols = req.get("cols").and_then(|v| v.as_u64()).map(|c| c as u16).unwrap_or(80);
+    let pts = req
+        .get("pts")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/dev/ptmx0");
+    let rows = req
+        .get("rows")
+        .and_then(|v| v.as_u64())
+        .map(|r| r as u16)
+        .unwrap_or(24);
+    let cols = req
+        .get("cols")
+        .and_then(|v| v.as_u64())
+        .map(|c| c as u16)
+        .unwrap_or(80);
     match ai_mgmt::resize_terminal(pts, rows, cols) {
         Ok(_) => Json(json!({ "success": true })),
         Err(e) => Json(json!({ "error": e })),
     }
 }
 
-async fn terminal_kill_handler(
-    Json(req): Json<serde_json::Value>,
-) -> axum::response::Json<Value> {
-    let pts = req.get("pts").and_then(|v| v.as_str()).unwrap_or("/dev/ptmx0");
+async fn terminal_kill_handler(Json(req): Json<serde_json::Value>) -> axum::response::Json<Value> {
+    let pts = req
+        .get("pts")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/dev/ptmx0");
     match ai_mgmt::kill_terminal(pts) {
         Ok(_) => Json(json!({ "success": true })),
         Err(e) => Json(json!({ "error": e })),
+    }
+}
+
+async fn terminal_ws_handler(
+    ws: axum::extract::WebSocketUpgrade,
+    axum::extract::Path(pts_name): axum::extract::Path<String>,
+) -> axum::response::Response {
+    ws.on_upgrade(move |socket| handle_terminal_ws(socket, pts_name))
+}
+
+async fn handle_terminal_ws(socket: WebSocket, pts_name: String) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // Attach this viewer to the terminal's broadcast channel and get scrollback buffer
+    let (rx, scrollback) = match ai_mgmt::attach_terminal_viewer(&pts_name) {
+        Ok((rx, sb)) => (rx, sb),
+        Err(_) => return,
+    };
+
+    // Replay scrollback history before streaming live output
+    let history: Vec<String> = scrollback.lock().map(|sb| sb.clone()).unwrap_or_default();
+    for chunk in history.iter() {
+        if sender
+            .send(Message::Text(axum::extract::ws::Utf8Bytes::from(
+                chunk.clone(),
+            )))
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+
+    // Task to receive messages from frontend and send to PTY
+    let input_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = receiver.next().await {
+            if let Message::Text(text) = msg {
+                // Check for resize command before writing to PTY
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let (Some("resize"), Some(rows), Some(cols)) = (
+                        json.get("type").and_then(|v| v.as_str()),
+                        json.get("rows").and_then(|v| v.as_u64()).map(|r| r as u16),
+                        json.get("cols").and_then(|v| v.as_u64()).map(|c| c as u16),
+                    ) {
+                        if let Err(_) = ai_mgmt::resize_terminal(&pts_name, rows, cols) {}
+                        continue;
+                    }
+                }
+                if let Err(_) = ai_mgmt::write_terminal_input(&pts_name, &text) {}
+            } else if let Message::Binary(data) = msg {
+                if let Err(_) =
+                    ai_mgmt::write_terminal_input(&pts_name, &String::from_utf8_lossy(&data))
+                {
+                }
+            }
+        }
+    });
+
+    // Task to broadcast terminal output to frontend
+    let output_task = tokio::spawn(async move {
+        let mut rx = rx;
+        loop {
+            match rx.recv().await {
+                Ok(text) => {
+                    if sender
+                        .send(Message::Text(axum::extract::ws::Utf8Bytes::from(text)))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Skip ahead - terminal output is append-only so we can just continue
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Wait for either task to complete (connection closed), then abort the
+    // other. Without this, the loser keeps running as an orphaned background
+    // task forever — in particular output_task holds the broadcast::Receiver
+    // open even after the client disconnects (it never attempts a send that
+    // would fail, since rx.recv().await doesn't notice the socket is gone),
+    // so receiver_count() never drops and idle-terminal detection breaks.
+    let mut input_task = input_task;
+    let mut output_task = output_task;
+    tokio::select! {
+        _ = &mut input_task => { output_task.abort(); },
+        _ = &mut output_task => { input_task.abort(); },
+    }
+}
+
+async fn terminal_history_handler(
+    axum::extract::Path(pts_name): axum::extract::Path<String>,
+) -> axum::response::Json<Value> {
+    match ai_mgmt::get_terminal_history(&pts_name) {
+        Ok(history) => Json(json!({ "data": safe_serialize(&history), "success": true })),
+        Err(e) => Json(json!({ "error": e, "success": false })),
     }
 }

@@ -176,11 +176,11 @@ export async function ptyResizeTerminal(ptsName: string, rows: number, cols: num
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
 }
 
-export async function ptyKillTerminal(ptsName: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/ai/terminal/kill`, {
+export function ptyKillTerminal(ptsName: string): void {
+  fetch(`${BASE_URL}/ai/terminal/kill`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pts: ptsName }),
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+    keepalive: true,
+  }).catch(() => {});
 }

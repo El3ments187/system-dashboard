@@ -12,8 +12,8 @@ interface HeaderProps {
   showThemePanel: boolean;
   onToggleThemePanel: () => void;
   healthOk?: boolean;
-  activePage?: 'overview' | 'gpu' | 'cpu' | 'ai' | 'settings';
-  onPageChange?: (page: 'overview' | 'gpu' | 'cpu' | 'ai' | 'settings') => void;
+  activePage?: 'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings';
+  onPageChange?: (page: 'overview' | 'gpu' | 'cpu' | 'ai' | 'terminal' | 'settings') => void;
 }
 
 const severityColors: Record<AlertSeverity, string> = {

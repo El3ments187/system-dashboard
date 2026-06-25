@@ -3,7 +3,7 @@ import { useMetricsContext } from '../../context/MetricsContext';
 import { getAiSettings } from '../../services/api';
 import { Code2, ExternalLink } from 'lucide-react';
 import MetricTile from '../shared/MetricTile';
-import { CardShell, CardHeader, Section, ScrollContent } from '../shared/CardComponents';
+import { CardShell, CardHeader, Section } from '../shared/CardComponents';
 
 export default function OpenCodeCard() {
   const { aiCurrentMetrics } = useMetricsContext();
@@ -29,7 +29,7 @@ export default function OpenCodeCard() {
     <CardShell>
       <CardHeader icon={<Code2 size={14} style={{ color: 'var(--accent-primary)' }} />} title="OPENCODE" online={online} />
 
-      <ScrollContent>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Section title="Process">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5 }}>
             <MetricTile label="Status" value={online ? 'Active' : 'Inactive'} color={online ? 'var(--success)' : 'var(--danger)'} />
@@ -58,13 +58,13 @@ export default function OpenCodeCard() {
 
         <Section title="Endpoint">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
-            <a href={url} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', fontSize: 11, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', textDecoration: 'none' }}>
+            <span style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: 'var(--text-shadow-sm)' }}>{url}</span>
+            <a href={url} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', fontSize: 11, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', textDecoration: 'none', textShadow: 'var(--text-shadow-md)' }}>
               <ExternalLink size={12} />Open in Browser
             </a>
           </div>
         </Section>
-      </ScrollContent>
+      </div>
     </CardShell>
   );
 }

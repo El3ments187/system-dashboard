@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ptySpawnTerminal, ptyReadOutput, ptyWriteInput, ptyResizeTerminal, ptyKillTerminal } from '../services/api';
+import { ptyReadOutput, ptyWriteInput, ptyResizeTerminal, ptyKillTerminal } from '../services/api';
 import { Terminal as TermIcon, X } from 'lucide-react';
 import { formatTerminalOutput } from '../utils/ansiOutput';
 
@@ -7,11 +7,11 @@ interface TerminalModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCommand?: string;
-  dir?: string;
+  ptsName?: string | null;
 }
 
-export default function TerminalModal({ isOpen, onClose, initialCommand, dir }: TerminalModalProps) {
-  const [ptsName, setPtsName] = useState<string | null>(null);
+export default function TerminalModal({ isOpen, onClose, initialCommand, ptsName: externalPts }: TerminalModalProps) {
+  const [ptsName] = useState<string | null>(externalPts ?? null);
   const [output, setOutput] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -30,21 +30,17 @@ export default function TerminalModal({ isOpen, onClose, initialCommand, dir }: 
       try {
         setLoading(true);
         setError(null);
-        const spawnDir = dir || localStorage.getItem('llama_cpp_dir') || '/home/gamer/Projects/system-dashboard';
-        const resp = await ptySpawnTerminal(spawnDir);
-        if (cancelled) return;
-        setPtsName(resp.pts_name);
         setConnected(true);
         try {
-          const initialOutput = await ptyReadOutput(resp.pts_name);
+          const initialOutput = await ptyReadOutput(ptsName!);
           setOutput(initialOutput);
         } catch { /* ignore */ }
         if (initialCommand && initialCommand.trim()) {
-          try { await ptyWriteInput(resp.pts_name, initialCommand.trim() + '\n'); } catch { /* ignore */ }
+          try { await ptyWriteInput(ptsName!, initialCommand.trim() + '\n'); } catch { /* ignore */ }
         }
       } catch (e: any) {
         if (cancelled) return;
-        setError(e.message || 'Failed to spawn terminal');
+        setError(e.message || 'Failed to connect to terminal');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -71,7 +67,7 @@ export default function TerminalModal({ isOpen, onClose, initialCommand, dir }: 
 
   useEffect(() => {
     return () => {
-      if (ptsName) ptyKillTerminal(ptsName).catch(() => {});
+      if (ptsName) ptyKillTerminal(ptsName);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [ptsName]);

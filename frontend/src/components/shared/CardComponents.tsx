@@ -4,12 +4,13 @@ import React from 'react';
 export function StatusBadge({ online }: { online: boolean }) {
   const c = online ? 'var(--success)' : 'var(--danger)';
   return (
-    <span style={{
+    <span className="status-badge" style={{
       display: 'inline-flex', alignItems: 'center', gap: 4,
       fontSize: 9, padding: '2px 6px', borderRadius: 3,
       background: `${c}18`,
       color: c,
       fontWeight: 600, letterSpacing: 0.5,
+      textShadow: 'var(--text-shadow-sm)',
     }}>
       <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, display: 'inline-block' }} />
       {online ? 'ONLINE' : 'OFFLINE'}
@@ -20,11 +21,11 @@ export function StatusBadge({ online }: { online: boolean }) {
 /* ─── section wrapper (identical across all cards) ─── */
 export function Section({ title, icon, children, style }: { title: string; icon?: React.ReactNode; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ padding: '3px 8px 1px', borderBottom: '1px solid var(--border-color)', ...style }}>
+    <div className="card-section" style={{ padding: '3px 8px 1px', borderBottom: '1px solid var(--border-color)', ...style }}>
       {(title || icon) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2, fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+        <div className="section-header">
           {icon && <span style={{ color: 'var(--accent-primary)' }}>{icon}</span>}
-          {title && <span>{title}</span>}
+          {title && <span className="section-title" style={{ textShadow: 'var(--text-shadow-sm)' }}>{title}</span>}
         </div>
       )}
       <div>{children}</div>
@@ -35,9 +36,9 @@ export function Section({ title, icon, children, style }: { title: string; icon?
 /* ─── card header (identical across all cards) ─── */
 export function CardHeader({ icon, title, online }: { icon: React.ReactNode; title: string; online: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border-color)' }}>
+    <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border-color)' }}>
       {icon}
-      <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.8, color: 'var(--text-primary)' }}>{title}</span>
+      <span className="card-title" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.8, color: 'var(--text-primary)', textShadow: 'var(--text-shadow-sm)' }}>{title}</span>
       <div style={{ flex: 1 }} />
       <StatusBadge online={online} />
     </div>

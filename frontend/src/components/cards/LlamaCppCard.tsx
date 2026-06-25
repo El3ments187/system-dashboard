@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMetricsContext } from '../../context/MetricsContext';
-import TerminalModal from '../TerminalModal';
 import UpdateOutputModal from '../UpdateOutputModal';
 import MetricTile from '../shared/MetricTile';
 import { CardShell, CardHeader, Section, ScrollContent } from '../shared/CardComponents';
@@ -25,7 +24,7 @@ function CapPill({ icon, label, enabled }: { icon: React.ReactNode; label: strin
         display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: 4,
         background: on ? 'rgba(var(--success-rgb, 34,197,94),0.18)' : 'transparent',
       }}>{icon}</span>
-      <span style={{ fontSize: 10, fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 600, textShadow: 'var(--text-shadow-sm)' }}>{label}</span>
     </div>
   );
 }
@@ -33,8 +32,8 @@ function CapPill({ icon, label, enabled }: { icon: React.ReactNode; label: strin
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-      <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 0, minWidth: 108 }}>{label}</span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 0, minWidth: 108, textShadow: 'var(--text-shadow-sm)' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: 'var(--text-shadow-sm)' }}>{value}</span>
     </div>
   );
 }
@@ -42,8 +41,9 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 export default function LlamaCppCard() {
   const { aiCurrentMetrics } = useMetricsContext();
   const [dirPath, setDirPath] = useState('');
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [terminalCmd, setTerminalCmd] = useState<string | undefined>(undefined);
+  const [ptsName, setPtsName] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'info' } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [outputOpen, setOutputOpen] = useState(false);
   const [updateScript, setUpdateScript] = useState(DEFAULT_UPDATE_SCRIPT);
   const [updateState, setUpdateState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -55,6 +55,18 @@ export default function LlamaCppCard() {
   const [llamaVersion, setLlamaVersion] = useState('');
   const [readmeUrl, setReadmeUrl] = useState('');
   const [buildNotesUrl, setBuildNotesUrl] = useState(DEFAULT_BUILD_NOTES_URL);
+
+  const showToast = useCallback((msg: string, type: 'error' | 'info') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const s = localStorage.getItem('llama_cpp_dir');
@@ -71,8 +83,11 @@ export default function LlamaCppCard() {
 
   useEffect(() => {
     return () => {
+      // Clean up timers and pollers, but DO NOT kill terminals on unmount.
+      // Terminals may have active viewer tabs — let the viewer or explicit
+      // close button handle termination. Only clear local state refs.
       if (updatePollRef.current) clearInterval(updatePollRef.current);
-      if (updatePtsRef.current) ptyKillTerminal(updatePtsRef.current).catch(() => {});
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -102,7 +117,32 @@ export default function LlamaCppCard() {
 
   const ctxColor = contextPct != null && contextPct > 90 ? 'var(--danger)' : contextPct != null && contextPct > 70 ? 'var(--warning)' : 'var(--accent-primary)';
 
-  const openTerminal = (cmd?: string) => { setTerminalCmd(cmd); setTerminalOpen(true); };
+  const openTerminal = useCallback(async () => {
+    if (!dirPath) return;
+
+    // If an update PTY is running, open a viewer for it instead of spawning a new shell
+    if (updatePtsRef.current) {
+      setPtsName(updatePtsRef.current);
+      window.open(`/ai/terminal?pts=${encodeURIComponent(updatePtsRef.current)}`, '_blank');
+      return;
+    }
+
+    // If a terminal PTY already exists, reuse it
+    if (ptsName) {
+      window.open(`/ai/terminal?pts=${encodeURIComponent(ptsName)}`, '_blank');
+      return;
+    }
+
+    // No existing terminal — spawn one
+    try {
+      const resp = await ptySpawnTerminal(dirPath);
+      setPtsName(resp.pts_name);
+      window.open(`/ai/terminal?pts=${encodeURIComponent(resp.pts_name)}`, '_blank');
+    } catch (e: any) {
+      console.error('[LlamaCpp] Terminal spawn error:', e);
+      showToast(e?.message || 'Failed to open terminal', 'error');
+    }
+  }, [dirPath, ptsName, showToast]);
 
   const stopPolling = useCallback(() => {
     if (updatePollRef.current) { clearInterval(updatePollRef.current); updatePollRef.current = null; }
@@ -110,6 +150,14 @@ export default function LlamaCppCard() {
 
   const runUpdate = useCallback(async () => {
     if (!dirPath || updateState === 'running') return;
+    
+    // Clean up any lingering PTY from a previous failed/cancelled update
+    stopPolling();
+    if (updatePtsRef.current) {
+      ptyKillTerminal(updatePtsRef.current);
+      updatePtsRef.current = null;
+    }
+    
     setUpdateState('running');
     setUpdateProgress(0);
     setUpdateOutput('');
@@ -135,38 +183,55 @@ export default function LlamaCppCard() {
                 setUpdateProgress(100);
                 setUpdateState('done');
                 stopPolling();
-                ptyKillTerminal(pts).catch(() => {});
+                ptyKillTerminal(pts);
                 updatePtsRef.current = null;
+                setTimeout(() => setUpdateState('idle'), 2000);
               }
               return next;
             });
           }
-        } catch {
-          setUpdateState('error');
+        } catch (err) {
+          console.error('[LlamaCpp] Update poll error:', err);
           stopPolling();
+          if (updatePtsRef.current) {
+            ptyKillTerminal(updatePtsRef.current);
+            updatePtsRef.current = null;
+          }
+          setUpdateState('error');
         }
       }, 400);
-    } catch {
+    } catch (err: any) {
+      console.error('[LlamaCpp] Update spawn error:', err);
+      showToast(err?.message || 'Failed to start update', 'error');
+      if (updatePtsRef.current) {
+        ptyKillTerminal(updatePtsRef.current);
+        updatePtsRef.current = null;
+      }
       setUpdateState('error');
     }
-  }, [dirPath, updateScript, updateState, stopPolling]);
+  }, [dirPath, updateScript, updateState, stopPolling, showToast]);
 
   const mgmtBtnStyle: React.CSSProperties = {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
     padding: '7px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer', color: 'var(--text-primary)', fontSize: 11, fontWeight: 600,
+    cursor: 'pointer', color: 'var(--text-primary)', fontSize: 11, fontWeight: 600, textShadow: 'var(--text-shadow-sm)',
   };
 
   const disabledBtnStyle: React.CSSProperties = { ...mgmtBtnStyle, opacity: 0.4, cursor: 'not-allowed' };
 
   const accentBtnStyle: React.CSSProperties = {
-    ...mgmtBtnStyle, background: 'var(--accent-primary)', border: 'none', color: '#fff', fontWeight: 700,
+    ...mgmtBtnStyle, background: 'var(--accent-primary)', border: 'none', color: '#fff', fontWeight: 700, textShadow: 'var(--text-shadow-md)',
   };
 
   const hasDir = !!dirPath;
 
   return (
     <>
+    {toast && (
+      <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, padding: '8px 14px', borderRadius: 6, background: toast.type === 'error' ? 'var(--danger)' : 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 600, boxShadow: '0 2px 12px rgba(0,0,0,0.4)', pointerEvents: 'none' }}>
+        {toast.msg}
+      </div>
+    )}
     <CardShell>
       <CardHeader icon={<BrainCircuit size={16} style={{ color: 'var(--accent-primary)' }} />} title="LLAMA.CPP" online={llamaOnline} />
 
@@ -174,7 +239,7 @@ export default function LlamaCppCard() {
 
         {/* ── MODEL IDENTITY ── */}
         <Section title="">
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, wordBreak: 'break-all' }}>{modelFile || '\u2014'}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, wordBreak: 'break-all', textShadow: 'var(--text-shadow-md)' }}>{modelFile || '\u2014'}</div>
         </Section>
 
         {/* ── METADATA ── */}
@@ -253,10 +318,10 @@ export default function LlamaCppCard() {
             borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
             padding: '4px 8px', marginBottom: 5,
           }}>
-            <span style={{ fontSize: 8.5, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Current Directory</span>
+            <span style={{ fontSize: 8.5, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, textShadow: 'var(--text-shadow-sm)' }}>Current Directory</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
               <Folder size={13} style={{ color: hasDir ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontFamily: 'monospace', color: hasDir ? 'var(--text-primary)' : 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={dirPath}>
+              <span style={{ fontSize: 12, fontFamily: 'monospace', color: hasDir ? 'var(--text-primary)' : 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: 'var(--text-shadow-sm)' }} title={dirPath}>
                 {hasDir ? dirPath : 'No directory selected.'}
               </span>
             </div>
@@ -270,19 +335,24 @@ export default function LlamaCppCard() {
             <button onClick={() => openTerminal()} disabled={!hasDir} style={!hasDir ? disabledBtnStyle : mgmtBtnStyle}>
               <TermIcon size={13} />Terminal
             </button>
+            {ptsName && (
+              <a href={`/ai/terminal?pts=${encodeURIComponent(ptsName)}`} target="_blank" rel="noopener noreferrer" style={{ ...mgmtBtnStyle, textDecoration: 'none' }} title="Open in new tab">
+                <ExternalLink size={13} />Tab ↗
+              </a>
+            )}
           </div>
 
           {updateState !== 'idle' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
               {updateState === 'running' ? <Loader2 size={13} className="spin" style={{ color: 'var(--accent-primary)' }} /> : null}
-              <span style={{ fontSize: 9.5, fontWeight: 600, color: updateState === 'error' ? 'var(--danger)' : updateState === 'done' ? 'var(--success)' : 'var(--accent-primary)', flexShrink: 0 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 600, color: updateState === 'error' ? 'var(--danger)' : updateState === 'done' ? 'var(--success)' : 'var(--accent-primary)', flexShrink: 0, textShadow: 'var(--text-shadow-sm)' }}>
                 {updateState === 'running' ? 'Updating…' : updateState === 'done' ? 'Update complete' : 'Update failed'}
               </span>
               <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
                 <div style={{ width: `${updateProgress}%`, height: '100%', borderRadius: 4, background: updateState === 'error' ? 'var(--danger)' : 'var(--accent-primary)', transition: 'width 0.3s ease' }} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0, width: 32, textAlign: 'right' }}>{updateProgress}%</span>
-              <button onClick={() => setOutputOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 7px', fontSize: 9.5, fontWeight: 600, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text-primary)', flexShrink: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0, width: 32, textAlign: 'right', textShadow: 'var(--text-shadow-sm)' }}>{updateProgress}%</span>
+              <button onClick={() => setOutputOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 7px', fontSize: 9.5, fontWeight: 600, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text-primary)', flexShrink: 0, textShadow: 'var(--text-shadow-sm)' }}>
                 <ExternalLink size={11} />View Output
               </button>
             </div>
@@ -291,8 +361,8 @@ export default function LlamaCppCard() {
           {/* ── UTILITY ROW ── */}
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, padding: '5px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', minWidth: 0 }}>
-              <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>llama.cpp Version</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{llamaVersion || '—'}</span>
+              <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, textShadow: 'var(--text-shadow-sm)' }}>llama.cpp Version</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: 'var(--text-shadow-sm)' }}>{llamaVersion || '—'}</span>
             </div>
             <button onClick={() => readmeUrl && window.open(readmeUrl, '_blank', 'noopener,noreferrer')} disabled={!readmeUrl} style={!readmeUrl ? disabledBtnStyle : mgmtBtnStyle}>
               <BookOpen size={13} />Readme
@@ -308,7 +378,6 @@ export default function LlamaCppCard() {
       </ScrollContent>
     </CardShell>
 
-    <TerminalModal isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} initialCommand={terminalCmd} dir={dirPath || undefined} />
     <UpdateOutputModal isOpen={outputOpen} onClose={() => setOutputOpen(false)} output={updateOutput} running={updateState === 'running'} />
     </>
   );

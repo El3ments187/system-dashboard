@@ -4,7 +4,7 @@ import { testConnection, getAiSettings } from '../../services/api';
 import { MessageSquare, ExternalLink } from 'lucide-react';
 import MetricTile from '../shared/MetricTile';
 import TerminalModal from '../TerminalModal';
-import { CardShell, CardHeader, Section, ScrollContent } from '../shared/CardComponents';
+import { CardShell, CardHeader, Section } from '../shared/CardComponents';
 import { TestConnectionResult } from '../../types/metrics';
 
 export default function OpenWebUICard() {
@@ -54,7 +54,7 @@ export default function OpenWebUICard() {
     <CardShell>
       <CardHeader icon={<MessageSquare size={14} style={{ color: 'var(--accent-primary)' }} />} title="OPENWEBUI" online={online} />
 
-      <ScrollContent>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Section title="Status">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
             <MetricTile label="Status" value={online ? 'Active' : 'Inactive'} color={online ? 'var(--success)' : 'var(--danger)'} />
@@ -73,18 +73,18 @@ export default function OpenWebUICard() {
 
         <Section title="Endpoint">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-            <span style={{ flex: 1, fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
+            <span style={{ flex: 1, fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: 'var(--text-shadow-sm)' }}>{url}</span>
           </div>
           <div style={{ display: 'flex', gap: 5 }}>
-            <a href={url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', fontSize: 10, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', textDecoration: 'none' }}>
+            <a href={url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', fontSize: 10, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', textDecoration: 'none', textShadow: 'var(--text-shadow-md)' }}>
               <ExternalLink size={11} />Open WebUI
             </a>
-            <button onClick={runTest} disabled={testing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', fontSize: 10, fontWeight: 700, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text-primary)', opacity: testing ? 0.6 : 1 }}>
+            <button onClick={runTest} disabled={testing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', fontSize: 10, fontWeight: 700, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text-primary)', opacity: testing ? 0.6 : 1, textShadow: 'var(--text-shadow-sm)' }}>
               {testing ? 'Testing...' : 'Test Endpoint'}
             </button>
           </div>
           {testResult && (
-            <div style={{ marginTop: 4, fontSize: 9, fontFamily: 'monospace', color: testResult.available ? 'var(--success)' : 'var(--danger)' }}>
+            <div style={{ marginTop: 4, fontSize: 9, fontFamily: 'monospace', color: testResult.available ? 'var(--success)' : 'var(--danger)', textShadow: 'var(--text-shadow-sm)' }}>
               {testResult.available ? `Connected: ${testResult.url}` : (testResult.error_message || 'Failed')}
             </div>
           )}
@@ -92,11 +92,11 @@ export default function OpenWebUICard() {
 
         <Section title="Command">
           <div style={{ display: 'flex', gap: 5 }}>
-            <input value={command} onChange={e => setCommand(e.target.value)} onKeyDown={e => e.key === 'Enter' && command.trim() && setRunCommand(command)} placeholder="Enter command..." style={{ flex: 1, padding: '6px 8px', fontSize: 10, fontFamily: 'monospace', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }} />
-            <button onClick={() => command.trim() && setRunCommand(command)} style={{ padding: '6px 12px', fontSize: 10, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: '#fff' }}>Run</button>
+            <input value={command} onChange={e => setCommand(e.target.value)} onKeyDown={e => e.key === 'Enter' && command.trim() && setRunCommand(command)} placeholder="Enter command..." style={{ flex: 1, padding: '6px 8px', fontSize: 10, fontFamily: 'monospace', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', textShadow: 'var(--text-shadow-sm)' }} />
+            <button onClick={() => command.trim() && setRunCommand(command)} style={{ padding: '6px 12px', fontSize: 10, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: '#fff', textShadow: 'var(--text-shadow-md)' }}>Run</button>
           </div>
         </Section>
-      </ScrollContent>
+      </div>
     </CardShell>
 
     <TerminalModal isOpen={runCommand != null} onClose={() => setRunCommand(null)} initialCommand={runCommand ?? undefined} />

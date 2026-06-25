@@ -110,7 +110,7 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
                 exists: false,
             },
             ExecutableInfo {
-                name: "main" .to_string(),
+                name: "main".to_string(),
                 path: format!("{}/main", dir),
                 exists: false,
             },
@@ -143,7 +143,7 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
                 exists: false,
             },
             ExecutableInfo {
-                name: "main" .to_string(),
+                name: "main".to_string(),
                 path: format!("{}/main", dir),
                 exists: false,
             },
@@ -207,7 +207,10 @@ fn remote_url_to_readme_url(remote: &str) -> Option<String> {
         .strip_prefix("git@github.com:")
         .or_else(|| remote.strip_prefix("https://github.com/"))
         .or_else(|| remote.strip_prefix("http://github.com/"))?;
-    Some(format!("https://github.com/{}/blob/master/README.md", repo_path))
+    Some(format!(
+        "https://github.com/{}/blob/master/README.md",
+        repo_path
+    ))
 }
 
 pub fn get_local_build_tag(dir: &str, tag_prefix: &str) -> Option<String> {
@@ -228,7 +231,10 @@ pub fn get_local_build_tag(dir: &str, tag_prefix: &str) -> Option<String> {
 
 pub async fn get_latest_release_tag(github_repo: &str) -> Option<String> {
     let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/repos/{}/releases/latest", github_repo);
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        github_repo
+    );
     let resp = client
         .get(&url)
         .header("User-Agent", "system-dashboard")
@@ -304,7 +310,8 @@ pub fn save_commands(commands: &[SavedCommand]) -> Result<(), String> {
     let data = CommandsFile {
         commands: commands.to_vec(),
     };
-    let json = serde_json::to_string_pretty(&data).map_err(|e| format!("Serialization error: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&data).map_err(|e| format!("Serialization error: {}", e))?;
     fs::write(&path, json).map_err(|e| format!("Write error: {}", e))
 }
 
@@ -325,13 +332,91 @@ pub struct TerminalSpawnResponse {
     pub pts_name: String,
 }
 
+const MAX_SCROLLBACK: usize = 8192;
+
 struct TerminalState {
     master_fd: std::os::unix::io::RawFd,
     pid: i32,
+    broadcast_tx: Option<tokio::sync::broadcast::Sender<String>>,
+    _reader_handle: Option<std::thread::JoinHandle<()>>,
+    scrollback: ScrollbackBuffer,
+    /// When the terminal last had zero attached viewers. `None` while at least
+    /// one viewer is connected. Used by the idle reaper to detect abandoned
+    /// sessions (e.g. a tab closed via the browser's own X instead of the
+    /// in-app Close button, which intentionally only detaches rather than kills).
+    zero_viewers_since: Option<std::time::Instant>,
 }
 
-static TERMINALS: Mutex<Vec<(String, std::sync::Arc<std::sync::RwLock<TerminalState>>)>> = Mutex::new(Vec::new());
+type ScrollbackBuffer = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+static TERMINALS: Mutex<Vec<(String, std::sync::Arc<std::sync::RwLock<TerminalState>>)>> =
+    Mutex::new(Vec::new());
 static NEXT_TERMINAL_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static REAPER_STARTED: std::sync::Once = std::sync::Once::new();
+
+/// Grace period a terminal may sit with zero attached viewers before it is
+/// considered abandoned and reaped. Generous on purpose: a terminal running an
+/// unattended long job (e.g. an update script with no viewer tab open) must
+/// not be killed prematurely.
+const REAP_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+const REAP_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn ensure_reaper_started() {
+    REAPER_STARTED.call_once(|| {
+        tokio::spawn(reaper_loop());
+    });
+}
+
+async fn reaper_loop() {
+    loop {
+        tokio::time::sleep(REAP_SWEEP_INTERVAL).await;
+
+        let snapshot: Vec<(String, std::sync::Arc<std::sync::RwLock<TerminalState>>)> = {
+            let terminals = TERMINALS.lock().unwrap();
+            terminals.clone()
+        };
+
+        let now = std::time::Instant::now();
+        let mut to_reap: Vec<String> = Vec::new();
+
+        for (pts, state_arc) in snapshot {
+            let viewers = {
+                let state = state_arc.read().unwrap();
+                state
+                    .broadcast_tx
+                    .as_ref()
+                    .map(|tx| tx.receiver_count())
+                    .unwrap_or(0)
+            };
+
+            if viewers > 0 {
+                let mut state = state_arc.write().unwrap();
+                state.zero_viewers_since = None;
+                continue;
+            }
+
+            let since = {
+                let mut state = state_arc.write().unwrap();
+                if state.zero_viewers_since.is_none() {
+                    state.zero_viewers_since = Some(now);
+                }
+                state.zero_viewers_since.unwrap()
+            };
+
+            if now.duration_since(since) >= REAP_GRACE {
+                to_reap.push(pts);
+            }
+        }
+
+        for pts in to_reap {
+            eprintln!(
+                "[Terminal] reaping {} — no viewers for {:?}",
+                pts, REAP_GRACE
+            );
+            let _ = kill_terminal(&pts);
+        }
+    }
+}
 
 fn find_terminal(pts: &str) -> Option<std::sync::Arc<std::sync::RwLock<TerminalState>>> {
     let terminals = TERMINALS.lock().unwrap();
@@ -343,10 +428,87 @@ fn find_terminal(pts: &str) -> Option<std::sync::Arc<std::sync::RwLock<TerminalS
     None
 }
 
+pub fn attach_terminal_viewer(
+    pts: &str,
+) -> Result<(tokio::sync::broadcast::Receiver<String>, ScrollbackBuffer), String> {
+    let guard = find_terminal(pts).ok_or("Terminal not found")?;
+    let state = guard.read().unwrap();
+
+    if let Some(tx) = &state.broadcast_tx {
+        Ok((tx.subscribe(), state.scrollback.clone()))
+    } else {
+        Err("Terminal has no broadcast channel".to_string())
+    }
+}
+
+pub fn get_terminal_history(pts: &str) -> Result<Vec<String>, String> {
+    let guard = find_terminal(pts).ok_or("Terminal not found")?;
+    let state = guard.read().unwrap();
+    Ok(state
+        .scrollback
+        .lock()
+        .map(|sb| sb.clone())
+        .unwrap_or_default())
+}
+
+fn spawn_reader_thread(
+    pts_name: String,
+    master_fd: std::os::unix::io::RawFd,
+    pid: i32,
+    tx: tokio::sync::broadcast::Sender<String>,
+    scrollback: ScrollbackBuffer,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            unsafe {
+                match libc::read(master_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) {
+                    n if n > 0 => {
+                        let text = String::from_utf8_lossy(&buf[..n as usize]).to_string();
+                        let _ = tx.send(text.clone());
+                        let mut sb = scrollback.lock().unwrap();
+                        sb.push(text);
+                        while sb.len() > MAX_SCROLLBACK {
+                            sb.remove(0);
+                        }
+                    }
+                    0 => {
+                        // EOF — shell process exited cleanly
+                        eprintln!("[Terminal] {} EOF detected, cleaning up", pts_name);
+                        drop(tx);
+                        libc::close(master_fd);
+                        let _ = libc::waitpid(pid, std::ptr::null_mut(), 0);
+                        remove_terminal(&pts_name);
+                        break;
+                    }
+                    _ => {
+                        let err = *libc::__errno_location();
+                        if err == libc::EIO {
+                            // EIO — slave side closed (shell crashed/killed)
+                            eprintln!("[Terminal] {} EIO detected, cleaning up", pts_name);
+                            drop(tx);
+                            libc::close(master_fd);
+                            let _ = libc::waitpid(pid, std::ptr::null_mut(), 0);
+                            remove_terminal(&pts_name);
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn remove_terminal(pts: &str) {
+    let mut terminals = TERMINALS.lock().unwrap();
+    terminals.retain(|(name, _)| name != pts);
+}
+
 /// Spawn a shell in the given directory and return PTY info.
 pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
-    use nix::pty::{openpty, Winsize};
-    use nix::unistd::{execve, fork, ForkResult};
+    use nix::pty::{Winsize, openpty};
+    use nix::unistd::{ForkResult, execve, fork};
     use std::os::fd::IntoRawFd;
     use std::os::unix::io::AsRawFd;
 
@@ -362,6 +524,16 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
             // Take ownership of master fd so nix doesn't close it when pty drops.
             let master_fd = pty.master.into_raw_fd();
             let slave_fd = pty.slave.as_raw_fd();
+
+            // Non-blocking so a read with no pending output returns EAGAIN
+            // immediately instead of blocking the calling thread forever.
+            // The background reader thread already tolerates EAGAIN by
+            // retrying after a short sleep, and read_terminal_output()
+            // relies on this to be safe to call from an async handler.
+            unsafe {
+                let flags = libc::fcntl(master_fd, libc::F_GETFL);
+                libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            }
 
             // Generate a unique pts identifier for this terminal session
             let pts_id = NEXT_TERMINAL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -388,13 +560,15 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
 
                     // Change directory if provided
                     if !dir.is_empty() {
-                        let cdir = std::ffi::CString::new(dir).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+                        let cdir = std::ffi::CString::new(dir)
+                            .unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
                         nix::unistd::chdir(cdir.as_ref()).ok();
                         drop(cdir);
                     }
 
                     // Execute shell
-                    let shell = std::ffi::CString::new("/bin/bash").unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+                    let shell = std::ffi::CString::new("/bin/bash")
+                        .unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
                     let args: Vec<std::ffi::CString> = vec![shell.clone()];
                     let env: Vec<std::ffi::CString> = std::env::vars_os()
                         .filter_map(|(k, v)| {
@@ -407,14 +581,44 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                     std::process::exit(1);
                 }
                 ForkResult::Parent { child } => {
+                    // Create broadcast channel for WebSocket viewers (capacity 1000)
+                    let (broadcast_tx, _) = tokio::sync::broadcast::channel(1000);
+
+                    // Shared scrollback buffer for history replay
+                    let scrollback: ScrollbackBuffer =
+                        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+                    // Spawn background reader thread that broadcasts PTY output
+                    let reader_handle = spawn_reader_thread(
+                        pts_name.clone(),
+                        master_fd,
+                        child.as_raw(),
+                        broadcast_tx.clone(),
+                        scrollback.clone(),
+                    );
+                    eprintln!(
+                        "[Terminal] spawned {} pid={} dir={}",
+                        pts_name,
+                        child.as_raw(),
+                        dir
+                    );
+
                     // Register terminal state for I/O operations
                     let ts = TerminalState {
                         master_fd,
                         pid: child.as_raw(),
+                        broadcast_tx: Some(broadcast_tx),
+                        _reader_handle: Some(reader_handle),
+                        scrollback,
+                        zero_viewers_since: Some(std::time::Instant::now()),
                     };
                     let mut terminals = TERMINALS.lock().unwrap();
-                    terminals.push((pts_name.clone(), std::sync::Arc::new(std::sync::RwLock::new(ts))));
-
+                    terminals.push((
+                        pts_name.clone(),
+                        std::sync::Arc::new(std::sync::RwLock::new(ts)),
+                    ));
+                    drop(terminals);
+                    ensure_reaper_started();
                     Ok(TerminalSpawnResponse {
                         pid: child.as_raw(),
                         pts_name,
@@ -484,12 +688,22 @@ pub fn resize_terminal(pts: &str, rows: u16, cols: u16) -> Result<(), String> {
 pub fn kill_terminal(pts: &str) -> Result<(), String> {
     let guard = find_terminal(pts).ok_or("Terminal not found")?;
     let state = guard.write().unwrap();
-    if let Some(pid) = state.pid.try_into().ok() {
-        unsafe {
-            libc::kill(pid, libc::SIGTERM);
+    let pid = state.pid;
+    eprintln!("[Terminal] killing {} pid={}", pts, pid);
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    drop(state);
+    // Wait for process to exit, then escalate to SIGKILL if needed
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    unsafe {
+        if libc::kill(pid, 0) == 0 {
+            eprintln!("[Terminal] {} still alive, sending SIGKILL", pts);
+            libc::kill(pid, libc::SIGKILL);
         }
     }
-    // Note: we keep the fd open so subsequent reads return empty string
+    // Remove from registry — reader thread will clean up fd on EOF/EIO
+    remove_terminal(pts);
     Ok(())
 }
 
