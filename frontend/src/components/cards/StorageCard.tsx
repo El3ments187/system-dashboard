@@ -4,6 +4,9 @@ import PanelErrorBoundary from '../common/PanelErrorBoundary';
 import PanelErrorState from '../common/PanelErrorState';
 import { useTooltip } from '../../components/common/TooltipProvider';
 import { getMetricDescription } from '../../data/metricDescriptions';
+import ProgressBar from '../shared/ProgressBar';
+import { useProgressStatus } from '../../hooks/useProgressStatus';
+import { getProgressColor, getStorageTempColor } from '../../utils/progress';
 
 interface CardProps {
   accent?: { color: string; glow: string };
@@ -32,9 +35,7 @@ function formatIops(iops: number): string {
 }
 
 function getUtilColor(util: number): string {
-  if (util < 80) return 'var(--accent-primary)';
-  if (util < 90) return 'var(--warning)';
-  return 'var(--danger)';
+  return getProgressColor(util);
 }
 
 function getDeviceState(io: any): string {
@@ -52,12 +53,6 @@ function getDeviceStateColor(state: string): string {
     case 'Idle': return 'var(--text-muted)';
     default: return 'var(--success)';
   }
-}
-
-function getTempColor(temp: number): string {
-  if (temp >= 65) return 'var(--danger)';
-  if (temp >= 50) return 'var(--warning)';
-  return 'var(--success)';
 }
 
 interface StorageMount {
@@ -97,8 +92,7 @@ export default function StorageCard(_props: CardProps) {
   const totalCapacity = allMounts.reduce((s, m) => s + m.total_bytes, 0);
   const overallUtil = totalCapacity > 0 ? (totalUsed / totalCapacity) * 100 : 0;
 
-  const statusColor = getUtilColor(overallUtil);
-  const statusLabel = overallUtil < 80 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
+  const { color: statusColor, label: statusLabel } = useProgressStatus(overallUtil);
 
   if (storageError) {
     return (
@@ -130,9 +124,7 @@ export default function StorageCard(_props: CardProps) {
           <div className="card-value">
             <span className="card-unit">%</span>
           </div>
-          <div className="card-progress">
-            <div className="card-progress-bar" />
-          </div>
+          <ProgressBar percent={0} />
           <div style={{ padding: '8px 0' }}>
             <div className="skeleton" style={{ height: 40, width: '100%', marginBottom: 8 }} />
             <div className="skeleton" style={{ height: 40, width: '100%', marginBottom: 8 }} />
@@ -160,15 +152,7 @@ export default function StorageCard(_props: CardProps) {
           <div className="card-value">
             <span className="card-unit">%</span>
           </div>
-          <div className="card-progress">
-            <div
-              className="card-progress-bar"
-              style={{
-                width: '0%',
-                background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
-              }}
-            />
-          </div>
+          <ProgressBar percent={0} />
           <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
             No storage devices detected
           </div>
@@ -194,15 +178,7 @@ export default function StorageCard(_props: CardProps) {
           {overallUtil.toFixed(1)}
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div
-            className="card-progress-bar"
-            style={{
-              width: `${Math.min(overallUtil, 100)}%`,
-              background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
-            }}
-          />
-        </div>
+        <ProgressBar percent={overallUtil} />
 
         {/* Device groups */}
         <div className="card-details">
@@ -221,7 +197,7 @@ export default function StorageCard(_props: CardProps) {
                     {device.device}
                   </span>
                 </div>
-                <span style={{ fontSize: 9, color: device.temperature_celsius != null ? getTempColor(device.temperature_celsius) : 'var(--text-muted)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
+                <span style={{ fontSize: 9, color: device.temperature_celsius != null ? getStorageTempColor(device.temperature_celsius) : 'var(--text-muted)', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'help' }}
                   onMouseEnter={(e) => tooltip.setCardTooltip({ title: 'Device Temperature', description: `${device.device} temperature in Celsius`, unit: '°C' }, e)}
                   onMouseLeave={() => tooltip.setCardTooltip(null)}
                 >
@@ -280,16 +256,7 @@ export default function StorageCard(_props: CardProps) {
                         {mount.utilization_percent.toFixed(1)}%
                       </span>
                     </div>
-                    <div className="card-progress" style={{ height: 3, marginBottom: 1 }}>
-                      <div
-                        className="card-progress-bar"
-                        style={{
-                          height: 3,
-                          width: `${Math.min(mount.utilization_percent, 100)}%`,
-                          background: `linear-gradient(90deg, ${getUtilColor(mount.utilization_percent)}, ${getUtilColor(mount.utilization_percent)})`,
-                        }}
-                      />
-                    </div>
+                    <ProgressBar percent={mount.utilization_percent} variant="compact" />
                   </div>
                   <div style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {formatBytes(mount.used_bytes)} / {formatBytes(mount.total_bytes)}

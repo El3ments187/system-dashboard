@@ -117,8 +117,8 @@ export default function ChartCard({ genTpsHistory, promptTpsHistory }: ChartCard
                  </div>
                );
              }} cursor={{ stroke: 'var(--chart-crosshair)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-             <Area dataKey="genTps" stroke="var(--success)" fill="rgba(34,197,94,0.1)" strokeWidth={1.5} fillOpacity={0.3} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: 'var(--chart-dot-stroke)', strokeWidth: 1.5, fill: 'var(--success)' }} />
-             <Area dataKey="promptTps" stroke="var(--accent-primary)" fill="rgba(59,130,246,0.1)" strokeWidth={1.5} fillOpacity={0.2} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: 'var(--chart-dot-stroke)', strokeWidth: 1.5, fill: 'var(--accent-primary)' }} />
+             <Area dataKey="genTps" stroke="var(--success)" fill="color-mix(in srgb, var(--success) 10%, transparent)" strokeWidth={1.5} fillOpacity={0.3} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: 'var(--chart-dot-stroke)', strokeWidth: 1.5, fill: 'var(--success)' }} />
+             <Area dataKey="promptTps" stroke="var(--accent-primary)" fill="color-mix(in srgb, var(--accent-primary) 10%, transparent)" strokeWidth={1.5} strokeDasharray="5 5" fillOpacity={0.2} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: 'var(--chart-dot-stroke)', strokeWidth: 1.5, fill: 'var(--accent-primary)' }} />
            </AreaChart>
          </div>
        </div>

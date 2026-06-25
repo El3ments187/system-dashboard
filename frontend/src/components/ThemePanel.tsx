@@ -1,16 +1,19 @@
-import { useTheme } from '../hooks/useTheme';
+import { useTheme, ACCENT_MODES } from '../hooks/useTheme';
 
 interface ThemePanelProps {
   open: boolean;
   onClose: () => void;
   accent: string;
   onAccentChange: (color: string) => void;
+  accentMode: string;
+  onAccentModeChange: (mode: string) => void;
   bg: string;
   onBgChange: (color: string) => void;
-  current: { color: string; glow: string };
+  current: { color: string; glow: string; hex: string };
+  onReset: () => void;
 }
 
-export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, onBgChange, current }: ThemePanelProps) {
+export default function ThemePanel({ open, onClose, accent, onAccentChange, accentMode, onAccentModeChange, bg, onBgChange, current, onReset }: ThemePanelProps) {
   const { presets, bgPresets } = useTheme();
 
   if (!open) return null;
@@ -38,7 +41,7 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
                 {presets.find(p => p.value === accent)?.name || 'Blue'}
               </div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                {current.color}
+                {current.hex}
               </div>
             </div>
           </div>
@@ -65,6 +68,22 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
             </div>
           ))}
         </div>
+        <div className="theme-section-header">Accent Mode</div>
+        <div className="mode-list">
+          {ACCENT_MODES.map(mode => (
+            <div
+              key={mode.id}
+              className={`mode-row ${accentMode === mode.id ? 'active' : ''}`}
+              onClick={() => onAccentModeChange(mode.id)}
+            >
+              <span className="mode-radio" />
+              <div className="mode-text">
+                <span className="mode-name">{mode.name}</span>
+                <span className="mode-desc">{mode.description}</span>
+              </div>
+            </div>
+          ))}
+        </div>
         <div className="theme-section-header">Background Colors</div>
         <div className="bg-grid">
           {bgPresets.map(bgPreset => (
@@ -84,6 +103,21 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, bg, 
             </div>
           ))}
         </div>
+        <div className="theme-section-header">Preview</div>
+        <div className="theme-live-preview">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="btn-accent" style={{ fontSize: 11, padding: '5px 12px' }}>Button</button>
+            <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
+              <div className="card-progress-bar" style={{ width: '64%' }} />
+            </div>
+          </div>
+          <div className="theme-live-preview-chart">
+            {[40, 65, 50, 80, 60, 90, 70, 55, 75, 45].map((h, i) => (
+              <div key={i} className="theme-live-preview-bar" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        </div>
+        <button className="theme-reset-btn" onClick={onReset}>Reset to Default</button>
       </div>
     </>
   );

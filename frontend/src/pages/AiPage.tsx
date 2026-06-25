@@ -11,7 +11,7 @@ function FooterStat({ icon, label, value, color, history }: { icon: React.ReactN
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
       <span style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%',
-        background: `${color}18`, color, flexShrink: 0,
+        background: `color-mix(in srgb, ${color} 18%, transparent)`, color, flexShrink: 0,
       }}>{icon}</span>
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{label}</span>

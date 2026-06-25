@@ -24,7 +24,7 @@ import AiPage from './pages/AiPage';
 import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
-  const { accent, setAccent, bg, setBg, current } = useTheme();
+  const { accent, setAccent, bg, setBg, accentMode, setAccentMode, resetTheme, current } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState<'overview' | 'gpu' | 'cpu' | 'ai' | 'settings'>(() => {
@@ -117,9 +117,12 @@ export default function App() {
           onClose={() => setShowThemePanel(false)}
           accent={accent}
           onAccentChange={setAccent}
+          accentMode={accentMode}
+          onAccentModeChange={setAccentMode}
           bg={bg}
           onBgChange={setBg}
           current={current}
+          onReset={resetTheme}
         />
         {activePage === 'overview' ? (
           <main className="dashboard-grid">

@@ -3,6 +3,8 @@ import MetricChart from '../charts/MetricChart';
 import PanelErrorBoundary from '../components/common/PanelErrorBoundary';
 import PanelErrorState from '../components/common/PanelErrorState';
 import { Gpu, Thermometer, Zap, Cpu, HardDrive, Activity, Fan } from 'lucide-react';
+import { useResolvedAccentColor } from '../utils/accentColors';
+import { getProgressState, getTempState, getStateColor, getStateLabel, worseState } from '../utils/progress';
 
 const GPU_HISTORY_LABEL = '(Last 2m)';
 
@@ -15,57 +17,54 @@ function formatBytes(gb: number): string {
   return `${(gb * 1024).toFixed(0)} MB`;
 }
 
-function getStatusColor(temp: number, util: number): { color: string; label: string } {
-  if (temp > 90 || util > 95) return { color: 'var(--danger)', label: 'Critical' };
-  if (temp > 75 || util > 80) return { color: 'var(--warning)', label: 'Warning' };
-  return { color: 'var(--success)', label: 'Normal' };
+function getStatusColor(util: number, temp: number): { color: string; label: string } {
+  const state = worseState(getProgressState(util), getTempState(temp));
+  return { color: getStateColor(state), label: getStateLabel(state) };
 }
 
 function resolveVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function getUtilBarColor(value: number): string {
-  if (value > 95) return resolveVar('--danger');
-  if (value > 80) return resolveVar('--warning');
-  return resolveVar('--accent-primary');
+function getUtilBarColor(value: number, base: string): string {
+  const state = getProgressState(value);
+  return state === 'normal' ? base : resolveVar(state === 'critical' ? '--danger' : '--warning');
 }
 
-function getTempBarColor(temp: number): string {
-  if (temp > 90) return resolveVar('--danger');
-  if (temp > 80) return resolveVar('--warning');
-  return resolveVar('--accent-primary');
+function getTempBarColor(temp: number, base: string): string {
+  const state = getTempState(temp);
+  return state === 'normal' ? base : resolveVar(state === 'critical' ? '--danger' : '--warning');
 }
 
-function getPowerBarColor(value: number, limit: number): string {
-  if (limit <= 0) return resolveVar('--accent-primary');
+function getPowerBarColor(value: number, limit: number, base: string): string {
+  if (limit <= 0) return base;
   const pct = (value / limit) * 100;
-  if (pct > 95) return resolveVar('--danger');
-  if (pct > 85) return resolveVar('--warning');
-  return resolveVar('--accent-primary');
+  const state = getProgressState(pct);
+  return state === 'normal' ? base : resolveVar(state === 'critical' ? '--danger' : '--warning');
 }
 
 /* ─── Vertical Progress Bar ─── */
 
-function VerticalProgress({ value, label, type = 'percent', max = 100, limit }: {
+function VerticalProgress({ value, label, type = 'percent', max = 100, limit, accent }: {
   value: number;
   label: string;
   type?: 'percent' | 'temp' | 'power';
   max?: number;
   limit?: number;
+  accent: string;
 }) {
   const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
   if (type === 'temp') {
-    color = getTempBarColor(value);
+    color = getTempBarColor(value, accent);
     displayValue = `${Math.round(value)}°C`;
   } else if (type === 'power') {
-    color = getPowerBarColor(value, limit ?? max);
+    color = getPowerBarColor(value, limit ?? max, accent);
     displayValue = `${Math.round(value)}W`;
   } else {
-    color = getUtilBarColor(value);
+    color = getUtilBarColor(value, accent);
     displayValue = `${Math.round(value)}%`;
   }
 
@@ -96,8 +95,9 @@ function VerticalProgress({ value, label, type = 'percent', max = 100, limit }: 
 /* ─── Combined GPU Summary Card ─── */
 
 function GpuSummaryCard({ gpu, accent, index }: { gpu: any; accent: { color: string; glow: string }; index: number }) {
+  const barColor = useResolvedAccentColor();
   const vramPct = gpu.vram_total_gb > 0 ? (gpu.vram_used_gb / gpu.vram_total_gb) * 100 : 0;
-  const { color: statusColor, label: statusLabel } = getStatusColor(gpu.temperature_celsius, gpu.utilization_percent);
+  const { color: statusColor, label: statusLabel } = getStatusColor(gpu.utilization_percent, gpu.temperature_celsius);
 
   return (
     <div className="metric-card gpu-summary-card" style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, flex: 1, minHeight: 0 }}>
@@ -196,10 +196,10 @@ function GpuSummaryCard({ gpu, accent, index }: { gpu: any; accent: { color: str
         padding: '8px 0 4px',
         gap: 24,
       }}>
-        <VerticalProgress value={gpu.utilization_percent} label="GPU UTIL" />
-        <VerticalProgress value={vramPct} label="VRAM" />
-        <VerticalProgress value={gpu.temperature_celsius} label="TEMP" type="temp" max={120} />
-        <VerticalProgress value={gpu.power_usage_watts} label="POWER" type="power" max={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : 300} limit={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined} />
+        <VerticalProgress value={gpu.utilization_percent} label="GPU UTIL" accent={barColor} />
+        <VerticalProgress value={vramPct} label="VRAM" accent={barColor} />
+        <VerticalProgress value={gpu.temperature_celsius} label="TEMP" type="temp" max={120} accent={barColor} />
+        <VerticalProgress value={gpu.power_usage_watts} label="POWER" type="power" max={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : 300} limit={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined} accent={barColor} />
       </div>
     </div>
   );

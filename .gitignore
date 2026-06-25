@@ -27,6 +27,9 @@ capture*.cjs
 capture*.js
 puppeteer*.html
 puppeteer*.txt
+test-results/
+playwright-report/
+blob-report/
 
 # Build Outputs
 *.tsbuildinfo

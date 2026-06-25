@@ -1,6 +1,7 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useId } from 'react';
 import { MetricHistoryPoint } from '../types/metrics';
 import ChartTooltip from '../components/common/ChartTooltip';
+import { resolveAccentColors, resolveAccentColor, useAccentSync, SECONDARY_LINE_DASH } from '../utils/accentColors';
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -35,10 +36,7 @@ function getChartColors(): { grid: string; axis: string; crosshair: string; dotS
 }
 
 function getSeriesColors(): string[] {
-  const cs = getComputedStyle(document.documentElement);
-  const primary = cs.getPropertyValue('--accent-primary').trim() || '#6366F1';
-   const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
-  return [primary, secondary];
+  return resolveAccentColors(2);
 }
 
 function formatTime(date: Date): string {
@@ -53,13 +51,11 @@ function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
 }
 
 export default function MetricChart({ title, data, color: _color, timeFrame, dataKeys, chartHeight, yDomain, yAxisTickValues, unit, style, chartType = 'area', dualData, dualYDomain, dualYAxisTickValues, dualUnit, primaryLabel, secondaryLabel }: ChartProps) {
+  const gradientId = `mc-fill-${useId().replace(/:/g, '')}`;
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
-  const [strokeColor, setStrokeColor] = useState(() => {
-    if (_color) return _color;
-    return getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366F1';
-  });
+  const [strokeColor, setStrokeColor] = useState(() => _color || resolveAccentColor());
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -82,18 +78,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
     return () => ro.disconnect();
   }, [chartComponents, chartHeight]);
 
-  useEffect(() => {
-    const update = () => {
-      setChartColors(getChartColors());
-      setSeriesColors(getSeriesColors());
-      if (!_color) {
-        setStrokeColor(getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366F1');
-      }
-    };
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
-    return () => observer.disconnect();
+  useAccentSync(() => {
+    setChartColors(getChartColors());
+    setSeriesColors(getSeriesColors());
+    if (!_color) {
+      setStrokeColor(resolveAccentColor());
+    }
   }, [_color]);
 
   const chartData = useMemo(() => {
@@ -202,6 +192,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
             stroke={seriesColors[1]}
             fill={`${seriesColors[1]}20`}
             strokeWidth={2}
+            strokeDasharray={SECONDARY_LINE_DASH}
             fillOpacity={0.2}
             isAnimationActive={false}
             animationDuration={0}
@@ -220,7 +211,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
             stroke={keyColor}
             fill={`${keyColor}20`}
             strokeWidth={2}
-            strokeDasharray={i === 1 ? "5 5" : "0"}
+            strokeDasharray={i === 1 ? SECONDARY_LINE_DASH : "0"}
             fillOpacity={i === 1 ? 0.2 : 0.3}
             isAnimationActive={false}
             animationDuration={0}
@@ -232,16 +223,32 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
     return (
       <A
         dataKey="value"
-        stroke={strokeColor}
-        fill={fillColor}
+        stroke={`url(#${gradientId}-stroke)`}
+        fill={`url(#${gradientId})`}
         strokeWidth={2}
-        fillOpacity={0.3}
+        fillOpacity={0.35}
         isAnimationActive={false}
         animationDuration={0}
         activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
       />
     );
   };
+
+  const fillGradientDefs = (
+    <defs>
+      <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" style={{ stopColor: 'var(--accent-fill-stop-1)', stopOpacity: 0.5 }} />
+        <stop offset="100%" style={{ stopColor: 'var(--accent-fill-stop-2)', stopOpacity: 0.05 }} />
+      </linearGradient>
+      {/* Full-opacity twin used for the line stroke itself, so Gradient/Rainbow/Spectrum
+          modes visibly tint the line, not just the area fill beneath it. Under Solid mode
+          --accent-fill-stop-1/2 are identical, so this renders as a flat line — no change. */}
+      <linearGradient id={`${gradientId}-stroke`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" style={{ stopColor: 'var(--accent-fill-stop-1)', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: 'var(--accent-fill-stop-2)', stopOpacity: 1 }} />
+      </linearGradient>
+    </defs>
+  );
 
   const tooltipContent = (props: any) => {
     if (!props || !props.payload || !props.payload[0] || !props.active) return null;
@@ -362,6 +369,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
               </BarChart>
             ) : (
               <AreaChart data={chartData} width={chartSize.width} height={chartSize.height} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                {fillGradientDefs}
                 <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="x"

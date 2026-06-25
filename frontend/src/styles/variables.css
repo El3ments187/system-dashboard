@@ -1,8 +1,35 @@
+/* Registered so it can be smoothly keyframe-animated (Rainbow Wave, Animated Gradient) —
+   plain custom properties cannot be interpolated by @keyframes without this. */
+@property --accent-spin {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --accent-pulse {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 :root {
-  --accent-primary: #3B82F6;
+  /* --accent-base/--accent-base-rgb hold the literal chosen accent color, set by the
+     [data-accent="x"] presets below. --accent-primary/--accent-secondary/--accent-glow are
+     the tokens components actually consume; the accent-mode rules further down derive these
+     FROM --accent-base (never from each other) so there is no same-element self-reference
+     cycle, and rainbow-wave/animated-gradient/gradient can safely transform them. */
+  --accent-base: #3B82F6;
+  --accent-base-rgb: 59, 130, 246;
+  --accent-primary: var(--accent-base);
   --accent-secondary: color-mix(in srgb, var(--accent-primary) 70%, white);
-  --accent-primary-rgb: 59, 130, 246;
+  --accent-primary-rgb: var(--accent-base-rgb);
   --accent-glow: rgba(var(--accent-primary-rgb), 0.3);
+  /* Generic translucent tints derived from whatever --accent-primary currently resolves to.
+     Components use these instead of hand-rolling `${accent.color}NN` strings, so tinted
+     backgrounds/borders (active nav tabs, hover highlights, etc.) stay mode-aware for free. */
+  --accent-tint-10: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+  --accent-tint-15: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  --accent-tint-40: color-mix(in srgb, var(--accent-primary) 40%, transparent);
   --bg-primary: #0A0F1A;
   --bg-secondary: #111827;
   --bg-card: #151D2E;
@@ -38,182 +65,177 @@
 /* ---- Blues ---- */
 
 [data-accent="blue"] {
-  --accent-primary: #3B82F6;
-  --accent-primary-rgb: 59, 130, 246;
+  --accent-base: #3B82F6;
+  --accent-base-rgb: 59, 130, 246;
 }
 
 [data-accent="sky"] {
-  --accent-primary: #60A5FA;
-  --accent-primary-rgb: 96, 165, 250;
+  --accent-base: #60A5FA;
+  --accent-base-rgb: 96, 165, 250;
 }
 
 [data-accent="ice"] {
-  --accent-primary: #8FD8FF;
-  --accent-primary-rgb: 143, 216, 255;
+  --accent-base: #8FD8FF;
+  --accent-base-rgb: 143, 216, 255;
 }
 
 [data-accent="sapphire"] {
-  --accent-primary: #0F52BA;
-  --accent-primary-rgb: 15, 82, 186;
-}
-
-[data-accent="cyber-blue"] {
-  --accent-primary: #00BFFF;
-  --accent-primary-rgb: 0, 191, 255;
+  --accent-base: #0F52BA;
+  --accent-base-rgb: 15, 82, 186;
 }
 
 /* ---- Cyans & Teals ---- */
 
 [data-accent="cyan"] {
-  --accent-primary: #06B6D4;
-  --accent-primary-rgb: 6, 182, 212;
+  --accent-base: #06B6D4;
+  --accent-base-rgb: 6, 182, 212;
 }
 
 [data-accent="aqua"] {
-  --accent-primary: #7FFFD4;
-  --accent-primary-rgb: 127, 255, 212;
+  --accent-base: #7FFFD4;
+  --accent-base-rgb: 127, 255, 212;
 }
 
 [data-accent="teal"] {
-  --accent-primary: #14B8A6;
-  --accent-primary-rgb: 20, 184, 166;
+  --accent-base: #14B8A6;
+  --accent-base-rgb: 20, 184, 166;
 }
 
 [data-accent="turquoise"] {
-  --accent-primary: #40E0D0;
-  --accent-primary-rgb: 64, 224, 208;
+  --accent-base: #40E0D0;
+  --accent-base-rgb: 64, 224, 208;
 }
 
 /* ---- Greens ---- */
 
 [data-accent="green"] {
-  --accent-primary: #22C55E;
-  --accent-primary-rgb: 34, 197, 94;
+  --accent-base: #22C55E;
+  --accent-base-rgb: 34, 197, 94;
 }
 
 [data-accent="emerald"] {
-  --accent-primary: #50C878;
-  --accent-primary-rgb: 80, 200, 120;
+  --accent-base: #50C878;
+  --accent-base-rgb: 80, 200, 120;
 }
 
 [data-accent="mint"] {
-  --accent-primary: #6EE7B7;
-  --accent-primary-rgb: 110, 231, 183;
+  --accent-base: #6EE7B7;
+  --accent-base-rgb: 110, 231, 183;
 }
 
 [data-accent="terminal"] {
-  --accent-primary: #39FF14;
-  --accent-primary-rgb: 57, 255, 20;
+  --accent-base: #39FF14;
+  --accent-base-rgb: 57, 255, 20;
 }
 
 /* ---- Yellows & Golds ---- */
 
 [data-accent="yellow"] {
-  --accent-primary: #FACC15;
-  --accent-primary-rgb: 250, 204, 21;
+  --accent-base: #FACC15;
+  --accent-base-rgb: 250, 204, 21;
 }
 
 [data-accent="amber"] {
-  --accent-primary: #F59E0B;
-  --accent-primary-rgb: 245, 158, 11;
+  --accent-base: #F59E0B;
+  --accent-base-rgb: 245, 158, 11;
 }
 
 [data-accent="gold"] {
-  --accent-primary: #D4AF37;
-  --accent-primary-rgb: 212, 175, 55;
+  --accent-base: #D4AF37;
+  --accent-base-rgb: 212, 175, 55;
 }
 
 [data-accent="bronze"] {
-  --accent-primary: #CD7F32;
-  --accent-primary-rgb: 205, 127, 50;
+  --accent-base: #CD7F32;
+  --accent-base-rgb: 205, 127, 50;
 }
 
 /* ---- Oranges & Reds ---- */
 
 [data-accent="orange"] {
-  --accent-primary: #F97316;
-  --accent-primary-rgb: 249, 115, 22;
+  --accent-base: #F97316;
+  --accent-base-rgb: 249, 115, 22;
 }
 
 [data-accent="coral"] {
-  --accent-primary: #FF7F6A;
-  --accent-primary-rgb: 255, 127, 106;
+  --accent-base: #FF7F6A;
+  --accent-base-rgb: 255, 127, 106;
 }
 
 [data-accent="red"] {
-  --accent-primary: #EF4444;
-  --accent-primary-rgb: 239, 68, 68;
+  --accent-base: #EF4444;
+  --accent-base-rgb: 239, 68, 68;
 }
 
 [data-accent="crimson"] {
-  --accent-primary: #DC143C;
-  --accent-primary-rgb: 220, 20, 60;
+  --accent-base: #DC143C;
+  --accent-base-rgb: 220, 20, 60;
 }
 
 [data-accent="ruby"] {
-  --accent-primary: #E0115F;
-  --accent-primary-rgb: 224, 17, 95;
+  --accent-base: #E0115F;
+  --accent-base-rgb: 224, 17, 95;
 }
 
 /* ---- Pinks & Magentas ---- */
 
 [data-accent="rose"] {
-  --accent-primary: #FB7185;
-  --accent-primary-rgb: 251, 113, 133;
+  --accent-base: #FB7185;
+  --accent-base-rgb: 251, 113, 133;
 }
 
 [data-accent="pink"] {
-  --accent-primary: #EC4899;
-  --accent-primary-rgb: 236, 72, 153;
+  --accent-base: #EC4899;
+  --accent-base-rgb: 236, 72, 153;
 }
 
 [data-accent="magenta"] {
-  --accent-primary: #D946EF;
-  --accent-primary-rgb: 217, 70, 239;
+  --accent-base: #D946EF;
+  --accent-base-rgb: 217, 70, 239;
 }
 
 [data-accent="orchid"] {
-  --accent-primary: #DA70D6;
-  --accent-primary-rgb: 218, 112, 214;
+  --accent-base: #DA70D6;
+  --accent-base-rgb: 218, 112, 214;
 }
 
 /* ---- Purples ---- */
 
 [data-accent="purple"] {
-  --accent-primary: #8B5CF6;
-  --accent-primary-rgb: 139, 92, 246;
+  --accent-base: #8B5CF6;
+  --accent-base-rgb: 139, 92, 246;
 }
 
 [data-accent="lavender"] {
-  --accent-primary: #B497FF;
-  --accent-primary-rgb: 180, 151, 255;
+  --accent-base: #B497FF;
+  --accent-base-rgb: 180, 151, 255;
 }
 
 [data-accent="indigo"] {
-  --accent-primary: #6366F1;
-  --accent-primary-rgb: 99, 102, 241;
+  --accent-base: #6366F1;
+  --accent-base-rgb: 99, 102, 241;
 }
 
 [data-accent="violet"] {
-  --accent-primary: #8A2BE2;
-  --accent-primary-rgb: 138, 43, 226;
+  --accent-base: #8A2BE2;
+  --accent-base-rgb: 138, 43, 226;
 }
 
 /* ---- Neutrals & Metals ---- */
 
 [data-accent="silver"] {
-  --accent-primary: #94A3B8;
-  --accent-primary-rgb: 148, 163, 184;
+  --accent-base: #94A3B8;
+  --accent-base-rgb: 148, 163, 184;
 }
 
 [data-accent="platinum"] {
-  --accent-primary: #E5E4E2;
-  --accent-primary-rgb: 229, 228, 226;
+  --accent-base: #E5E4E2;
+  --accent-base-rgb: 229, 228, 226;
 }
 
 [data-accent="copper"] {
-  --accent-primary: #B87333;
-  --accent-primary-rgb: 184, 115, 51;
+  --accent-base: #B87333;
+  --accent-base-rgb: 184, 115, 51;
 }
 
 /* ========================================
@@ -558,7 +580,7 @@
   --chart-grid: #161616;
   --chart-axis: #262626;
   --chart-crosshair: #3F3F3F;
-  --chart-dot-stroke: #fff;
+  --chart-dot-stroke: #D4D4D4;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
@@ -640,4 +662,106 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ========================================
+    Accent Modes
+    Every mode derives --accent-primary/--accent-secondary/--accent-glow FROM --accent-base
+    (never from itself, avoiding a same-element cycle) so every existing consumer — icons,
+    text, borders, tints, chart SVG gradients — updates automatically with zero
+    per-component work. --accent-fill is a background image for filled surfaces (buttons,
+    progress bars). Repeating stripes are used (not one big diagonal sweep) so the gradient
+    is visibly distinct even on small/thin elements like progress bars.
+    ======================================== */
+
+:root {
+  --accent-fill: var(--accent-primary);
+  --accent-fill-stop-1: var(--accent-primary);
+  --accent-fill-stop-2: var(--accent-secondary);
+}
+
+/* ---- Solid (default) ---- */
+[data-accent-mode="solid"] {
+  --accent-fill: var(--accent-primary);
+  --accent-fill-stop-1: var(--accent-primary);
+  --accent-fill-stop-2: var(--accent-primary);
+}
+
+/* ---- Animated Gradient (same stripes, panning + a slow lightness pulse so
+   icons/text/borders are also visibly "alive", not just filled surfaces) ---- */
+[data-accent-mode="animated-gradient"] {
+  --accent-primary: color-mix(in srgb, var(--accent-base) calc(85% - var(--accent-pulse) * 1%), white);
+  --accent-secondary: color-mix(in srgb, var(--accent-base) calc(55% + var(--accent-pulse) * 1%), black);
+  --accent-fill: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--accent-base) 55%, black) 0px 14px,
+    var(--accent-base) 14px 28px,
+    color-mix(in srgb, var(--accent-base) 60%, white) 28px 42px,
+    var(--accent-base) 42px 56px
+  );
+}
+
+@keyframes accent-pulse-cycle {
+  0%, 100% { --accent-pulse: 0; }
+  50% { --accent-pulse: 30; }
+}
+
+/* ---- Rainbow Wave (classic RGB lighting effect) ---- */
+[data-accent-mode="rainbow-wave"] {
+  --accent-primary: hsl(var(--accent-spin), 85%, 60%);
+  --accent-secondary: hsl(calc(var(--accent-spin) + 40), 85%, 65%);
+  --accent-glow: hsla(var(--accent-spin), 85%, 60%, 0.35);
+  --accent-fill: repeating-linear-gradient(
+    45deg,
+    hsl(calc(var(--accent-spin) + 0), 90%, 58%) 0px 14px,
+    hsl(calc(var(--accent-spin) + 45), 90%, 58%) 14px 28px,
+    hsl(calc(var(--accent-spin) + 90), 90%, 58%) 28px 42px,
+    hsl(calc(var(--accent-spin) + 135), 90%, 58%) 42px 56px
+  );
+}
+
+@keyframes accent-spin-rotate {
+  from { --accent-spin: 0; }
+  to { --accent-spin: 360; }
+}
+
+/* ---- Spectrum Per-Element (32-color palette distributed across the UI) ---- */
+[data-accent-mode="spectrum"] {
+  --accent-fill: repeating-linear-gradient(
+    45deg,
+    #D4AF37 0px 14px, #14B8A6 14px 28px, #8B5CF6 28px 42px, #EF4444 42px 56px
+  );
+  --accent-fill-stop-1: #14B8A6;
+  --accent-fill-stop-2: #8B5CF6;
+}
+
+@keyframes accent-stripe-pan {
+  from { background-position: 0 0; }
+  to { background-position: 56px 56px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-accent-mode="animated-gradient"] { animation: accent-pulse-cycle 20s ease-in-out infinite; }
+  [data-accent-mode="rainbow-wave"] { animation: accent-spin-rotate 20s linear infinite; }
+
+  [data-accent-mode="animated-gradient"] .accent-fill,
+  [data-accent-mode="rainbow-wave"] .accent-fill,
+  [data-accent-mode="animated-gradient"] .accent-bg,
+  [data-accent-mode="rainbow-wave"] .accent-bg,
+  [data-accent-mode="animated-gradient"] .btn-accent,
+  [data-accent-mode="rainbow-wave"] .btn-accent,
+  [data-accent-mode="animated-gradient"] .progress-accent,
+  [data-accent-mode="rainbow-wave"] .progress-accent,
+  [data-accent-mode="animated-gradient"] .card-progress-bar,
+  [data-accent-mode="rainbow-wave"] .card-progress-bar,
+  [data-accent-mode="animated-gradient"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="rainbow-wave"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="animated-gradient"] .theme-preview-swatch.gradient,
+  [data-accent-mode="rainbow-wave"] .theme-preview-swatch.gradient,
+  [data-accent-mode="animated-gradient"] .theme-live-preview-bar,
+  [data-accent-mode="rainbow-wave"] .theme-live-preview-bar,
+  [data-accent-mode="animated-gradient"] .mode-row.active .mode-radio::after,
+  [data-accent-mode="rainbow-wave"] .mode-row.active .mode-radio::after {
+    animation: accent-stripe-pan 20s linear infinite;
+  }
 }

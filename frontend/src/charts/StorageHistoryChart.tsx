@@ -1,16 +1,16 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { StorageHistoryPoint } from '../types/metrics';
 import ChartTooltip from '../components/common/ChartTooltip';
+import { resolveAccentColors, getSecondarySeriesColor, useAccentSync, SECONDARY_LINE_DASH } from '../utils/accentColors';
 
 interface ChartProps {
   data: Map<string, StorageHistoryPoint[]>;
 }
 
 function getSeriesColors(): string[] {
-  const cs = getComputedStyle(document.documentElement);
-  const primary = cs.getPropertyValue('--accent-primary').trim() || '#6366F1';
-  const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#93C5FD';
-  return [primary, secondary];
+  // Resolve more than 2 stops so multi-device storage charts get visible
+  // variety in rainbow-wave / spectrum modes instead of cycling 2 colors.
+  return resolveAccentColors(8);
 }
 
 function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
@@ -65,16 +65,10 @@ export default function StorageHistoryChart({ data }: ChartProps) {
     return () => ro.disconnect();
   }, [chartComponents]);
 
-  useEffect(() => {
-    const update = () => {
-      setChartColors(getChartColors());
-      setSeriesColors(getSeriesColors());
-    };
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
-    return () => observer.disconnect();
-  }, []);
+  useAccentSync(() => {
+    setChartColors(getChartColors());
+    setSeriesColors(getSeriesColors());
+  });
 
   const chartData = useMemo(() => {
     const entries = Array.from(data.entries());
@@ -241,6 +235,7 @@ export default function StorageHistoryChart({ data }: ChartProps) {
                   />
                  {deviceNames.map((device, i) => {
                       const color = seriesColors[i % seriesColors.length];
+                      const writeColor = getSecondarySeriesColor(color);
                       const baseKey = activeTab === 'throughput' ? `${device}_read` : `${device}_util`;
                       const writeKey = activeTab === 'throughput' ? `${device}_write` : null;
                     return (
@@ -258,14 +253,14 @@ export default function StorageHistoryChart({ data }: ChartProps) {
                         {writeKey && (
                           <Area
                             dataKey={writeKey}
-                            stroke={color}
-                            fill={`${color}10`}
+                            stroke={writeColor}
+                            fill={`${writeColor}10`}
                             strokeWidth={2}
-                            strokeDasharray="4 4"
+                            strokeDasharray={SECONDARY_LINE_DASH}
                             fillOpacity={0.2}
                             isAnimationActive={false}
                             animationDuration={0}
-                            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: color }}
+                            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: writeColor }}
                           />
                         )}
                       </g>

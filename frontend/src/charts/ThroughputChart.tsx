@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { MetricHistoryPoint } from '../types/metrics';
+import { resolveAccentColors, useAccentSync, SECONDARY_LINE_DASH } from '../utils/accentColors';
 
 interface ThroughputChartProps {
   genTpsHistory: MetricHistoryPoint[] | null;
@@ -8,11 +9,13 @@ interface ThroughputChartProps {
   height?: number;
 }
 
-function getChartColors(): { grid: string; axis: string } {
+function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
   const cs = getComputedStyle(document.documentElement);
   return {
     grid: cs.getPropertyValue('--chart-grid').trim() || '#1e2535',
     axis: cs.getPropertyValue('--chart-axis').trim() || '#2a3143',
+    crosshair: cs.getPropertyValue('--chart-crosshair').trim() || '#5a6578',
+    dotStroke: cs.getPropertyValue('--chart-dot-stroke').trim() || '#fff',
   };
 }
 
@@ -28,9 +31,12 @@ function computeStats(history: MetricHistoryPoint[] | null): { current: number |
   return { current, avg, peak };
 }
 
-export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accent, height = 80 }: ThroughputChartProps) {
+export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accent: _accent, height = 80 }: ThroughputChartProps) {
   const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
+  const [seriesColors, setSeriesColors] = useState(() => resolveAccentColors(2));
+  const accent = { color: seriesColors[0] };
+  const promptColor = seriesColors[1];
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -51,13 +57,10 @@ export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accen
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    const update = () => setChartColors(getChartColors());
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bg', 'data-accent'] });
-    return () => observer.disconnect();
-  }, []);
+  useAccentSync(() => {
+    setChartColors(getChartColors());
+    setSeriesColors(resolveAccentColors(2));
+  });
 
   const chartData = useMemo(() => {
     if (!genTpsHistory && !promptTpsHistory) return [];
@@ -83,7 +86,7 @@ export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accen
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <StatBadge label="Gen TPS" current={genStats.current} avg={genStats.avg} peak={genStats.peak} color={accent.color} />
-          <StatBadge label="Prompt TPS" current={promptStats.current} avg={promptStats.avg} peak={promptStats.peak} color="#bd93f9" />
+          <StatBadge label="Prompt TPS" current={promptStats.current} avg={promptStats.avg} peak={promptStats.peak} color={promptColor} />
         </div>
       </div>
     );
@@ -102,7 +105,7 @@ export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accen
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <StatBadge label="Gen TPS" current={genStats.current} avg={genStats.avg} peak={genStats.peak} color={accent.color} />
-        <StatBadge label="Prompt TPS" current={promptStats.current} avg={promptStats.avg} peak={promptStats.peak} color="#bd93f9" />
+        <StatBadge label="Prompt TPS" current={promptStats.current} avg={promptStats.avg} peak={promptStats.peak} color={promptColor} />
       </div>
       <div ref={chartRef} style={{ height, overflow: 'hidden' }}>
         <div style={{ width: chartSize.width, height: chartSize.height }}>
@@ -114,15 +117,15 @@ export default function ThroughputChart({ genTpsHistory, promptTpsHistory, accen
               if (!props?.payload?.[0]?.payload) return null;
               const d = props.payload[0].payload;
               return (
-                <div style={{ background: '#1a1a2e', border: '1px solid var(--border-color)', borderRadius: 4, padding: '4px 8px', fontSize: 9 }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 4, padding: '4px 8px', fontSize: 9 }}>
                   <div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>{d.timeLabel}</div>
                   <div style={{ color: accent.color }}>Gen TPS: {d.genTps ?? '\u2014'}</div>
-                  <div style={{ color: '#bd93f9' }}>Prompt TPS: {d.promptTps ?? '\u2014'}</div>
+                  <div style={{ color: promptColor }}>Prompt TPS: {d.promptTps ?? '\u2014'}</div>
                 </div>
               );
-            }} cursor={{ stroke: '#5a6578', strokeWidth: 1, strokeDasharray: '3 3' }} />
-            <Area dataKey="genTps" stroke={accent.color} fill={`${accent.color}20`} strokeWidth={1.5} fillOpacity={0.3} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: '#fff', strokeWidth: 1.5, fill: accent.color }} />
-            <Area dataKey="promptTps" stroke="#bd93f9" fill="rgba(189,147,249,0.1)" strokeWidth={1.5} fillOpacity={0.2} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: '#fff', strokeWidth: 1.5, fill: '#bd93f9' }} />
+            }} cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3' }} />
+            <Area dataKey="genTps" stroke={accent.color} fill={`${accent.color}20`} strokeWidth={1.5} fillOpacity={0.3} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: chartColors.dotStroke, strokeWidth: 1.5, fill: accent.color }} />
+            <Area dataKey="promptTps" stroke={promptColor} fill={`${promptColor}20`} strokeWidth={1.5} strokeDasharray={SECONDARY_LINE_DASH} fillOpacity={0.2} isAnimationActive={false} animationDuration={0} activeDot={{ r: 3, stroke: chartColors.dotStroke, strokeWidth: 1.5, fill: promptColor }} />
           </AreaChart>
         </div>
       </div>

@@ -115,7 +115,7 @@ interface MetricsContextValue {
   toggle: () => void;
 }
 
-const MetricsContext = React.createContext<MetricsContextValue | null>(null);
+export const MetricsContext = React.createContext<MetricsContextValue | null>(null);
 
 export function MetricsProvider({ children }: { children: React.ReactNode }) {
   const { isPaused, pause, resume, toggle } = useLiveDataControlsContext();

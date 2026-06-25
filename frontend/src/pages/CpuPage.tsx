@@ -5,6 +5,8 @@ import CoreBars from '../charts/CoreBars';
 import PanelErrorBoundary from '../components/common/PanelErrorBoundary';
 import PanelErrorState from '../components/common/PanelErrorState';
 import { Cpu, Thermometer, Activity, Server, Zap } from 'lucide-react';
+import { useResolvedAccentColor } from '../utils/accentColors';
+import { getProgressState, getTempState, getStateColor, getStateLabel, worseState } from '../utils/progress';
 
 const CPU_HISTORY_LABEL = '(Last 2m)';
 
@@ -17,40 +19,38 @@ function resolveVar(name: string): string {
 }
 
 function getStatusColor(util: number, temp: number): { color: string; label: string } {
-  if (temp > 90 || util > 95) return { color: resolveVar('--danger'), label: 'Critical' };
-  if (temp > 75 || util > 80) return { color: resolveVar('--warning'), label: 'Warning' };
-  return { color: resolveVar('--success'), label: 'Normal' };
+  const state = worseState(getProgressState(util), getTempState(temp));
+  return { color: getStateColor(state), label: getStateLabel(state) };
 }
 
-function getUtilBarColor(value: number): string {
-  if (value > 95) return resolveVar('--danger');
-  if (value > 80) return resolveVar('--warning');
-  return resolveVar('--accent-primary');
+function getUtilBarColor(value: number, accent: string): string {
+  const state = getProgressState(value);
+  return state === 'normal' ? accent : resolveVar(state === 'critical' ? '--danger' : '--warning');
 }
 
-function getTempBarColor(temp: number): string {
-  if (temp > 90) return resolveVar('--danger');
-  if (temp > 80) return resolveVar('--warning');
-  return resolveVar('--accent-primary');
+function getTempBarColor(temp: number, accent: string): string {
+  const state = getTempState(temp);
+  return state === 'normal' ? accent : resolveVar(state === 'critical' ? '--danger' : '--warning');
 }
 
 /* ─── Vertical Progress Bar ─── */
 
-function CpuVerticalProgress({ value, label, type = 'percent', max = 100 }: {
+function CpuVerticalProgress({ value, label, type = 'percent', max = 100, accent }: {
   value: number;
   label: string;
   type?: 'percent' | 'temp';
   max?: number;
+  accent: string;
 }) {
   const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
   if (type === 'temp') {
-    color = getTempBarColor(value);
+    color = getTempBarColor(value, accent);
     displayValue = `${Math.round(value)}°C`;
   } else {
-    color = getUtilBarColor(value);
+    color = getUtilBarColor(value, accent);
     displayValue = type === 'percent' ? `${Math.round(value)}%` : value.toFixed(2);
   }
 
@@ -81,6 +81,7 @@ function CpuVerticalProgress({ value, label, type = 'percent', max = 100 }: {
 /* ─── CPU Summary Card (Left Column) ─── */
 
 function CpuSummaryCard({ accent }: { accent: { color: string; glow: string } }) {
+  const barColor = useResolvedAccentColor();
   const { cpuCurrentValues, cpuRawData } = useMetricsContext();
 
   const util = cpuCurrentValues[0] ?? 0;
@@ -190,11 +191,11 @@ function CpuSummaryCard({ accent }: { accent: { color: string; glow: string } })
         padding: '8px 0 4px',
         gap: 16,
       }}>
-        <CpuVerticalProgress value={util} label="CPU UTIL" />
-        <CpuVerticalProgress value={load1Pct} label="LOAD 1M" />
-        <CpuVerticalProgress value={load5Pct} label="LOAD 5M" />
-        <CpuVerticalProgress value={load15Pct} label="LOAD 15M" />
-        <CpuVerticalProgress value={temp} label="TEMP" type="temp" max={100} />
+        <CpuVerticalProgress value={util} label="CPU UTIL" accent={barColor} />
+        <CpuVerticalProgress value={load1Pct} label="LOAD 1M" accent={barColor} />
+        <CpuVerticalProgress value={load5Pct} label="LOAD 5M" accent={barColor} />
+        <CpuVerticalProgress value={load15Pct} label="LOAD 15M" accent={barColor} />
+        <CpuVerticalProgress value={temp} label="TEMP" type="temp" max={100} accent={barColor} />
       </div>
     </div>
   );

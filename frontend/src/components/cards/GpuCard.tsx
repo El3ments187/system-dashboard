@@ -4,6 +4,8 @@ import PanelErrorBoundary from '../common/PanelErrorBoundary';
 import PanelErrorState from '../common/PanelErrorState';
 import { useTooltip } from '../../components/common/TooltipProvider';
 import { getMetricDescription } from '../../data/metricDescriptions';
+import ProgressBar from '../shared/ProgressBar';
+import { useProgressStatus } from '../../hooks/useProgressStatus';
 
 export default function GpuCard({ accent }: { accent: { color: string; glow: string } }) {
   const tooltip = useTooltip();
@@ -16,20 +18,7 @@ export default function GpuCard({ accent }: { accent: { color: string; glow: str
   const powerDraw = gpuCurrentValues[4];
   const powerLimit = gpuCurrentValues[5];
 
-  const getStatus = (val: number | null): string => {
-    if (val === null) return 'normal';
-    if (val < 70) return 'good';
-    if (val < 90) return 'warn';
-    return 'bad';
-  };
-
-  const status = gpu != null ? getStatus(gpu) : 'normal';
-  const statusColor = status === 'good' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)';
-
-  let statusLabel: string;
-  if (status === 'good') statusLabel = 'Normal';
-  else if (status === 'warn') statusLabel = 'Warning';
-  else statusLabel = 'Critical';
+  const { color: statusColor, label: statusLabel } = useProgressStatus(gpu);
 
   if (gpuLoading) {
     return (
@@ -79,12 +68,7 @@ export default function GpuCard({ accent }: { accent: { color: string; glow: str
           {gpuLoading ? '\u2014' : gpu != null ? gpu.toFixed(1) : '\u2014'}
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div className="card-progress-bar" style={{
-            width: `${Math.min(gpu || 0, 100)}%`,
-            background: `linear-gradient(90deg, ${accent.color}, ${accent.glow})`,
-          }} />
-        </div>
+        <ProgressBar percent={gpu ?? 0} />
         <div className="card-details">
           <div className="card-detail-item"
             onMouseEnter={(e) => { const desc = getMetricDescription('gpu_temperature'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit }, e); }}
@@ -119,7 +103,7 @@ export default function GpuCard({ accent }: { accent: { color: string; glow: str
           </div>
           <div className="card-detail-item">
             <span className="card-detail-label">Status</span>
-            <span style={{ color: statusColor, textTransform: 'capitalize' }}>{status}</span>
+            <span style={{ color: statusColor }}>{statusLabel}</span>
           </div>
           <div className="card-filler" />
         </div>

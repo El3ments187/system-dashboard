@@ -88,8 +88,8 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
     <>
       <header className="dashboard-header">
         <div className="header-left">
-          <div style={{
-            width: 24, height: 24, borderRadius: 5, background: `linear-gradient(135deg, ${accent.color}, ${accent.glow})`,
+          <div className="accent-fill" style={{
+            width: 24, height: 24, borderRadius: 5,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -104,7 +104,7 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
                 key={page}
                 onClick={() => onPageChange?.(page)}
                 style={{
-                  background: activePage === page ? `${accent.color}15` : 'transparent',
+                  background: activePage === page ? 'var(--accent-tint-15)' : 'transparent',
                   color: activePage === page ? accent.color : 'var(--text-secondary)',
                   padding: '3px 10px',
                   borderRadius: 6,
@@ -113,12 +113,12 @@ export default function Header({ accent, onToggleThemePanel, healthOk, activePag
                   fontSize: '12px',
                   fontWeight: activePage === page ? 600 : 400,
                   transition: 'all 0.15s ease',
-                  border: activePage === page ? `1px solid ${accent.color}40` : '1px solid transparent',
+                  border: activePage === page ? '1px solid var(--accent-tint-40)' : '1px solid transparent',
                 }}
                 onMouseEnter={(e) => {
                   if (activePage !== page) {
                     e.currentTarget.style.color = accent.color;
-                    e.currentTarget.style.background = `${accent.color}10`;
+                    e.currentTarget.style.background = 'var(--accent-tint-10)';
                   }
                 }}
                 onMouseLeave={(e) => {

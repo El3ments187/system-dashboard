@@ -2,6 +2,8 @@ import { useMetricsContext } from '../../context/MetricsContext';
 import { BrainCircuit } from 'lucide-react';
 import PanelErrorBoundary from '../common/PanelErrorBoundary';
 import PanelErrorState from '../common/PanelErrorState';
+import ProgressBar from '../shared/ProgressBar';
+import { useProgressStatus } from '../../hooks/useProgressStatus';
 
 export default function AiCard() {
   const { aiCurrentMetrics, aiLoading, aiError, retryAi } = useMetricsContext();
@@ -22,21 +24,8 @@ export default function AiCard() {
     return aiCurrentMetrics.token_usage.cached_tokens ?? null;
   };
 
-  const getStatus = (val: number | null): string => {
-    if (val === null) return 'normal';
-    if (val < 70) return 'good';
-    if (val < 90) return 'warn';
-    return 'bad';
-  };
-
   const llmUtil = getLlmUtilization();
-  const status = getStatus(llmUtil);
-  const statusColor = status === 'good' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)';
-
-  let statusLabel: string;
-  if (status === 'good') statusLabel = 'Normal';
-  else if (status === 'warn') statusLabel = 'Warning';
-  else statusLabel = 'Critical';
+  const { color: statusColor, label: statusLabel } = useProgressStatus(llmUtil);
 
   const llamaStatus = aiCurrentMetrics?.llama_server;
   const openwebuiStatus = aiCurrentMetrics?.openwebui;
@@ -90,15 +79,7 @@ export default function AiCard() {
           {aiLoading ? '\u2014' : llmUtil != null ? llmUtil.toFixed(1) : '\u2014'}
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div
-            className="card-progress-bar"
-            style={{
-              width: `${Math.min(llmUtil || 0, 100)}%`,
-              background: 'var(--accent-primary)',
-            }}
-          />
-        </div>
+        <ProgressBar percent={llmUtil ?? 0} />
         <div className="card-details">
           <div className="card-detail-item">
             <span className="card-detail-label">KV Cache Used</span>

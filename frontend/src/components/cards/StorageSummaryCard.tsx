@@ -1,5 +1,7 @@
 import { useMetricsContext } from '../../context/MetricsContext';
 import { HardDrive, ArrowUp, ArrowDown } from 'lucide-react';
+import ProgressBar from '../shared/ProgressBar';
+import { useProgressStatus } from '../../hooks/useProgressStatus';
 
 interface CardProps {
   accent?: { color: string; glow: string };
@@ -34,9 +36,7 @@ export default function StorageSummaryCard(_props: CardProps) {
   const totalReadBps = devices.reduce((s, d) => s + (d.io_stats?.read_bytes_per_sec || 0), 0);
   const totalWriteBps = devices.reduce((s, d) => s + (d.io_stats?.write_bytes_per_sec || 0), 0);
 
-  const statusColor = overallUtil < 70 ? 'var(--success)' : overallUtil < 90 ? 'var(--warning)' : 'var(--danger)';
-  const statusLabel = overallUtil < 80 ? 'Normal' : overallUtil < 90 ? 'Warning' : 'Critical';
-  const utilColor = overallUtil < 80 ? 'var(--accent-primary)' : overallUtil < 90 ? 'var(--warning)' : 'var(--danger)';
+  const { color: statusColor, label: statusLabel } = useProgressStatus(overallUtil);
 
   if (storageLoading) {
     return (
@@ -54,9 +54,7 @@ export default function StorageSummaryCard(_props: CardProps) {
         <div className="card-value">
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div className="card-progress-bar" />
-        </div>
+        <ProgressBar percent={0} />
         <div style={{ padding: '8px 0' }}>
           <div className="skeleton" style={{ height: 36, width: '100%', marginBottom: 8 }} />
           <div className="skeleton" style={{ height: 36, width: '100%', marginBottom: 8 }} />
@@ -82,12 +80,7 @@ export default function StorageSummaryCard(_props: CardProps) {
         <div className="card-value">
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div
-            className="card-progress-bar"
-            style={{ width: '0%', background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-glow))' }}
-          />
-        </div>
+        <ProgressBar percent={0} />
         <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
           No storage devices detected
         </div>
@@ -111,15 +104,7 @@ export default function StorageSummaryCard(_props: CardProps) {
         {overallUtil.toFixed(1)}
         <span className="card-unit">%</span>
       </div>
-      <div className="card-progress">
-        <div
-          className="card-progress-bar"
-          style={{
-            width: `${Math.min(overallUtil, 100)}%`,
-            background: `linear-gradient(90deg, ${utilColor}, var(--accent-glow))`,
-          }}
-        />
-      </div>
+      <ProgressBar percent={overallUtil} />
 
       {/* Capacity breakdown */}
       <div style={{ padding: '8px 0', marginBottom: 4 }}>
@@ -127,16 +112,7 @@ export default function StorageSummaryCard(_props: CardProps) {
           <span>{formatBytes(totalUsed)} used</span>
           <span>{formatBytes(totalCapacity)} total</span>
         </div>
-        <div className="card-progress" style={{ height: 4, marginBottom: 4 }}>
-          <div
-            className="card-progress-bar"
-            style={{
-              height: 4,
-              width: `${Math.min(overallUtil, 100)}%`,
-           background: `linear-gradient(90deg, var(--accent-primary), var(--accent-glow))`,
-            }}
-          />
-        </div>
+        <ProgressBar percent={overallUtil} variant="compact" />
         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {formatBytes(totalFree)} free
         </div>

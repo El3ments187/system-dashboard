@@ -40,55 +40,62 @@ interface AccentTheme {
   color: string;
 }
 
+/**
+ * Ordered as a continuous hue spectrum (computed via HSL, hue descending from Blue) rather
+ * than alphabetically or by category, so neighboring swatches in the picker are always
+ * perceptually related and moving along the row feels like traversing a color wheel.
+ * Greens bridge Blues -> Yellows; Purples bridge Reds back toward Blue. Silver/Platinum are
+ * desaturated neutrals with no real place on the hue wheel, so they're grouped at the very
+ * end instead of wherever their (largely meaningless) computed hue would otherwise land.
+ */
 const ACCENT_THEMES: AccentTheme[] = [
   /* Blues */
   { id: 'blue',     name: 'Blue',           color: '#3B82F6' },
   { id: 'sky',      name: 'Sky',            color: '#60A5FA' },
-  { id: 'ice',      name: 'Ice',            color: '#8FD8FF' },
   { id: 'sapphire', name: 'Sapphire',       color: '#0F52BA' },
-  { id: 'cyber-blue', name: 'Cyber Blue',   color: '#00BFFF' },
+  { id: 'ice',      name: 'Ice',            color: '#8FD8FF' },
 
   /* Cyans & Teals */
   { id: 'cyan',     name: 'Cyan',           color: '#06B6D4' },
-  { id: 'aqua',     name: 'Aqua',           color: '#7FFFD4' },
-  { id: 'teal',     name: 'Teal',           color: '#14B8A6' },
   { id: 'turquoise', name: 'Turquoise',     color: '#40E0D0' },
+  { id: 'teal',     name: 'Teal',           color: '#14B8A6' },
+  { id: 'aqua',     name: 'Aqua',           color: '#7FFFD4' },
+  { id: 'mint',     name: 'Mint',           color: '#6EE7B7' },
 
-  /* Greens */
+  /* Greens (bridge Blues -> Yellows) */
   { id: 'green',    name: 'Green',          color: '#22C55E' },
   { id: 'emerald',  name: 'Emerald',        color: '#50C878' },
-  { id: 'mint',     name: 'Mint',           color: '#6EE7B7' },
   { id: 'terminal', name: 'Terminal Green', color: '#39FF14' },
 
   /* Yellows & Golds */
   { id: 'yellow',   name: 'Yellow',         color: '#FACC15' },
-  { id: 'amber',    name: 'Amber',          color: '#F59E0B' },
   { id: 'gold',     name: 'Gold',           color: '#D4AF37' },
+  { id: 'amber',    name: 'Amber',          color: '#F59E0B' },
   { id: 'bronze',   name: 'Bronze',         color: '#CD7F32' },
+  { id: 'copper',   name: 'Copper',         color: '#B87333' },
 
   /* Oranges & Reds */
   { id: 'orange',   name: 'Orange',         color: '#F97316' },
   { id: 'coral',    name: 'Coral',          color: '#FF7F6A' },
   { id: 'red',      name: 'Red',            color: '#EF4444' },
-  { id: 'crimson',  name: 'Crimson',        color: '#DC143C' },
-  { id: 'ruby',     name: 'Ruby',           color: '#E0115F' },
 
   /* Pinks & Magentas */
   { id: 'rose',     name: 'Rose',           color: '#FB7185' },
+  { id: 'crimson',  name: 'Crimson',        color: '#DC143C' },
+  { id: 'ruby',     name: 'Ruby',           color: '#E0115F' },
   { id: 'pink',     name: 'Pink',           color: '#EC4899' },
-  { id: 'magenta',  name: 'Magenta',        color: '#D946EF' },
   { id: 'orchid',   name: 'Orchid',         color: '#DA70D6' },
+  { id: 'magenta',  name: 'Magenta',        color: '#D946EF' },
 
-  /* Purples */
+  /* Purples (bridge Reds -> back toward Blue) */
+  { id: 'violet',   name: 'Violet',         color: '#8A2BE2' },
   { id: 'purple',   name: 'Purple',         color: '#8B5CF6' },
   { id: 'lavender', name: 'Lavender',       color: '#B497FF' },
   { id: 'indigo',   name: 'Indigo',         color: '#6366F1' },
-  { id: 'violet',   name: 'Violet',         color: '#8A2BE2' },
 
-  /* Neutrals & Metals */
+  /* Neutrals & Metals — grouped at the end, not on the hue wheel */
   { id: 'silver',   name: 'Silver',         color: '#94A3B8' },
   { id: 'platinum', name: 'Platinum',       color: '#E5E4E2' },
-  { id: 'copper',   name: 'Copper',         color: '#B87333' },
 ];
 
 /* ---- background theme config ---- */
@@ -150,18 +157,64 @@ const BG_PRESETS = BACKGROUND_THEMES.map(t => ({
   color: t.background,
 }));
 
+/* ---- accent mode config ---- */
+
+interface AccentMode {
+  id: string;
+  name: string;
+  description: string;
+}
+
+const ACCENT_MODES: AccentMode[] = [
+  { id: 'solid',             name: 'Solid',                description: 'Single accent color.' },
+  { id: 'animated-gradient', name: 'Animated Gradient',     description: 'Animated accent gradient.' },
+  { id: 'rainbow-wave',      name: 'Rainbow Wave',          description: 'Classic RGB rainbow effect.' },
+  { id: 'spectrum',          name: 'Spectrum Per-Element',  description: 'Distributes the 32-color palette throughout the UI.' },
+];
+
+const DEFAULT_ACCENT = 'blue';
+const DEFAULT_BG = 'dark';
+const DEFAULT_ACCENT_MODE = 'solid';
+
+// Gradient mode was removed; migrate any persisted choice to its closest replacement.
+function migrateAccentMode(mode: string | null): string {
+  if (mode === 'gradient') return 'animated-gradient';
+  return mode || DEFAULT_ACCENT_MODE;
+}
+
 /* ---- hook ---- */
 
 export function useTheme() {
   const [accent, setAccent] = useState<string>(() => {
-    return localStorage.getItem('dashboard-accent') || 'blue';
+    return localStorage.getItem('dashboard-accent') || DEFAULT_ACCENT;
   });
 
   const [bg, setBg] = useState<string>(() => {
-    return localStorage.getItem('dashboard-bg') || 'dark';
+    return localStorage.getItem('dashboard-bg') || DEFAULT_BG;
   });
 
-  const current = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
+  const [accentMode, setAccentMode] = useState<string>(() => {
+    return migrateAccentMode(localStorage.getItem('dashboard-accent-mode'));
+  });
+
+  const resetTheme = () => {
+    setAccent(DEFAULT_ACCENT);
+    setBg(DEFAULT_BG);
+    setAccentMode(DEFAULT_ACCENT_MODE);
+  };
+
+  const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
+  // `current.color`/`current.glow` resolve through CSS variables (not literal hex) so that
+  // every consumer — icons, text, gradients, anything passed `accent={current}` — automatically
+  // reflects the active accent mode (e.g. animates with Rainbow Wave) with no per-component work.
+  // `current.hex` retains the literal value for places that need to *display* the color (e.g. the
+  // Theme Settings hex label) rather than render it.
+  const current = {
+    color: 'var(--accent-primary)',
+    glow: 'var(--accent-glow)',
+    hex: hexColors.color,
+    hexGlow: hexColors.glow,
+  };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-accent', accent);
@@ -173,20 +226,29 @@ export function useTheme() {
     localStorage.setItem('dashboard-bg', bg);
   }, [bg]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-accent-mode', accentMode);
+    localStorage.setItem('dashboard-accent-mode', accentMode);
+  }, [accentMode]);
+
   return {
     accent,
     setAccent,
     bg,
     setBg,
+    accentMode,
+    setAccentMode,
+    resetTheme,
     current,
     presets: PRESETS,
     bgPresets: BG_PRESETS,
     accentThemes: ACCENT_THEMES,
     backgroundThemes: BACKGROUND_THEMES,
+    accentModes: ACCENT_MODES,
     darken,
     lighten,
     hexToRgba,
   };
 }
 
-export { ACCENT_THEMES, BACKGROUND_THEMES, ACCENT_COLORS, PRESETS, BG_PRESETS, darken, lighten, hexToRgba };
+export { ACCENT_THEMES, BACKGROUND_THEMES, ACCENT_COLORS, PRESETS, BG_PRESETS, ACCENT_MODES, darken, lighten, hexToRgba };

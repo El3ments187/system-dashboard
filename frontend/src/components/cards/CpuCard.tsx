@@ -4,6 +4,8 @@ import PanelErrorBoundary from '../common/PanelErrorBoundary';
 import PanelErrorState from '../common/PanelErrorState';
 import { useTooltip } from '../../components/common/TooltipProvider';
 import { getMetricDescription } from '../../data/metricDescriptions';
+import ProgressBar from '../shared/ProgressBar';
+import { useProgressStatus } from '../../hooks/useProgressStatus';
 
 interface CardProps {
   accent: { color: string; glow: string };
@@ -22,20 +24,7 @@ export default function CpuCard({ accent }: CardProps) {
   const load5 = cpuCurrentValues[6];
   const load15 = cpuCurrentValues[7];
 
-  const getStatus = (val: number | null) => {
-    if (val === null) return 'normal';
-    if (val < 70) return 'good';
-    if (val < 90) return 'warn';
-    return 'bad';
-  };
-
-  const status = getStatus(currentValue);
-  const statusColor = status === 'good' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)';
-
-  let statusLabel: string;
-  if (status === 'good') statusLabel = 'Normal';
-  else if (status === 'warn') statusLabel = 'Warning';
-  else statusLabel = 'Critical';
+  const { color: statusColor, label: statusLabel } = useProgressStatus(currentValue);
 
   if (cpuLoading) {
     return (
@@ -85,15 +74,7 @@ export default function CpuCard({ accent }: CardProps) {
           {cpuLoading ? '\u2014' : currentValue !== null ? currentValue.toFixed(1) : '\u2014'}
           <span className="card-unit">%</span>
         </div>
-        <div className="card-progress">
-          <div
-            className="card-progress-bar"
-            style={{
-              width: `${Math.min(currentValue || 0, 100)}%`,
-              background: `linear-gradient(90deg, ${accent.color}, ${accent.glow})`,
-            }}
-          />
-        </div>
+        <ProgressBar percent={currentValue ?? 0} />
         <div className="card-details">
           <div className="card-detail-item"
             onMouseEnter={(e) => { const desc = getMetricDescription('cpu_temperature'); if (desc) tooltip.setCardTooltip({ title: desc.title, description: desc.description, unit: desc.unit, direction: desc.direction }, e); }}
@@ -142,7 +123,7 @@ export default function CpuCard({ accent }: CardProps) {
           </div>
           <div className="card-detail-item" style={{ gridColumn: '2 / 3' }}>
             <span className="card-detail-label">Status</span>
-            <span style={{ color: statusColor, textTransform: 'capitalize' }}>{status}</span>
+            <span style={{ color: statusColor }}>{statusLabel}</span>
           </div>
         </div>
       </div>
