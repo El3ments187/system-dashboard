@@ -373,14 +373,24 @@ fn find_llama_server_command(content: &str) -> Option<String> {
         // not any line that merely mentions the string elsewhere (e.g.
         // `echo 'no llama-server here'`).
         if !found_server {
-            let first_word = line.split_whitespace().next().unwrap_or("");
-            if first_word == "llama-server" || first_word.ends_with("/llama-server") {
+            let mut words = line.split_whitespace();
+            let first_word = words.next().unwrap_or("");
+            let second_word = words.next().unwrap_or("");
+            let is_server = first_word == "llama-server"
+                || first_word.ends_with("/llama-server")
+                // headless: `exec /path/to/llama-server \`
+                || (first_word == "exec"
+                    && (second_word == "llama-server"
+                        || second_word.ends_with("/llama-server")));
+            if is_server {
                 found_server = true;
             }
         }
         if found_server {
             // Remove leading whitespace and continuation backslash-newline
             let trimmed = line.trim();
+            // Strip leading `exec ` so the tokenizer only sees the server path + args
+            let trimmed = trimmed.strip_prefix("exec ").unwrap_or(trimmed);
             let continues = trimmed.ends_with('\\');
             let cleaned = if continues {
                 trimmed[..trimmed.len() - 1].trim_end().to_string()
