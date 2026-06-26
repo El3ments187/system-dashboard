@@ -108,20 +108,23 @@ describe("RunModelsSection table", () => {
     render(<RunModelsSection />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-    for (const col of [
-      "Status",
-      "Model",
-      "Params",
-      "Quant",
-      "Ctx",
+    const sortableHeaders = [
+      "STATUS",
+      "MODEL",
+      "PARAMS",
+      "QUANT",
+      "CTX",
       "VRAM",
       "RAM",
-      "Spec",
+      "SPEC",
       "TPS",
-      "Actions",
-    ]) {
-      expect(screen.getByText(col)).toBeInTheDocument();
+    ];
+    for (const col of sortableHeaders) {
+      const buttons = screen.getAllByRole("button");
+      const found = buttons.some((b) => b.textContent?.includes(col));
+      expect(found).toBe(true);
     }
+    expect(screen.getByText("Actions")).toBeInTheDocument();
   });
 
   it("renders a fully-populated row correctly", async () => {

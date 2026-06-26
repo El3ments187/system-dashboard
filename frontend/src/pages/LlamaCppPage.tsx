@@ -20,6 +20,11 @@ import type {
   ProfileState,
   ProfileMetadata,
 } from "../types/metrics";
+import {
+  sortProfiles,
+  type SortConfig,
+  type SortColumn,
+} from "../utils/sorting";
 
 const SPEC_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -180,6 +185,24 @@ function FooterStat({
   );
 }
 
+const SORTABLE_COLUMNS: SortColumn[] = [
+  "status",
+  "model",
+  "params",
+  "quant",
+  "ctx",
+  "vram",
+  "ram",
+  "spec",
+  "tps",
+];
+
+function cycleSortDirection(current: SortConfig["direction"]): SortConfig["direction"] {
+  if (current === "none" || current === "desc") return "asc";
+  if (current === "asc") return "desc";
+  return "none";
+}
+
 export function RunModelsSection() {
   const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
   const [states, setStates] = useState<Record<string, ProfileState>>({});
@@ -187,6 +210,11 @@ export function RunModelsSection() {
   const [scanDir, setScanDir] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortConfig, setSortConfig] = useState<SortConfig>({
+    column: null,
+    direction: "none",
+  });
+  const originalOrderRef = useRef<string[]>([]);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadProfiles = useCallback(async () => {
@@ -213,6 +241,38 @@ export function RunModelsSection() {
     const t = setTimeout(loadProfiles, 0);
     return () => clearTimeout(t);
   }, [loadProfiles]);
+
+  // Capture original order once when profiles are first loaded.
+  useEffect(() => {
+    if (profiles.length > 0 && originalOrderRef.current.length === 0) {
+      const ids = profiles.map((p) => p.id);
+      originalOrderRef.current = ids;
+    }
+  }, [profiles]);
+
+  const handleSort = useCallback(
+    (column: SortColumn) => {
+      setSortConfig((prev) => {
+        if (prev.column === column) {
+          const nextDir = cycleSortDirection(prev.direction);
+          return {
+            column: nextDir === "none" ? null : column,
+            direction: nextDir,
+          };
+        }
+        return { column, direction: "asc" };
+      });
+    },
+    [],
+  );
+
+  const getSortedProfiles = useCallback((): LaunchProfile[] => {
+    if (sortConfig.column === null || sortConfig.direction === "none") {
+      return profiles;
+    }
+
+    return sortProfiles(profiles, states, metadata, sortConfig);
+  }, [profiles, states, metadata, sortConfig]);
 
   useEffect(() => {
     const hasActive = Object.values(states).some(
@@ -423,103 +483,73 @@ export function RunModelsSection() {
         >
           #
         </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-          }}
-        >
-          Status
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-          }}
-        >
-          Model
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          Params
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          Quant
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          Ctx
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          VRAM
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          RAM
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          Spec
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            textAlign: "center",
-          }}
-        >
-          TPS
-        </span>
+
+        {SORTABLE_COLUMNS.map((col) => {
+          const isActive = sortConfig.column === col;
+          const ariaValue = isActive
+            ? sortConfig.direction === "asc"
+              ? "ascending"
+              : "descending"
+            : "none";
+          const LABELS: Record<SortColumn, string> = {
+            status: "STATUS",
+            model: "MODEL",
+            params: "PARAMS",
+            quant: "QUANT",
+            ctx: "CTX",
+            vram: "VRAM",
+            ram: "RAM",
+            spec: "SPEC",
+            tps: "TPS",
+          };
+          const label = LABELS[col];
+          const align =
+            col === "status" || col === "model"
+              ? "left"
+              : "center";
+
+          return (
+            <button
+              key={col}
+              onClick={() => handleSort(col)}
+              tabIndex={0}
+              aria-sort={ariaValue}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 2,
+                fontSize: 9,
+                fontWeight: 600,
+                color: isActive
+                  ? "var(--accent-primary)"
+                  : "var(--text-muted)",
+                textTransform: "uppercase",
+                textAlign: align,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                outline: "none",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = isActive
+                  ? "var(--accent-primary)"
+                  : "var(--text-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = isActive
+                  ? "var(--accent-primary)"
+                  : "var(--text-muted)";
+              }}
+            >
+              {label}
+              {isActive && sortConfig.direction === "asc" && " \u2191"}
+              {isActive && sortConfig.direction === "desc" && " \u2193"}
+              {!isActive && " \u2195"}
+            </button>
+          );
+        })}
+
         <span
           style={{
             fontSize: 9,
@@ -564,7 +594,7 @@ export function RunModelsSection() {
         </div>
       ) : (
         <div style={{ maxHeight: 300, overflowY: "auto" }}>
-          {profiles.map((profile: LaunchProfile, idx: number) => {
+          {getSortedProfiles().map((profile: LaunchProfile, idx: number) => {
             const running = isRunning(profile);
             const active = isActive(profile);
             const state = states[profile.script_path];
