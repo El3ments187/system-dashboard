@@ -1,9 +1,152 @@
 //! AI metrics data models for llama-server, OpenWebUI, and OpenCode monitoring.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+// ─── Launch Profile Models ──────────────────────────────────────────
+
+/// Parsed arguments from a .sh launch script
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct ParsedScriptArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ubatch_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_reuse: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flash_attn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threads: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_type_k: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_type_v: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_draft_n_max: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_draft: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj: Option<String>,
+}
+
+/// Metadata parsed from the script filename
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FilenameMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quant: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+/// A launch profile discovered from a .sh script
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LaunchProfile {
+    pub id: String,
+    pub name: String,
+    pub script_path: String,
+    pub file_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parsed_args: Option<ParsedScriptArgs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename_meta: Option<FilenameMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// Current runtime state of a profile
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProfileState {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llama_server_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_vram_mb: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_ram_mb: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_tps: Option<f64>,
+}
+
+/// Persisted metadata for a profile (keyed by script path)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProfileMetadata {
+    pub script_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_vram_mb: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_ram_mb: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_gen_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_gen_tps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_context_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_run_date: Option<String>,
+    #[serde(default)]
+    pub run_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_startup_time_ms: Option<f64>,
+}
+
+/// Combined profile response for the frontend
+#[derive(Debug, Serialize, Clone)]
+pub struct ProfileResponse {
+    pub profiles: Vec<LaunchProfile>,
+    pub states: HashMap<String, ProfileState>,
+    pub metadata: HashMap<String, ProfileMetadata>,
+    pub scan_dir: String,
+}
+
+/// Request to launch a profile
+#[derive(Debug, Deserialize)]
+pub struct LaunchRequest {
+    pub script_path: String,
+}
+
+/// Request to stop a profile
+#[derive(Debug, Deserialize)]
+pub struct StopRequest {
+    pub script_path: String,
+}
 
 /// Status of an AI service
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Default, Serialize, Clone)]
 pub struct AiServiceStatus {
     pub name: String,
     pub endpoint: String,
@@ -134,7 +277,7 @@ pub struct AiComfyUiInfo {
 }
 
 /// Complete AI metrics snapshot
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Default, Serialize, Clone)]
 pub struct AiMetrics {
     /// Service status objects (for detailed view)
     pub llama_server: AiServiceStatus,
@@ -296,7 +439,7 @@ pub struct SavedCommand {
 }
 
 /// History point for AI metrics over time
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Default, Serialize, Clone)]
 pub struct AiHistoryPoint {
     pub timestamp: String,
     #[serde(skip_serializing_if = "Option::is_none")]

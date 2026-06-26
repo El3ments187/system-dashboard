@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::api::ai_management as ai_mgmt;
+use crate::api::launcher as launcher_api;
 use crate::api::settings::{
     AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, test_connection,
 };
@@ -68,6 +69,13 @@ pub fn create_router() -> axum::Router {
                 .put(update_command_handler),
         )
         .route("/api/ai/commands", delete(delete_command_handler))
+        .route("/api/launch/profiles", get(list_profiles_handler))
+        .route(
+            "/api/launch/metrics/{script_path}",
+            get(profile_metrics_handler),
+        )
+        .route("/api/launch/launch", post(launch_profile_handler))
+        .route("/api/launch/stop", post(stop_profile_handler))
 }
 
 async fn health_handler() -> axum::response::Json<Value> {
@@ -245,6 +253,8 @@ pub struct UpdateSettingsRequest {
     pub openwebui_url: String,
     pub opencode_url: String,
     pub comfyui_url: String,
+    #[serde(default)]
+    pub launcher_scan_dir: Option<String>,
 }
 
 async fn update_settings_handler(
@@ -255,8 +265,14 @@ async fn update_settings_handler(
         openwebui_url: req.openwebui_url,
         opencode_url: req.opencode_url,
         comfyui_url: req.comfyui_url,
+        launcher_scan_dir: req.launcher_scan_dir.clone(),
     };
     set_ai_settings(settings.clone());
+    if let Some(ref dir) = req.launcher_scan_dir
+        && !dir.is_empty()
+    {
+        launcher_api::update_scan_dir(dir);
+    }
     Json(settings)
 }
 
@@ -561,4 +577,176 @@ async fn terminal_history_handler(
         Ok(history) => Json(json!({ "data": safe_serialize(&history), "success": true })),
         Err(e) => Json(json!({ "error": e, "success": false })),
     }
+}
+
+#[derive(Deserialize)]
+pub struct LaunchProfileRequest {
+    pub profile_id: String,
+}
+
+async fn list_profiles_handler() -> axum::response::Json<Value> {
+    eprintln!("[API] /api/launch/profiles request received");
+    let response = match tokio::task::spawn_blocking(launcher_api::scan_profiles).await {
+        Ok(response) => response,
+        Err(e) => {
+            eprintln!("[API] profile scan task panicked: {}", e);
+            return Json(json!({ "error": "Profile scan failed" }));
+        }
+    };
+    eprintln!("[API] /api/launch/profiles scan completed, returning response");
+    Json(json!({ "data": safe_serialize(&response) }))
+}
+
+async fn launch_profile_handler(
+    Json(req): Json<LaunchProfileRequest>,
+) -> axum::response::Json<Value> {
+    eprintln!(
+        "[API] /api/launch/launch request received for profile_id={}",
+        req.profile_id
+    );
+    let profile_id = req.profile_id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let state = launcher_api::get_state();
+        let guard = state.read().unwrap();
+        let script_path: Option<String> = guard
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.script_path.clone());
+        drop(guard);
+
+        match script_path {
+            Some(path) => launcher_api::launch_profile(&path),
+            None => Err("Profile not found".to_string()),
+        }
+    })
+    .await;
+
+    let response = match result {
+        Ok(Ok(_)) => Json(json!({ "success": true, "message": "Model launch initiated" })),
+        Ok(Err(e)) => Json(json!({ "error": e, "success": false })),
+        Err(e) => {
+            eprintln!("[API] launch task panicked: {}", e);
+            Json(json!({ "error": "Launch failed unexpectedly", "success": false }))
+        }
+    };
+    eprintln!("[API] /api/launch/launch returning response");
+    response
+}
+
+#[derive(Deserialize)]
+pub struct StopProfileRequest {
+    pub profile_id: String,
+}
+
+async fn stop_profile_handler(Json(req): Json<StopProfileRequest>) -> axum::response::Json<Value> {
+    eprintln!(
+        "[API] /api/launch/stop request received for profile_id={}",
+        req.profile_id
+    );
+    let profile_id = req.profile_id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let state = launcher_api::get_state();
+        let guard = state.read().unwrap();
+        let script_path: Option<String> = guard
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.script_path.clone());
+        drop(guard);
+
+        match script_path {
+            Some(path) => launcher_api::stop_profile(&path),
+            None => Err("Profile not found".to_string()),
+        }
+    })
+    .await;
+
+    let response = match result {
+        Ok(Ok(_)) => Json(json!({ "success": true })),
+        Ok(Err(e)) => Json(json!({ "error": e, "success": false })),
+        Err(e) => {
+            eprintln!("[API] stop task panicked: {}", e);
+            Json(json!({ "error": "Stop failed unexpectedly", "success": false }))
+        }
+    };
+    eprintln!("[API] /api/launch/stop returning response");
+    response
+}
+
+async fn profile_metrics_handler(
+    axum::extract::Path(script_path): axum::extract::Path<String>,
+) -> axum::response::Json<Value> {
+    // Use spawn_blocking to avoid async context issues with axum handlers
+    let script_path_clone = script_path.clone();
+    match tokio::task::spawn_blocking(move || profile_metrics_handler_sync(&script_path_clone))
+        .await
+    {
+        Ok(json_response) => json_response,
+        Err(_) => Json(json!({
+            "data": json!({
+                "status": "error",
+                "peak_vram_mb": null,
+                "current_tps": null,
+                "model_path": null,
+                "context_size": null,
+            }),
+        })),
+    }
+}
+
+fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value> {
+    let state = launcher_api::get_state();
+    let guard = state.read().unwrap();
+
+    if let Some(profile_state) = guard.states.get(script_path) {
+        let status = profile_state.status.clone();
+        let pid = profile_state.llama_server_pid;
+        drop(guard);
+
+        if status == "running"
+            && let Some(pid_val) = pid
+        {
+            // Get process-level metrics from system
+            let system = sysinfo::System::new_all();
+            if let Some(proc) = system.process(sysinfo::Pid::from(pid_val as usize)) {
+                let cpu_percent = proc.cpu_usage();
+                let memory_kb = proc.memory();
+
+                return Json(json!({
+                    "data": json!({
+                        "status": "running",
+                        "pid": pid,
+                        "cpu_percent": cpu_percent,
+                        "memory_kb": memory_kb,
+                        "peak_vram_mb": null,
+                        "current_tps": null,
+                        "model_path": null,
+                        "context_size": null,
+                    }),
+                }));
+            }
+        }
+
+        return Json(json!({
+            "data": json!({
+                "status": status.clone(),
+                "peak_vram_mb": null,
+                "current_tps": null,
+                "model_path": null,
+                "context_size": null,
+            }),
+        }));
+    }
+
+    drop(guard);
+    Json(json!({
+        "data": json!({
+            "status": "not_found",
+            "peak_vram_mb": null,
+            "current_tps": null,
+            "model_path": null,
+            "context_size": null,
+        }),
+    }))
 }

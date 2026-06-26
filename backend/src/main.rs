@@ -9,6 +9,10 @@ use system_dashboard::api::routes::create_router;
 
 #[tokio::main]
 async fn main() {
+    // Initialize launcher state and start metrics updater
+    let _profiles = system_dashboard::api::launcher::scan_profiles();
+    system_dashboard::api::launcher::start_metrics_updater();
+
     let app = create_router();
     let addr = Ipv4Addr::UNSPECIFIED;
     let port = 3001;

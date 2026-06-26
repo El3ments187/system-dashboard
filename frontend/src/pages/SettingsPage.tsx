@@ -22,6 +22,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     openwebui_url: '',
     opencode_url: '',
     comfyui_url: '',
+    launcher_scan_dir: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -120,6 +121,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     getAiSettings()
       .then((s) => {
         setSettings(s);
+        if (s.launcher_scan_dir && !llamaDir) {
+          setLlamaDir(s.launcher_scan_dir);
+          localStorage.setItem('llama_cpp_dir', s.launcher_scan_dir);
+        }
         setLoading(false);
       })
       .catch(() => {
@@ -155,7 +160,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateAiSettings(settings);
+      await updateAiSettings({ ...settings, launcher_scan_dir: llamaDir || undefined });
     } catch {
       // silently ignore save errors — toast will show if needed
     } finally {
@@ -186,7 +191,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     return null;
   };
 
-  const renderUrlField = (key: keyof AiSettings, label: string, placeholder: string, icon: React.ReactNode) => (
+  const renderUrlField = (key: Exclude<keyof AiSettings, 'launcher_scan_dir'>, label: string, placeholder: string, icon: React.ReactNode) => (
     <div key={key} className="settings-field">
       <div className="settings-field-label">{icon}{label}</div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -212,7 +217,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     </div>
   );
 
-  const fields: Array<{ key: keyof AiSettings; label: string; placeholder: string }> = [
+  const fields: Array<{ key: Exclude<keyof AiSettings, 'launcher_scan_dir'>; label: string; placeholder: string }> = [
     { key: 'openwebui_url', label: 'OpenWebUI URL', placeholder: 'http://localhost:3000' },
     { key: 'opencode_url', label: 'OpenCode URL', placeholder: 'http://localhost:4000' },
     { key: 'comfyui_url', label: 'ComfyUI URL', placeholder: 'http://localhost:8188' },
@@ -274,6 +279,24 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
                 value={llamaDir}
                 readOnly
                 placeholder="No directory selected"
+                style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
+              />
+              <button className="settings-btn" onClick={() => setBrowserOpen(true)}>
+                <FolderOpen size={13} />
+                Browse
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-field">
+            <div className="settings-field-label"><Folder size={12} />Startup Script Directory</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                className="settings-input"
+                value={llamaDir || ''}
+                readOnly
+                placeholder="/home/gamer/Documents/AI/Start_Scripts"
                 style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
               />
               <button className="settings-btn" onClick={() => setBrowserOpen(true)}>

@@ -387,9 +387,12 @@ pub fn check_all_alerts(
     }
 
     // AI service availability alerts (deduplicated)
-    for alert in
-        check_ai_service_availability(llama_available, openwebui_available, opencode_available, comfyui_available)
-    {
+    for alert in check_ai_service_availability(
+        llama_available,
+        openwebui_available,
+        opencode_available,
+        comfyui_available,
+    ) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);

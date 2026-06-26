@@ -42,16 +42,16 @@ export interface StorageMetrics {
 }
 
 export interface DiskIOStats {
-   reads: number;
-   writes: number;
-   read_sectors: number;
-   write_sectors: number;
-   read_bytes_per_sec: number;
-   write_bytes_per_sec: number;
-   read_iops: number;
-   write_iops: number;
-   utilization_percent: number;
- }
+  reads: number;
+  writes: number;
+  read_sectors: number;
+  write_sectors: number;
+  read_bytes_per_sec: number;
+  write_bytes_per_sec: number;
+  read_iops: number;
+  write_iops: number;
+  utilization_percent: number;
+}
 
 export interface DeviceStorageInfo {
   device: string;
@@ -70,10 +70,10 @@ export interface SystemMetrics {
 }
 
 export interface MetricHistoryPoint {
-   slot: number;
-   timestamp: Date;
-   value: number | null;
- }
+  slot: number;
+  timestamp: Date;
+  value: number | null;
+}
 
 export interface ApiResponse<T> {
   data: T;
@@ -81,18 +81,18 @@ export interface ApiResponse<T> {
 }
 
 export interface StorageHistoryPoint {
-   device: string;
-   slot: number;
-   timestamp: string;
-   read_bytes_per_sec: number | null;
-   write_bytes_per_sec: number | null;
-   utilization: number | null;
+  device: string;
+  slot: number;
+  timestamp: string;
+  read_bytes_per_sec: number | null;
+  write_bytes_per_sec: number | null;
+  utilization: number | null;
 }
 
 export enum AlertSeverity {
-  Info = 'info',
-  Warning = 'warning',
-  Error = 'error',
+  Info = "info",
+  Warning = "warning",
+  Error = "error",
 }
 
 export interface AiServiceStatus {
@@ -128,7 +128,7 @@ export interface ProcessMetrics {
   uptime_seconds: number;
 }
 
-export type ServiceStatus = 'online' | 'offline';
+export type ServiceStatus = "online" | "offline";
 
 export interface AiComfyUiInfo {
   queue_size?: number | null;
@@ -157,36 +157,36 @@ export interface AiMetrics {
   kv_cache_stats: AiKvCacheStats[] | null;
   models: AiModelItem[] | null;
   llama_server_latency_ms: number | null;
-   // Operational metrics from /metrics endpoint
-    gen_tps: number | null;
-    prompt_tps: number | null;
-    active_requests: number | null;
-    queued_requests: number | null;
-    busy_slots: number | null;
-    context_tokens: number | null;
-    max_context: number | null;
+  // Operational metrics from /metrics endpoint
+  gen_tps: number | null;
+  prompt_tps: number | null;
+  active_requests: number | null;
+  queued_requests: number | null;
+  busy_slots: number | null;
+  context_tokens: number | null;
+  max_context: number | null;
 
-    // Props from /props endpoint
-    model_alias?: string | null;
-    model_path?: string | null;
-    total_slots?: number | null;
-    build_info?: string | null;
-    endpoint_metrics?: boolean | null;
-    webui?: boolean | null;
-    vision?: boolean | null;
-    video?: boolean | null;
-    audio?: boolean | null;
-    temperature?: number | null;
-    top_k?: number | null;
-    top_p?: number | null;
-    repeat_penalty?: number | null;
+  // Props from /props endpoint
+  model_alias?: string | null;
+  model_path?: string | null;
+  total_slots?: number | null;
+  build_info?: string | null;
+  endpoint_metrics?: boolean | null;
+  webui?: boolean | null;
+  vision?: boolean | null;
+  video?: boolean | null;
+  audio?: boolean | null;
+  temperature?: number | null;
+  top_k?: number | null;
+  top_p?: number | null;
+  repeat_penalty?: number | null;
 
-    // Per-process metrics
-    llama_server_process?: ProcessMetrics | null;
-    opencode_process?: ProcessMetrics | null;
-    openwebui_process?: ProcessMetrics | null;
-    comfyui_process?: ProcessMetrics | null;
-    comfyui_info?: AiComfyUiInfo | null;
+  // Per-process metrics
+  llama_server_process?: ProcessMetrics | null;
+  opencode_process?: ProcessMetrics | null;
+  openwebui_process?: ProcessMetrics | null;
+  comfyui_process?: ProcessMetrics | null;
+  comfyui_info?: AiComfyUiInfo | null;
 }
 
 export interface AiHistoryEntry {
@@ -216,6 +216,7 @@ export interface AiSettings {
   openwebui_url: string;
   opencode_url: string;
   comfyui_url: string;
+  launcher_scan_dir?: string;
 }
 
 export interface TestConnectionResult {
@@ -271,3 +272,76 @@ export interface RepoInfo {
   latest_build_tag?: string | null;
 }
 
+// ─── Launcher / Run Models ──────────────────────────────────────────
+
+export interface ParsedScriptArgs {
+  model_path?: string;
+  alias?: string;
+  context_size?: number;
+  port?: number;
+  host?: string;
+  batch_size?: number;
+  ubatch_size?: number;
+  parallel?: number;
+  cache_reuse?: number;
+  flash_attn?: string;
+  threads?: number;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  repeat_penalty?: number;
+  min_p?: number;
+  presence_penalty?: number;
+  cache_type_k?: string;
+  cache_type_v?: string;
+  spec_type?: string;
+  spec_draft_n_max?: number;
+  model_draft?: string;
+  mmproj?: string;
+}
+
+export interface FilenameMetadata {
+  family?: string;
+  params?: string;
+  quant?: string;
+  variant?: string;
+}
+
+export interface LaunchProfile {
+  id: string;
+  name: string;
+  script_path: string;
+  file_hash: string;
+  parsed_args: ParsedScriptArgs | null;
+  filename_meta: FilenameMetadata | null;
+  warning?: string | null;
+}
+
+export interface ProfileState {
+  status: string;
+  llama_server_pid?: number | null;
+  start_time?: string | null;
+  peak_vram_mb?: number | null;
+  peak_ram_mb?: number | null;
+  current_tps?: number | null;
+}
+
+export interface ProfileMetadata {
+  script_path: string;
+  model_path?: string | null;
+  peak_vram_mb?: number | null;
+  peak_ram_mb?: number | null;
+  avg_gen_tps?: number | null;
+  peak_gen_tps?: number | null;
+  last_context_size?: number | null;
+  last_run_date?: string | null;
+  run_count: number;
+  last_startup_time_ms?: number | null;
+}
+
+export interface ProfileResponse {
+  profiles: LaunchProfile[];
+  states: Record<string, ProfileState>;
+  metadata: Record<string, ProfileMetadata>;
+  scan_dir: string;
+}

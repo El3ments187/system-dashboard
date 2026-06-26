@@ -9,6 +9,8 @@ pub struct AiSettings {
     pub openwebui_url: String,
     pub opencode_url: String,
     pub comfyui_url: String,
+    #[serde(default)]
+    pub launcher_scan_dir: Option<String>,
 }
 
 impl Default for AiSettings {
@@ -18,6 +20,7 @@ impl Default for AiSettings {
             openwebui_url: "http://localhost:3000".to_string(),
             opencode_url: "http://localhost:4000".to_string(),
             comfyui_url: "http://localhost:8188".to_string(),
+            launcher_scan_dir: None,
         }
     }
 }

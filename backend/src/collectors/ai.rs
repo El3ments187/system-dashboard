@@ -21,8 +21,12 @@ fn find_process_pids(name_pattern: &str) -> Vec<u32> {
             if !path.is_dir() {
                 continue;
             }
-            let Some(pid_str) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            let Ok(pid) = pid_str.parse::<u32>() else { continue };
+            let Some(pid_str) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Ok(pid) = pid_str.parse::<u32>() else {
+                continue;
+            };
 
             if let Some(exe_name) = std::fs::read_link(path.join("exe"))
                 .ok()
@@ -83,7 +87,11 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     let total_sys_time: f64 = sys_fields.iter().sum();
 
     // Get number of CPUs for normalization
-    let num_cpus = if sys_fields.len() > 0 { (sys_fields.len() - 1) as f64 } else { 1.0 };
+    let num_cpus = if sys_fields.len() > 0 {
+        (sys_fields.len() - 1) as f64
+    } else {
+        1.0
+    };
 
     // Calculate CPU utilization (instantaneous based on total time since process start)
     // We use a simple approach: total_time / (total_sys_time / num_cpus) * 100
@@ -190,28 +198,73 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
     let modalities = val.get("modalities");
 
     Some(LlamaProps {
-        model_alias: val.get("model_alias").and_then(|v| v.as_str()).map(String::from),
-        model_path: val.get("model_path").and_then(|v| v.as_str()).map(String::from),
-        n_ctx: val.get("n_ctx")
+        model_alias: val
+            .get("model_alias")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        model_path: val
+            .get("model_path")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        n_ctx: val
+            .get("n_ctx")
             .or_else(|| gen_settings.and_then(|g| g.get("n_ctx")))
             .and_then(|v| v.as_u64())
             .map(|v| v as u32),
-        total_slots: val.get("total_slots").and_then(|v| v.as_u64()).map(|v| v as u32),
-        build_info: val.get("build_info").and_then(|v| v.as_str()).map(String::from),
+        total_slots: val
+            .get("total_slots")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
+        build_info: val
+            .get("build_info")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         endpoint_metrics: val.get("endpoint_metrics").and_then(|v| v.as_bool()),
-        webui: val.get("webui").or_else(|| val.get("ui")).and_then(|v| v.as_bool()),
-        vision: val.get("vision").or_else(|| modalities.and_then(|m| m.get("vision"))).and_then(|v| v.as_bool()),
-        video: val.get("video").or_else(|| modalities.and_then(|m| m.get("video"))).and_then(|v| v.as_bool()),
-        audio: val.get("audio").or_else(|| modalities.and_then(|m| m.get("audio"))).and_then(|v| v.as_bool()),
-        temperature: val.get("temperature").or_else(|| params.and_then(|p| p.get("temperature"))).and_then(|v| v.as_f64()),
-        top_k: val.get("top_k").or_else(|| params.and_then(|p| p.get("top_k"))).and_then(|v| v.as_i64()).map(|v| v as i32),
-        top_p: val.get("top_p").or_else(|| params.and_then(|p| p.get("top_p"))).and_then(|v| v.as_f64()),
-        repeat_penalty: val.get("repeat_penalty").or_else(|| params.and_then(|p| p.get("repeat_penalty"))).and_then(|v| v.as_f64()),
+        webui: val
+            .get("webui")
+            .or_else(|| val.get("ui"))
+            .and_then(|v| v.as_bool()),
+        vision: val
+            .get("vision")
+            .or_else(|| modalities.and_then(|m| m.get("vision")))
+            .and_then(|v| v.as_bool()),
+        video: val
+            .get("video")
+            .or_else(|| modalities.and_then(|m| m.get("video")))
+            .and_then(|v| v.as_bool()),
+        audio: val
+            .get("audio")
+            .or_else(|| modalities.and_then(|m| m.get("audio")))
+            .and_then(|v| v.as_bool()),
+        temperature: val
+            .get("temperature")
+            .or_else(|| params.and_then(|p| p.get("temperature")))
+            .and_then(|v| v.as_f64()),
+        top_k: val
+            .get("top_k")
+            .or_else(|| params.and_then(|p| p.get("top_k")))
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
+        top_p: val
+            .get("top_p")
+            .or_else(|| params.and_then(|p| p.get("top_p")))
+            .and_then(|v| v.as_f64()),
+        repeat_penalty: val
+            .get("repeat_penalty")
+            .or_else(|| params.and_then(|p| p.get("repeat_penalty")))
+            .and_then(|v| v.as_f64()),
     })
 }
 
 /// Poll llama-server for health, /metrics, and /props data.
-async fn poll_llama_server(base_url: &str) -> (AiServiceStatus, Option<LlamaMetrics>, Option<LlamaProps>, Option<f64>) {
+async fn poll_llama_server(
+    base_url: &str,
+) -> (
+    AiServiceStatus,
+    Option<LlamaMetrics>,
+    Option<LlamaProps>,
+    Option<f64>,
+) {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -348,19 +401,25 @@ fn compute_derived_metrics(prom: &LlamaMetrics, props: Option<&LlamaProps>) -> A
         total_tokens,
 
         // Operational metrics from /metrics endpoint
-        gen_tps: if prom.predicted_tokens_per_second.is_finite() && prom.predicted_tokens_per_second > 0.0 {
+        gen_tps: if prom.predicted_tokens_per_second.is_finite()
+            && prom.predicted_tokens_per_second > 0.0
+        {
             Some(prom.predicted_tokens_per_second)
         } else {
             None
         },
-        prompt_tps: if prom.prompt_tokens_per_second.is_finite() && prom.prompt_tokens_per_second > 0.0 {
+        prompt_tps: if prom.prompt_tokens_per_second.is_finite()
+            && prom.prompt_tokens_per_second > 0.0
+        {
             Some(prom.prompt_tokens_per_second)
         } else {
             None
         },
         active_requests: Some(prom.requests_processing as u32),
         queued_requests: Some(prom.requests_deferred as u32),
-        busy_slots: if prom.n_busy_slots_per_decode.is_finite() && prom.n_busy_slots_per_decode > 0.0 {
+        busy_slots: if prom.n_busy_slots_per_decode.is_finite()
+            && prom.n_busy_slots_per_decode > 0.0
+        {
             Some(prom.n_busy_slots_per_decode as u32)
         } else {
             None
@@ -473,9 +532,7 @@ async fn poll_openwebui(
 }
 
 /// Poll ComfyUI for health check and workflow info.
-async fn poll_comfyui(
-    base_url: &str,
-) -> (AiServiceStatus, Option<AiComfyUiInfo>) {
+async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>) {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -601,7 +658,8 @@ pub async fn collect_ai_metrics(
 
     // Collect per-process metrics for llama-server, OpenCode, and ComfyUI
     let llama_process = collect_process_metrics("llama");
-    let openwebui_process = collect_process_metrics("open_webui").or_else(|| collect_process_metrics("open-webui"));
+    let openwebui_process =
+        collect_process_metrics("open_webui").or_else(|| collect_process_metrics("open-webui"));
     let opencode_process = collect_process_metrics("opencode");
     let comfyui_process = collect_process_metrics("comfyui");
 

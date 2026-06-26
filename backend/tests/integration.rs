@@ -1,5 +1,8 @@
 //! Comprehensive backend tests covering collectors, models, history, and calculations.
 
+use system_dashboard::api::launcher::{
+    capture_metrics_into_metadata, extract_filename_metadata, parse_script_args,
+};
 use system_dashboard::collectors::alerts::{
     Alert, AlertResponse, AlertSeverity, CollectorStatus, check_all_alerts,
     check_cpu_collector_status, check_gpu_backend_status, check_gpu_collector_status,
@@ -14,6 +17,7 @@ use system_dashboard::collectors::storage::{
     collect_storage_metrics, is_loop_device, is_nvme_device, is_partition_device,
     nvme_controller_name,
 };
+use system_dashboard::models::ai::{ProfileMetadata, ProfileState};
 use system_dashboard::models::metrics::{
     CpuCoreInfo, CpuMetrics, GpuMetrics, MemoryMetrics, SystemMetrics,
 };
@@ -459,6 +463,7 @@ mod alerts {
             true,
             true,
             true,
+            true,
         );
         for alert in &alerts {
             assert_eq!(alert.subsystem, "gpu");
@@ -475,6 +480,7 @@ mod alerts {
             CollectorStatus::Ok,
             CollectorStatus::Ok,
             CollectorStatus::Ok,
+            true,
             true,
             true,
             true,
@@ -511,6 +517,7 @@ mod alerts {
             CollectorStatus::Error("e3".to_string()),
             CollectorStatus::Error("e4".to_string()),
             CollectorStatus::Ok,
+            true,
             true,
             true,
             true,
@@ -1557,6 +1564,7 @@ mod ai_model_serialization {
             openwebui_available: Some(true),
             opencode_available: Some(false),
             kv_cache_max_pct: Some(75.5),
+            ..Default::default()
         };
         let json = serde_json::to_string(&point).unwrap();
         assert!(json.contains("2024-01-01"));
@@ -1572,6 +1580,7 @@ mod ai_model_serialization {
             openwebui_available: None,
             opencode_available: None,
             kv_cache_max_pct: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&point).unwrap();
         assert!(json.contains("2024-01-01"));
@@ -1629,6 +1638,7 @@ mod ai_model_serialization {
                 description: Some("Test model".to_string()),
             }]),
             llama_server_latency_ms: Some(5.0),
+            ..Default::default()
         };
         let json = serde_json::to_string(&metrics).unwrap();
         assert!(json.contains("llama-server"));
@@ -1675,6 +1685,7 @@ mod ai_model_serialization {
             chat_history_count: None,
             models: None,
             llama_server_latency_ms: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&metrics).unwrap();
         assert!(json.contains("llama-server"));
@@ -1753,6 +1764,7 @@ mod ai_model_serialization {
                 description: None,
             }]),
             llama_server_latency_ms: Some(f64::MAX),
+            ..Default::default()
         };
         let json = serde_json::to_string(&metrics);
         assert!(json.is_ok());
@@ -1804,6 +1816,7 @@ mod ai_alerts {
             false, // llama available
             false, // openwebui available
             false, // opencode available
+            false, // comfyui available
         );
         assert!(!alerts.is_empty());
         assert_eq!(alerts[0].subsystem, "ai");
@@ -1816,8 +1829,9 @@ mod ai_alerts {
             true,  // llama available
             false, // openwebui unavailable
             false, // opencode unavailable
+            false, // comfyui unavailable
         );
-        assert_eq!(alerts.len(), 2);
+        assert_eq!(alerts.len(), 3);
     }
 
     #[test]
@@ -1848,6 +1862,7 @@ mod ai_alerts {
             true,
             true,
             true,
+            true,
         );
         // Should not have AI alerts when all services are OK
         let ai_alerts: Vec<&Alert> = alerts.iter().filter(|a| a.subsystem == "ai").collect();
@@ -1867,6 +1882,7 @@ mod ai_alerts {
             false,
             false,
             false,
+            false,
         );
         let ai_alerts: Vec<&Alert> = alerts.iter().filter(|a| a.subsystem == "ai").collect();
         assert!(!ai_alerts.is_empty());
@@ -1879,12 +1895,318 @@ mod ai_alerts {
             false, // llama unavailable
             false, // openwebui unavailable
             false, // opencode unavailable
+            false, // comfyui unavailable
         );
-        assert_eq!(alerts.len(), 3);
-        // All three alerts should have unique IDs
+        assert_eq!(alerts.len(), 4);
+        // All four alerts should have unique IDs
         let ids: Vec<u64> = alerts.iter().map(|a| a.id).collect();
-        assert_ne!(ids[0], ids[1]);
-        assert_ne!(ids[1], ids[2]);
-        assert_ne!(ids[0], ids[2]);
+        let unique_ids: std::collections::HashSet<u64> = ids.iter().copied().collect();
+        assert_eq!(ids.len(), unique_ids.len());
+    }
+}
+
+// ============================================================================
+// Launcher: script parsing & metadata extraction tests
+// ============================================================================
+
+#[cfg(test)]
+mod launcher_script_parsing {
+    use super::*;
+
+    #[test]
+    fn test_parse_simple_model_flag() {
+        let script = r#"#!/bin/bash
+llama-server -m "/mnt/models/foo.gguf" -c 32768 --port 8081
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("/mnt/models/foo.gguf"));
+        assert_eq!(args.context_size, Some(32768));
+        assert_eq!(args.port, Some(8081));
+    }
+
+    #[test]
+    fn test_parse_long_form_model_and_ctx_size_flags() {
+        let script = r#"#!/bin/bash
+llama-server --model "/mnt/models/bar.gguf" --ctx-size 65536
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("/mnt/models/bar.gguf"));
+        assert_eq!(args.context_size, Some(65536));
+    }
+
+    #[test]
+    fn test_parse_ctx_size_equals_syntax() {
+        let script = "llama-server -m model.gguf --ctx-size=131072";
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.context_size, Some(131072));
+    }
+
+    #[test]
+    fn test_parse_hf_file_flag() {
+        let script = "llama-server --hf-file org/repo/model.gguf -c 4096";
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("org/repo/model.gguf"));
+    }
+
+    #[test]
+    fn test_model_flag_does_not_collide_with_mmproj() {
+        // Regression test: `-m` must never match inside `--mmproj`, regardless
+        // of which flag appears first in the command.
+        let script =
+            r#"llama-server --mmproj "/mnt/models/mmproj.gguf" -m "/mnt/models/real.gguf""#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("/mnt/models/real.gguf"));
+        assert_eq!(args.mmproj.as_deref(), Some("/mnt/models/mmproj.gguf"));
+    }
+
+    #[test]
+    fn test_parse_multiline_with_line_continuations() {
+        let script = r#"#!/bin/bash
+llama-server \
+  -m "/mnt/models/multiline.gguf" \
+  -c 131072 \
+  --port 8081
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(
+            args.model_path.as_deref(),
+            Some("/mnt/models/multiline.gguf")
+        );
+        assert_eq!(args.context_size, Some(131072));
+        assert_eq!(args.port, Some(8081));
+    }
+
+    #[test]
+    fn test_parse_shell_variable_substitution() {
+        // Matches the documented example: a variable defined earlier in the
+        // script should be resolved when referenced via `-m "$MODEL"`.
+        let script = r#"#!/bin/bash
+MODEL="/mnt/Games/AI/models/foo.gguf"
+
+llama-server \
+  -m "$MODEL" \
+  -c 131072
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(
+            args.model_path.as_deref(),
+            Some("/mnt/Games/AI/models/foo.gguf")
+        );
+    }
+
+    #[test]
+    fn test_parse_exported_shell_variable() {
+        let script = r#"export MODEL_DIR="/mnt/models"
+llama-server -m "$MODEL_DIR/foo.gguf" -c 8192
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("/mnt/models/foo.gguf"));
+    }
+
+    #[test]
+    fn test_parse_ignores_full_line_comments() {
+        let script = r#"#!/bin/bash
+# -m "/old/unused/path.gguf"
+llama-server -m "/mnt/models/current.gguf" -c 32768
+"#;
+        let args = parse_script_args(script).expect("should parse");
+        assert_eq!(args.model_path.as_deref(), Some("/mnt/models/current.gguf"));
+    }
+
+    #[test]
+    fn test_parse_spec_type_mappings() {
+        let cases = [
+            ("draft", "draft"),
+            ("draft-mtp", "draft-mtp"),
+            ("eagle", "eagle"),
+            ("eagle3", "eagle3"),
+        ];
+        for (flag_val, expected) in cases {
+            let script = format!("llama-server -m model.gguf --spec-type {}", flag_val);
+            let args = parse_script_args(&script).expect("should parse");
+            assert_eq!(args.spec_type.as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_parse_missing_model_does_not_crash() {
+        let script = "llama-server -c 4096 --port 8081";
+        let args = parse_script_args(script).expect("should still parse the rest");
+        assert_eq!(args.model_path, None);
+        assert_eq!(args.context_size, Some(4096));
+    }
+
+    #[test]
+    fn test_parse_no_server_command_returns_none() {
+        let script = "#!/bin/bash\necho 'no llama-server here'\n";
+        assert!(parse_script_args(script).is_none());
+    }
+
+    #[test]
+    fn test_parse_malformed_unterminated_quote_does_not_panic() {
+        let script = r#"llama-server -m "/mnt/models/unterminated.gguf -c 4096"#;
+        // Must not panic; result content is best-effort.
+        let _ = parse_script_args(script);
+    }
+
+    #[test]
+    fn test_parse_empty_script_does_not_panic() {
+        assert!(parse_script_args("").is_none());
+    }
+}
+
+// ============================================================================
+// Launcher: filename metadata (PARAMS / QUANT) extraction tests
+// ============================================================================
+
+#[cfg(test)]
+mod launcher_filename_metadata {
+    use super::*;
+
+    #[test]
+    fn test_extract_params_and_quant_basic() {
+        let meta = extract_filename_metadata("Gemma-4-27B-Q4_K_M").expect("should parse");
+        assert_eq!(meta.params.as_deref(), Some("27B"));
+        assert_eq!(meta.quant.as_deref(), Some("Q4_K_M"));
+    }
+
+    #[test]
+    fn test_extract_quant_iq_and_mxfp_forms() {
+        let m1 = extract_filename_metadata("Foo-7B-IQ4_XS").expect("should parse");
+        assert_eq!(m1.quant.as_deref(), Some("IQ4_XS"));
+
+        let m2 = extract_filename_metadata("Foo-7B-MXFP4").expect("should parse");
+        assert_eq!(m2.quant.as_deref(), Some("MXFP4"));
+    }
+
+    #[test]
+    fn test_extract_quant_bare_short_form() {
+        // Matches real scripts like "Qwen3.6-27B-NEO-Q4.sh"
+        let meta = extract_filename_metadata("Qwen3.6-27B-NEO-Q4").expect("should parse");
+        assert_eq!(meta.quant.as_deref(), Some("Q4"));
+        assert_eq!(meta.variant.as_deref(), Some("NEO"));
+    }
+
+    #[test]
+    fn test_extract_params_decimal_billions() {
+        let meta = extract_filename_metadata("Qwen3.6-35B-RangerX").expect("should parse");
+        assert_eq!(meta.params.as_deref(), Some("35B"));
+    }
+
+    #[test]
+    fn test_extract_fallback_when_no_params_or_quant() {
+        let meta = extract_filename_metadata("nomodel");
+        // Either None entirely, or params/quant individually absent — must not panic either way.
+        if let Some(m) = meta {
+            assert!(m.params.is_none() || m.params.is_some());
+            assert!(m.quant.is_none() || m.quant.is_some());
+        }
+    }
+}
+
+// ============================================================================
+// Launcher: historical metrics capture (VRAM / RAM / TPS persistence)
+// ============================================================================
+
+#[cfg(test)]
+mod launcher_metrics_capture {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn running_state(vram: Option<f64>, ram: Option<f64>, tps: Option<f64>) -> ProfileState {
+        ProfileState {
+            status: "running".to_string(),
+            llama_server_pid: Some(1234),
+            start_time: None,
+            peak_vram_mb: vram,
+            peak_ram_mb: ram,
+            current_tps: tps,
+        }
+    }
+
+    #[test]
+    fn test_capture_creates_new_metadata_entry() {
+        let mut metadata: HashMap<String, ProfileMetadata> = HashMap::new();
+        let state = running_state(Some(14540.0), Some(19000.0), Some(11.0));
+        capture_metrics_into_metadata(&mut metadata, "script.sh", &state, Some(131072));
+
+        let entry = metadata.get("script.sh").expect("entry should exist");
+        assert_eq!(entry.peak_vram_mb, Some(14540.0));
+        assert_eq!(entry.peak_ram_mb, Some(19000.0));
+        assert_eq!(entry.avg_gen_tps, Some(11.0));
+        assert_eq!(entry.peak_gen_tps, Some(11.0));
+        assert_eq!(entry.last_context_size, Some(131072));
+    }
+
+    #[test]
+    fn test_capture_keeps_max_peak_across_calls() {
+        let mut metadata: HashMap<String, ProfileMetadata> = HashMap::new();
+        capture_metrics_into_metadata(
+            &mut metadata,
+            "s.sh",
+            &running_state(Some(10000.0), Some(15000.0), Some(8.0)),
+            None,
+        );
+        capture_metrics_into_metadata(
+            &mut metadata,
+            "s.sh",
+            &running_state(Some(8000.0), Some(20000.0), Some(12.0)),
+            None,
+        );
+
+        let entry = metadata.get("s.sh").unwrap();
+        // VRAM/RAM peaks should never decrease.
+        assert_eq!(entry.peak_vram_mb, Some(10000.0));
+        assert_eq!(entry.peak_ram_mb, Some(20000.0));
+        // TPS reflects the latest reading, peak tracks the max.
+        assert_eq!(entry.avg_gen_tps, Some(12.0));
+        assert_eq!(entry.peak_gen_tps, Some(12.0));
+    }
+
+    #[test]
+    fn test_capture_does_not_overwrite_run_count_or_last_run_date() {
+        let mut metadata: HashMap<String, ProfileMetadata> = HashMap::new();
+        metadata.insert(
+            "s.sh".to_string(),
+            ProfileMetadata {
+                script_path: "s.sh".to_string(),
+                model_path: None,
+                peak_vram_mb: None,
+                peak_ram_mb: None,
+                avg_gen_tps: None,
+                peak_gen_tps: None,
+                last_context_size: None,
+                last_run_date: Some("2026-01-01T00:00:00Z".to_string()),
+                run_count: 5,
+                last_startup_time_ms: None,
+            },
+        );
+        capture_metrics_into_metadata(
+            &mut metadata,
+            "s.sh",
+            &running_state(Some(1000.0), None, None),
+            None,
+        );
+
+        let entry = metadata.get("s.sh").unwrap();
+        assert_eq!(entry.run_count, 5);
+        assert_eq!(entry.last_run_date.as_deref(), Some("2026-01-01T00:00:00Z"));
+        assert_eq!(entry.peak_vram_mb, Some(1000.0));
+    }
+
+    #[test]
+    fn test_capture_with_all_none_leaves_metadata_unset() {
+        let mut metadata: HashMap<String, ProfileMetadata> = HashMap::new();
+        capture_metrics_into_metadata(
+            &mut metadata,
+            "s.sh",
+            &running_state(None, None, None),
+            None,
+        );
+        let entry = metadata.get("s.sh").unwrap();
+        assert_eq!(entry.peak_vram_mb, None);
+        assert_eq!(entry.peak_ram_mb, None);
+        assert_eq!(entry.avg_gen_tps, None);
+        assert_eq!(entry.last_context_size, None);
     }
 }

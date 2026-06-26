@@ -1,4 +1,4 @@
-import { CpuMetrics, MemoryMetrics, GpuMetrics, StorageMetrics, DeviceStorageInfo, SystemMetrics, AiMetrics, AiHistoryEntry, AiSettings, TestConnectionResult, DirectoryEntry, SavedCommand, TerminalSpawnResponse, DirectoryInfo, RepoInfo } from '../types/metrics';
+import { CpuMetrics, MemoryMetrics, GpuMetrics, StorageMetrics, DeviceStorageInfo, SystemMetrics, AiMetrics, AiHistoryEntry, AiSettings, TestConnectionResult, DirectoryEntry, SavedCommand, TerminalSpawnResponse, DirectoryInfo, RepoInfo, ProfileResponse } from '../types/metrics';
 
 const BASE_URL = '/api';
 
@@ -183,4 +183,64 @@ export function ptyKillTerminal(ptsName: string): void {
     body: JSON.stringify({ pts: ptsName }),
     keepalive: true,
   }).catch(() => {});
+}
+
+// ─── Launcher API Methods ──────────────────────────────────────────
+
+export async function getLaunchProfiles(): Promise<ProfileResponse> {
+  const res = await fetch(`${BASE_URL}/launch/profiles`);
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()).data as ProfileResponse;
+}
+
+export async function launchProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`${BASE_URL}/launch/launch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()) as { success: boolean; error?: string };
+}
+
+export async function stopProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`${BASE_URL}/launch/stop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()) as { success: boolean; error?: string };
+}
+
+export async function getLaunchMetrics(scriptPath: string): Promise<{
+  status: string;
+  pid?: number | null;
+  cpu_percent?: number;
+  memory_kb?: number;
+  peak_vram_mb?: number | null;
+  current_tps?: number | null;
+  model_path?: string | null;
+  context_size?: number | null;
+}> {
+  const res = await fetch(`${BASE_URL}/launch/metrics/${encodeURIComponent(scriptPath)}`);
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()).data as any;
+}
+
+export async function getLaunchMetadata(): Promise<Record<string, {
+  script_path: string;
+  model_path?: string | null;
+  peak_vram_mb?: number | null;
+  peak_ram_mb?: number | null;
+  avg_gen_tps?: number | null;
+  peak_gen_tps?: number | null;
+  last_context_size?: number | null;
+  last_run_date?: string | null;
+  run_count: number;
+  last_startup_time_ms?: number | null;
+}>> {
+  const res = await fetch(`${BASE_URL}/launch/profiles`);
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()).data.metadata as any;
 }
