@@ -12,15 +12,12 @@ import {
   BrainCircuit,
   Cpu,
   MemoryStick,
-  Gauge,
-  Database,
   Thermometer,
   RefreshCw,
   Play,
   Square,
   FolderOpen,
   AlertCircle,
-  Folder,
   Terminal as TermIcon,
   ExternalLink,
   Loader2,
@@ -33,6 +30,20 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  Server,
+  Package,
+  Brain,
+  BarChart3,
+  Gauge,
+  Database,
+  Clock3,
+  Fingerprint,
+  Zap,
+  GitBranch,
+  GitCommitHorizontal,
+  Tag,
+  Layers,
+  MonitorCog,
 } from "lucide-react";
 import type {
   ProfileResponse,
@@ -98,32 +109,38 @@ function useViewportWidth(): number {
 
 function StatusIndicator({ status }: { status: string }) {
   let color: string;
+  let bg: string;
   let label: string;
   switch (status) {
     case "running":
       color = "var(--success)";
+      bg = "rgba(34,197,94,0.12)";
       label = "Running";
       break;
     case "starting":
       color = "var(--warning)";
+      bg = "rgba(234,179,8,0.12)";
       label = "Starting";
       break;
     case "loading":
       color = "var(--accent-primary)";
+      bg = "rgba(59,130,246,0.12)";
       label = "Loading";
       break;
     case "failed":
       color = "var(--danger)";
+      bg = "rgba(239,68,68,0.12)";
       label = "Failed";
       break;
     default:
       color = "var(--text-muted)";
+      bg = "rgba(255,255,255,0.06)";
       label = "Stopped";
   }
   return (
     <span
       style={{
-        display: "flex",
+        display: "inline-flex",
         alignItems: "center",
         gap: 4,
         fontSize: 10,
@@ -131,6 +148,9 @@ function StatusIndicator({ status }: { status: string }) {
         color,
         whiteSpace: "nowrap",
         overflow: "hidden",
+        background: bg,
+        borderRadius: 3,
+        padding: "1px 4px",
       }}
     >
       <span
@@ -281,9 +301,13 @@ function CapPill({
 
 function SidebarSection({
   title,
+  icon,
+  accentColor,
   children,
 }: {
   title: string;
+  icon?: React.ReactNode;
+  accentColor?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -291,6 +315,9 @@ function SidebarSection({
       style={{
         background: "var(--bg-secondary)",
         border: "1px solid var(--border-color)",
+        borderLeft: accentColor
+          ? `2px solid ${accentColor}`
+          : "1px solid var(--border-color)",
         borderRadius: "var(--radius-sm)",
         overflow: "hidden",
         flexShrink: 0,
@@ -298,11 +325,15 @@ function SidebarSection({
     >
       <div
         style={{
-          padding: "3px 10px",
+          padding: "2px 8px",
           borderBottom: "1px solid var(--border-color)",
           background: "var(--bg-tertiary)",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
         }}
       >
+        {icon}
         <span
           style={{
             fontSize: 9,
@@ -315,7 +346,7 @@ function SidebarSection({
           {title}
         </span>
       </div>
-      <div style={{ padding: "4px 10px" }}>{children}</div>
+      <div style={{ padding: "3px 8px" }}>{children}</div>
     </div>
   );
 }
@@ -740,6 +771,15 @@ export function RunModelsSection() {
             const tps = running
               ? (state?.current_tps ?? profileMeta?.avg_gen_tps)
               : profileMeta?.avg_gen_tps;
+            let rowBg: string | undefined;
+            if (running) {
+              rowBg = "rgba(var(--success-rgb, 34,197,94),0.06)";
+            } else if (idx % 2 === 1) {
+              rowBg = "rgba(255,255,255,0.015)";
+            }
+            const modelNameStyle: React.CSSProperties = running
+              ? { fontWeight: 700, color: "var(--success)" }
+              : { fontWeight: 600, color: "var(--text-primary)" };
 
             return (
               <div
@@ -750,9 +790,7 @@ export function RunModelsSection() {
                   gap: 0,
                   padding: "3px 12px",
                   borderBottom: "1px solid var(--border-color)",
-                  background: running
-                    ? "rgba(var(--success-rgb, 34,197,94),0.06)"
-                    : undefined,
+                  background: rowBg,
                   alignItems: "center",
                   height: 22,
                 }}
@@ -772,8 +810,7 @@ export function RunModelsSection() {
                 <span
                   style={{
                     fontSize: 11,
-                    fontWeight: running ? 700 : 600,
-                    color: running ? "var(--success)" : "var(--text-primary)",
+                    ...modelNameStyle,
                     fontFamily: "monospace",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -1041,7 +1078,7 @@ function KvRow({
   value,
   color,
 }: {
-  label: string;
+  label: React.ReactNode;
   value: string;
   color?: string;
 }) {
@@ -1084,8 +1121,6 @@ interface RuntimeInfoProps {
   processMemoryKb?: number | null;
   runningPort?: number | null;
   maxContext?: number | null;
-  runningParallel?: number | null;
-  totalSlots?: number | null;
   modelAlias?: string | null;
   modelFile?: string | null;
   seed?: number | null;
@@ -1093,6 +1128,8 @@ interface RuntimeInfoProps {
   speculative?: boolean | null;
   gpuOffload?: GpuOffloadInfo | null;
   loadTimeSecs?: number | null;
+  tokensCached?: number | null;
+  totalTokensSent?: number | null;
 }
 
 function RuntimeInfoSection({
@@ -1110,157 +1147,216 @@ function RuntimeInfoSection({
   speculative,
   gpuOffload,
   loadTimeSecs,
+  tokensCached,
+  totalTokensSent,
 }: RuntimeInfoProps) {
+  const gpuTotalLoaded =
+    gpuOffload != null
+      ? gpuOffload.main_loaded + (gpuOffload.draft_loaded ?? 0)
+      : null;
+  const gpuTotalLayers =
+    gpuOffload != null
+      ? gpuOffload.main_total + (gpuOffload.draft_total ?? 0)
+      : null;
+  const gpuPct =
+    gpuTotalLayers != null && gpuTotalLayers > 0
+      ? Math.round((gpuTotalLoaded! / gpuTotalLayers) * 100)
+      : 0;
+  const hasDraft =
+    gpuOffload != null &&
+    gpuOffload.draft_loaded != null &&
+    gpuOffload.draft_total != null;
+
+  const ic = (icon: React.ReactNode, text: string) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      {icon}
+      {text}
+    </span>
+  );
+
   return (
-    <SidebarSection title="Runtime Information">
-      <KvRow
-        label="Server"
-        value={llamaOnline ? "Online" : "Offline"}
-        color={llamaOnline ? "var(--success)" : "var(--text-muted)"}
-      />
-      <KvRow label="Uptime" value={fmtUptime(processUptimeSecs)} />
-      <KvRow
-        label="PID"
-        value={processPid != null ? String(processPid) : "\u2014"}
-      />
-      <KvRow
-        label="Port"
-        value={runningPort != null ? String(runningPort) : "\u2014"}
-      />
-      <KvRow
-        label="Context"
-        value={maxContext != null ? formatCtx(maxContext) : "\u2014"}
-      />
-      {speculative != null && (
-        <KvRow
-          label="Speculative"
-          value={speculative ? "Yes" : "No"}
-          color={speculative ? "var(--success)" : "var(--text-muted)"}
-        />
-      )}
-      {reasoningFormat != null &&
-        reasoningFormat !== "none" &&
-        reasoningFormat !== "" && (
+    <SidebarSection
+      title="Runtime Information"
+      icon={<Activity size={10} style={{ color: "var(--text-muted)" }} />}
+      accentColor="rgba(59,130,246,0.6)"
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          columnGap: 8,
+        }}
+      >
+        {/* Left: identity */}
+        <div>
           <KvRow
-            label="Thinking"
-            value={reasoningFormat}
-            color="var(--accent-primary)"
+            label={ic(
+              <Server
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Server",
+            )}
+            value={llamaOnline ? "Online" : "Offline"}
+            color={llamaOnline ? "var(--success)" : "var(--text-muted)"}
           />
-        )}
-      {seed != null && seed !== 4294967295 && (
-        <KvRow label="Seed" value={String(seed)} />
-      )}
-      {modelAlias && <KvRow label="Alias" value={modelAlias} />}
-      {modelFile && <KvRow label="Model" value={modelFile} />}
-      {processCpuPct != null && (
-        <KvRow label="CPU" value={`${processCpuPct.toFixed(1)}%`} />
-      )}
-      {processMemoryKb != null && (
-        <KvRow label="Memory" value={fmtKb(processMemoryKb)} />
-      )}
-      {gpuOffload != null &&
-        (() => {
-          const totalLoaded =
-            gpuOffload.main_loaded + (gpuOffload.draft_loaded ?? 0);
-          const totalLayers =
-            gpuOffload.main_total + (gpuOffload.draft_total ?? 0);
-          const pct =
-            totalLayers > 0 ? Math.round((totalLoaded / totalLayers) * 100) : 0;
-          const hasDraft =
-            gpuOffload.draft_loaded != null && gpuOffload.draft_total != null;
-          return (
+          <KvRow
+            label={ic(
+              <Fingerprint
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "PID",
+            )}
+            value={processPid != null ? String(processPid) : "\u2014"}
+          />
+          <KvRow
+            label={ic(
+              <Globe
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Port",
+            )}
+            value={runningPort != null ? String(runningPort) : "\u2014"}
+          />
+          <KvRow
+            label={ic(
+              <Brain
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Context",
+            )}
+            value={maxContext != null ? formatCtx(maxContext) : "\u2014"}
+          />
+          {speculative != null && (
+            <KvRow
+              label="Speculative"
+              value={speculative ? "Yes" : "No"}
+              color={speculative ? "var(--success)" : "var(--text-muted)"}
+            />
+          )}
+          {reasoningFormat != null &&
+            reasoningFormat !== "none" &&
+            reasoningFormat !== "" && (
+              <KvRow
+                label="Thinking"
+                value={reasoningFormat}
+                color="var(--accent-primary)"
+              />
+            )}
+          {seed != null && seed !== 4294967295 && (
+            <KvRow label="Seed" value={String(seed)} />
+          )}
+          {modelAlias && (
+            <KvRow
+              label={ic(
+                <Tag
+                  size={10}
+                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                />,
+                "Alias",
+              )}
+              value={modelAlias}
+            />
+          )}
+          {modelFile && (
+            <KvRow
+              label={ic(
+                <Package
+                  size={10}
+                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                />,
+                "Model",
+              )}
+              value={modelFile}
+            />
+          )}
+        </div>
+        {/* Right: runtime stats */}
+        <div>
+          <KvRow
+            label={ic(
+              <Clock3
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Uptime",
+            )}
+            value={fmtUptime(processUptimeSecs)}
+          />
+          {processCpuPct != null && (
+            <KvRow label="CPU" value={`${processCpuPct.toFixed(1)}%`} />
+          )}
+          <KvRow
+            label={ic(
+              <MemoryStick
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Memory",
+            )}
+            value={processMemoryKb != null ? fmtKb(processMemoryKb) : "—"}
+          />
+          {hasDraft && gpuOffload != null && (
             <>
               <KvRow
-                label="GPU Layers"
-                value={`${totalLoaded} / ${totalLayers} (${pct}%)`}
-                color={pct === 100 ? "var(--success)" : "var(--text-muted)"}
+                label={ic(
+                  <Cpu
+                    size={10}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />,
+                  "CPU Layers",
+                )}
+                value={`${gpuOffload.main_loaded}/${gpuOffload.main_total}`}
               />
-              {hasDraft && (
-                <>
-                  <KvRow
-                    label="\u251C\u2500 Main"
-                    value={`${gpuOffload.main_loaded} / ${gpuOffload.main_total}`}
-                  />
-                  <KvRow
-                    label="\u2514\u2500 Draft"
-                    value={`${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`}
-                  />
-                </>
-              )}
+              <KvRow
+                label={ic(
+                  <Layers
+                    size={10}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />,
+                  "Draft Layers",
+                )}
+                value={`${gpuOffload.draft_loaded}/${gpuOffload.draft_total}`}
+              />
             </>
-          );
-        })()}
-      {loadTimeSecs != null && (
-        <KvRow label="Load Time" value={`${loadTimeSecs.toFixed(2)}s`} />
-      )}
+          )}
+          {gpuOffload != null &&
+            gpuTotalLoaded != null &&
+            gpuTotalLayers != null && (
+              <KvRow
+                label={ic(
+                  <MonitorCog
+                    size={10}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />,
+                  "GPU Layers",
+                )}
+                value={`${gpuTotalLoaded}/${gpuTotalLayers} (${gpuPct}%)`}
+                color={gpuPct === 100 ? "var(--success)" : "var(--text-muted)"}
+              />
+            )}
+          <KvRow
+            label={ic(
+              <Zap
+                size={10}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />,
+              "Load Time",
+            )}
+            value={loadTimeSecs != null ? `${loadTimeSecs.toFixed(2)}s` : "—"}
+          />
+          <KvRow label="Total Sent" value={fmtNum(totalTokensSent) || "—"} />
+          <KvRow label="Tokens Cached" value={fmtNum(tokensCached) || "—"} />
+        </div>
+      </div>
     </SidebarSection>
   );
 }
 
 // ─── Server activity sidebar section ──────────────────────────────────────────
-
-interface ServerActivityProps {
-  activeRequests?: number | null;
-  queuedRequests?: number | null;
-  busySlots?: number | null;
-  totalSlots?: number | null;
-  runningPrompts?: number | null;
-  promptQueueSize?: number | null;
-  tokensCached?: number | null;
-  totalTokensSent?: number | null;
-  llamaServerLatencyMs?: number | null;
-  serverTimeMs?: number | null;
-  swapPendingSlots?: number | null;
-  llmUtilPct?: number | null;
-}
-
-function ServerActivitySection({
-  activeRequests,
-  queuedRequests,
-  busySlots,
-  totalSlots,
-  runningPrompts,
-  promptQueueSize,
-  tokensCached,
-  totalTokensSent,
-  llamaServerLatencyMs,
-  serverTimeMs,
-  swapPendingSlots,
-  llmUtilPct,
-}: ServerActivityProps) {
-  const slotVal =
-    busySlots != null && totalSlots != null
-      ? `${busySlots}/${totalSlots}`
-      : fmtNum(busySlots);
-  return (
-    <SidebarSection title="Server Activity">
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 4,
-          marginBottom: 2,
-        }}
-      >
-        <MetricTile label="Active Req" value={fmtNum(activeRequests)} />
-        <MetricTile label="Queued Req" value={fmtNum(queuedRequests)} />
-        <MetricTile label="Busy Slots" value={slotVal} />
-        <MetricTile label="Prompts" value={fmtNum(runningPrompts)} />
-        <MetricTile label="Queue" value={fmtNum(promptQueueSize)} />
-        <MetricTile label="Swap" value={fmtNum(swapPendingSlots)} />
-      </div>
-      <KvRow label="Tokens Cached" value={fmtNum(tokensCached) || "\u2014"} />
-      <KvRow label="Total Sent" value={fmtNum(totalTokensSent) || "\u2014"} />
-      <KvRow label="Latency" value={fmtLatency(llamaServerLatencyMs)} />
-      {serverTimeMs != null && (
-        <KvRow label="Server Time" value={fmtLatency(serverTimeMs)} />
-      )}
-      {llmUtilPct != null && (
-        <KvRow label="LLM Util" value={`${llmUtilPct.toFixed(1)}%`} />
-      )}
-    </SidebarSection>
-  );
-}
 
 // ─── Sidebar content panels ───────────────────────────────────────────────────
 
@@ -1290,40 +1386,12 @@ interface LlamaCppSidebarContentProps {
   runningBatchSize?: number | null;
   runningThreads?: number | null;
   runningCacheReuse?: number | null;
-  // Runtime
-  seed?: number | null;
-  reasoningFormat?: string | null;
-  speculative?: boolean | null;
-  llamaOnline: boolean;
-  processUptimeSecs?: number | null;
-  processPid?: number | null;
-  processCpuPct?: number | null;
-  processMemoryKb?: number | null;
-  runningPort?: number | null;
-  runningParallel?: number | null;
-  totalSlots?: number | null;
-  modelAlias?: string | null;
-  modelFile?: string | null;
-  // Server activity
-  activeRequests?: number | null;
-  queuedRequests?: number | null;
-  busySlots?: number | null;
-  runningPrompts?: number | null;
-  promptQueueSize?: number | null;
-  tokensCached?: number | null;
-  totalTokensSent?: number | null;
-  llamaServerLatencyMs?: number | null;
-  serverTimeMs?: number | null;
-  swapPendingSlots?: number | null;
-  llmUtilPct?: number | null;
   // KV cache
   kvCacheUsagePct?: number | null;
   promptBufferPct?: number | null;
   gpuCachePct?: number | null;
   gpuMemUsedMb?: number | null;
   gpuMemFreeMb?: number | null;
-  gpuOffload?: GpuOffloadInfo | null;
-  loadTimeSecs?: number | null;
   kvReservedMib?: number | null;
   kvUsedMib?: number | null;
 }
@@ -1352,323 +1420,248 @@ function LlamaCppSidebarContent({
   runningBatchSize,
   runningThreads,
   runningCacheReuse,
-  seed,
-  reasoningFormat,
-  speculative,
-  llamaOnline,
-  processUptimeSecs,
-  processPid,
-  processCpuPct,
-  processMemoryKb,
-  runningPort,
-  runningParallel,
-  totalSlots,
-  modelAlias,
-  modelFile,
-  activeRequests,
-  queuedRequests,
-  busySlots,
-  runningPrompts,
-  promptQueueSize,
-  tokensCached,
-  totalTokensSent,
-  llamaServerLatencyMs,
-  serverTimeMs,
-  swapPendingSlots,
-  llmUtilPct,
   kvCacheUsagePct,
   promptBufferPct,
   gpuCachePct,
   gpuMemUsedMb,
   gpuMemFreeMb,
-  gpuOffload,
-  loadTimeSecs,
   kvReservedMib,
   kvUsedMib,
 }: LlamaCppSidebarContentProps) {
   const showExtraTokens = cachedTokens != null || totalTokens != null;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 6,
-        alignItems: "start",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <SidebarSection title="Context">
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <SidebarSection title="Context">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 4,
+            marginBottom: 6,
+          }}
+        >
+          <MetricTile
+            label="Current"
+            value={fmtNum(contextTokens)}
+            unit=" tok"
+            color={ctxColor}
+          />
+          <MetricTile label="Max" value={fmtNum(maxContext)} unit=" tok" />
+          <MetricTile
+            label="Largest Seen"
+            value={fmtNum(largestContext)}
+            unit=" tok"
+          />
+          <MetricTile
+            label="Remaining"
+            value={fmtNum(remainingContext)}
+            unit=" tok"
+          />
+        </div>
+        <div style={{ marginTop: 4 }}>
+          <div
+            style={{
+              fontSize: 9,
+              color: "var(--text-muted)",
+              marginBottom: 2,
+            }}
+          >
+            Usage
+          </div>
+          <div
+            style={{
+              height: 6,
+              borderRadius: 3,
+              background: "var(--bg-tertiary)",
+              overflow: "hidden",
+              marginBottom: 3,
+            }}
+          >
+            <div
+              style={{
+                width: `${contextPct ?? 0}%`,
+                height: "100%",
+                borderRadius: 3,
+                background: ctxColor,
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 8,
+              color: "var(--text-muted)",
+              marginBottom: 3,
+            }}
+          >
+            <span>0%</span>
+            <span style={{ fontWeight: 700, color: ctxColor }}>
+              {(contextPct ?? 0).toFixed(1)}%
+            </span>
+            <span>100%</span>
+          </div>
+          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>
+            <span style={{ color: ctxColor, fontWeight: 700 }}>
+              {(contextTokens ?? 0).toLocaleString()}
+            </span>
+            {" / "}
+            {(maxContext ?? 0).toLocaleString()} tokens
+          </div>
+        </div>
+        {showExtraTokens && (
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: 4,
-              marginBottom: 6,
+              marginTop: 4,
             }}
           >
             <MetricTile
-              label="Current"
-              value={fmtNum(contextTokens)}
-              unit=" tok"
-              color={ctxColor}
-            />
-            <MetricTile label="Max" value={fmtNum(maxContext)} unit=" tok" />
-            <MetricTile
-              label="Largest Seen"
-              value={fmtNum(largestContext)}
+              label="Cached Tok"
+              value={fmtNum(cachedTokens)}
               unit=" tok"
             />
             <MetricTile
-              label="Remaining"
-              value={fmtNum(remainingContext)}
+              label="Total Tok"
+              value={fmtNum(totalTokens)}
               unit=" tok"
             />
           </div>
-          <div style={{ marginTop: 4 }}>
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                marginBottom: 2,
-              }}
-            >
-              Usage
-            </div>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: "var(--bg-tertiary)",
-                overflow: "hidden",
-                marginBottom: 3,
-              }}
-            >
-              <div
-                style={{
-                  width: `${contextPct ?? 0}%`,
-                  height: "100%",
-                  borderRadius: 3,
-                  background: ctxColor,
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 8,
-                color: "var(--text-muted)",
-                marginBottom: 3,
-              }}
-            >
-              <span>0%</span>
-              <span style={{ fontWeight: 700, color: ctxColor }}>
-                {(contextPct ?? 0).toFixed(1)}%
-              </span>
-              <span>100%</span>
-            </div>
-            <div style={{ fontSize: 9, color: "var(--text-muted)" }}>
-              <span style={{ color: ctxColor, fontWeight: 700 }}>
-                {(contextTokens ?? 0).toLocaleString()}
-              </span>
-              {" / "}
-              {(maxContext ?? 0).toLocaleString()} tokens
-            </div>
+        )}
+        <>
+          <div
+            style={{
+              marginTop: 8,
+              borderTop: "1px solid var(--border-color)",
+              paddingTop: 6,
+              marginBottom: 4,
+              fontSize: 9,
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            KV Cache
           </div>
-          {showExtraTokens && (
+          {(kvCacheUsagePct != null ||
+            promptBufferPct != null ||
+            gpuCachePct != null) && (
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: 4,
-                marginTop: 4,
+                marginBottom: 4,
               }}
             >
-              <MetricTile
-                label="Cached Tok"
-                value={fmtNum(cachedTokens)}
-                unit=" tok"
-              />
-              <MetricTile
-                label="Total Tok"
-                value={fmtNum(totalTokens)}
-                unit=" tok"
-              />
+              {kvCacheUsagePct != null && (
+                <MetricTile
+                  label="KV Cache"
+                  value={kvCacheUsagePct.toFixed(1)}
+                  unit="%"
+                />
+              )}
+              {promptBufferPct != null && (
+                <MetricTile
+                  label="Prompt Buf"
+                  value={promptBufferPct.toFixed(1)}
+                  unit="%"
+                />
+              )}
+              {gpuCachePct != null && (
+                <MetricTile
+                  label="GPU Cache"
+                  value={gpuCachePct.toFixed(1)}
+                  unit="%"
+                />
+              )}
             </div>
           )}
-          <>
-            <div
-              style={{
-                marginTop: 8,
-                borderTop: "1px solid var(--border-color)",
-                paddingTop: 6,
-                marginBottom: 4,
-                fontSize: 9,
-                color: "var(--text-muted)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              KV Cache
-            </div>
-            {(kvCacheUsagePct != null ||
-              promptBufferPct != null ||
-              gpuCachePct != null) && (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 4,
-                  marginBottom: 4,
-                }}
-              >
-                {kvCacheUsagePct != null && (
-                  <MetricTile
-                    label="KV Cache"
-                    value={kvCacheUsagePct.toFixed(1)}
-                    unit="%"
-                  />
-                )}
-                {promptBufferPct != null && (
-                  <MetricTile
-                    label="Prompt Buf"
-                    value={promptBufferPct.toFixed(1)}
-                    unit="%"
-                  />
-                )}
-                {gpuCachePct != null && (
-                  <MetricTile
-                    label="GPU Cache"
-                    value={gpuCachePct.toFixed(1)}
-                    unit="%"
-                  />
-                )}
-              </div>
-            )}
-            {gpuMemUsedMb != null && (
-              <KvRow
-                label="GPU Mem Used"
-                value={`${(gpuMemUsedMb / 1024).toFixed(1)} GB`}
-                color="var(--accent-primary)"
-              />
-            )}
-            {gpuMemFreeMb != null && (
-              <KvRow
-                label="GPU Mem Free"
-                value={`${(gpuMemFreeMb / 1024).toFixed(1)} GB`}
-              />
-            )}
+          {gpuMemUsedMb != null && (
             <KvRow
-              label="Memory Used"
-              value={kvUsedMib != null ? `${kvUsedMib.toFixed(1)} MiB` : "—"}
-              color={kvUsedMib != null ? "var(--accent-primary)" : undefined}
+              label="GPU Mem Used"
+              value={`${(gpuMemUsedMb / 1024).toFixed(1)} GB`}
+              color="var(--accent-primary)"
             />
+          )}
+          {gpuMemFreeMb != null && (
             <KvRow
-              label="Memory Reserved"
-              value={
-                kvReservedMib != null ? `${kvReservedMib.toFixed(1)} MiB` : "—"
-              }
+              label="GPU Mem Free"
+              value={`${(gpuMemFreeMb / 1024).toFixed(1)} GB`}
             />
-          </>
-        </SidebarSection>
+          )}
+          <KvRow
+            label="Memory Used"
+            value={kvUsedMib != null ? `${kvUsedMib.toFixed(1)} MiB` : "—"}
+            color={kvUsedMib != null ? "var(--accent-primary)" : undefined}
+          />
+          <KvRow
+            label="Memory Reserved"
+            value={
+              kvReservedMib != null ? `${kvReservedMib.toFixed(1)} MiB` : "—"
+            }
+          />
+        </>
+      </SidebarSection>
 
-        <SidebarSection title="Generation & Performance">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 4,
-            }}
-          >
-            <MetricTile label="Gen TPS" value={fmtNum(genTps)} unit=" tok/s" />
-            <MetricTile
-              label="Prompt TPS"
-              value={fmtNum(promptTps)}
-              unit=" tok/s"
-            />
-            <MetricTile
-              label="Prompt"
-              value={fmtNum(promptTokens)}
-              unit=" tok"
-            />
-            <MetricTile
-              label="Generated"
-              value={fmtNum(completionTokens)}
-              unit=" tok"
-            />
-            <MetricTile
-              label="Temperature"
-              value={temperature != null ? temperature.toFixed(2) : null}
-            />
-            <MetricTile label="Top-K" value={fmtNum(topK)} />
-            <MetricTile
-              label="Top-P"
-              value={topP != null ? topP.toFixed(2) : null}
-            />
-            <MetricTile
-              label="Repeat Pen"
-              value={repeatPenalty != null ? repeatPenalty.toFixed(2) : null}
-            />
-            <MetricTile
-              label="Min-P"
-              value={minP != null ? minP.toFixed(3) : null}
-            />
-            <MetricTile
-              label="Presence Pen"
-              value={
-                presencePenalty != null ? presencePenalty.toFixed(2) : null
-              }
-            />
-            <MetricTile
-              label="Freq Pen"
-              value={
-                frequencyPenalty != null ? frequencyPenalty.toFixed(2) : null
-              }
-            />
-            <MetricTile label="Repeat N" value={fmtNum(repeatLastN)} />
-            <MetricTile label="Batch Size" value={fmtNum(runningBatchSize)} />
-            <MetricTile label="Threads" value={fmtNum(runningThreads)} />
-            <MetricTile label="Cache Reuse" value={fmtNum(runningCacheReuse)} />
-          </div>
-        </SidebarSection>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <RuntimeInfoSection
-          llamaOnline={llamaOnline}
-          processUptimeSecs={processUptimeSecs}
-          processPid={processPid}
-          processCpuPct={processCpuPct}
-          processMemoryKb={processMemoryKb}
-          runningPort={runningPort}
-          maxContext={maxContext}
-          runningParallel={runningParallel}
-          totalSlots={totalSlots}
-          modelAlias={modelAlias}
-          modelFile={modelFile}
-          seed={seed}
-          reasoningFormat={reasoningFormat}
-          speculative={speculative}
-          gpuOffload={gpuOffload}
-          loadTimeSecs={loadTimeSecs}
-        />
-        <ServerActivitySection
-          activeRequests={activeRequests}
-          queuedRequests={queuedRequests}
-          busySlots={busySlots}
-          totalSlots={totalSlots}
-          runningPrompts={runningPrompts}
-          promptQueueSize={promptQueueSize}
-          tokensCached={tokensCached}
-          totalTokensSent={totalTokensSent}
-          llamaServerLatencyMs={llamaServerLatencyMs}
-          serverTimeMs={serverTimeMs}
-          swapPendingSlots={swapPendingSlots}
-          llmUtilPct={llmUtilPct}
-        />
-      </div>
+      <SidebarSection title="Generation & Performance">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 4,
+          }}
+        >
+          <MetricTile label="Gen TPS" value={fmtNum(genTps)} unit=" tok/s" />
+          <MetricTile
+            label="Prompt TPS"
+            value={fmtNum(promptTps)}
+            unit=" tok/s"
+          />
+          <MetricTile label="Prompt" value={fmtNum(promptTokens)} unit=" tok" />
+          <MetricTile
+            label="Generated"
+            value={fmtNum(completionTokens)}
+            unit=" tok"
+          />
+          <MetricTile
+            label="Temperature"
+            value={temperature != null ? temperature.toFixed(2) : null}
+          />
+          <MetricTile label="Top-K" value={fmtNum(topK)} />
+          <MetricTile
+            label="Top-P"
+            value={topP != null ? topP.toFixed(2) : null}
+          />
+          <MetricTile
+            label="Repeat Pen"
+            value={repeatPenalty != null ? repeatPenalty.toFixed(2) : null}
+          />
+          <MetricTile
+            label="Min-P"
+            value={minP != null ? minP.toFixed(3) : null}
+          />
+          <MetricTile
+            label="Presence Pen"
+            value={presencePenalty != null ? presencePenalty.toFixed(2) : null}
+          />
+          <MetricTile
+            label="Freq Pen"
+            value={
+              frequencyPenalty != null ? frequencyPenalty.toFixed(2) : null
+            }
+          />
+          <MetricTile label="Repeat N" value={fmtNum(repeatLastN)} />
+          <MetricTile label="Batch Size" value={fmtNum(runningBatchSize)} />
+          <MetricTile label="Threads" value={fmtNum(runningThreads)} />
+          <MetricTile label="Cache Reuse" value={fmtNum(runningCacheReuse)} />
+        </div>
+      </SidebarSection>
     </div>
   );
 }
@@ -1698,18 +1691,6 @@ interface LlamaCppStackedSidebarProps {
   repeatLastN?: number | null;
   runningBatchSize?: number | null;
   runningThreads?: number | null;
-  seed?: number | null;
-  reasoningFormat?: string | null;
-  speculative?: boolean | null;
-  llamaOnline: boolean;
-  processUptimeSecs?: number | null;
-  processPid?: number | null;
-  runningPort?: number | null;
-  runningParallel?: number | null;
-  totalSlots?: number | null;
-  modelAlias?: string | null;
-  gpuOffload?: GpuOffloadInfo | null;
-  loadTimeSecs?: number | null;
   kvUsedMib?: number | null;
   kvReservedMib?: number | null;
 }
@@ -1737,18 +1718,6 @@ function LlamaCppStackedSidebar({
   repeatLastN,
   runningBatchSize,
   runningThreads,
-  seed,
-  reasoningFormat,
-  speculative,
-  llamaOnline,
-  processUptimeSecs,
-  processPid,
-  runningPort,
-  runningParallel,
-  totalSlots,
-  modelAlias,
-  gpuOffload,
-  loadTimeSecs,
   kvUsedMib,
   kvReservedMib,
 }: LlamaCppStackedSidebarProps) {
@@ -1764,7 +1733,11 @@ function LlamaCppStackedSidebar({
       }}
     >
       <div style={{ flex: "1 1 200px" }}>
-        <SidebarSection title="Context">
+        <SidebarSection
+          title="Context"
+          icon={<Brain size={10} style={{ color: "var(--text-muted)" }} />}
+          accentColor="rgba(59,130,246,0.6)"
+        >
           <div
             style={{
               display: "grid",
@@ -1912,7 +1885,11 @@ function LlamaCppStackedSidebar({
         </SidebarSection>
       </div>
       <div style={{ flex: "2 1 340px" }}>
-        <SidebarSection title="Generation & Performance">
+        <SidebarSection
+          title="Generation & Performance"
+          icon={<BarChart3 size={10} style={{ color: "var(--text-muted)" }} />}
+          accentColor="rgba(139,92,246,0.6)"
+        >
           <div
             style={{
               display: "grid",
@@ -1970,23 +1947,6 @@ function LlamaCppStackedSidebar({
             <MetricTile label="Threads" value={fmtNum(runningThreads)} />
           </div>
         </SidebarSection>
-      </div>
-      <div style={{ flex: "1 1 180px" }}>
-        <RuntimeInfoSection
-          llamaOnline={llamaOnline}
-          processUptimeSecs={processUptimeSecs}
-          processPid={processPid}
-          runningPort={runningPort}
-          maxContext={maxContext}
-          runningParallel={runningParallel}
-          totalSlots={totalSlots}
-          modelAlias={modelAlias}
-          seed={seed}
-          reasoningFormat={reasoningFormat}
-          speculative={speculative}
-          gpuOffload={gpuOffload}
-          loadTimeSecs={loadTimeSecs}
-        />
       </div>
     </div>
   );
@@ -2217,6 +2177,7 @@ interface LlamaCppPageHeaderProps {
   isMobile: boolean;
   mgmt: LlamaCppManagement;
   hasDir: boolean;
+  runningArgs: ParsedScriptArgs | null;
 }
 
 function LlamaCppPageHeader({
@@ -2224,8 +2185,10 @@ function LlamaCppPageHeader({
   isMobile,
   mgmt,
   hasDir,
+  runningArgs,
 }: LlamaCppPageHeaderProps) {
   const llamaOnline: boolean = m?.llama_server?.available ?? false;
+  const proc = m?.llama_server_process;
   const fullModelPath: string = m?.model_path || m?.model_alias || "";
   const modelFile = fullModelPath.includes("/")
     ? (fullModelPath.split("/").pop() ?? "")
@@ -2254,25 +2217,43 @@ function LlamaCppPageHeader({
     textShadow: "var(--text-shadow-sm)",
     textDecoration: "none",
   };
-  const disabledBtnStyle: React.CSSProperties = {
+  const railBtnStyle: React.CSSProperties = {
     ...mgmtBtnStyle,
+    width: "100%",
+    justifyContent: "flex-start",
+    lineHeight: 1,
+    background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)",
+    border:
+      "1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent)",
+  };
+  const railDisabledBtnStyle: React.CSSProperties = {
+    ...railBtnStyle,
     opacity: 0.4,
     cursor: "not-allowed",
   };
-  const accentBtnStyle: React.CSSProperties = {
-    ...mgmtBtnStyle,
-    background: "var(--accent-primary)",
-    border: "none",
-    color: "#fff",
+  const railAccentBtnStyle: React.CSSProperties = {
+    ...railBtnStyle,
+    background: "color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+    border:
+      "1px solid color-mix(in srgb, var(--accent-primary) 60%, transparent)",
+    color: "var(--accent-primary)",
     fontWeight: 700,
   };
+  let updateBtnStyle: React.CSSProperties;
+  if (!hasDir) {
+    updateBtnStyle = railDisabledBtnStyle;
+  } else if (behind) {
+    updateBtnStyle = railAccentBtnStyle;
+  } else {
+    updateBtnStyle = railBtnStyle;
+  }
 
   return (
     <div
       style={{
         display: "flex",
         gap: 8,
-        alignItems: "flex-start",
+        alignItems: "stretch",
         flexShrink: 0,
         paddingBottom: 6,
         borderBottom: "1px solid var(--border-color)",
@@ -2281,7 +2262,7 @@ function LlamaCppPageHeader({
       }}
     >
       {/* Left: model identity */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 2, minWidth: 0 }}>
         <div
           style={{
             display: "flex",
@@ -2358,415 +2339,506 @@ function LlamaCppPageHeader({
         </div>
       </div>
 
-      {/* Right: status card */}
       <div
         style={{
-          width: isMobile ? "100%" : 300,
-          flexShrink: 0,
-          border: "1px solid var(--border-color)",
-          borderRadius: "var(--radius-sm)",
-          background: "var(--bg-secondary)",
-          padding: "8px 10px",
-          display: "flex",
-          flexDirection: "column",
+          display: "grid",
+          gridTemplateColumns: "1fr 1.5fr",
           gap: 6,
+          flex: 3,
+          minWidth: 0,
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <RuntimeInfoSection
+          llamaOnline={llamaOnline}
+          processUptimeSecs={proc?.uptime_seconds}
+          processPid={proc?.pid}
+          processCpuPct={proc?.cpu_percent}
+          processMemoryKb={proc?.memory_kb}
+          runningPort={runningArgs?.port}
+          maxContext={m?.max_context}
+          modelAlias={modelAlias}
+          modelFile={modelFile}
+          seed={m?.seed}
+          reasoningFormat={m?.reasoning_format}
+          speculative={m?.speculative}
+          gpuOffload={m?.gpu_offload}
+          loadTimeSecs={
+            m?.model_load_time_ms != null ? m.model_load_time_ms / 1000 : null
+          }
+          tokensCached={m?.tokens_cached}
+          totalTokensSent={m?.total_tokens_sent}
+        />
+
+        {/* Right: status card */}
+        <div
+          style={{
+            border: "1px solid var(--border-color)",
+            borderLeft: "2px solid rgba(139,92,246,0.6)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-secondary)",
+            padding: "6px 8px",
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 120px",
+            gap: 0,
+          }}
+        >
+          {/* Left: metadata + update progress */}
           <div
             style={{
-              fontSize: 9,
-              fontWeight: 700,
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: 0.6,
-              marginBottom: 1,
-            }}
-          >
-            Model / Build
-          </div>
-          {modelAlias && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>Alias</span>
-              <span
-                style={{
-                  color: "var(--text-primary)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {modelAlias}
-              </span>
-            </div>
-          )}
-          <div
-            style={{
-              fontSize: 9,
-              color: "var(--text-muted)",
               display: "flex",
-              justifyContent: "space-between",
-              gap: 8,
+              flexDirection: "column",
+              gap: 4,
+              minWidth: 0,
+              paddingRight: 8,
             }}
           >
-            <span style={{ flexShrink: 0 }}>Version</span>
-            <span
-              style={{
-                color: "var(--text-primary)",
-                fontFamily: "monospace",
-                fontWeight: 700,
-              }}
-            >
-              {mgmt.llamaVersion || "\u2014"}
-            </span>
-          </div>
-          {buildInfo && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>Build</span>
-              <span
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <div
                 style={{
-                  color: "var(--text-primary)",
-                  fontFamily: "monospace",
+                  fontSize: 9,
                   fontWeight: 700,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  marginBottom: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
                 }}
               >
-                {buildInfo}
-              </span>
-            </div>
-          )}
-          <div
-            style={{
-              fontSize: 9,
-              color: "var(--text-muted)",
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Current Build</span>
-            <span
-              style={{
-                color: "var(--text-primary)",
-                fontFamily: "monospace",
-                fontWeight: 700,
-              }}
-            >
-              {mgmt.llamaVersion || "\u2014"}
-            </span>
-          </div>
-          {mgmt.repoInfo?.local_build_tag && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Local Tag</span>
-              <span
-                style={{
-                  color: "var(--text-primary)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                }}
-              >
-                {mgmt.repoInfo.local_build_tag}
-              </span>
-            </div>
-          )}
-          {mgmt.repoInfo?.latest_build_tag && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Latest Release</span>
-              <span
-                style={{
-                  color: "var(--success)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                }}
-              >
-                {mgmt.repoInfo.latest_build_tag}
-              </span>
-            </div>
-          )}
-          {behind != null && behind > 0 && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--warning)",
-                fontWeight: 600,
-              }}
-            >
-              {behind} build{behind === 1 ? "" : "s"} behind latest
-            </div>
-          )}
-          {mgmt.gitInfo?.branch && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Branch</span>
-              <span
-                style={{
-                  color: "var(--accent-primary)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                }}
-              >
-                {mgmt.gitInfo.branch}
-              </span>
-            </div>
-          )}
-          {mgmt.gitInfo?.commit_hash && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Commit</span>
-              <span
-                style={{
-                  color: "var(--accent-primary)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                }}
-              >
-                {mgmt.gitInfo.commit_hash}
-              </span>
-            </div>
-          )}
-          {m?.gguf_size_gib != null && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--text-muted)",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>GGUF Size</span>
-              <span
-                style={{
-                  color: "var(--text-primary)",
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                }}
-              >
-                {(m.gguf_size_gib as number).toFixed(2)} GiB
-              </span>
-            </div>
-          )}
-          {hasDir && (
-            <div style={{ marginTop: 3 }}>
+                <Package size={10} style={{ color: "var(--text-muted)" }} />
+                Model / Build
+              </div>
+              {modelAlias && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ flexShrink: 0 }}>Alias</span>
+                  <span
+                    style={{
+                      color: "var(--text-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {modelAlias}
+                  </span>
+                </div>
+              )}
               <div
                 style={{
                   fontSize: 9,
                   color: "var(--text-muted)",
                   display: "flex",
-                  alignItems: "center",
-                  gap: 3,
-                  marginBottom: 1,
+                  justifyContent: "space-between",
+                  gap: 8,
                 }}
               >
-                <Folder
-                  size={9}
-                  style={{ color: "var(--accent-primary)", flexShrink: 0 }}
-                />
-                Working Directory
+                <span
+                  style={{
+                    flexShrink: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 3,
+                  }}
+                >
+                  <Package
+                    size={10}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />
+                  Version
+                </span>
+                <span
+                  style={{
+                    color: "var(--text-primary)",
+                    fontFamily: "monospace",
+                    fontWeight: 700,
+                  }}
+                >
+                  {mgmt.llamaVersion || "\u2014"}
+                </span>
               </div>
+              {buildInfo && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ flexShrink: 0 }}>Build</span>
+                  <span
+                    style={{
+                      color: "var(--text-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {buildInfo}
+                  </span>
+                </div>
+              )}
               <div
                 style={{
                   fontSize: 9,
-                  fontFamily: "monospace",
-                  color: "var(--text-primary)",
-                  fontWeight: 600,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  color: "var(--text-muted)",
+                  display: "flex",
+                  justifyContent: "space-between",
                 }}
-                title={mgmt.dirPath}
               >
-                {mgmt.dirPath}
+                <span>Current Build</span>
+                <span
+                  style={{
+                    color: "var(--text-primary)",
+                    fontFamily: "monospace",
+                    fontWeight: 700,
+                  }}
+                >
+                  {mgmt.llamaVersion || "\u2014"}
+                </span>
               </div>
+              {mgmt.repoInfo?.local_build_tag && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Local Tag</span>
+                  <span
+                    style={{
+                      color: "var(--text-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {mgmt.repoInfo.local_build_tag}
+                  </span>
+                </div>
+              )}
+              {mgmt.repoInfo?.latest_build_tag && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Latest Release</span>
+                  <span
+                    style={{
+                      color: "var(--success)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {mgmt.repoInfo.latest_build_tag}
+                  </span>
+                </div>
+              )}
+              {behind != null && behind > 0 && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--warning)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {behind} build{behind === 1 ? "" : "s"} behind latest
+                </div>
+              )}
+              {mgmt.gitInfo?.branch && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    <GitBranch
+                      size={10}
+                      style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                    />
+                    Branch
+                  </span>
+                  <span
+                    style={{
+                      color: "var(--accent-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {mgmt.gitInfo.branch}
+                  </span>
+                </div>
+              )}
+              {mgmt.gitInfo?.commit_hash && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    <GitCommitHorizontal
+                      size={10}
+                      style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                    />
+                    Commit
+                  </span>
+                  <span
+                    style={{
+                      color: "var(--accent-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {mgmt.gitInfo.commit_hash}
+                  </span>
+                </div>
+              )}
+              {m?.gguf_size_gib != null && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ flexShrink: 0 }}>GGUF Size</span>
+                  <span
+                    style={{
+                      color: "var(--text-primary)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {(m.gguf_size_gib as number).toFixed(2)} GiB
+                  </span>
+                </div>
+              )}
+              {hasDir && (
+                <div style={{ marginTop: 3 }}>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: "var(--text-muted)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      marginBottom: 1,
+                    }}
+                  >
+                    <FolderOpen
+                      size={9}
+                      style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                    />
+                    Working Directory
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      fontFamily: "monospace",
+                      color: "var(--text-primary)",
+                      fontWeight: 600,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={mgmt.dirPath}
+                  >
+                    {mgmt.dirPath}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-          <button
-            onClick={mgmt.runUpdate}
-            disabled={!hasDir || mgmt.updateState === "running"}
-            style={!hasDir ? disabledBtnStyle : accentBtnStyle}
+            {mgmt.updateState !== "idle" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                {mgmt.updateState === "running" && (
+                  <Loader2
+                    size={10}
+                    className="spin"
+                    style={{ color: "var(--accent-primary)", flexShrink: 0 }}
+                  />
+                )}
+                <span
+                  style={{
+                    fontSize: 8.5,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    color: updateStateColor(mgmt.updateState),
+                  }}
+                >
+                  {(() => {
+                    if (mgmt.updateState === "running") return "Updating\u2026";
+                    if (mgmt.updateState === "done") return "Update complete";
+                    return "Update failed";
+                  })()}
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 5,
+                    borderRadius: 2,
+                    background: "var(--bg-tertiary)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${mgmt.updateProgress}%`,
+                      height: "100%",
+                      borderRadius: 2,
+                      background:
+                        mgmt.updateState === "error"
+                          ? "var(--danger)"
+                          : "var(--accent-primary)",
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <span
+                  style={{
+                    fontSize: 8.5,
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    flexShrink: 0,
+                    width: 24,
+                    textAlign: "right",
+                  }}
+                >
+                  {mgmt.updateProgress}%
+                </span>
+                <button
+                  onClick={() => mgmt.setOutputOpen(true)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    padding: "2px 5px",
+                    fontSize: 8.5,
+                    fontWeight: 600,
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "var(--radius-sm)",
+                    cursor: "pointer",
+                    color: "var(--text-primary)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <ExternalLink size={9} />
+                  Output
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Right: action rail */}
+          <div
+            style={{
+              borderLeft: "1px solid var(--border-subtle, var(--border-color))",
+              paddingLeft: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
           >
-            <RefreshCw
-              size={10}
-              className={mgmt.updateState === "running" ? "spin" : undefined}
-            />
-            Update
-          </button>
-          <button
-            onClick={() => mgmt.openTerminal()}
-            disabled={!hasDir}
-            style={!hasDir ? disabledBtnStyle : mgmtBtnStyle}
-          >
-            <TermIcon size={10} />
-            Terminal
-          </button>
-          {mgmt.ptsName && (
+            <button
+              onClick={mgmt.runUpdate}
+              disabled={!hasDir || mgmt.updateState === "running"}
+              style={updateBtnStyle}
+            >
+              <RefreshCw
+                size={10}
+                className={mgmt.updateState === "running" ? "spin" : undefined}
+              />
+              Update
+            </button>
+            <button
+              onClick={() => mgmt.openTerminal()}
+              disabled={!hasDir}
+              style={!hasDir ? railDisabledBtnStyle : railBtnStyle}
+            >
+              <TermIcon size={10} />
+              Terminal
+            </button>
+            {mgmt.ptsName && (
+              <a
+                href={`/ai/terminal?pts=${encodeURIComponent(mgmt.ptsName)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...railBtnStyle, textDecoration: "none" }}
+                title="Open terminal in new tab"
+              >
+                <ExternalLink size={10} />
+                Tab \u2197
+              </a>
+            )}
             <a
-              href={`/ai/terminal?pts=${encodeURIComponent(mgmt.ptsName)}`}
+              href="https://github.com/ggml-org/llama.cpp"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ ...mgmtBtnStyle, textDecoration: "none" }}
-              title="Open terminal in new tab"
+              style={{ ...railBtnStyle, textDecoration: "none" }}
             >
               <ExternalLink size={10} />
-              Tab \u2197
+              GitHub
             </a>
-          )}
-          <a
-            href="https://github.com/ggml-org/llama.cpp"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ ...mgmtBtnStyle, textDecoration: "none" }}
-          >
-            <ExternalLink size={10} />
-            GitHub
-          </a>
-          <button
-            onClick={() =>
-              mgmt.readmeUrl &&
-              window.open(mgmt.readmeUrl, "_blank", "noopener,noreferrer")
-            }
-            disabled={!mgmt.readmeUrl}
-            style={!mgmt.readmeUrl ? disabledBtnStyle : mgmtBtnStyle}
-          >
-            <BookOpen size={10} />
-            Readme
-          </button>
-          <button
-            onClick={() =>
-              window.open(mgmt.buildNotesUrl, "_blank", "noopener,noreferrer")
-            }
-            style={mgmtBtnStyle}
-          >
-            <FileText size={10} />
-            Release Notes
-          </button>
-        </div>
-        {mgmt.updateState !== "idle" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {mgmt.updateState === "running" && (
-              <Loader2
-                size={10}
-                className="spin"
-                style={{ color: "var(--accent-primary)", flexShrink: 0 }}
-              />
-            )}
-            <span
-              style={{
-                fontSize: 8.5,
-                fontWeight: 600,
-                flexShrink: 0,
-                color: updateStateColor(mgmt.updateState),
-              }}
-            >
-              {(() => {
-                if (mgmt.updateState === "running") return "Updating\u2026";
-                if (mgmt.updateState === "done") return "Update complete";
-                return "Update failed";
-              })()}
-            </span>
-            <div
-              style={{
-                flex: 1,
-                height: 5,
-                borderRadius: 2,
-                background: "var(--bg-tertiary)",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${mgmt.updateProgress}%`,
-                  height: "100%",
-                  borderRadius: 2,
-                  background:
-                    mgmt.updateState === "error"
-                      ? "var(--danger)"
-                      : "var(--accent-primary)",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-            <span
-              style={{
-                fontSize: 8.5,
-                fontWeight: 700,
-                color: "var(--text-primary)",
-                flexShrink: 0,
-                width: 24,
-                textAlign: "right",
-              }}
-            >
-              {mgmt.updateProgress}%
-            </span>
             <button
-              onClick={() => mgmt.setOutputOpen(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                padding: "2px 5px",
-                fontSize: 8.5,
-                fontWeight: 600,
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border-color)",
-                borderRadius: "var(--radius-sm)",
-                cursor: "pointer",
-                color: "var(--text-primary)",
-                flexShrink: 0,
-              }}
+              onClick={() =>
+                mgmt.readmeUrl &&
+                window.open(mgmt.readmeUrl, "_blank", "noopener,noreferrer")
+              }
+              disabled={!mgmt.readmeUrl}
+              style={!mgmt.readmeUrl ? railDisabledBtnStyle : railBtnStyle}
             >
-              <ExternalLink size={9} />
-              Output
+              <BookOpen size={10} />
+              Readme
+            </button>
+            <button
+              onClick={() =>
+                window.open(mgmt.buildNotesUrl, "_blank", "noopener,noreferrer")
+              }
+              style={railBtnStyle}
+            >
+              <FileText size={10} />
+              Release Notes
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -2950,17 +3022,11 @@ export default function LlamaCppPage() {
   const vramUsed = gpuCurrentValues[2];
   const vramTotal = gpuCurrentValues[3];
 
-  const proc = m?.llama_server_process;
   const kvStats = m?.kv_cache_stats?.[0] ?? null;
   const remainingContext =
     maxContext != null && contextTokens != null
       ? maxContext - contextTokens
       : null;
-  const fullModelPath: string = m?.model_path || m?.model_alias || "";
-  const modelFile = fullModelPath.includes("/")
-    ? (fullModelPath.split("/").pop() ?? "")
-    : fullModelPath;
-
   const sharedSidebarProps = {
     // Context
     contextTokens,
@@ -2987,41 +3053,12 @@ export default function LlamaCppPage() {
     runningBatchSize: runningArgs?.batch_size,
     runningThreads: runningArgs?.threads,
     runningCacheReuse: runningArgs?.cache_reuse,
-    seed: m?.seed,
-    reasoningFormat: m?.reasoning_format,
-    speculative: m?.speculative,
-    // Runtime
-    llamaOnline: m?.llama_server?.available ?? false,
-    processUptimeSecs: proc?.uptime_seconds,
-    processPid: proc?.pid,
-    processCpuPct: proc?.cpu_percent,
-    processMemoryKb: proc?.memory_kb,
-    runningPort: runningArgs?.port,
-    runningParallel: runningArgs?.parallel ?? m?.total_slots ?? null,
-    totalSlots: m?.total_slots,
-    modelAlias: m?.model_alias,
-    modelFile,
-    // Server activity
-    activeRequests: m?.active_requests,
-    queuedRequests: m?.queued_requests,
-    busySlots: m?.busy_slots,
-    runningPrompts: m?.running_prompts,
-    promptQueueSize: m?.prompt_queue_size,
-    tokensCached: m?.tokens_cached,
-    totalTokensSent: m?.total_tokens_sent,
-    llamaServerLatencyMs: m?.llama_server_latency_ms,
-    serverTimeMs: m?.server_time_ms,
-    swapPendingSlots: m?.swap_pending_slots,
-    llmUtilPct: m?.llm_utilization_percent,
     // KV cache
     kvCacheUsagePct: m?.kv_cache_usage_percent,
     promptBufferPct: m?.prompt_buffer_usage_percent,
     gpuCachePct: kvStats?.gpu_cache_usage_pct,
     gpuMemUsedMb: kvStats?.used_gpu_memory_mb,
     gpuMemFreeMb: kvStats?.free_gpu_memory_mb,
-    gpuOffload: m?.gpu_offload,
-    loadTimeSecs:
-      m?.model_load_time_ms != null ? m.model_load_time_ms / 1000 : null,
     kvReservedMib: m?.kv_cache_reserved_mib ?? null,
     kvUsedMib:
       m?.kv_cache_reserved_mib != null && contextPct != null
@@ -3067,6 +3104,7 @@ export default function LlamaCppPage() {
         isMobile={isMobile}
         mgmt={mgmt}
         hasDir={hasDir}
+        runningArgs={runningArgs}
       />
 
       {/* ── Middle: Sidebar + Workspace ── */}
