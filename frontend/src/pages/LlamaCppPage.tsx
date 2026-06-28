@@ -314,10 +314,10 @@ function SidebarSection({
     <div
       style={{
         background: "var(--bg-secondary)",
-        border: "1px solid var(--border-color)",
+        border: "1px solid var(--border-subtle, var(--border-color))",
         borderLeft: accentColor
           ? `2px solid ${accentColor}`
-          : "1px solid var(--border-color)",
+          : "1px solid var(--border-subtle, var(--border-color))",
         borderRadius: "var(--radius-sm)",
         overflow: "hidden",
         flexShrink: 0,
@@ -325,28 +325,28 @@ function SidebarSection({
     >
       <div
         style={{
-          padding: "2px 8px",
-          borderBottom: "1px solid var(--border-color)",
+          padding: "3px 8px",
+          borderBottom: "1px solid var(--border-subtle, var(--border-color))",
           background: "var(--bg-tertiary)",
           display: "flex",
           alignItems: "center",
-          gap: 4,
+          gap: 5,
         }}
       >
         {icon}
         <span
           style={{
-            fontSize: 9,
-            fontWeight: 700,
-            color: "var(--text-muted)",
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--text-secondary)",
             textTransform: "uppercase",
-            letterSpacing: 0.6,
+            letterSpacing: 0.5,
           }}
         >
           {title}
         </span>
       </div>
-      <div style={{ padding: "3px 8px" }}>{children}</div>
+      <div style={{ padding: "4px 8px" }}>{children}</div>
     </div>
   );
 }
@@ -784,15 +784,17 @@ export function RunModelsSection() {
             return (
               <div
                 key={profile.id}
+                className="run-models-row"
+                data-running={String(running)}
                 style={{
                   display: "grid",
                   gridTemplateColumns: COL_GRID,
                   gap: 0,
-                  padding: "3px 12px",
+                  padding: "4px 12px",
                   borderBottom: "1px solid var(--border-color)",
                   background: rowBg,
                   alignItems: "center",
-                  height: 22,
+                  minHeight: 26,
                 }}
               >
                 <span

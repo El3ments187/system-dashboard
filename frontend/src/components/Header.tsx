@@ -1,7 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { getSystemMetrics } from "../services/api";
 import { SystemMetrics } from "../types/metrics";
-import { Wifi, WifiOff, Pause, Play, Bell, Trash2 } from "lucide-react";
+import {
+  Wifi,
+  WifiOff,
+  Pause,
+  Play,
+  Bell,
+  Trash2,
+  Server,
+  Clock,
+  RefreshCw,
+} from "lucide-react";
 import { useLiveDataControlsContext } from "../context/LiveDataControlsContext";
 import { useAlertsContext, AlertSeverity } from "../context/AlertsContext";
 import { useFetchAlerts } from "../hooks/useFetchAlerts";
@@ -31,6 +41,15 @@ interface HeaderProps {
       | "settings",
   ) => void;
 }
+
+const PAGE_LABELS: Record<string, string> = {
+  overview: "Overview",
+  gpu: "GPU",
+  cpu: "CPU",
+  "llama-cpp": "llama.cpp",
+  ai: "AI",
+  settings: "Settings",
+};
 
 const severityColors: Record<AlertSeverity, string> = {
   [AlertSeverity.Info]: "var(--info)",
@@ -182,17 +201,7 @@ export default function Header({
                   }
                 }}
               >
-                {page === "overview"
-                  ? "Overview"
-                  : page === "gpu"
-                    ? "GPU"
-                    : page === "cpu"
-                      ? "CPU"
-                      : page === "llama-cpp"
-                        ? "llama.cpp"
-                        : page === "ai"
-                          ? "AI"
-                          : "Settings"}
+                {PAGE_LABELS[page] ?? page}
               </button>
             ))}
           </nav>
@@ -200,27 +209,50 @@ export default function Header({
         <div className="header-center">
           {system && (
             <div className="header-info">
+              <Server
+                size={11}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />
               <span className="header-info-label">Host</span>
               <span style={{ color: accent.color }}>{system.hostname}</span>
             </div>
           )}
           <div className="header-info">
+            <Clock
+              size={11}
+              style={{ color: "var(--text-muted)", flexShrink: 0 }}
+            />
             <span className="header-info-label">Uptime</span>
             <span style={{ color: accent.color }}>{uptime}</span>
           </div>
           <div className="header-info">
+            <RefreshCw
+              size={11}
+              style={{ color: "var(--text-muted)", flexShrink: 0 }}
+            />
             <span className="header-info-label">Updated</span>
             <span style={{ color: accent.color }}>
               {system?.last_update ?? "Just now"}
             </span>
           </div>
           <div className="header-info">
-            <span className="header-info-label">Status</span>
             {healthOk ? (
-              <Wifi size={14} style={{ color: "var(--success)" }} />
+              <Wifi
+                size={12}
+                style={{ color: "var(--success)", flexShrink: 0 }}
+              />
             ) : (
-              <WifiOff size={14} style={{ color: "var(--danger)" }} />
+              <WifiOff
+                size={12}
+                style={{ color: "var(--danger)", flexShrink: 0 }}
+              />
             )}
+            <span
+              className="header-info-label"
+              style={{ color: healthOk ? "var(--success)" : "var(--danger)" }}
+            >
+              {healthOk ? "Online" : "Offline"}
+            </span>
           </div>
         </div>
         <div className="header-right">
