@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::api::ai_management as ai_mgmt;
 use crate::api::launcher as launcher_api;
+use crate::api::log_manager;
 use crate::api::settings::{
     AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, test_connection,
 };
@@ -76,6 +77,11 @@ pub fn create_router() -> axum::Router {
         )
         .route("/api/launch/launch", post(launch_profile_handler))
         .route("/api/launch/stop", post(stop_profile_handler))
+        .route(
+            "/api/launch/logs",
+            get(get_logs_handler).delete(clear_logs_handler),
+        )
+        .route("/api/launch/logs/ws", get(logs_ws_handler))
 }
 
 async fn health_handler() -> axum::response::Json<Value> {
@@ -218,12 +224,12 @@ async fn ai_metrics_handler() -> axum::response::Json<Value> {
 
     // Enrich kv_cache_stats with real NVML VRAM data if available
     let (gpus, _) = collect_gpu_metrics();
-    if let Some(first_gpu) = gpus.first() {
-        if let Some(ref mut stats) = metrics.kv_cache_stats {
-            for stat in stats.iter_mut() {
-                stat.used_gpu_memory_mb = first_gpu.vram_used_gb * 1024.0;
-                stat.free_gpu_memory_mb = first_gpu.vram_total_gb * 1024.0;
-            }
+    if let Some(first_gpu) = gpus.first()
+        && let Some(ref mut stats) = metrics.kv_cache_stats
+    {
+        for stat in stats.iter_mut() {
+            stat.used_gpu_memory_mb = first_gpu.vram_used_gb * 1024.0;
+            stat.free_gpu_memory_mb = first_gpu.vram_total_gb * 1024.0;
         }
     }
 
@@ -255,6 +261,8 @@ pub struct UpdateSettingsRequest {
     pub comfyui_url: String,
     #[serde(default)]
     pub launcher_scan_dir: Option<String>,
+    #[serde(default)]
+    pub llama_working_dir: Option<String>,
 }
 
 async fn update_settings_handler(
@@ -266,6 +274,7 @@ async fn update_settings_handler(
         opencode_url: req.opencode_url,
         comfyui_url: req.comfyui_url,
         launcher_scan_dir: req.launcher_scan_dir.clone(),
+        llama_working_dir: req.llama_working_dir.clone(),
     };
     set_ai_settings(settings.clone());
     if let Some(ref dir) = req.launcher_scan_dir
@@ -514,22 +523,19 @@ async fn handle_terminal_ws(socket: WebSocket, pts_name: String) {
         while let Some(Ok(msg)) = receiver.next().await {
             if let Message::Text(text) = msg {
                 // Check for resize command before writing to PTY
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let (Some("resize"), Some(rows), Some(cols)) = (
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+                    && let (Some("resize"), Some(rows), Some(cols)) = (
                         json.get("type").and_then(|v| v.as_str()),
                         json.get("rows").and_then(|v| v.as_u64()).map(|r| r as u16),
                         json.get("cols").and_then(|v| v.as_u64()).map(|c| c as u16),
-                    ) {
-                        if let Err(_) = ai_mgmt::resize_terminal(&pts_name, rows, cols) {}
-                        continue;
-                    }
-                }
-                if let Err(_) = ai_mgmt::write_terminal_input(&pts_name, &text) {}
-            } else if let Message::Binary(data) = msg {
-                if let Err(_) =
-                    ai_mgmt::write_terminal_input(&pts_name, &String::from_utf8_lossy(&data))
+                    )
                 {
+                    let _ = ai_mgmt::resize_terminal(&pts_name, rows, cols);
+                    continue;
                 }
+                let _ = ai_mgmt::write_terminal_input(&pts_name, &text);
+            } else if let Message::Binary(data) = msg {
+                let _ = ai_mgmt::write_terminal_input(&pts_name, &String::from_utf8_lossy(&data));
             }
         }
     });
@@ -692,6 +698,133 @@ async fn profile_metrics_handler(
                 "context_size": null,
             }),
         })),
+    }
+}
+
+#[derive(Deserialize)]
+struct LogsQuery {
+    profile_id: String,
+}
+
+async fn get_logs_handler(
+    axum::extract::Query(params): axum::extract::Query<LogsQuery>,
+) -> axum::response::Json<Value> {
+    let script_path = {
+        let state = launcher_api::get_state();
+        let guard = state.read().unwrap();
+        guard
+            .profiles
+            .iter()
+            .find(|p| p.id == params.profile_id)
+            .map(|p| p.script_path.clone())
+    };
+    match script_path {
+        Some(path) => {
+            let (lines, exited) = log_manager::get_log_manager().get_history(&path);
+            Json(json!({ "lines": safe_serialize(&lines), "exited": exited }))
+        }
+        None => Json(json!({ "lines": [], "exited": false })),
+    }
+}
+
+async fn clear_logs_handler(
+    axum::extract::Query(params): axum::extract::Query<LogsQuery>,
+) -> axum::response::Json<Value> {
+    let script_path = {
+        let state = launcher_api::get_state();
+        let guard = state.read().unwrap();
+        guard
+            .profiles
+            .iter()
+            .find(|p| p.id == params.profile_id)
+            .map(|p| p.script_path.clone())
+    };
+    if let Some(path) = script_path {
+        log_manager::get_log_manager().clear(&path);
+    }
+    Json(json!({ "success": true }))
+}
+
+async fn logs_ws_handler(
+    ws: axum::extract::WebSocketUpgrade,
+    axum::extract::Query(params): axum::extract::Query<LogsQuery>,
+) -> axum::response::Response {
+    let profile_id = params.profile_id;
+    ws.on_upgrade(move |socket| handle_logs_ws(socket, profile_id))
+}
+
+async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
+    let script_path = {
+        let state = launcher_api::get_state();
+        let guard = state.read().unwrap();
+        guard
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.script_path.clone())
+    };
+    let script_path = match script_path {
+        Some(p) => p,
+        None => return,
+    };
+
+    let log_mgr = log_manager::get_log_manager();
+    let (rx, history, exited) = log_mgr.subscribe(&script_path);
+
+    let (mut sender, mut receiver) = socket.split();
+
+    // Send full history immediately on connect.
+    let history_msg = json!({
+        "type": "history",
+        "lines": history,
+        "exited": exited,
+    });
+    if sender
+        .send(Message::Text(axum::extract::ws::Utf8Bytes::from(
+            history_msg.to_string(),
+        )))
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    // Forward new log events to the client.
+    let send_task = tokio::spawn(async move {
+        let mut rx = rx;
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let msg = match &event {
+                        log_manager::LogEvent::Log { line } => {
+                            json!({ "type": "log", "line": line })
+                        }
+                        log_manager::LogEvent::Exited => json!({ "type": "exited" }),
+                    };
+                    if sender
+                        .send(Message::Text(axum::extract::ws::Utf8Bytes::from(
+                            msg.to_string(),
+                        )))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Drain incoming messages (client sends nothing, but we must consume frames).
+    let recv_task = tokio::spawn(async move { while let Some(Ok(_)) = receiver.next().await {} });
+
+    let send_abort = send_task.abort_handle();
+    let recv_abort = recv_task.abort_handle();
+    tokio::select! {
+        _ = send_task => { recv_abort.abort(); }
+        _ = recv_task => { send_abort.abort(); }
     }
 }
 

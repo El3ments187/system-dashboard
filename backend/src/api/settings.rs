@@ -11,6 +11,8 @@ pub struct AiSettings {
     pub comfyui_url: String,
     #[serde(default)]
     pub launcher_scan_dir: Option<String>,
+    #[serde(default)]
+    pub llama_working_dir: Option<String>,
 }
 
 impl Default for AiSettings {
@@ -21,6 +23,7 @@ impl Default for AiSettings {
             opencode_url: "http://localhost:4000".to_string(),
             comfyui_url: "http://localhost:8188".to_string(),
             launcher_scan_dir: None,
+            llama_working_dir: None,
         }
     }
 }

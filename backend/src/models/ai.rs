@@ -265,6 +265,24 @@ pub struct LlamaProps {
     pub top_k: Option<i32>,
     pub top_p: Option<f64>,
     pub repeat_penalty: Option<f64>,
+    pub frequency_penalty: Option<f64>,
+    pub repeat_last_n: Option<i32>,
+    pub seed: Option<u64>,
+    pub reasoning_format: Option<String>,
+    pub samplers: Option<Vec<String>>,
+    pub speculative: Option<bool>,
+    pub context_tokens: Option<u32>,
+}
+
+/// GPU layer offload information parsed from llama.cpp startup logs
+#[derive(Debug, Clone, Serialize)]
+pub struct GpuOffloadInfo {
+    pub main_loaded: u32,
+    pub main_total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_loaded: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_total: Option<u32>,
 }
 
 /// ComfyUI workflow and queue info
@@ -374,6 +392,18 @@ pub struct AiMetrics {
     pub top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeat_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_last_n: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub samplers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speculative: Option<bool>,
 
     /// Per-process metrics for llama-server
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -394,6 +424,22 @@ pub struct AiMetrics {
     /// ComfyUI workflow/queue info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comfyui_info: Option<AiComfyUiInfo>,
+
+    /// GPU layer offload info parsed from startup logs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_offload: Option<GpuOffloadInfo>,
+
+    /// Model load time from launch initiation to first health check success
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_load_time_ms: Option<f64>,
+
+    /// Total KV buffer size reserved across all GPUs (from startup logs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kv_cache_reserved_mib: Option<f64>,
+
+    /// GGUF model file size in GiB (from filesystem stat on model path)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gguf_size_gib: Option<f64>,
 }
 
 /// Directory entry from filesystem browse

@@ -49,10 +49,8 @@ pub fn read_git_info(dir: &str) -> Option<GitInfo> {
         // Extract branch name from ref path (e.g., "refs/heads/main" -> "main")
         let branch = if let Some(b) = ref_path.strip_prefix("refs/heads/") {
             Some(b.to_string())
-        } else if let Some(b) = ref_path.strip_prefix("refs/tags/") {
-            Some(b.to_string())
         } else {
-            None
+            ref_path.strip_prefix("refs/tags/").map(|b| b.to_string())
         };
 
         Some(GitInfo {
@@ -253,12 +251,12 @@ pub fn get_repo_version(dir: &str) -> Option<String> {
         .current_dir(dir)
         .output()
         .ok();
-    if let Some(out) = describe {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !s.is_empty() {
-                return Some(s);
-            }
+    if let Some(out) = describe
+        && out.status.success()
+    {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !s.is_empty() {
+            return Some(s);
         }
     }
 
@@ -292,10 +290,10 @@ struct CommandsFile {
 
 pub fn load_commands() -> Vec<SavedCommand> {
     let path = commands_file_path();
-    if let Ok(content) = fs::read_to_string(&path) {
-        if let Ok(data) = serde_json::from_str::<CommandsFile>(&content) {
-            return data.commands;
-        }
+    if let Ok(content) = fs::read_to_string(&path)
+        && let Ok(data) = serde_json::from_str::<CommandsFile>(&content)
+    {
+        return data.commands;
     }
     Vec::new()
 }
@@ -680,7 +678,7 @@ pub fn resize_terminal(pts: &str, rows: u16, cols: u16) -> Result<(), String> {
     unsafe {
         match libc::ioctl(fd, libc::TIOCSWINSZ, &ws) {
             0 => Ok(()),
-            _ => Err(format!("Resize failed (ioctl returned non-zero)")),
+            _ => Err("Resize failed (ioctl returned non-zero)".to_string()),
         }
     }
 }

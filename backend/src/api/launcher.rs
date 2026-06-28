@@ -1,12 +1,15 @@
 //! Launch profile management: script scanning, parsing, process control, resource monitoring, metadata persistence.
 
+use crate::api::log_manager::{self, LogLevel, LogLine, LogStream, classify_log_level};
 use crate::models::ai::*;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use walkdir::WalkDir;
 
 // ─── Configuration ──────────────────────────────────────────────────
@@ -57,6 +60,12 @@ pub fn update_scan_dir(dir: &str) {
     let state = get_state();
     let mut guard = state.write().unwrap();
     guard.scan_dir = dir.to_string();
+}
+
+pub fn get_running_script() -> Option<String> {
+    let state = get_state();
+    let guard = state.read().unwrap();
+    guard.running_script.clone()
 }
 
 // ─── Script Scanner ─────────────────────────────────────────────────
@@ -596,6 +605,24 @@ pub fn launch_profile(script_path: &str) -> Result<Value, String> {
             }
         }
 
+        // Clear previous logs for this profile and add a launch marker so the
+        // console panel always shows context for the current run.
+        {
+            let log_mgr = log_manager::get_log_manager();
+            log_mgr.clear(&script_str);
+            crate::api::gpu_offload_parser::clear(&script_str);
+            crate::api::startup_info::clear(&script_str);
+            crate::api::startup_info::on_load_start(&script_str);
+            log_mgr.add_line(
+                &script_str,
+                LogLine {
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    stream: LogStream::Stdout,
+                    level: LogLevel::Info,
+                    text: format!("[Dashboard] Launching: {}", script_str),
+                },
+            );
+        }
         eprintln!("[Launcher] Spawning script: {}", script_str);
         match execute_script(&script_str).await {
             Ok(pid) => {
@@ -658,6 +685,19 @@ pub fn launch_profile(script_path: &str) -> Result<Value, String> {
             }
             Err(e) => {
                 eprintln!("[Launcher] Failed to launch {}: {}", script_str, e);
+                {
+                    let log_mgr = log_manager::get_log_manager();
+                    log_mgr.add_line(
+                        &script_str,
+                        LogLine {
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            stream: LogStream::Stderr,
+                            level: LogLevel::Error,
+                            text: format!("[Dashboard] Failed to launch script: {}", e),
+                        },
+                    );
+                    log_mgr.set_process_exited(&script_str);
+                }
                 let _state = get_state();
                 let mut guard = _state.write().unwrap();
                 guard.states.insert(
@@ -688,13 +728,15 @@ async fn execute_script(script_path: &str) -> Result<u32, String> {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("/tmp"));
 
-    let child = tokio::process::Command::new("bash")
+    let mut child = tokio::process::Command::new("bash")
         .current_dir(&script_dir)
         .arg(script_path)
         // Make the bash wrapper the leader of its own process group, so any
         // child it forks (e.g. llama-server, when the script doesn't `exec`
         // into it) inherits the same group and can be signaled together.
         .process_group(0)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn script: {}", e))?;
 
@@ -702,8 +744,63 @@ async fn execute_script(script_path: &str) -> Result<u32, String> {
         .id()
         .ok_or_else(|| "Process ID not available".to_string())?;
 
+    // Take pipe handles before detaching — ChildStdout/ChildStderr are
+    // independent of the Child handle, so they remain open after drop(child).
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
     // Detach the process so it continues after we return
     drop(child);
+
+    let log_mgr = log_manager::get_log_manager();
+
+    // Spawn async reader for stdout — when the script uses `exec llama-server`,
+    // llama-server inherits this pipe and all its output is captured here.
+    if let Some(stdout_handle) = stdout {
+        let path = script_path.to_string();
+        let mgr = log_mgr.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout_handle).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                crate::api::gpu_offload_parser::process_line(&path, &line);
+                crate::api::startup_info::process_line(&path, &line);
+                let level = classify_log_level(&line);
+                mgr.add_line(
+                    &path,
+                    LogLine {
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        stream: LogStream::Stdout,
+                        level,
+                        text: line,
+                    },
+                );
+            }
+            mgr.set_process_exited(&path);
+        });
+    }
+
+    // Spawn async reader for stderr.
+    if let Some(stderr_handle) = stderr {
+        let path = script_path.to_string();
+        let mgr = log_mgr.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr_handle).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                crate::api::gpu_offload_parser::process_line(&path, &line);
+                crate::api::startup_info::process_line(&path, &line);
+                let level = classify_log_level(&line);
+                mgr.add_line(
+                    &path,
+                    LogLine {
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        stream: LogStream::Stderr,
+                        level,
+                        text: line,
+                    },
+                );
+            }
+        });
+    }
 
     Ok(pid)
 }
@@ -713,7 +810,9 @@ async fn execute_script(script_path: &str) -> Result<u32, String> {
 async fn wait_for_model_ready(script_path: &str) {
     let parsed_args = get_profile_parsed_args(script_path);
     let port = parsed_args.as_ref().and_then(|a| a.port);
-    let host = parsed_args.and_then(|a| a.host).unwrap_or_else(|| "127.0.0.1".to_string());
+    let host = parsed_args
+        .and_then(|a| a.host)
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     // 60 second timeout, 1 second polling interval
     let timeout_secs = 60;
@@ -728,7 +827,10 @@ async fn wait_for_model_ready(script_path: &str) {
             let state = get_state();
             let guard = state.read().unwrap();
             let status = guard.states.get(script_path).map(|ps| ps.status.clone());
-            let pid = guard.states.get(script_path).and_then(|ps| ps.llama_server_pid);
+            let pid = guard
+                .states
+                .get(script_path)
+                .and_then(|ps| ps.llama_server_pid);
             (status, pid)
         };
 
@@ -746,48 +848,49 @@ async fn wait_for_model_ready(script_path: &str) {
         }
 
         // Check process liveness
-        if let Some(pid) = profile_pid {
-            if unsafe { libc::kill(pid as i32, 0) != 0 } {
-                // PID is dead — the bash wrapper may have exited after exec'ing the server.
-                // Check if a live server is still bound to the expected port before failing.
-                let still_on_port = port.is_some_and(|p| {
-                    let sys = sysinfo::System::new_all();
-                    find_llama_server_pid_by_port(&sys, p).is_some()
-                });
-                if !still_on_port {
-                    eprintln!(
-                        "[HealthCheck] PID {} for {} is no longer alive and no server on port, marking as failed",
-                        pid, script_path
-                    );
-                    let state = get_state();
-                    let mut guard = state.write().unwrap();
-                    if let Some(entry) = guard.states.get_mut(script_path) {
-                        entry.status = "failed".to_string();
-                        entry.llama_server_pid = None;
-                    }
-                    return;
+        if let Some(pid) = profile_pid
+            && unsafe { libc::kill(pid as i32, 0) != 0 }
+        {
+            // PID is dead — the bash wrapper may have exited after exec'ing the server.
+            // Check if a live server is still bound to the expected port before failing.
+            let still_on_port = port.is_some_and(|p| {
+                let sys = sysinfo::System::new_all();
+                find_llama_server_pid_by_port(&sys, p).is_some()
+            });
+            if !still_on_port {
+                eprintln!(
+                    "[HealthCheck] PID {} for {} is no longer alive and no server on port, marking as failed",
+                    pid, script_path
+                );
+                let state = get_state();
+                let mut guard = state.write().unwrap();
+                if let Some(entry) = guard.states.get_mut(script_path) {
+                    entry.status = "failed".to_string();
+                    entry.llama_server_pid = None;
                 }
-                // Server is still alive on port under a different PID — continue polling.
-                // The liveness check in scan_profiles will update the stored PID.
+                return;
             }
+            // Server is still alive on port under a different PID — continue polling.
+            // The liveness check in scan_profiles will update the stored PID.
         }
 
         // Check health endpoint if port is available
         if let Some(p) = port {
             let health_url = format!("http://{}:{}/health", host, p);
-            if let Ok(resp) = metrics_http_client().get(&health_url).send().await {
-                if resp.status().is_success() {
-                    eprintln!(
-                        "[HealthCheck] {} health check succeeded, marking as running",
-                        script_path
-                    );
-                    let state = get_state();
-                    let mut guard = state.write().unwrap();
-                    if let Some(entry) = guard.states.get_mut(script_path) {
-                        entry.status = "running".to_string();
-                    }
-                    return;
+            if let Ok(resp) = metrics_http_client().get(&health_url).send().await
+                && resp.status().is_success()
+            {
+                eprintln!(
+                    "[HealthCheck] {} health check succeeded, marking as running",
+                    script_path
+                );
+                crate::api::startup_info::on_load_ready(script_path);
+                let state = get_state();
+                let mut guard = state.write().unwrap();
+                if let Some(entry) = guard.states.get_mut(script_path) {
+                    entry.status = "running".to_string();
                 }
+                return;
             }
         }
     }
@@ -862,6 +965,8 @@ fn stop_profile_internal(script_path: &str) -> Result<Value, String> {
 
     guard.running_script = None;
     save_metadata(&guard.metadata);
+    crate::api::gpu_offload_parser::clear(script_path);
+    crate::api::startup_info::clear(script_path);
 
     Ok(json!({ "success": true }))
 }
@@ -1104,7 +1209,10 @@ pub fn scan_profiles() -> ProfileResponse {
         } = &mut *guard;
         let liveness_system = sysinfo::System::new_all();
         for (script_path, state_entry) in states.iter_mut() {
-            if state_entry.status == "running" || state_entry.status == "loading" || state_entry.status == "starting" {
+            if state_entry.status == "running"
+                || state_entry.status == "loading"
+                || state_entry.status == "starting"
+            {
                 // No PID yet means the spawn is still in progress; skip liveness check
                 // to avoid immediately marking the profile as "failed".
                 if state_entry.status == "starting" && state_entry.llama_server_pid.is_none() {
@@ -1200,24 +1308,20 @@ pub fn scan_profiles() -> ProfileResponse {
     // don't recover a second profile onto the same port.
     let mut recovered_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
     for profile in &profiles {
-        let is_active = guard
-            .states
-            .get(&profile.script_path)
-            .map_or(false, |s| {
-                s.status == "running" || s.status == "loading" || s.status == "starting"
-            });
-        if is_active {
-            if let Some(parsed_args) = &profile.parsed_args {
-                if let Some(port) = parsed_args.port {
-                    recovered_ports.insert(port);
-                }
-            }
+        let is_active = guard.states.get(&profile.script_path).is_some_and(|s| {
+            s.status == "running" || s.status == "loading" || s.status == "starting"
+        });
+        if is_active
+            && let Some(parsed_args) = &profile.parsed_args
+            && let Some(port) = parsed_args.port
+        {
+            recovered_ports.insert(port);
         }
     }
     for profile in &recovery_candidates {
         let is_inactive = {
             let s = guard.states.get(&profile.script_path);
-            s.map_or(true, |s| s.status == "stopped" || s.status == "failed")
+            s.is_none_or(|s| s.status == "stopped" || s.status == "failed")
         };
         if is_inactive
             && let Some(parsed_args) = &profile.parsed_args

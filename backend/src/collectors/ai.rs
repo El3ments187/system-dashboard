@@ -31,17 +31,16 @@ fn find_process_pids(name_pattern: &str) -> Vec<u32> {
             if let Some(exe_name) = std::fs::read_link(path.join("exe"))
                 .ok()
                 .and_then(|exe| exe.file_name().and_then(|n| n.to_str()).map(String::from))
+                && exe_name.contains(name_pattern)
             {
-                if exe_name.contains(name_pattern) {
-                    pids.push(pid);
-                    continue;
-                }
+                pids.push(pid);
+                continue;
             }
 
-            if let Ok(cmdline) = std::fs::read_to_string(path.join("cmdline")) {
-                if cmdline.replace('\0', " ").contains(name_pattern) {
-                    pids.push(pid);
-                }
+            if let Ok(cmdline) = std::fs::read_to_string(path.join("cmdline"))
+                && cmdline.replace('\0', " ").contains(name_pattern)
+            {
+                pids.push(pid);
             }
         }
     }
@@ -87,7 +86,7 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     let total_sys_time: f64 = sys_fields.iter().sum();
 
     // Get number of CPUs for normalization
-    let num_cpus = if sys_fields.len() > 0 {
+    let num_cpus = if !sys_fields.is_empty() {
         (sys_fields.len() - 1) as f64
     } else {
         1.0
@@ -253,6 +252,28 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
             .get("repeat_penalty")
             .or_else(|| params.and_then(|p| p.get("repeat_penalty")))
             .and_then(|v| v.as_f64()),
+        frequency_penalty: params
+            .and_then(|p| p.get("frequency_penalty"))
+            .and_then(|v| v.as_f64()),
+        repeat_last_n: params
+            .and_then(|p| p.get("repeat_last_n"))
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
+        seed: params.and_then(|p| p.get("seed")).and_then(|v| v.as_u64()),
+        reasoning_format: params
+            .and_then(|p| p.get("reasoning_format"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        samplers: params
+            .and_then(|p| p.get("samplers"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            }),
+        speculative: None,
+        context_tokens: None,
     })
 }
 
@@ -289,13 +310,34 @@ async fn poll_llama_server(
 
             // Fetch /props endpoint for model and server info
             let props_url = format!("{}/props", base_url);
-            let props = match client.get(&props_url).send().await {
+            let mut props = match client.get(&props_url).send().await {
                 Ok(presp) if presp.status().is_success() => match presp.text().await {
                     Ok(body) => parse_props(&body),
                     Err(_) => None,
                 },
                 _ => None,
             };
+
+            // Fetch /slots for speculative decoding status
+            if let Some(ref mut p) = props {
+                let slots_url = format!("{}/slots", base_url);
+                if let Ok(sresp) = client.get(&slots_url).send().await
+                    && sresp.status().is_success()
+                    && let Ok(body) = sresp.text().await
+                    && let Ok(slots) = serde_json::from_str::<serde_json::Value>(&body)
+                {
+                    p.speculative = slots
+                        .as_array()
+                        .and_then(|arr| arr.first())
+                        .and_then(|slot| slot.get("speculative"))
+                        .and_then(|v| v.as_bool());
+                    p.context_tokens = slots.as_array().map(|arr| {
+                        arr.iter()
+                            .filter_map(|slot| slot.get("n_past").and_then(|v| v.as_u64()))
+                            .sum::<u64>() as u32
+                    });
+                }
+            }
 
             let status = AiServiceStatus {
                 name: "llama-server".to_string(),
@@ -374,7 +416,7 @@ fn compute_derived_metrics(prom: &LlamaMetrics, props: Option<&LlamaProps>) -> A
         } else {
             None
         },
-        tokens_cached: Some(prom.n_tokens_max as i64),
+        tokens_cached: None,
         total_tokens_sent: if total_tokens >= 0 {
             Some(total_tokens)
         } else {
@@ -424,7 +466,7 @@ fn compute_derived_metrics(prom: &LlamaMetrics, props: Option<&LlamaProps>) -> A
         } else {
             None
         },
-        context_tokens: Some(prom.n_tokens_max as u32),
+        context_tokens: None,
         max_context: props.and_then(|p| p.n_ctx),
     }
 }
@@ -656,6 +698,25 @@ pub async fn collect_ai_metrics(
     let opencode_status = poll_opencode(opencode_url).await;
     let (comfyui_status, comfyui_info) = poll_comfyui(comfyui_url).await;
 
+    let gpu_offload = crate::api::launcher::get_running_script()
+        .as_deref()
+        .and_then(crate::api::gpu_offload_parser::get_info);
+
+    let gguf_size_gib = props
+        .as_ref()
+        .and_then(|p| p.model_path.as_ref())
+        .and_then(|path| std::fs::metadata(path).ok())
+        .map(|m| m.len() as f64 / (1024.0 * 1024.0 * 1024.0));
+
+    let (model_load_time_ms, kv_cache_reserved_mib) = crate::api::launcher::get_running_script()
+        .map(|script| {
+            (
+                crate::api::startup_info::get_load_time_ms(&script),
+                crate::api::startup_info::get_kv_reserved_mib(&script),
+            )
+        })
+        .unwrap_or((None, None));
+
     // Collect per-process metrics for llama-server, OpenCode, and ComfyUI
     let llama_process = collect_process_metrics("llama");
     let openwebui_process =
@@ -686,7 +747,7 @@ pub async fn collect_ai_metrics(
             active_requests: None,
             queued_requests: None,
             busy_slots: None,
-            context_tokens: None,
+            context_tokens: props.as_ref().and_then(|p| p.context_tokens),
             max_context: None,
         }
     };
@@ -803,11 +864,21 @@ pub async fn collect_ai_metrics(
         top_k: props.as_ref().and_then(|p| p.top_k),
         top_p: props.as_ref().and_then(|p| p.top_p),
         repeat_penalty: props.as_ref().and_then(|p| p.repeat_penalty),
+        frequency_penalty: props.as_ref().and_then(|p| p.frequency_penalty),
+        repeat_last_n: props.as_ref().and_then(|p| p.repeat_last_n),
+        seed: props.as_ref().and_then(|p| p.seed),
+        reasoning_format: props.as_ref().and_then(|p| p.reasoning_format.clone()),
+        samplers: props.as_ref().and_then(|p| p.samplers.clone()),
+        speculative: props.as_ref().and_then(|p| p.speculative),
         llama_server_process: llama_process,
         openwebui_process,
         opencode_process,
         comfyui_process,
         comfyui_info,
+        gpu_offload,
+        model_load_time_ms,
+        kv_cache_reserved_mib,
+        gguf_size_gib,
     };
 
     (metrics, status)

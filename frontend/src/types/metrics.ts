@@ -180,6 +180,12 @@ export interface AiMetrics {
   top_k?: number | null;
   top_p?: number | null;
   repeat_penalty?: number | null;
+  frequency_penalty?: number | null;
+  repeat_last_n?: number | null;
+  seed?: number | null;
+  reasoning_format?: string | null;
+  samplers?: string[] | null;
+  speculative?: boolean | null;
 
   // Per-process metrics
   llama_server_process?: ProcessMetrics | null;
@@ -187,6 +193,21 @@ export interface AiMetrics {
   openwebui_process?: ProcessMetrics | null;
   comfyui_process?: ProcessMetrics | null;
   comfyui_info?: AiComfyUiInfo | null;
+
+  // GPU layer offload info parsed from startup logs
+  gpu_offload?: GpuOffloadInfo | null;
+
+  // Startup / model info
+  model_load_time_ms?: number | null;
+  kv_cache_reserved_mib?: number | null;
+  gguf_size_gib?: number | null;
+}
+
+export interface GpuOffloadInfo {
+  main_loaded: number;
+  main_total: number;
+  draft_loaded?: number | null;
+  draft_total?: number | null;
 }
 
 export interface AiHistoryEntry {
@@ -217,6 +238,7 @@ export interface AiSettings {
   opencode_url: string;
   comfyui_url: string;
   launcher_scan_dir?: string;
+  llama_working_dir?: string;
 }
 
 export interface TestConnectionResult {
@@ -344,4 +366,27 @@ export interface ProfileResponse {
   states: Record<string, ProfileState>;
   metadata: Record<string, ProfileMetadata>;
   scan_dir: string;
+}
+
+// ─── Log Console ────────────────────────────────────────────────────
+
+export type LogStream = "stdout" | "stderr";
+export type LogLevel =
+  | "info"
+  | "warn"
+  | "error"
+  | "debug"
+  | "stats"
+  | "unknown";
+
+export interface LogLine {
+  timestamp: string;
+  stream: LogStream;
+  level: LogLevel;
+  text: string;
+}
+
+export interface LogsResponse {
+  lines: LogLine[];
+  exited: boolean;
 }
