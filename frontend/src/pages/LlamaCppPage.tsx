@@ -46,7 +46,6 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  GitBranch,
 } from "lucide-react";
 import type {
   ProfileResponse,
@@ -2398,20 +2397,6 @@ export default function LlamaCppPage() {
                 />
                 Terminal
               </button>
-
-              <a
-                href="https://github.com/ggml-org/llama.cpp"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="settings-btn"
-                style={{ ...railBtn, textDecoration: "none" }}
-              >
-                <GitBranch
-                  size={15}
-                  style={{ color: "var(--accent-primary)" }}
-                />
-                GitHub
-              </a>
 
               <button
                 onClick={() =>
