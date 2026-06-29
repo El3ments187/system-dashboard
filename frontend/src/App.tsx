@@ -33,6 +33,8 @@ export default function App() {
     setBg,
     accentMode,
     setAccentMode,
+    glow,
+    setGlow,
     resetTheme,
     current,
   } = useTheme();
@@ -145,6 +147,8 @@ export default function App() {
                 onBgChange={setBg}
                 current={current}
                 onReset={resetTheme}
+                glow={glow}
+                onGlowChange={setGlow}
               />
               {activePage === "terminal" ? (
                 <AiTerminalViewer />

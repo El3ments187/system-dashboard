@@ -1,11 +1,12 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
-import LlamaCppPage, {
+import LlamaCppPage from "../pages/LlamaCppPage";
+import {
   fmtUptime,
   fmtKb,
   fmtLatency,
   calcBuildsBehind,
-} from "../pages/LlamaCppPage";
+} from "../pages/llamaCppUtils";
 import type { AiMetrics, ProfileResponse } from "../types/metrics";
 
 // ─── Module mocks ─────────────────────────────────────────────────────

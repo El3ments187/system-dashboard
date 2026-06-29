@@ -754,6 +754,9 @@ pub async fn collect_ai_metrics(
     if derived.max_context.is_none() {
         derived.max_context = props.as_ref().and_then(|p| p.n_ctx);
     }
+    if derived.context_tokens.is_none() {
+        derived.context_tokens = props.as_ref().and_then(|p| p.context_tokens);
+    }
 
     // Build token usage from derived metrics
     let token_usage = if derived.prompt_tokens > 0 || derived.completion_tokens > 0 {

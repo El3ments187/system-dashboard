@@ -59,6 +59,31 @@
   --transition-slow: 400ms ease;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.18);
+  --card-glow: none;
+  /* Per-metric color tokens — footer bars, inline sparklines; no stray hex allowed */
+  --metric-cpu: var(--success);
+  --metric-ram: var(--warning);
+  --metric-gpu: var(--accent-primary);
+  --metric-vram: color-mix(in srgb, var(--accent-primary) 70%, var(--warning));
+  --metric-temp: var(--danger);
+}
+
+/* ========================================
+   Neon Glow Axis
+   ========================================
+   Opt-in effect layer: add data-glow="neon" to <html> to enable.
+   Composes with the existing accent + bg theme axes automatically.
+   Disabled when user prefers reduced motion.
+   ======================================== */
+[data-glow="neon"] {
+  --card-glow: 0 0 16px var(--accent-glow);
+  --border-color: var(--accent-tint-40, var(--border-color));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-glow="neon"] {
+    --card-glow: none;
+  }
 }
 
 /* ========================================

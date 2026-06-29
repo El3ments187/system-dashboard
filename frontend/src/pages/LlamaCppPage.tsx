@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { useMetricsContext } from "../context/MetricsContext";
 import LogConsole from "../components/LogConsole";
-import MetricTile from "../components/shared/MetricTile";
 import Sparkline from "../components/shared/Sparkline";
 import UpdateOutputModal from "../components/UpdateOutputModal";
 import { useLlamaCppManagement } from "../hooks/useLlamaCppManagement";
@@ -26,7 +31,6 @@ import {
   Server,
   Package,
   Brain,
-  BarChart3,
   Gauge,
   Database,
   Clock3,
@@ -35,8 +39,6 @@ import {
   Tag,
   Layers,
   MonitorCog,
-  TrendingUp,
-  MessageSquare,
   SlidersHorizontal,
   RotateCcw,
   Send,
@@ -45,8 +47,6 @@ import {
   ArrowDown,
   ArrowUpDown,
   GitBranch,
-  ScrollText,
-  FileText,
 } from "lucide-react";
 import type {
   ProfileResponse,
@@ -65,76 +65,17 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SPEC_LABELS: Record<string, string> = {
-  draft: "Draft",
-  "draft-mtp": "MTP",
-  eagle: "EAGLE",
-  eagle3: "EAGLE-3",
-};
-
-// ─── Utility exports ──────────────────────────────────────────────────────────
-
-export function formatCtx(contextSize?: number | null): string {
-  if (contextSize == null || contextSize <= 0) return "\u2014";
-  return `${Math.round(contextSize / 1024)}K`;
-}
-
-export function formatGB(mb?: number | null): string {
-  if (mb == null) return "\u2014";
-  return `${(mb / 1024).toFixed(1)}G`;
-}
-
-export function formatTps(tps?: number | null): string {
-  if (tps == null) return "\u2014";
-  return `${Math.round(tps)}`;
-}
-
-export function specLabel(specType?: string | null): string {
-  if (!specType) return "None";
-  return SPEC_LABELS[specType] ?? "Other";
-}
-
-export function fmtUptime(sec: number | null | undefined): string {
-  if (sec == null) return "\u2014";
-  if (sec < 60) return `${Math.round(sec)}s`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
-}
-
-export function fmtKb(kb: number | null | undefined): string {
-  if (kb == null) return "\u2014";
-  if (kb < 1024) return `${Math.round(kb)} KB`;
-  if (kb < 1024 * 1024) return `${(kb / 1024).toFixed(1)} MB`;
-  return `${(kb / (1024 * 1024)).toFixed(2)} GB`;
-}
-
-export function fmtLatency(ms: number | null | undefined): string {
-  if (ms == null) return "\u2014";
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
-
-export function calcBuildsBehind(
-  local?: string | null,
-  latest?: string | null,
-): number | null {
-  if (!local || !latest) return null;
-  const lm = local.match(/b?(\d+)/);
-  const rm = latest.match(/b?(\d+)/);
-  if (!lm || !rm) return null;
-  const diff = parseInt(rm[1], 10) - parseInt(lm[1], 10);
-  return diff > 0 ? diff : 0;
-}
+import {
+  formatCtx,
+  formatGB,
+  formatTps,
+  specLabel,
+  fmtUptime,
+  fmtKb,
+  calcBuildsBehind,
+} from "./llamaCppUtils";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
-
-function ic(icon: React.ReactNode, text: string): React.ReactNode {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-      {icon}
-      {text}
-    </span>
-  );
-}
 
 function fmtNum(v: unknown): string {
   if (v == null || v === "") return "";
@@ -145,6 +86,20 @@ function fmtNum(v: unknown): string {
 function getCtxColor(pct: number | null): string {
   if (pct != null && pct > 90) return "var(--danger)";
   if (pct != null && pct > 70) return "var(--warning)";
+  return "var(--accent-primary)";
+}
+
+function thresholdClass(pct: number | null | undefined): string {
+  if (pct == null) return "";
+  if (pct >= 85) return "progress-bar-critical";
+  if (pct >= 70) return "progress-bar-warning";
+  return "progress-bar-normal";
+}
+
+function thresholdColor(pct: number | null | undefined): string {
+  if (pct == null) return "var(--accent-primary)";
+  if (pct >= 85) return "var(--danger)";
+  if (pct >= 70) return "var(--warning)";
   return "var(--accent-primary)";
 }
 
@@ -170,15 +125,44 @@ function boolLabel(val: boolean | null | undefined): string {
   return val ? "Yes" : "No";
 }
 
-function truncateName(name: string | null | undefined, max: number): string {
-  if (!name) return "\u2014";
-  return name.length > max ? `${name.slice(0, max - 1)}\u2026` : name;
-}
-
 function updateStateText(state: string): string {
   if (state === "running") return "Updating\u2026";
   if (state === "done") return "Update complete";
   return "Update failed";
+}
+
+function middleTruncate(s: string, max = 46): string {
+  if (s.length <= max) return s;
+  const keep = max - 1;
+  const head = Math.ceil(keep * 0.6);
+  const tail = keep - head;
+  return s.slice(0, head) + "\u2026" + s.slice(s.length - tail);
+}
+
+function useFitText(
+  value: string,
+  maxPx = 26,
+  minPx = 13,
+): React.RefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = maxPx;
+      el.style.fontSize = size + "px";
+      el.style.whiteSpace = "nowrap";
+      while (el.scrollWidth > el.clientWidth && size > minPx) {
+        size -= 0.5;
+        el.style.fontSize = size + "px";
+      }
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [value, maxPx, minPx]);
+  return ref;
 }
 
 // ─── Card layout primitives ───────────────────────────────────────────────────
@@ -193,7 +177,6 @@ const SPINE_STYLE: React.CSSProperties = {
   width: 3,
   background: "var(--accent-fill)",
   backgroundSize: "var(--accent-fill-size, 200% 200%)",
-  boxShadow: "0 0 13px -2px var(--accent-glow)",
   zIndex: 2,
   pointerEvents: "none",
   flexShrink: 0,
@@ -464,33 +447,7 @@ function CapPill({
   );
 }
 
-// ─── UpdateStatusChip ─────────────────────────────────────────────────────────
 
-function UpdateStatusChip({ behind }: { behind: number }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        margin: "0 15px 13px",
-        background: "color-mix(in srgb, var(--warning) 10%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
-        color: "var(--warning)",
-        borderRadius: 8,
-        padding: "7px 11px",
-        fontSize: 11.5,
-        fontWeight: 500,
-      }}
-    >
-      <TriangleAlert
-        size={14}
-        style={{ flexShrink: 0, animation: "pulse 2s ease-in-out infinite" }}
-      />
-      {behind} build{behind === 1 ? "" : "s"} behind latest
-    </div>
-  );
-}
 
 // ─── InfoCell ─────────────────────────────────────────────────────────────────
 
@@ -538,6 +495,182 @@ function InfoCell({
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
           marginTop: 2,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ─── RadialGauge ──────────────────────────────────────────────────────────────
+
+function RadialGauge({
+  pct,
+  color,
+  size = 110,
+  children,
+}: {
+  pct: number | null;
+  color?: string;
+  size?: number;
+  children?: React.ReactNode;
+}) {
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const startDeg = 135;
+  const totalDeg = 270;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const pt = (deg: number) => {
+    const a = toRad(startDeg + deg);
+    return `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
+  };
+  const pctClamped = Math.min(100, Math.max(0, pct ?? 0));
+  const progressDeg = (pctClamped / 100) * totalDeg;
+  const trackPath = `M ${pt(0)} A ${r} ${r} 0 1 1 ${pt(totalDeg)}`;
+  const progPath =
+    progressDeg > 0
+      ? `M ${pt(0)} A ${r} ${r} 0 ${progressDeg > 180 ? 1 : 0} 1 ${pt(progressDeg)}`
+      : "";
+  const gaugeColor = color ?? "var(--accent-primary)";
+  return (
+    <div style={{ position: "relative", width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        style={{ display: "block" }}
+      >
+        <path
+          d={trackPath}
+          fill="none"
+          stroke="var(--bg-secondary)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+        />
+        {progPath && (
+          <path
+            d={progPath}
+            fill="none"
+            stroke={gaugeColor}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+          />
+        )}
+      </svg>
+      {children && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MiniRing ─────────────────────────────────────────────────────────────────
+
+function MiniRing({
+  pct,
+  color,
+  size = 42,
+  label,
+  value,
+}: {
+  pct: number | null;
+  color?: string;
+  size?: number;
+  label: string;
+  value: string;
+}) {
+  const stroke = 3.5;
+  const r = (size - stroke * 2) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = pct != null ? Math.min(1, pct / 100) * circ : 0;
+  const ringColor = color ?? "var(--accent-primary)";
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 4,
+        minWidth: 56,
+      }}
+    >
+      <div style={{ position: "relative", width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          style={{ display: "block", transform: "rotate(-90deg)" }}
+        >
+          <circle
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke="var(--bg-secondary)"
+            strokeWidth={stroke}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke={ringColor}
+            strokeWidth={stroke}
+            strokeDasharray={`${dash} ${circ}`}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 9,
+            fontWeight: 700,
+            fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+            color: ringColor,
+          }}
+        >
+          {pct != null ? `${Math.round(pct)}` : "\u2014"}
+        </div>
+      </div>
+      <div
+        style={{
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          color: "var(--text-muted)",
+          textAlign: "center",
+          fontWeight: 500,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+          color: ringColor,
         }}
       >
         {value}
@@ -982,7 +1115,7 @@ export function RunModelsSection() {
               : profileMeta?.avg_gen_tps;
             let rowBg: string | undefined;
             if (running) {
-              rowBg = "rgba(var(--success-rgb, 34,197,94),0.06)";
+              rowBg = "color-mix(in srgb, var(--accent-primary) 9%, var(--bg-card))";
             } else if (idx % 2 === 1) {
               rowBg = "rgba(255,255,255,0.015)";
             }
@@ -1001,6 +1134,9 @@ export function RunModelsSection() {
                   gap: 0,
                   padding: "4px 12px",
                   borderBottom: "1px solid var(--border-color)",
+                  borderLeft: running
+                    ? "2px solid var(--accent-primary)"
+                    : "2px solid transparent",
                   background: rowBg,
                   alignItems: "center",
                   minHeight: 26,
@@ -1083,7 +1219,7 @@ export function RunModelsSection() {
                     fontWeight: 700,
                     color:
                       vram != null
-                        ? "var(--accent-primary)"
+                        ? "var(--metric-vram)"
                         : "var(--text-muted)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
@@ -1097,7 +1233,7 @@ export function RunModelsSection() {
                     fontWeight: 700,
                     color:
                       ram != null
-                        ? "var(--accent-primary)"
+                        ? "var(--metric-ram)"
                         : "var(--text-muted)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
@@ -1200,41 +1336,7 @@ export function RunModelsSection() {
         </div>
       )}
 
-      {/* Footer */}
-      {profiles.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            padding: "5px 12px",
-            borderTop: "1px solid var(--border-color)",
-            background: "var(--bg-card)",
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            }}
-          >
-            {profiles.filter((p: LaunchProfile) => isRunning(p)).length} running
-            &middot; {profiles.length} total
-          </span>
-          {scanDir && (
-            <span
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-              }}
-            >
-              {scanDir}
-            </span>
-          )}
-        </div>
-      )}
+
     </div>
   );
 }
@@ -1254,6 +1356,7 @@ interface LlamaCppHardwareFooterProps {
   memoryHistory: MetricHistoryPoint[];
   gpuHistory: MetricHistoryPoint[];
   gpuVramUtilHistory: MetricHistoryPoint[];
+  gpuTempHistory: MetricHistoryPoint[];
 }
 
 function LlamaCppHardwareFooter({
@@ -1269,13 +1372,14 @@ function LlamaCppHardwareFooter({
   memoryHistory,
   gpuHistory,
   gpuVramUtilHistory,
+  gpuTempHistory,
 }: LlamaCppHardwareFooterProps) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 20,
+        justifyContent: "space-between",
         flexShrink: 0,
         borderTop: "1px solid var(--border-color)",
         padding: "8px 14px",
@@ -1286,7 +1390,7 @@ function LlamaCppHardwareFooter({
         icon={<Cpu size={13} />}
         label="CPU"
         value={cpuPct != null ? `${cpuPct.toFixed(1)}%` : "\u2014"}
-        color="var(--success)"
+        color="var(--metric-cpu)"
         history={cpuHistory}
       />
       <FooterStat
@@ -1297,14 +1401,14 @@ function LlamaCppHardwareFooter({
             ? `${memUsed.toFixed(1)} / ${memTotal.toFixed(1)} GB \u00b7 ${memPct?.toFixed(0) ?? "\u2014"}%`
             : "\u2014"
         }
-        color="var(--warning)"
+        color="var(--metric-ram)"
         history={memoryHistory}
       />
       <FooterStat
         icon={<Gauge size={13} />}
         label="GPU"
         value={gpuPct != null ? `${gpuPct.toFixed(0)}%` : "\u2014"}
-        color="var(--accent-primary)"
+        color="var(--metric-gpu)"
         history={gpuHistory}
       />
       <FooterStat
@@ -1315,14 +1419,15 @@ function LlamaCppHardwareFooter({
             ? `${vramUsed.toFixed(1)} / ${vramTotal.toFixed(1)} GB`
             : "\u2014"
         }
-        color="var(--accent-primary)"
+        color="var(--metric-vram)"
         history={gpuVramUtilHistory}
       />
       <FooterStat
         icon={<Thermometer size={13} />}
         label="GPU Temp"
         value={gpuTemp != null ? `${gpuTemp.toFixed(0)}\u00b0C` : "\u2014"}
-        color="var(--danger)"
+        color="var(--metric-temp)"
+        history={gpuTempHistory}
       />
     </div>
   );
@@ -1334,6 +1439,7 @@ function LlamaCppHardwareFooter({
 export default function LlamaCppPage() {
   const {
     aiCurrentMetrics,
+    aiLoading,
     cpuCurrentValues,
     memoryCurrentValues,
     gpuCurrentValues,
@@ -1341,6 +1447,9 @@ export default function LlamaCppPage() {
     memoryHistory,
     gpuHistory,
     gpuVramUtilHistory,
+    gpuTemperatureHistory,
+    aiGenTpsHistory,
+    aiPromptTpsHistory,
   } = useMetricsContext();
 
   const mgmt = useLlamaCppManagement();
@@ -1404,14 +1513,6 @@ export default function LlamaCppPage() {
       ? Math.round((contextTokens / maxContext) * 1000) / 10
       : null;
 
-  const [largestContext, setLargestContext] = useState<number | null>(null);
-  if (
-    contextTokens != null &&
-    (largestContext === null || contextTokens > largestContext)
-  ) {
-    setLargestContext(contextTokens);
-  }
-
   const ctxColor = getCtxColor(contextPct);
   const hasDir = !!mgmt.dirPath;
   const toastBg =
@@ -1427,10 +1528,6 @@ export default function LlamaCppPage() {
   const vramTotal = gpuCurrentValues[3];
 
   const kvStats = m?.kv_cache_stats?.[0] ?? null;
-  const remainingContext =
-    maxContext != null && contextTokens != null
-      ? maxContext - contextTokens
-      : null;
 
   const gpuOffload: GpuOffloadInfo | null = m?.gpu_offload ?? null;
   const gpuTotalLoaded =
@@ -1456,13 +1553,16 @@ export default function LlamaCppPage() {
   );
   const buildInfo: string = m?.build_info || "";
 
+  const modelNameRef = useFitText(cleanModelName);
+
   // ── Shared button style for action rail
   const railBtn: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     gap: 8,
     padding: "0 14px",
-    height: 34,
+    flex: 1,
+    minHeight: 38,
     width: "100%",
     fontSize: 12.5,
     fontWeight: 500,
@@ -1490,14 +1590,14 @@ export default function LlamaCppPage() {
   ) => (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "5px 0",
-        borderBottom: "1px dashed var(--border-light, var(--border-color))",
-        fontSize: 12,
-        gap: 8,
-        minWidth: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "4px 0",
+      borderBottom: "1px dashed var(--border-light, var(--border-color))",
+      fontSize: 12,
+      gap: 8,
+      minWidth: 0,
       }}
     >
       <span
@@ -1534,65 +1634,6 @@ export default function LlamaCppPage() {
       >
         {value}
       </span>
-    </div>
-  );
-
-  // ── Inline stat cell renderer for context card
-  const statCell = (
-    icon: React.ReactNode,
-    label: string,
-    value: string,
-    unit: string,
-    color?: string,
-  ) => (
-    <div
-      style={{
-        background: "var(--bg-secondary)",
-        border: "1px solid var(--border-light, var(--border-color))",
-        borderRadius: 9,
-        padding: "10px 12px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 9.5,
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          color: "var(--text-muted)",
-          fontWeight: 500,
-        }}
-      >
-        <span style={{ color: "var(--accent-primary)", display: "flex" }}>
-          {icon}
-        </span>
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-          fontSize: 19,
-          fontWeight: 600,
-          marginTop: 5,
-          color: color ?? "var(--text-primary)",
-        }}
-      >
-        {value || "\u2014"}
-        {value && (
-          <small
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              fontWeight: 400,
-              marginLeft: 3,
-            }}
-          >
-            {unit}
-          </small>
-        )}
-      </div>
     </div>
   );
 
@@ -1646,8 +1687,8 @@ export default function LlamaCppPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "678px 1fr",
-            gap: 12,
+            gridTemplateColumns: "660px 1fr 1fr 196px",
+            gap: 14,
             flexShrink: 0,
             alignItems: "stretch",
           }}
@@ -1656,10 +1697,10 @@ export default function LlamaCppPage() {
           <PanelCard
             style={{
               padding: "16px 18px 14px",
-              justifyContent: "space-between",
+              gap: 12,
             }}
           >
-            <div>
+            <div style={{ flex: 1 }}>
               {/* Icon badge + eyebrow + model name */}
               <div
                 style={{
@@ -1744,22 +1785,24 @@ export default function LlamaCppPage() {
                       {llamaOnline ? "ONLINE" : "OFFLINE"}
                     </span>
                   </div>
-                  {/* Model name hero */}
+                  {/* Model name hero — auto-shrinks via useFitText; falls back to middleTruncate */}
                   <div
+                    ref={modelNameRef}
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                       fontSize: 26,
                       fontWeight: 700,
                       letterSpacing: "-1px",
                       lineHeight: 1.06,
-                      wordBreak: "break-all",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
                       color: "var(--text-primary)",
                     }}
                     title={cleanModelName || "\u2014"}
                   >
                     {cleanModelName ? (
                       <>
-                        {modelHead}
+                        {middleTruncate(modelHead, 40)}
                         {modelQuant && (
                           <span
                             className="accent-text"
@@ -1896,6 +1939,87 @@ export default function LlamaCppPage() {
               </div>
             </div>
 
+            {/* Sampling params sub-row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 10,
+                paddingTop: 10,
+                borderTop:
+                  "1px dashed var(--border-light, var(--border-color))",
+              }}
+            >
+              {(
+                [
+                  {
+                    icon: <Thermometer size={10} />,
+                    label: "Temp",
+                    value:
+                      m?.temperature != null
+                        ? m.temperature.toFixed(2)
+                        : "\u2014",
+                  },
+                  {
+                    icon: <SlidersHorizontal size={10} />,
+                    label: "Top-K",
+                    value: fmtNum(m?.top_k) || "\u2014",
+                  },
+                  {
+                    icon: <SlidersHorizontal size={10} />,
+                    label: "Top-P",
+                    value:
+                      m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
+                  },
+                  {
+                    icon: <RotateCcw size={10} />,
+                    label: "Repeat",
+                    value:
+                      m?.repeat_penalty != null
+                        ? m.repeat_penalty.toFixed(2)
+                        : "\u2014",
+                  },
+                ] as { icon: React.ReactNode; label: string; value: string }[]
+              ).map(({ icon, label, value }) => (
+                <div
+                  key={label}
+                  style={{ display: "flex", flexDirection: "column", gap: 3 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 9.5,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "var(--accent-primary)",
+                        display: "flex",
+                      }}
+                    >
+                      {icon}
+                    </span>
+                    {label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* Capability badges */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <CapPill
@@ -1926,182 +2050,130 @@ export default function LlamaCppPage() {
             </div>
           </PanelCard>
 
-          {/* ── Right top band: Runtime | llama.cpp info | Action buttons ── */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1.02fr 1.05fr 208px",
-              gap: 12,
-              alignItems: "stretch",
-            }}
-          >
-            {/* ── Runtime Information card ── */}
+          {/* ── Context | llama.cpp info | Action buttons ── */}
+          <div style={{ display: "contents" }}>
+            {/* ── Context card ── */}
             <PanelCard>
-              <PanelHead
-                icon={<Activity size={13} />}
-                title="Runtime Information"
-              />
+              <PanelHead icon={<Brain size={13} />} title="Context" />
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "0 22px",
-                  padding: "11px 15px",
-                  overflow: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  padding: "12px 14px 14px",
+                  gap: 10,
                   flex: 1,
+                  overflow: "hidden",
                 }}
               >
-                {/* Left column */}
-                <div>
-                  {kvRow(
-                    <Server size={12} />,
-                    "Server",
-                    llamaOnline ? "Online" : "Offline",
-                    llamaOnline ? "var(--success)" : "var(--text-muted)",
-                  )}
-                  {kvRow(
-                    <Fingerprint size={12} />,
-                    "PID",
-                    proc?.pid != null ? String(proc.pid) : "\u2014",
-                  )}
-                  {kvRow(
-                    <Globe size={12} />,
-                    "Port",
-                    runningArgs?.port != null
-                      ? String(runningArgs.port)
-                      : "\u2014",
-                  )}
-                  {kvRow(
-                    <Brain size={12} />,
-                    "Context",
-                    maxContext != null ? formatCtx(maxContext) : "\u2014",
-                  )}
-                  {kvRow(
-                    <Zap size={12} />,
-                    "Speculative",
-                    boolLabel(m?.speculative),
-                    m?.speculative ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <Tag size={12} />,
-                    "Alias",
-                    pageModelAlias || "\u2014",
-                    pageModelAlias ? "var(--accent-primary)" : undefined,
-                  )}
-                  {kvRow(
-                    <Send size={12} />,
-                    "Total Sent",
-                    fmtNum(m?.total_tokens_sent) || "0",
-                  )}
-                  {/* Model row — no dashed border at bottom */}
+                {!llamaOnline && !aiLoading && (
                   <div
+                    className="error-banner"
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "5px 0",
-                      fontSize: 12,
-                      gap: 8,
-                      minWidth: 0,
+                      gap: 6,
+                      borderRadius: 6,
+                      width: "100%",
                     }}
                   >
-                    <span
-                      style={{
-                        color: "var(--text-muted)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        flexShrink: 0,
-                        fontSize: 11.5,
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          opacity: 0.7,
-                        }}
-                      >
-                        <Package size={12} />
-                      </span>
-                      Model
+                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                    llama.cpp server offline
+                  </div>
+                )}
+                {/* Radial gauge */}
+                <RadialGauge pct={contextPct} color={ctxColor} size={110}>
+                  <span
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: ctxColor,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {contextPct != null
+                      ? contextPct.toFixed(0)
+                      : llamaOnline
+                        ? "—"
+                        : "0"}
+                  </span>
+                  {contextPct != null && (
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                      %
                     </span>
-                    <span
-                      title={cleanModelName}
-                      style={{
-                        color: "var(--accent-primary)",
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        fontWeight: 500,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        minWidth: 0,
-                        maxWidth: 110,
-                      }}
-                    >
-                      {truncateName(cleanModelName, 14)}
-                    </span>
+                  )}
+                </RadialGauge>
+                {/* Token counts */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    fontSize: 11,
+                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <span style={{ color: ctxColor, fontWeight: 600 }}>
+                    {contextTokens != null
+                      ? contextTokens.toLocaleString()
+                      : "—"}
+                  </span>
+                  <span>
+                    /{" "}
+                    {maxContext != null ? maxContext.toLocaleString() : "—"} tok
+                  </span>
+                </div>
+                {/* Usage bar */}
+                <div style={{ width: "100%" }}>
+                  <div className="card-progress" style={{ height: 4 }}>
+                    <div
+                      className={`card-progress-bar ${thresholdClass(contextPct)}`}
+                      style={{ width: `${contextPct ?? 0}%` }}
+                    />
                   </div>
                 </div>
-
-                {/* Right column */}
-                <div>
-                  {kvRow(
-                    <Clock3 size={12} />,
-                    "Uptime",
-                    fmtUptime(proc?.uptime_seconds),
-                  )}
-                  {kvRow(
-                    <Cpu size={12} />,
-                    "CPU",
-                    proc?.cpu_percent != null
-                      ? `${proc.cpu_percent.toFixed(1)}%`
-                      : "\u2014",
-                  )}
-                  {kvRow(
-                    <MemoryStick size={12} />,
-                    "Memory",
-                    fmtKb(proc?.memory_kb),
-                  )}
-                  {kvRow(
-                    <Layers size={12} />,
-                    "CPU Layers",
-                    gpuOffload != null
-                      ? `${gpuOffload.main_loaded} / ${gpuOffload.main_total}`
-                      : "\u2014",
-                    gpuOffload != null ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <Layers size={12} />,
-                    "Draft Layers",
-                    hasDraft && gpuOffload != null
-                      ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
-                      : "\u2014",
-                    hasDraft ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <MonitorCog size={12} />,
-                    "GPU Layers",
-                    gpuTotalLoaded != null && gpuTotalLayers != null
-                      ? `${gpuTotalLoaded}/${gpuTotalLayers} (${gpuOffloadPct}%)`
-                      : "\u2014",
-                    gpuOffloadPct === 100 ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <Zap size={12} />,
-                    "Load Time",
-                    m?.model_load_time_ms != null
-                      ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
-                      : "\u2014",
-                  )}
-                  {kvRow(
-                    <Database size={12} />,
-                    "Tokens Cached",
-                    m?.tokens_cached != null
-                      ? fmtNum(m.tokens_cached)
-                      : "\u2014",
-                    m?.tokens_cached == null ? "var(--text-muted)" : undefined,
-                  )}
+                {/* Mini rings */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    justifyContent: "center",
+                    marginTop: "auto",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <MiniRing
+                    pct={m?.kv_cache_usage_percent ?? null}
+                    color={thresholdColor(m?.kv_cache_usage_percent)}
+                    label="KV Cache"
+                    value={
+                      m?.kv_cache_usage_percent != null
+                        ? `${m.kv_cache_usage_percent.toFixed(0)}%`
+                        : "—"
+                    }
+                  />
+                  <MiniRing
+                    pct={m?.prompt_buffer_usage_percent ?? null}
+                    color={thresholdColor(m?.prompt_buffer_usage_percent)}
+                    label="Prompt Buf"
+                    value={
+                      m?.prompt_buffer_usage_percent != null
+                        ? `${m.prompt_buffer_usage_percent.toFixed(0)}%`
+                        : "—"
+                    }
+                  />
+                  <MiniRing
+                    pct={kvStats?.gpu_cache_usage_pct ?? null}
+                    color={thresholdColor(kvStats?.gpu_cache_usage_pct)}
+                    label="GPU Cache"
+                    value={
+                      kvStats?.gpu_cache_usage_pct != null
+                        ? `${kvStats.gpu_cache_usage_pct.toFixed(0)}%`
+                        : "—"
+                    }
+                  />
                 </div>
               </div>
             </PanelCard>
@@ -2149,9 +2221,72 @@ export default function LlamaCppPage() {
                 />
               </div>
 
-              {behind != null && behind > 0 && (
-                <UpdateStatusChip behind={behind} />
-              )}
+              {/* Update row: "N builds behind" chip + tinted Update CTA */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "0 15px 12px",
+                }}
+              >
+                {behind != null && behind > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flex: 1,
+                      background:
+                        "color-mix(in srgb, var(--warning) 10%, transparent)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+                      color: "var(--warning)",
+                      borderRadius: 7,
+                      padding: "5px 10px",
+                      fontSize: 11,
+                      fontWeight: 500,
+                    }}
+                  >
+                    <TriangleAlert
+                      size={13}
+                      style={{
+                        flexShrink: 0,
+                        animation: "pulse 2s ease-in-out infinite",
+                      }}
+                    />
+                    {behind} build{behind === 1 ? "" : "s"} behind latest
+                  </div>
+                )}
+                <button
+                  onClick={mgmt.runUpdate}
+                  disabled={!hasDir || mgmt.updateState === "running"}
+                  className="settings-btn settings-btn-accent"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 11px",
+                    fontSize: 11,
+                    borderRadius: 7,
+                    whiteSpace: "nowrap",
+                    cursor:
+                      !hasDir || mgmt.updateState === "running"
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      !hasDir || mgmt.updateState === "running" ? 0.5 : 1,
+                  }}
+                >
+                  <RefreshCw
+                    size={12}
+                    className={
+                      mgmt.updateState === "running" ? "spin" : undefined
+                    }
+                  />
+                  Update to latest
+                </button>
+              </div>
 
               {/* Update progress bar */}
               {mgmt.updateState !== "idle" && (
@@ -2242,47 +2377,15 @@ export default function LlamaCppPage() {
               )}
             </PanelCard>
 
-            {/* ── Action buttons column ── */}
+            {/* ── Action buttons column: 4 secondary buttons ── */}
             <div
               style={{
                 display: "flex",
                 flexDirection: "column",
                 gap: 8,
+                height: "100%",
               }}
             >
-              {/* Update — uses btn-accent for mode-aware accent fill */}
-              <button
-                onClick={mgmt.runUpdate}
-                disabled={!hasDir || mgmt.updateState === "running"}
-                className="btn-accent"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  height: 36,
-                  width: "100%",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderRadius: 9,
-                  border: "none",
-                  cursor:
-                    !hasDir || mgmt.updateState === "running"
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity: !hasDir || mgmt.updateState === "running" ? 0.5 : 1,
-                  color: "#fff",
-                }}
-              >
-                <RefreshCw
-                  size={16}
-                  className={
-                    mgmt.updateState === "running" ? "spin" : undefined
-                  }
-                />
-                Update
-              </button>
-
               <button
                 onClick={() => mgmt.openTerminal()}
                 disabled={!hasDir}
@@ -2326,579 +2429,511 @@ export default function LlamaCppPage() {
                 Readme
               </button>
 
-              <button
-                onClick={() =>
-                  window.open(
-                    mgmt.buildNotesUrl,
-                    "_blank",
-                    "noopener,noreferrer",
-                  )
-                }
+              <a
+                href="https://github.com/ggml-org/llama.cpp/releases"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="settings-btn"
-                style={railBtn}
+                style={{ ...railBtn, textDecoration: "none" }}
               >
-                <ScrollText
+                <ArrowDown
                   size={15}
                   style={{ color: "var(--accent-primary)" }}
                 />
                 Release Notes
-              </button>
-
-              {mgmt.ptsName && (
-                <a
-                  href={`/ai/terminal?pts=${encodeURIComponent(mgmt.ptsName)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="settings-btn"
-                  style={{ ...railBtn, textDecoration: "none" }}
-                  title="Open terminal in new tab"
-                >
-                  <ExternalLink
-                    size={15}
-                    style={{ color: "var(--accent-primary)" }}
-                  />
-                  Tab \u2197
-                </a>
-              )}
+              </a>
             </div>
           </div>
         </div>
 
         {/* ════════════════════════════════════════════
-            GENERATION & PERFORMANCE BAND (full width)
-            ════════════════════════════════════════════ */}
-        <PanelCard style={{ flexShrink: 0 }}>
-          <PanelHead
-            icon={<BarChart3 size={13} />}
-            title="Generation & Performance"
-            right={
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                }}
-              >
-                live decode &middot; sampling
-              </span>
-            }
-          />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(8, 1fr)",
-              gap: 10,
-              padding: "9px 15px",
-            }}
-          >
-            <MetricTile
-              label={ic(
-                <Zap
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Gen TPS",
-              )}
-              value={fmtNum(m?.gen_tps) || null}
-              unit=" tok/s"
-              color="var(--accent-primary)"
-            />
-            <MetricTile
-              label={ic(
-                <Activity
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Prompt TPS",
-              )}
-              value={fmtNum(m?.prompt_tps) || null}
-              unit=" tok/s"
-              color="var(--accent-primary)"
-            />
-            <MetricTile
-              label={ic(
-                <MessageSquare
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Prompt",
-              )}
-              value={fmtNum(tokenUsage?.prompt_tokens) || null}
-              unit=" tok"
-            />
-            <MetricTile
-              label={ic(
-                <Send
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Generated",
-              )}
-              value={fmtNum(tokenUsage?.completion_tokens) || null}
-              unit=" tok"
-            />
-            <MetricTile
-              label={ic(
-                <Thermometer
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Temperature",
-              )}
-              value={m?.temperature != null ? m.temperature.toFixed(2) : null}
-            />
-            <MetricTile
-              label={ic(
-                <SlidersHorizontal
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Top-K",
-              )}
-              value={fmtNum(m?.top_k) || null}
-            />
-            <MetricTile
-              label={ic(
-                <SlidersHorizontal
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Top-P",
-              )}
-              value={m?.top_p != null ? m.top_p.toFixed(2) : null}
-            />
-            <MetricTile
-              label={ic(
-                <RotateCcw
-                  size={10}
-                  style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                />,
-                "Repeat Pen",
-              )}
-              value={
-                m?.repeat_penalty != null ? m.repeat_penalty.toFixed(2) : null
-              }
-            />
-          </div>
-        </PanelCard>
-
-        {/* ════════════════════════════════════════════
-            LOWER ROW: Context (678px) | Run Models + Console
+            LOWER ROW: Runtime (660px) | Run Models + Console
             ════════════════════════════════════════════ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "678px 1fr",
-            gap: 12,
+            gridTemplateColumns: "660px 1fr",
+            gap: 14,
             flex: 1,
             minHeight: 0,
             alignItems: "stretch",
           }}
         >
-          {/* ── Context card (left, fills height) ── */}
-          <PanelCard style={{ overflow: "hidden" }}>
-            <PanelHead icon={<Brain size={13} />} title="Context" />
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                flex: 1,
-                minHeight: 0,
-              }}
-            >
-              {/* 4 stat cells */}
+          {/* ── Lower-left: Telemetry rail + Runtime card ── */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              minHeight: 0,
+            }}
+          >
+            {/* Telemetry rail — two rows: numbers on top, aligned sparklines below */}
+            <PanelCard style={{ flexShrink: 0 }}>
+              {/* Row 1: metric numbers */}
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 10,
-                  padding: "13px 15px 0",
+                  display: "flex",
+                  alignItems: "stretch",
+                  borderBottom:
+                    "1px solid var(--border-light, var(--border-color))",
                 }}
               >
-                {statCell(
-                  <Zap size={11} />,
-                  "Current",
-                  fmtNum(contextTokens),
-                  "tok",
-                  ctxColor,
-                )}
-                {statCell(
-                  <BarChart3 size={11} />,
-                  "Max",
-                  fmtNum(maxContext),
-                  "tok",
-                )}
-                {statCell(
-                  <TrendingUp size={11} />,
-                  "Largest Seen",
-                  fmtNum(largestContext),
-                  "tok",
-                )}
-                {statCell(
-                  <Clock3 size={11} />,
-                  "Remaining",
-                  fmtNum(remainingContext),
-                  "tok",
-                )}
-              </div>
-
-              {/* Usage bar + sparkline */}
-              <div style={{ padding: "10px 15px 0" }}>
+                {/* Gen TPS — hero */}
                 <div
                   style={{
-                    fontSize: 9.5,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    color: "var(--text-muted)",
-                    marginBottom: 6,
-                  }}
-                >
-                  Usage
-                </div>
-                <div className="card-progress" style={{ height: 7 }}>
-                  <div
-                    className="card-progress-bar"
-                    style={{ width: `${contextPct ?? 0}%` }}
-                  />
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: 11,
-                    marginTop: 6,
-                    color: "var(--text-muted)",
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                  }}
-                >
-                  <span className="accent-text" style={{ fontWeight: 600 }}>
-                    {(contextPct ?? 0).toFixed(1)}%
-                  </span>
-                  <span>
-                    {(contextTokens ?? 0).toLocaleString()} /{" "}
-                    {(maxContext ?? 0).toLocaleString()} tokens
-                  </span>
-                </div>
-                <div style={{ marginTop: 8, height: 26 }}>
-                  <Sparkline
-                    data={null}
-                    color="var(--accent-primary)"
-                    width={640}
-                    height={26}
-                  />
-                </div>
-              </div>
-
-              {/* 3 cache cells */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr",
-                  gap: 10,
-                  padding: "10px 15px 0",
-                }}
-              >
-                {/* KV Cache */}
-                <div
-                  style={{
-                    background: "var(--bg-secondary)",
-                    border:
+                    flex: 2,
+                    padding: "10px 14px",
+                    borderRight:
                       "1px solid var(--border-light, var(--border-color))",
-                    borderRadius: 9,
-                    padding: "10px 12px",
+                    minWidth: 0,
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 6,
+                      gap: 4,
                       fontSize: 9.5,
+                      color: "var(--text-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.5px",
-                      color: "var(--text-muted)",
-                      fontWeight: 500,
+                      marginBottom: 4,
                     }}
                   >
                     <span
-                      style={{
-                        color: "var(--accent-primary)",
-                        display: "flex",
-                      }}
+                      style={{ color: "var(--accent-primary)", display: "flex" }}
                     >
-                      <Database size={11} />
+                      <Zap size={12} />
                     </span>
-                    KV Cache
+                    Gen TPS
                   </div>
                   <div
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 19,
-                      fontWeight: 600,
-                      marginTop: 5,
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    {m?.kv_cache_usage_percent != null
-                      ? m.kv_cache_usage_percent.toFixed(1)
-                      : "\u2014"}
-                    {m?.kv_cache_usage_percent != null && (
-                      <small
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          fontWeight: 400,
-                        }}
-                      >
-                        {" "}
-                        %
-                      </small>
-                    )}
-                  </div>
-                  <div
-                    className="card-progress"
-                    style={{ marginTop: 7, height: 4 }}
-                  >
-                    <div
-                      className="card-progress-bar"
-                      style={{
-                        width: `${m?.kv_cache_usage_percent ?? 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Prompt Buf */}
-                <div
-                  style={{
-                    background: "var(--bg-secondary)",
-                    border:
-                      "1px solid var(--border-light, var(--border-color))",
-                    borderRadius: 9,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 9.5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      color: "var(--text-muted)",
-                      fontWeight: 500,
-                    }}
+                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
                   >
                     <span
                       style={{
+                        fontSize: 30,
+                        fontWeight: 800,
                         color: "var(--accent-primary)",
-                        display: "flex",
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1,
                       }}
                     >
-                      <FileText size={11} />
+                      {m?.gen_tps != null ? m.gen_tps.toFixed(1) : "—"}
                     </span>
-                    Prompt Buf
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 19,
-                      fontWeight: 600,
-                      marginTop: 5,
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    {m?.prompt_buffer_usage_percent != null
-                      ? m.prompt_buffer_usage_percent.toFixed(1)
-                      : "\u2014"}
-                    {m?.prompt_buffer_usage_percent != null && (
-                      <small
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          fontWeight: 400,
-                        }}
-                      >
-                        {" "}
-                        %
-                      </small>
-                    )}
-                  </div>
-                  <div
-                    className="card-progress"
-                    style={{ marginTop: 7, height: 4 }}
-                  >
-                    <div
-                      className="card-progress-bar"
-                      style={{
-                        width: `${m?.prompt_buffer_usage_percent ?? 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* GPU Cache */}
-                <div
-                  style={{
-                    background: "var(--bg-secondary)",
-                    border:
-                      "1px solid var(--border-light, var(--border-color))",
-                    borderRadius: 9,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 9.5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      color: "var(--text-muted)",
-                      fontWeight: 500,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "var(--accent-primary)",
-                        display: "flex",
-                      }}
-                    >
-                      <MonitorCog size={11} />
-                    </span>
-                    GPU Cache
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 19,
-                      fontWeight: 600,
-                      marginTop: 5,
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    {kvStats?.gpu_cache_usage_pct != null
-                      ? kvStats.gpu_cache_usage_pct.toFixed(1)
-                      : "\u2014"}
-                    {kvStats?.gpu_cache_usage_pct != null && (
-                      <small
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          fontWeight: 400,
-                        }}
-                      >
-                        {" "}
-                        %
-                      </small>
-                    )}
-                  </div>
-                  <div
-                    className="card-progress"
-                    style={{ marginTop: 7, height: 4 }}
-                  >
-                    <div
-                      className="card-progress-bar"
-                      style={{
-                        width: `${kvStats?.gpu_cache_usage_pct ?? 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 4 memory rows */}
-              <div style={{ padding: "10px 15px 13px" }}>
-                {(
-                  [
-                    {
-                      icon: <MonitorCog size={12} />,
-                      label: "GPU Mem Used",
-                      value:
-                        kvStats?.used_gpu_memory_mb != null
-                          ? `${(kvStats.used_gpu_memory_mb / 1024).toFixed(1)} GB`
-                          : "\u2014",
-                      color: "var(--accent-primary)",
-                    },
-                    {
-                      icon: <MonitorCog size={12} />,
-                      label: "GPU Mem Free",
-                      value:
-                        kvStats?.free_gpu_memory_mb != null
-                          ? `${(kvStats.free_gpu_memory_mb / 1024).toFixed(1)} GB`
-                          : "\u2014",
-                      color: undefined,
-                    },
-                    {
-                      icon: <MemoryStick size={12} />,
-                      label: "Memory Used",
-                      value: fmtKb(proc?.memory_kb),
-                      color: undefined,
-                    },
-                    {
-                      icon: <MemoryStick size={12} />,
-                      label: "Memory Reserved",
-                      value:
-                        m?.kv_cache_reserved_mib != null
-                          ? `${m.kv_cache_reserved_mib.toFixed(1)} MiB`
-                          : "\u2014",
-                      color: undefined,
-                    },
-                  ] as const
-                ).map(({ icon, label, value, color }, i, arr) => (
-                  <div
-                    key={label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "5px 0",
-                      borderBottom:
-                        i < arr.length - 1
-                          ? "1px dashed var(--border-light, var(--border-color))"
-                          : "none",
-                      fontSize: 12,
-                      gap: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "var(--text-muted)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        flexShrink: 0,
-                        fontSize: 11.5,
-                      }}
-                    >
+                    {m?.gen_tps != null && (
                       <span
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          opacity: 0.7,
+                          fontSize: 10,
+                          color: "var(--text-muted)",
+                          fontWeight: 500,
                         }}
                       >
-                        {icon}
+                        t/s
                       </span>
-                      {label}
+                    )}
+                  </div>
+                </div>
+
+                {/* Prompt TPS */}
+                <div
+                  style={{
+                    flex: 1.5,
+                    padding: "10px 12px",
+                    borderRight:
+                      "1px solid var(--border-light, var(--border-color))",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 9.5,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{ color: "var(--accent-primary)", display: "flex" }}
+                    >
+                      <Activity size={12} />
+                    </span>
+                    Prompt TPS
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {m?.prompt_tps != null ? m.prompt_tps.toFixed(1) : "—"}
+                    </span>
+                    {m?.prompt_tps != null && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "var(--text-muted)",
+                          fontWeight: 500,
+                        }}
+                      >
+                        t/s
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prompt tokens */}
+                <div
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRight:
+                      "1px solid var(--border-light, var(--border-color))",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 9.5,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{ color: "var(--text-secondary)", display: "flex" }}
+                    >
+                      <Send size={12} />
+                    </span>
+                    Prompt
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {fmtNum(tokenUsage?.prompt_tokens) || "0"}
                     </span>
                     <span
                       style={{
-                        color: color ?? "var(--text-primary)",
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontSize: 9.5,
+                        color: "var(--text-muted)",
                         fontWeight: 500,
                       }}
                     >
-                      {value}
+                      tok
                     </span>
                   </div>
-                ))}
+                </div>
+
+                {/* Generated tokens */}
+                <div
+                  style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 9.5,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{ color: "var(--text-secondary)", display: "flex" }}
+                    >
+                      <Cpu size={12} />
+                    </span>
+                    Generated
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {fmtNum(tokenUsage?.completion_tokens) || "0"}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 9.5,
+                        color: "var(--text-muted)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      tok
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: aligned sparkline graphs on recessed background */}
+              <div
+                style={{
+                  display: "flex",
+                  background:
+                    "color-mix(in srgb, var(--bg-secondary) 55%, transparent)",
+                  borderRadius:
+                    "0 0 var(--radius-md) var(--radius-md)",
+                }}
+              >
+                {/* Gen TPS graph — flex:2 matches number column above */}
+                <div
+                  style={{
+                    flex: 2,
+                    height: 44,
+                    overflow: "hidden",
+                    borderRight:
+                      "1px solid var(--border-light, var(--border-color))",
+                    padding: "3px 0",
+                  }}
+                >
+                  {aiGenTpsHistory && aiGenTpsHistory.length > 0 && (
+                    <Sparkline
+                      data={aiGenTpsHistory}
+                      color="var(--accent-primary)"
+                      height={38}
+                    />
+                  )}
+                </div>
+                {/* Prompt TPS graph — flex:1.5 matches column above */}
+                <div
+                  style={{
+                    flex: 1.5,
+                    height: 44,
+                    overflow: "hidden",
+                    borderRight:
+                      "1px solid var(--border-light, var(--border-color))",
+                    padding: "3px 0",
+                  }}
+                >
+                  {aiPromptTpsHistory && aiPromptTpsHistory.length > 0 && (
+                    <Sparkline
+                      data={aiPromptTpsHistory}
+                      color="var(--accent-primary)"
+                      height={38}
+                    />
+                  )}
+                </div>
+                {/* Prompt — cumulative counter, no graph */}
+                <div
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    borderRight:
+                      "1px solid var(--border-light, var(--border-color))",
+                  }}
+                />
+                {/* Generated — cumulative counter, no graph */}
+                <div style={{ flex: 1, height: 44 }} />
+              </div>
+            </PanelCard>
+
+            {/* Runtime Information card */}
+            <PanelCard style={{ flex: 1, minHeight: 0 }}>
+              <PanelHead
+                icon={<Activity size={13} />}
+                title="Runtime Information"
+              />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "0 22px",
+                padding: "8px 15px",
+                overflow: "auto",
+                flex: 1,
+              }}
+            >
+              {/* Left column */}
+              <div>
+                {kvRow(
+                  <Server size={12} />,
+                  "Server",
+                  llamaOnline ? "Online" : "Offline",
+                  llamaOnline ? "var(--success)" : "var(--text-muted)",
+                )}
+                {kvRow(
+                  <Fingerprint size={12} />,
+                  "PID",
+                  proc?.pid != null ? String(proc.pid) : "\u2014",
+                )}
+                {kvRow(
+                  <Globe size={12} />,
+                  "Port",
+                  runningArgs?.port != null
+                    ? String(runningArgs.port)
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <Brain size={12} />,
+                  "Context",
+                  maxContext != null ? formatCtx(maxContext) : "\u2014",
+                )}
+                {kvRow(
+                  <Zap size={12} />,
+                  "Speculative",
+                  boolLabel(m?.speculative),
+                  m?.speculative ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Tag size={12} />,
+                  "Alias",
+                  pageModelAlias || "\u2014",
+                  pageModelAlias ? "var(--accent-primary)" : undefined,
+                )}
+                {kvRow(
+                  <Send size={12} />,
+                  "Total Sent",
+                  fmtNum(m?.total_tokens_sent) || "0",
+                )}
+              </div>
+
+              {/* Right column */}
+              <div>
+                {kvRow(
+                  <Clock3 size={12} />,
+                  "Uptime",
+                  fmtUptime(proc?.uptime_seconds),
+                )}
+                {kvRow(
+                  <Cpu size={12} />,
+                  "CPU",
+                  proc?.cpu_percent != null
+                    ? `${proc.cpu_percent.toFixed(1)}%`
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <MemoryStick size={12} />,
+                  "Memory",
+                  fmtKb(proc?.memory_kb),
+                )}
+                {kvRow(
+                  <Layers size={12} />,
+                  "CPU Layers",
+                  gpuOffload != null
+                    ? `${gpuOffload.main_loaded} / ${gpuOffload.main_total}`
+                    : "\u2014",
+                  gpuOffload != null ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Layers size={12} />,
+                  "Draft Layers",
+                  hasDraft && gpuOffload != null
+                    ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
+                    : "\u2014",
+                  hasDraft ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <MonitorCog size={12} />,
+                  "GPU Layers",
+                  gpuTotalLoaded != null && gpuTotalLayers != null
+                    ? `${gpuTotalLoaded}/${gpuTotalLayers} (${gpuOffloadPct}%)`
+                    : "\u2014",
+                  gpuOffloadPct === 100 ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Zap size={12} />,
+                  "Load Time",
+                  m?.model_load_time_ms != null
+                    ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <Database size={12} />,
+                  "Tokens Cached",
+                  m?.tokens_cached != null ? fmtNum(m.tokens_cached) : "—",
+                  m?.tokens_cached == null ? "var(--text-muted)" : undefined,
+                )}
+              </div>
+            </div>
+
+            {/* Live Activity */}
+            <div
+              style={{
+                padding: "7px 15px 9px",
+                borderTop:
+                  "1px dashed var(--border-light, var(--border-color))",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  marginBottom: 6,
+                }}
+              >
+                Live Activity
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <FooterStat
+                  icon={<Send size={13} />}
+                  label="Total Sent"
+                  value={fmtNum(m?.total_tokens_sent) || "0"}
+                  color="var(--accent-primary)"
+                />
+                <FooterStat
+                  icon={<Zap size={13} />}
+                  label="Load Time"
+                  value={
+                    m?.model_load_time_ms != null
+                      ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
+                      : "—"
+                  }
+                  color="var(--text-secondary)"
+                />
+                <FooterStat
+                  icon={<Database size={13} />}
+                  label="Tok Cached"
+                  value={
+                    m?.tokens_cached != null ? fmtNum(m.tokens_cached) : "—"
+                  }
+                  color="var(--success)"
+                  history={gpuVramUtilHistory}
+                />
               </div>
             </div>
           </PanelCard>
+          </div>
 
           {/* ── Right lower column: Run Models + Console ── */}
           <div
@@ -2909,12 +2944,12 @@ export default function LlamaCppPage() {
               minHeight: 0,
             }}
           >
-            {/* Run Models card — flex:1, internal scroll */}
+            {/* Run Models card — fixed height showing 5 rows, rest scrolls */}
             <div
               className="card-accent-spine"
               style={{
-                flex: 1,
-                minHeight: 0,
+                flex: "none",
+                height: 204,
                 border: "1px solid var(--border-light, var(--border-color))",
                 borderRadius: "var(--radius-md)",
                 overflow: "hidden",
@@ -2928,12 +2963,12 @@ export default function LlamaCppPage() {
               <RunModelsSection />
             </div>
 
-            {/* Console card — fixed height */}
+            {/* Console card — fills remaining height */}
             <div
               className="card-accent-spine"
               style={{
-                flexShrink: 0,
-                height: 152,
+                flex: 1,
+                minHeight: 0,
                 border: "1px solid var(--border-light, var(--border-color))",
                 borderRadius: "var(--radius-md)",
                 overflow: "hidden",
@@ -2964,6 +2999,7 @@ export default function LlamaCppPage() {
         memoryHistory={memoryHistory}
         gpuHistory={gpuHistory}
         gpuVramUtilHistory={gpuVramUtilHistory}
+        gpuTempHistory={gpuTemperatureHistory ?? []}
       />
 
       <UpdateOutputModal

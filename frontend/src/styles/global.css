@@ -193,7 +193,7 @@ a:hover {
   width: 3px;
   background: var(--accent-fill);
   background-size: var(--accent-fill-size, 200% 200%);
-  box-shadow: 0 0 13px -2px var(--accent-glow);
+  box-shadow: var(--card-glow);
   z-index: 2;
   pointer-events: none;
 }

@@ -197,10 +197,15 @@ export function useTheme() {
     return migrateAccentMode(localStorage.getItem('dashboard-accent-mode'));
   });
 
+  const [glow, setGlow] = useState<boolean>(() => {
+    return localStorage.getItem('dashboard-glow') === 'neon';
+  });
+
   const resetTheme = () => {
     setAccent(DEFAULT_ACCENT);
     setBg(DEFAULT_BG);
     setAccentMode(DEFAULT_ACCENT_MODE);
+    setGlow(false);
   };
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -231,6 +236,15 @@ export function useTheme() {
     localStorage.setItem('dashboard-accent-mode', accentMode);
   }, [accentMode]);
 
+  useEffect(() => {
+    if (glow) {
+      document.documentElement.setAttribute('data-glow', 'neon');
+    } else {
+      document.documentElement.removeAttribute('data-glow');
+    }
+    localStorage.setItem('dashboard-glow', glow ? 'neon' : '');
+  }, [glow]);
+
   return {
     accent,
     setAccent,
@@ -238,6 +252,8 @@ export function useTheme() {
     setBg,
     accentMode,
     setAccentMode,
+    glow,
+    setGlow,
     resetTheme,
     current,
     presets: PRESETS,

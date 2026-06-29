@@ -14,6 +14,8 @@ import {
   Download,
   WrapText,
   Search,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import type {
   LogLine,
@@ -39,13 +41,31 @@ interface WsMessage {
 const WS_BASE =
   (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:3001";
 
-const LEVEL_COLORS: Record<LogLevel, string> = {
+const LEVEL_BADGE_COLORS: Record<LogLevel, string> = {
+  info: "var(--accent-primary)",
+  warn: "var(--warning)",
+  error: "var(--danger)",
+  debug: "var(--text-muted)",
+  stats: "var(--success)",
+  unknown: "var(--text-muted)",
+};
+
+const LEVEL_TEXT_COLORS: Record<LogLevel, string> = {
   info: "var(--text-primary)",
   warn: "var(--warning)",
   error: "var(--danger)",
   debug: "var(--text-muted)",
-  stats: "var(--accent-primary)",
+  stats: "var(--success)",
   unknown: "var(--text-muted)",
+};
+
+const LEVEL_LETTERS: Record<LogLevel, string> = {
+  info: "I",
+  warn: "W",
+  error: "E",
+  debug: "D",
+  stats: "S",
+  unknown: "?",
 };
 
 const DEFAULT_FILTERS: LogFilter = {
@@ -78,16 +98,20 @@ function formatTimestamp(ts: string): string {
 const LogLineRow = memo(function LogLineRow({
   log,
   wrap,
+  onCopy,
 }: {
   log: LogLine;
   wrap: boolean;
+  onCopy?: (text: string) => void;
 }) {
-  const color = LEVEL_COLORS[log.level];
+  const badgeColor = LEVEL_BADGE_COLORS[log.level];
+  const textColor = LEVEL_TEXT_COLORS[log.level];
   const isError = log.level === "error";
-  const isStderr = log.stream === "stderr";
+  const letter = LEVEL_LETTERS[log.level];
 
   return (
     <div
+      onClick={() => onCopy?.(log.text)}
       style={{
         display: "flex",
         gap: 5,
@@ -99,41 +123,45 @@ const LogLineRow = memo(function LogLineRow({
           ? "2px solid var(--danger)"
           : "2px solid transparent",
         alignItems: "flex-start",
+        cursor: onCopy ? "pointer" : undefined,
       }}
+      title={onCopy ? "Click to copy line" : undefined}
     >
       <span
         style={{
-          fontSize: 9,
+          fontSize: 10,
           color: "var(--text-muted)",
           flexShrink: 0,
           userSelect: "none",
           fontFamily: "monospace",
           paddingTop: 1,
-          minWidth: 60,
+          minWidth: 66,
+          opacity: 0.7,
         }}
       >
         {formatTimestamp(log.timestamp)}
       </span>
-      {isStderr && (
-        <span
-          style={{
-            fontSize: 8,
-            fontWeight: 700,
-            color: "var(--danger)",
-            background: "rgba(var(--danger-rgb, 239,68,68), 0.15)",
-            borderRadius: 2,
-            padding: "0 3px",
-            flexShrink: 0,
-            lineHeight: "16px",
-          }}
-        >
-          E
-        </span>
-      )}
+      <span
+        style={{
+          fontSize: 8,
+          fontWeight: 700,
+          color: badgeColor,
+          background: `color-mix(in srgb, ${badgeColor} 15%, transparent)`,
+          borderRadius: 2,
+          padding: "0 3px",
+          flexShrink: 0,
+          lineHeight: "17px",
+          userSelect: "none",
+          minWidth: 12,
+          textAlign: "center",
+        }}
+      >
+        {letter}
+      </span>
       <span
         style={{
           flex: 1,
-          color,
+          color: textColor,
           fontFamily: "monospace",
           fontSize: 10,
           lineHeight: 1.5,
@@ -222,7 +250,13 @@ function FilterChip({
 
 // ─── Main Component ──────────────────────────────────────────────────
 
-export function LogConsole() {
+export function LogConsole({
+  expanded,
+  onToggleExpand,
+}: {
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+} = {}) {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [paused, setPaused] = useState(false);
   const [search, setSearch] = useState("");
@@ -422,6 +456,14 @@ export function LogConsole() {
     setFilters((prev) => ({ ...prev, [level]: !prev[level] }));
   }, []);
 
+  const handleCopyLine = useCallback((text: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  }, []);
+
   const statusLabel: Record<ConsoleStatus, string> = {
     live: "● Live",
     exited: "● Process Exited",
@@ -544,6 +586,14 @@ export function LogConsole() {
           >
             <WrapText size={9} /> Wrap
           </ToolbarBtn>
+          {onToggleExpand && (
+            <ToolbarBtn
+              onClick={onToggleExpand}
+              title={expanded ? "Collapse console" : "Expand console"}
+            >
+              {expanded ? <ChevronDown size={9} /> : <ChevronUp size={9} />}
+            </ToolbarBtn>
+          )}
         </div>
       </div>
 
@@ -596,7 +646,7 @@ export function LogConsole() {
               key={level}
               label={level.toUpperCase()}
               active={filters[level]}
-              color={LEVEL_COLORS[level]}
+              color={LEVEL_BADGE_COLORS[level]}
               onClick={() => toggleFilter(level)}
             />
           ))}
@@ -645,7 +695,7 @@ export function LogConsole() {
           </div>
         ) : (
           filteredLogs.map((log, idx) => (
-            <LogLineRow key={idx} log={log} wrap={wrap} />
+            <LogLineRow key={idx} log={log} wrap={wrap} onCopy={handleCopyLine} />
           ))
         )}
         <div ref={logEndRef} />

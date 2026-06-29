@@ -11,9 +11,11 @@ interface ThemePanelProps {
   onBgChange: (color: string) => void;
   current: { color: string; glow: string; hex: string };
   onReset: () => void;
+  glow?: boolean;
+  onGlowChange?: (v: boolean) => void;
 }
 
-export default function ThemePanel({ open, onClose, accent, onAccentChange, accentMode, onAccentModeChange, bg, onBgChange, current, onReset }: ThemePanelProps) {
+export default function ThemePanel({ open, onClose, accent, onAccentChange, accentMode, onAccentModeChange, bg, onBgChange, current, onReset, glow, onGlowChange }: ThemePanelProps) {
   const { presets, bgPresets } = useTheme();
 
   if (!open) return null;
@@ -84,6 +86,36 @@ export default function ThemePanel({ open, onClose, accent, onAccentChange, acce
             </div>
           ))}
         </div>
+        <div className="theme-section-header">Effects</div>
+        {onGlowChange && (
+          <div
+            className={`mode-row ${glow ? 'active' : ''}`}
+            onClick={() => onGlowChange(!glow)}
+            style={{ cursor: 'pointer' }}
+          >
+            <span className="mode-radio" />
+            <div className="mode-text">
+              <span className="mode-name">Neon Glow</span>
+              <span className="mode-desc">Adds a glow halo to accent spine elements.</span>
+            </div>
+            <div style={{
+              marginLeft: 'auto',
+              width: 28, height: 16, borderRadius: 8,
+              background: glow ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              position: 'relative', flexShrink: 0,
+              transition: 'background 200ms',
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: 2, left: glow ? 12 : 2,
+                width: 10, height: 10, borderRadius: '50%',
+                background: 'var(--text-primary)',
+                transition: 'left 200ms',
+              }} />
+            </div>
+          </div>
+        )}
         <div className="theme-section-header">Background Colors</div>
         <div className="bg-grid">
           {bgPresets.map(bgPreset => (
