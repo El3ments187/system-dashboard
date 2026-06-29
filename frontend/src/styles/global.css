@@ -127,6 +127,18 @@ a:hover {
   }
 }
 
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.75);
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -144,4 +156,44 @@ a:hover {
   100% {
     background-position: 200px 0;
   }
+}
+
+/* Run Models table row hover */
+.run-models-row:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+.run-models-row[data-running="true"]:hover {
+  background: rgba(34, 197, 94, 0.1) !important;
+}
+
+/* Drag divider handle */
+.divider-handle {
+  transition: background 150ms ease;
+}
+.divider-handle:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+.divider-handle .divider-pill {
+  opacity: 0.35;
+  transition: opacity 150ms ease;
+}
+.divider-handle:hover .divider-pill {
+  opacity: 0.85;
+}
+
+/* Card accent spine */
+.card-accent-spine {
+  position: relative;
+}
+.card-accent-spine > .accent-spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-fill);
+  background-size: var(--accent-fill-size, 200% 200%);
+  box-shadow: 0 0 13px -2px var(--accent-glow);
+  z-index: 2;
+  pointer-events: none;
 }

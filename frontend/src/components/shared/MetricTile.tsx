@@ -26,9 +26,9 @@ export default function MetricTile({
         borderRadius: "var(--radius-sm)",
         border: "1px solid var(--border-color)",
         background: "var(--bg-secondary)",
-        padding: "5px 7px",
+        padding: "3px 5px",
         minWidth: 0,
-        minHeight: 34,
+        minHeight: 24,
       }}
     >
       <span
@@ -39,7 +39,7 @@ export default function MetricTile({
           color: "var(--text-muted)",
           textTransform: "uppercase",
           letterSpacing: 0.5,
-          marginBottom: 2,
+          marginBottom: 1,
           textShadow: "var(--text-shadow-sm)",
         }}
       >
@@ -48,7 +48,7 @@ export default function MetricTile({
       <span
         className="metric-tile-value"
         style={{
-          fontSize: 15,
+          fontSize: 13,
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
           color: color || "var(--text-primary)",

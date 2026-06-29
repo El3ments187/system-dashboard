@@ -6,6 +6,15 @@ import React, {
   useMemo,
   memo,
 } from "react";
+import {
+  Pause,
+  Play,
+  Trash2,
+  Copy,
+  Download,
+  WrapText,
+  Search,
+} from "lucide-react";
 import type {
   LogLine,
   LogLevel,
@@ -166,6 +175,9 @@ function ToolbarBtn({
         cursor: "pointer",
         whiteSpace: "nowrap",
         lineHeight: "16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
       }}
     >
       {children}
@@ -503,26 +515,34 @@ export function LogConsole() {
             onClick={() => setPaused((p) => !p)}
             title={paused ? "Resume auto-scroll" : "Pause auto-scroll"}
           >
-            {paused ? "▶ Resume" : "⏸ Pause"}
+            {paused ? (
+              <>
+                <Play size={9} /> Resume
+              </>
+            ) : (
+              <>
+                <Pause size={9} /> Pause
+              </>
+            )}
           </ToolbarBtn>
           <ToolbarBtn onClick={handleClear} title="Clear logs">
-            Clear
+            <Trash2 size={9} /> Clear
           </ToolbarBtn>
           <ToolbarBtn
             onClick={handleCopy}
             title="Copy visible logs to clipboard"
           >
-            Copy
+            <Copy size={9} /> Copy
           </ToolbarBtn>
           <ToolbarBtn onClick={handleDownload} title="Download logs as .txt">
-            ↓ Save
+            <Download size={9} /> Save
           </ToolbarBtn>
           <ToolbarBtn
             active={wrap}
             onClick={() => setWrap((w) => !w)}
             title={wrap ? "Disable word wrap" : "Enable word wrap"}
           >
-            Wrap
+            <WrapText size={9} /> Wrap
           </ToolbarBtn>
         </div>
       </div>
@@ -540,24 +560,36 @@ export function LogConsole() {
           flexWrap: "wrap",
         }}
       >
-        <input
-          type="search"
-          placeholder="Search logs..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search logs"
+        <div
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 3,
             flex: "0 0 auto",
-            width: 140,
-            fontSize: 10,
-            padding: "2px 6px",
-            background: "var(--bg-secondary)",
-            border: "1px solid var(--border-color)",
-            borderRadius: 3,
-            color: "var(--text-primary)",
-            outline: "none",
           }}
-        />
+        >
+          <Search
+            size={10}
+            style={{ color: "var(--text-muted)", flexShrink: 0 }}
+          />
+          <input
+            type="search"
+            placeholder="Search logs..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search logs"
+            style={{
+              width: 130,
+              fontSize: 10,
+              padding: "2px 6px",
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: 3,
+              color: "var(--text-primary)",
+              outline: "none",
+            }}
+          />
+        </div>
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
           {FILTER_LEVELS.map((level) => (
             <FilterChip
