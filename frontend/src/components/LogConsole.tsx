@@ -1,6 +1,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   useMemo,
@@ -79,6 +80,27 @@ const DEFAULT_FILTERS: LogFilter = {
 
 const FILTER_LEVELS: LogLevel[] = ["info", "warn", "error", "debug", "stats"];
 
+type PresetConfig = { id: string; label: string; keywords: readonly string[] };
+
+const PRESETS: readonly PresetConfig[] = [
+  { id: "draft", label: "Draft/Spec", keywords: ["slot", "draft", "specul"] },
+  {
+    id: "timings",
+    label: "Timings",
+    keywords: ["t/s", "tokens/s", "timing", "eval", "ms per"],
+  },
+  {
+    id: "cache",
+    label: "Cache",
+    keywords: ["kv cache", "prefix", "cached", "n_cache"],
+  },
+  {
+    id: "errors",
+    label: "Errors",
+    keywords: ["error", "failed", "abort", "fatal", "exception"],
+  },
+];
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 function formatTimestamp(ts: string): string {
@@ -93,37 +115,64 @@ function formatTimestamp(ts: string): string {
   }
 }
 
+function lineMatchesFilters(
+  text: string,
+  presets: Set<string>,
+  query: string,
+): boolean {
+  const lower = text.toLowerCase();
+  for (const pid of presets) {
+    const p = PRESETS.find((x) => x.id === pid);
+    if (p && !p.keywords.some((kw) => lower.includes(kw))) return false;
+  }
+  return !query || lower.includes(query.toLowerCase());
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────
 
 const LogLineRow = memo(function LogLineRow({
   log,
   wrap,
   onCopy,
+  highlighted,
 }: {
   log: LogLine;
   wrap: boolean;
   onCopy?: (text: string) => void;
+  highlighted?: boolean;
 }) {
   const badgeColor = LEVEL_BADGE_COLORS[log.level];
   const textColor = LEVEL_TEXT_COLORS[log.level];
   const isError = log.level === "error";
   const letter = LEVEL_LETTERS[log.level];
 
+  let rowBg: string | undefined;
+  if (isError) {
+    rowBg = "rgba(var(--danger-rgb, 239,68,68), 0.05)";
+  } else if (highlighted) {
+    rowBg = "rgba(var(--warning-rgb, 234,179,8), 0.07)";
+  }
+
+  let rowBorder = "2px solid transparent";
+  if (isError) {
+    rowBorder = "2px solid var(--danger)";
+  } else if (highlighted) {
+    rowBorder = "2px solid var(--warning)";
+  }
+
   return (
     <div
+      data-highlighted={highlighted ? "true" : undefined}
       onClick={() => onCopy?.(log.text)}
       style={{
         display: "flex",
         gap: 5,
         padding: "1px 8px",
-        background: isError
-          ? "rgba(var(--danger-rgb, 239,68,68), 0.05)"
-          : undefined,
-        borderLeft: isError
-          ? "2px solid var(--danger)"
-          : "2px solid transparent",
+        background: rowBg,
+        borderLeft: rowBorder,
         alignItems: "flex-start",
         cursor: onCopy ? "pointer" : undefined,
+        minWidth: 0,
       }}
       title={onCopy ? "Click to copy line" : undefined}
     >
@@ -168,7 +217,6 @@ const LogLineRow = memo(function LogLineRow({
           minWidth: 0,
           whiteSpace: wrap ? "pre-wrap" : "pre",
           wordBreak: wrap ? "break-all" : undefined,
-          overflowX: wrap ? undefined : "visible",
         }}
       >
         {log.text}
@@ -267,6 +315,34 @@ export function LogConsole({
   const [activeProfileName, setActiveProfileName] = useState<string | null>(
     null,
   );
+  const [hideIdle, setHideIdle] = useState(() => {
+    try {
+      return localStorage.getItem("log_console_hide_idle") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const [activePresets, setActivePresets] = useState<Set<string>>(new Set());
+  const [filterMode, setFilterMode] = useState<"filter" | "highlight">(
+    "filter",
+  );
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "log_console_hide_idle",
+        hideIdle ? "true" : "false",
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [hideIdle]);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(id);
+  }, [search]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -290,18 +366,15 @@ export function LogConsole({
     });
   }, []);
 
-  // Auto-scroll to bottom when new lines arrive (unless paused or user scrolled up).
-  useEffect(() => {
-    if (!paused && isAtBottomRef.current && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ block: "end" });
-    }
-  }, [logs, paused]);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isAtBottomRef.current = distFromBottom < 80;
+    const atBottom = distFromBottom < 40;
+    isAtBottomRef.current = atBottom;
+    setIsScrolledUp(!atBottom);
   }, []);
 
   const connectWs = useCallback(
@@ -414,16 +487,60 @@ export function LogConsole({
     setLogs([]);
   }, [activeProfileId]);
 
-  const filteredLogs = useMemo(
+  const levelFilteredLogs = useMemo(
     () =>
       logs.filter((log) => {
         if (!filters[log.level]) return false;
-        if (search && !log.text.toLowerCase().includes(search.toLowerCase()))
+        if (
+          hideIdle &&
+          /update_slots:\s*all\s+slots?\s+are\s+idle/i.test(log.text)
+        )
           return false;
         return true;
       }),
-    [logs, filters, search],
+    [logs, filters, hideIdle],
   );
+
+  const hasActiveSecondaryFilters =
+    activePresets.size > 0 || debouncedSearch.length > 0;
+
+  const filteredLogs = useMemo(() => {
+    if (!hasActiveSecondaryFilters || filterMode === "highlight")
+      return levelFilteredLogs;
+    return levelFilteredLogs.filter((log) =>
+      lineMatchesFilters(log.text, activePresets, debouncedSearch),
+    );
+  }, [
+    levelFilteredLogs,
+    activePresets,
+    debouncedSearch,
+    filterMode,
+    hasActiveSecondaryFilters,
+  ]);
+
+  const highlightSet = useMemo((): Set<number> | null => {
+    if (filterMode !== "highlight" || !hasActiveSecondaryFilters) return null;
+    const s = new Set<number>();
+    filteredLogs.forEach((log, i) => {
+      if (lineMatchesFilters(log.text, activePresets, debouncedSearch))
+        s.add(i);
+    });
+    return s;
+  }, [
+    filterMode,
+    filteredLogs,
+    activePresets,
+    debouncedSearch,
+    hasActiveSecondaryFilters,
+  ]);
+
+  // Auto-scroll after DOM update when pinned to bottom. Uses filteredLogs so
+  // toggling hide-idle or wrap also re-anchors when the user is at the bottom.
+  useLayoutEffect(() => {
+    if (!paused && isAtBottomRef.current && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ block: "end" });
+    }
+  }, [filteredLogs, paused]);
 
   const handleCopy = useCallback(() => {
     const text = filteredLogs
@@ -492,6 +609,7 @@ export function LogConsole({
         borderRadius: "var(--radius-sm)",
         overflow: "hidden",
         height: "100%",
+        minWidth: 0,
       }}
     >
       {/* Header */}
@@ -586,6 +704,13 @@ export function LogConsole({
           >
             <WrapText size={9} /> Wrap
           </ToolbarBtn>
+          <ToolbarBtn
+            active={hideIdle}
+            onClick={() => setHideIdle((h) => !h)}
+            title={hideIdle ? "Show idle lines" : "Hide idle lines"}
+          >
+            Hide Idle
+          </ToolbarBtn>
           {onToggleExpand && (
             <ToolbarBtn
               onClick={onToggleExpand}
@@ -624,6 +749,8 @@ export function LogConsole({
           />
           <input
             type="search"
+            name="log-search"
+            id="log-console-search"
             placeholder="Search logs..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -651,6 +778,49 @@ export function LogConsole({
             />
           ))}
         </div>
+        <div
+          style={{
+            width: 1,
+            alignSelf: "stretch",
+            background: "var(--border-color)",
+            flexShrink: 0,
+            opacity: 0.6,
+          }}
+        />
+        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+          {PRESETS.map((preset) => (
+            <FilterChip
+              key={preset.id}
+              label={preset.label}
+              active={activePresets.has(preset.id)}
+              color="var(--accent-primary)"
+              onClick={() => {
+                setActivePresets((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(preset.id)) next.delete(preset.id);
+                  else next.add(preset.id);
+                  return next;
+                });
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+          <ToolbarBtn
+            active={filterMode === "filter"}
+            onClick={() => setFilterMode("filter")}
+            title="Filter: only show matching lines"
+          >
+            Filter
+          </ToolbarBtn>
+          <ToolbarBtn
+            active={filterMode === "highlight"}
+            onClick={() => setFilterMode("highlight")}
+            title="Highlight: show all lines, emphasize matches"
+          >
+            Highlight
+          </ToolbarBtn>
+        </div>
       </div>
 
       {/* Log Area */}
@@ -664,6 +834,7 @@ export function LogConsole({
           overflowX: wrap ? "hidden" : "auto",
           background: "var(--bg-secondary)",
           padding: "2px 0",
+          minWidth: 0,
         }}
       >
         {hasNoLogs || hasNoMatches ? (
@@ -694,9 +865,54 @@ export function LogConsole({
             )}
           </div>
         ) : (
-          filteredLogs.map((log, idx) => (
-            <LogLineRow key={idx} log={log} wrap={wrap} onCopy={handleCopyLine} />
-          ))
+          <div style={wrap ? undefined : { minWidth: "max-content" }}>
+            {filteredLogs.map((log, idx) => (
+              <LogLineRow
+                key={idx}
+                log={log}
+                wrap={wrap}
+                onCopy={handleCopyLine}
+                highlighted={highlightSet?.has(idx)}
+              />
+            ))}
+          </div>
+        )}
+        {isScrolledUp && !paused && (
+          <div
+            style={{
+              position: "sticky",
+              bottom: 8,
+              display: "flex",
+              justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <button
+              onClick={() => {
+                isAtBottomRef.current = true;
+                setIsScrolledUp(false);
+                logEndRef.current?.scrollIntoView({ block: "end" });
+              }}
+              style={{
+                pointerEvents: "auto",
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "3px 8px",
+                background: "var(--accent-primary)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 12,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                opacity: 0.9,
+              }}
+            >
+              <ChevronDown size={10} />
+              Jump to latest
+            </button>
+          </div>
         )}
         <div ref={logEndRef} />
       </div>

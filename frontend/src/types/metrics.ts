@@ -135,6 +135,17 @@ export interface AiComfyUiInfo {
   history_size?: number | null;
 }
 
+export interface LlamaSlot {
+  id: number;
+  n_ctx?: number | null;
+  n_prompt_tokens?: number | null;
+  is_processing?: boolean | null;
+  n_decoded?: number | null;
+  n_remain?: number | null;
+  n_prompt_tokens_cache?: number | null;
+  n_predict?: number | null;
+}
+
 export interface AiMetrics {
   llama_server: AiServiceStatus;
   openwebui: AiServiceStatus;
@@ -165,6 +176,9 @@ export interface AiMetrics {
   busy_slots: number | null;
   context_tokens: number | null;
   max_context: number | null;
+
+  // Per-slot state parsed from /slots endpoint
+  slots?: LlamaSlot[] | null;
 
   // Props from /props endpoint
   model_alias?: string | null;

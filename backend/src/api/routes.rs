@@ -7,8 +7,8 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::ai_management as ai_mgmt;
 use crate::api::launcher as launcher_api;
+use crate::api::llama_management as ai_mgmt;
 use crate::api::log_manager;
 use crate::api::settings::{
     AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, test_connection,
@@ -50,26 +50,29 @@ pub fn create_router() -> axum::Router {
             get(get_settings_handler).put(update_settings_handler),
         )
         .route("/api/ai/test-connection", post(test_connection_handler))
-        .route("/api/ai/directory-info", get(directory_info_handler))
-        .route("/api/ai/repo-info", get(repo_info_handler))
-        .route("/api/ai/browse", get(browse_directory_handler))
-        .route("/api/ai/terminal/spawn", post(spawn_terminal_handler))
-        .route("/api/ai/terminal/input", post(terminal_input_handler))
-        .route("/api/ai/terminal/output", get(terminal_output_handler))
-        .route("/api/ai/terminal/resize", post(terminal_resize_handler))
-        .route("/api/ai/terminal/kill", post(terminal_kill_handler))
+        .route("/api/llama/directory-info", get(directory_info_handler))
+        .route("/api/llama/repo-info", get(repo_info_handler))
+        .route("/api/llama/browse", get(browse_directory_handler))
+        .route("/api/llama/terminal/spawn", post(spawn_terminal_handler))
+        .route("/api/llama/terminal/input", post(terminal_input_handler))
+        .route("/api/llama/terminal/output", get(terminal_output_handler))
+        .route("/api/llama/terminal/resize", post(terminal_resize_handler))
+        .route("/api/llama/terminal/kill", post(terminal_kill_handler))
         .route(
-            "/api/ai/terminal/history/{pts_name}",
+            "/api/llama/terminal/history/{pts_name}",
             get(terminal_history_handler),
         )
-        .route("/api/ai/terminal/ws/{pts_name}", get(terminal_ws_handler))
         .route(
-            "/api/ai/commands",
+            "/api/llama/terminal/ws/{pts_name}",
+            get(terminal_ws_handler),
+        )
+        .route(
+            "/api/llama/commands",
             get(list_commands_handler)
                 .post(create_command_handler)
                 .put(update_command_handler),
         )
-        .route("/api/ai/commands", delete(delete_command_handler))
+        .route("/api/llama/commands", delete(delete_command_handler))
         .route("/api/launch/profiles", get(list_profiles_handler))
         .route(
             "/api/launch/metrics/{script_path}",

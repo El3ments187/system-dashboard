@@ -1,6 +1,23 @@
-import { CpuMetrics, MemoryMetrics, GpuMetrics, StorageMetrics, DeviceStorageInfo, SystemMetrics, AiMetrics, AiHistoryEntry, AiSettings, TestConnectionResult, DirectoryEntry, SavedCommand, TerminalSpawnResponse, DirectoryInfo, RepoInfo, ProfileResponse } from '../types/metrics';
+import {
+  CpuMetrics,
+  MemoryMetrics,
+  GpuMetrics,
+  StorageMetrics,
+  DeviceStorageInfo,
+  SystemMetrics,
+  AiMetrics,
+  AiHistoryEntry,
+  AiSettings,
+  TestConnectionResult,
+  DirectoryEntry,
+  SavedCommand,
+  TerminalSpawnResponse,
+  DirectoryInfo,
+  RepoInfo,
+  ProfileResponse,
+} from "../types/metrics";
 
-const BASE_URL = '/api';
+const BASE_URL = "/api";
 
 async function fetchMetrics<T>(endpoint: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
@@ -12,27 +29,27 @@ async function fetchMetrics<T>(endpoint: string): Promise<T> {
 }
 
 export async function getCpuMetrics(): Promise<CpuMetrics> {
-  return fetchMetrics<CpuMetrics>('/metrics/cpu');
+  return fetchMetrics<CpuMetrics>("/metrics/cpu");
 }
 
 export async function getMemoryMetrics(): Promise<MemoryMetrics> {
-  return fetchMetrics<MemoryMetrics>('/metrics/memory');
+  return fetchMetrics<MemoryMetrics>("/metrics/memory");
 }
 
 export async function getGpuMetrics(): Promise<GpuMetrics> {
-  return fetchMetrics<GpuMetrics>('/metrics/gpu');
+  return fetchMetrics<GpuMetrics>("/metrics/gpu");
 }
 
 export async function getStorageMetrics(): Promise<StorageMetrics[]> {
-  return fetchMetrics<StorageMetrics[]>('/metrics/storage');
+  return fetchMetrics<StorageMetrics[]>("/metrics/storage");
 }
 
 export async function getStorageDevices(): Promise<DeviceStorageInfo[]> {
-  return fetchMetrics<DeviceStorageInfo[]>('/metrics/storage/devices');
+  return fetchMetrics<DeviceStorageInfo[]>("/metrics/storage/devices");
 }
 
 export async function getSystemMetrics(): Promise<SystemMetrics> {
-  return fetchMetrics<SystemMetrics>('/metrics/system');
+  return fetchMetrics<SystemMetrics>("/metrics/system");
 }
 
 export async function checkHealth(): Promise<boolean> {
@@ -41,11 +58,11 @@ export async function checkHealth(): Promise<boolean> {
 }
 
 export async function getAiMetrics(): Promise<AiMetrics> {
-  return fetchMetrics<AiMetrics>('/ai/metrics');
+  return fetchMetrics<AiMetrics>("/ai/metrics");
 }
 
 export async function getAiHistory(): Promise<AiHistoryEntry[]> {
-  return fetchMetrics<AiHistoryEntry[]>('/ai/history');
+  return fetchMetrics<AiHistoryEntry[]>("/ai/history");
 }
 
 export async function getAiSettings(): Promise<AiSettings> {
@@ -54,20 +71,24 @@ export async function getAiSettings(): Promise<AiSettings> {
   return (await res.json()) as AiSettings;
 }
 
-export async function updateAiSettings(settings: AiSettings): Promise<AiSettings> {
+export async function updateAiSettings(
+  settings: AiSettings,
+): Promise<AiSettings> {
   const res = await fetch(`${BASE_URL}/ai/settings`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()) as AiSettings;
 }
 
-export async function testConnection(url: string): Promise<TestConnectionResult> {
+export async function testConnection(
+  url: string,
+): Promise<TestConnectionResult> {
   const res = await fetch(`${BASE_URL}/ai/test-connection`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -75,30 +96,40 @@ export async function testConnection(url: string): Promise<TestConnectionResult>
 }
 
 export async function browseDirectory(path: string): Promise<DirectoryEntry[]> {
-  const res = await fetch(`${BASE_URL}/ai/browse?path=${encodeURIComponent(path)}`);
+  const res = await fetch(
+    `${BASE_URL}/llama/browse?path=${encodeURIComponent(path)}`,
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as DirectoryEntry[];
 }
 
 export async function getDirectoryInfo(path: string): Promise<DirectoryInfo> {
-  const res = await fetch(`${BASE_URL}/ai/directory-info?path=${encodeURIComponent(path)}`);
+  const res = await fetch(
+    `${BASE_URL}/llama/directory-info?path=${encodeURIComponent(path)}`,
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as DirectoryInfo;
 }
 
-export async function getRepoInfo(path: string, githubRepo?: string, tagPrefix?: string): Promise<RepoInfo> {
+export async function getRepoInfo(
+  path: string,
+  githubRepo?: string,
+  tagPrefix?: string,
+): Promise<RepoInfo> {
   const params = new URLSearchParams({ path });
-  if (githubRepo) params.set('github_repo', githubRepo);
-  if (tagPrefix) params.set('tag_prefix', tagPrefix);
-  const res = await fetch(`${BASE_URL}/ai/repo-info?${params.toString()}`);
+  if (githubRepo) params.set("github_repo", githubRepo);
+  if (tagPrefix) params.set("tag_prefix", tagPrefix);
+  const res = await fetch(`${BASE_URL}/llama/repo-info?${params.toString()}`);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as RepoInfo;
 }
 
-export async function spawnTerminal(dir: string): Promise<TerminalSpawnResponse> {
-  const res = await fetch(`${BASE_URL}/ai/terminal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function spawnTerminal(
+  dir: string,
+): Promise<TerminalSpawnResponse> {
+  const res = await fetch(`${BASE_URL}/llama/terminal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dir }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -106,15 +137,17 @@ export async function spawnTerminal(dir: string): Promise<TerminalSpawnResponse>
 }
 
 export async function listCommands(): Promise<SavedCommand[]> {
-  const res = await fetch(`${BASE_URL}/ai/commands`);
+  const res = await fetch(`${BASE_URL}/llama/commands`);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as SavedCommand[];
 }
 
-export async function createCommand(cmd: Omit<SavedCommand, 'id'>): Promise<SavedCommand> {
-  const res = await fetch(`${BASE_URL}/ai/commands`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function createCommand(
+  cmd: Omit<SavedCommand, "id">,
+): Promise<SavedCommand> {
+  const res = await fetch(`${BASE_URL}/llama/commands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cmd),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -122,9 +155,9 @@ export async function createCommand(cmd: Omit<SavedCommand, 'id'>): Promise<Save
 }
 
 export async function updateCommand(cmd: SavedCommand): Promise<SavedCommand> {
-  const res = await fetch(`${BASE_URL}/ai/commands`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+  const res = await fetch(`${BASE_URL}/llama/commands`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cmd),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -132,9 +165,9 @@ export async function updateCommand(cmd: SavedCommand): Promise<SavedCommand> {
 }
 
 export async function deleteCommand(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/ai/commands`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+  const res = await fetch(`${BASE_URL}/llama/commands`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -142,10 +175,12 @@ export async function deleteCommand(id: string): Promise<void> {
 
 // ─── PTY Terminal API Methods ──────────────────────────────────────
 
-export async function ptySpawnTerminal(dir: string): Promise<TerminalSpawnResponse> {
-  const res = await fetch(`${BASE_URL}/ai/terminal/spawn`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function ptySpawnTerminal(
+  dir: string,
+): Promise<TerminalSpawnResponse> {
+  const res = await fetch(`${BASE_URL}/llama/terminal/spawn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dir }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -153,33 +188,42 @@ export async function ptySpawnTerminal(dir: string): Promise<TerminalSpawnRespon
 }
 
 export async function ptyReadOutput(ptsName: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/ai/terminal/output?pts=${encodeURIComponent(ptsName)}`);
+  const res = await fetch(
+    `${BASE_URL}/llama/terminal/output?pts=${encodeURIComponent(ptsName)}`,
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as string;
 }
 
-export async function ptyWriteInput(ptsName: string, input: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/ai/terminal/input`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function ptyWriteInput(
+  ptsName: string,
+  input: string,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/llama/terminal/input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pts: ptsName, input }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
 }
 
-export async function ptyResizeTerminal(ptsName: string, rows: number, cols: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/ai/terminal/resize`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function ptyResizeTerminal(
+  ptsName: string,
+  rows: number,
+  cols: number,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/llama/terminal/resize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pts: ptsName, rows, cols }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
 }
 
 export function ptyKillTerminal(ptsName: string): void {
-  fetch(`${BASE_URL}/ai/terminal/kill`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  fetch(`${BASE_URL}/llama/terminal/kill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pts: ptsName }),
     keepalive: true,
   }).catch(() => {});
@@ -193,20 +237,24 @@ export async function getLaunchProfiles(): Promise<ProfileResponse> {
   return (await res.json()).data as ProfileResponse;
 }
 
-export async function launchProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
+export async function launchProfile(
+  profileId: string,
+): Promise<{ success: boolean; error?: string }> {
   const res = await fetch(`${BASE_URL}/launch/launch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile_id: profileId }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()) as { success: boolean; error?: string };
 }
 
-export async function stopProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
+export async function stopProfile(
+  profileId: string,
+): Promise<{ success: boolean; error?: string }> {
   const res = await fetch(`${BASE_URL}/launch/stop`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile_id: profileId }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
@@ -223,23 +271,30 @@ export async function getLaunchMetrics(scriptPath: string): Promise<{
   model_path?: string | null;
   context_size?: number | null;
 }> {
-  const res = await fetch(`${BASE_URL}/launch/metrics/${encodeURIComponent(scriptPath)}`);
+  const res = await fetch(
+    `${BASE_URL}/launch/metrics/${encodeURIComponent(scriptPath)}`,
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as any;
 }
 
-export async function getLaunchMetadata(): Promise<Record<string, {
-  script_path: string;
-  model_path?: string | null;
-  peak_vram_mb?: number | null;
-  peak_ram_mb?: number | null;
-  avg_gen_tps?: number | null;
-  peak_gen_tps?: number | null;
-  last_context_size?: number | null;
-  last_run_date?: string | null;
-  run_count: number;
-  last_startup_time_ms?: number | null;
-}>> {
+export async function getLaunchMetadata(): Promise<
+  Record<
+    string,
+    {
+      script_path: string;
+      model_path?: string | null;
+      peak_vram_mb?: number | null;
+      peak_ram_mb?: number | null;
+      avg_gen_tps?: number | null;
+      peak_gen_tps?: number | null;
+      last_context_size?: number | null;
+      last_run_date?: string | null;
+      run_count: number;
+      last_startup_time_ms?: number | null;
+    }
+  >
+> {
   const res = await fetch(`${BASE_URL}/launch/profiles`);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data.metadata as any;

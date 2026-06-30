@@ -85,12 +85,16 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         })?;
     let total_sys_time: f64 = sys_fields.iter().sum();
 
-    // Get number of CPUs for normalization
-    let num_cpus = if !sys_fields.is_empty() {
-        (sys_fields.len() - 1) as f64
-    } else {
-        1.0
-    };
+    // Get number of CPUs for normalization by counting cpuN lines in /proc/stat
+    let num_cpus = sys_stat
+        .lines()
+        .filter(|l| {
+            l.len() > 3
+                && l.starts_with("cpu")
+                && l.as_bytes().get(3).is_some_and(|b| b.is_ascii_digit())
+        })
+        .count()
+        .max(1) as f64;
 
     // Calculate CPU utilization (instantaneous based on total time since process start)
     // We use a simple approach: total_time / (total_sys_time / num_cpus) * 100
@@ -284,6 +288,7 @@ async fn poll_llama_server(
     AiServiceStatus,
     Option<LlamaMetrics>,
     Option<LlamaProps>,
+    Option<Vec<crate::models::ai::LlamaSlot>>,
     Option<f64>,
 ) {
     let client = reqwest::Client::builder()
@@ -318,24 +323,72 @@ async fn poll_llama_server(
                 _ => None,
             };
 
-            // Fetch /slots for speculative decoding status
+            // Fetch /slots for speculative decoding status and per-slot state
+            let mut slot_list: Vec<crate::models::ai::LlamaSlot> = Vec::new();
             if let Some(ref mut p) = props {
                 let slots_url = format!("{}/slots", base_url);
                 if let Ok(sresp) = client.get(&slots_url).send().await
                     && sresp.status().is_success()
                     && let Ok(body) = sresp.text().await
-                    && let Ok(slots) = serde_json::from_str::<serde_json::Value>(&body)
+                    && let Ok(slots_val) = serde_json::from_str::<serde_json::Value>(&body)
                 {
-                    p.speculative = slots
+                    p.speculative = slots_val
                         .as_array()
                         .and_then(|arr| arr.first())
                         .and_then(|slot| slot.get("speculative"))
                         .and_then(|v| v.as_bool());
-                    p.context_tokens = slots.as_array().map(|arr| {
+                    p.context_tokens = slots_val.as_array().map(|arr| {
                         arr.iter()
-                            .filter_map(|slot| slot.get("n_past").and_then(|v| v.as_u64()))
+                            .filter_map(|slot| slot.get("n_prompt_tokens").and_then(|v| v.as_u64()))
                             .sum::<u64>() as u32
                     });
+
+                    // Parse per-slot fields for frontend bindings using real /slots keys
+                    if let Some(arr) = slots_val.as_array() {
+                        for (idx, slot) in arr.iter().enumerate() {
+                            let id = idx as u32;
+                            let n_ctx =
+                                slot.get("n_ctx").and_then(|v| v.as_u64()).map(|v| v as u32);
+                            let n_prompt_tokens = slot
+                                .get("n_prompt_tokens")
+                                .and_then(|v| v.as_u64())
+                                .map(|v| v as u32);
+                            let is_processing = slot.get("is_processing").and_then(|v| v.as_bool());
+                            // n_decoded/n_remain live in next_token[0]; n_predict in params
+                            let next_tok = slot
+                                .get("next_token")
+                                .and_then(|v| v.as_array())
+                                .and_then(|a| a.first());
+                            let n_decoded = next_tok
+                                .and_then(|t| t.get("n_decoded"))
+                                .and_then(|v| v.as_u64())
+                                .map(|v| v as u32);
+                            let n_remain = next_tok
+                                .and_then(|t| t.get("n_remain"))
+                                .and_then(|v| v.as_i64())
+                                .map(|v| v as i32);
+                            let n_prompt_tokens_cache =
+                                slot.get("n_prompt_tokens_cache").and_then(|v| v.as_u64());
+                            let n_predict = slot
+                                .get("params")
+                                .and_then(|p| p.get("n_predict"))
+                                .and_then(|v| v.as_i64())
+                                .map(|v| if v > 0 { v as u32 } else { 0 });
+
+                            if n_prompt_tokens.is_some() || is_processing.is_some() {
+                                slot_list.push(crate::models::ai::LlamaSlot {
+                                    id,
+                                    n_ctx,
+                                    n_prompt_tokens,
+                                    is_processing,
+                                    n_decoded,
+                                    n_remain,
+                                    n_prompt_tokens_cache,
+                                    n_predict,
+                                });
+                            }
+                        }
+                    }
                 }
             }
 
@@ -346,7 +399,7 @@ async fn poll_llama_server(
                 error_message: None,
             };
 
-            (status, metrics, props, Some(latency_ms))
+            (status, metrics, props, Some(slot_list), Some(latency_ms))
         }
         Ok(resp) => {
             let status = AiServiceStatus {
@@ -355,7 +408,7 @@ async fn poll_llama_server(
                 available: false,
                 error_message: Some(format!("HTTP {}", resp.status())),
             };
-            (status, None, None, None)
+            (status, None, None, None, None)
         }
         Err(e) => {
             let status = AiServiceStatus {
@@ -364,7 +417,7 @@ async fn poll_llama_server(
                 available: false,
                 error_message: Some(format!("Connection failed: {}", e)),
             };
-            (status, None, None, None)
+            (status, None, None, None, None)
         }
     }
 }
@@ -693,7 +746,8 @@ pub async fn collect_ai_metrics(
     opencode_url: &str,
     comfyui_url: &str,
 ) -> (AiMetrics, CollectorStatus) {
-    let (llama_status, prom_metrics, props, latency_ms) = poll_llama_server(llama_server_url).await;
+    let (llama_status, prom_metrics, props, slot_list, latency_ms) =
+        poll_llama_server(llama_server_url).await;
     let (openwebui_status, chat_history_count, models_list) = poll_openwebui(openwebui_url).await;
     let opencode_status = poll_opencode(opencode_url).await;
     let (comfyui_status, comfyui_info) = poll_comfyui(comfyui_url).await;
@@ -854,6 +908,7 @@ pub async fn collect_ai_metrics(
         busy_slots: derived.busy_slots,
         context_tokens: derived.context_tokens,
         max_context: derived.max_context,
+        slots: slot_list.and_then(|s| if s.is_empty() { None } else { Some(s) }),
         model_alias: props.as_ref().and_then(|p| p.model_alias.clone()),
         model_path: props.as_ref().and_then(|p| p.model_path.clone()),
         total_slots: props.as_ref().and_then(|p| p.total_slots),
@@ -891,4 +946,186 @@ pub async fn collect_ai_metrics(
 pub fn collect_ai_history() -> Vec<AiHistoryPoint> {
     let history = AI_HISTORY.lock().unwrap();
     history.iter().map(|entry| entry.point.clone()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_prometheus_metrics ──────────────────────────────────────────────
+
+    #[test]
+    fn test_prometheus_valid_fields() {
+        let body = "llamacpp:prompt_tokens_total 1234\n\
+llamacpp:tokens_predicted_total 567\n\
+llamacpp:predicted_tokens_seconds 42.5\n\
+llamacpp:requests_processing 2\n";
+        let m = parse_prometheus_metrics(body);
+        assert_eq!(m.prompt_tokens_total, 1234.0);
+        assert_eq!(m.tokens_predicted_total, 567.0);
+        assert_eq!(m.predicted_tokens_per_second, 42.5);
+        assert_eq!(m.requests_processing, 2.0);
+    }
+
+    #[test]
+    fn test_prometheus_empty_body_returns_defaults() {
+        let m = parse_prometheus_metrics("");
+        assert_eq!(m.prompt_tokens_total, 0.0);
+        assert_eq!(m.tokens_predicted_total, 0.0);
+        assert_eq!(m.requests_processing, 0.0);
+    }
+
+    #[test]
+    fn test_prometheus_comment_lines_skipped() {
+        let body = "# HELP llamacpp:prompt_tokens_total count\n\
+# TYPE llamacpp:prompt_tokens_total counter\n";
+        let m = parse_prometheus_metrics(body);
+        assert_eq!(m.prompt_tokens_total, 0.0);
+    }
+
+    #[test]
+    fn test_prometheus_unknown_fields_ignored() {
+        let body = "unknown_metric 999\nllamacpp:prompt_tokens_total 100\n";
+        let m = parse_prometheus_metrics(body);
+        assert_eq!(m.prompt_tokens_total, 100.0);
+    }
+
+    #[test]
+    fn test_prometheus_malformed_value_becomes_nan() {
+        let body = "llamacpp:prompt_tokens_total not_a_number\n";
+        let m = parse_prometheus_metrics(body);
+        assert!(m.prompt_tokens_total.is_nan());
+    }
+
+    #[test]
+    fn test_prometheus_all_known_fields() {
+        let body = "llamacpp:prompt_tokens_total 100\n\
+llamacpp:prompt_seconds_total 1.5\n\
+llamacpp:tokens_predicted_total 200\n\
+llamacpp:tokens_predicted_seconds_total 2.0\n\
+llamacpp:n_decode_total 300\n\
+llamacpp:n_tokens_max 4096\n\
+llamacpp:prompt_tokens_seconds 66.7\n\
+llamacpp:predicted_tokens_seconds 100.0\n\
+llamacpp:requests_processing 1\n\
+llamacpp:requests_deferred 0\n\
+llamacpp:n_busy_slots_per_decode 0.5\n";
+        let m = parse_prometheus_metrics(body);
+        assert_eq!(m.prompt_tokens_total, 100.0);
+        assert_eq!(m.prompt_seconds_total, 1.5);
+        assert_eq!(m.tokens_predicted_total, 200.0);
+        assert_eq!(m.tokens_predicted_seconds_total, 2.0);
+        assert_eq!(m.n_decode_total, 300.0);
+        assert_eq!(m.n_tokens_max, 4096.0);
+        assert_eq!(m.prompt_tokens_per_second, 66.7);
+        assert_eq!(m.predicted_tokens_per_second, 100.0);
+        assert_eq!(m.requests_processing, 1.0);
+        assert_eq!(m.requests_deferred, 0.0);
+        assert_eq!(m.n_busy_slots_per_decode, 0.5);
+    }
+
+    // ── Slot JSON parsing (mirrors poll_llama_server logic) ───────────────────
+
+    fn parse_slot_value(slot: &serde_json::Value, id: u32) -> Option<crate::models::ai::LlamaSlot> {
+        let n_prompt_tokens = slot
+            .get("n_prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        let is_processing = slot.get("is_processing").and_then(|v| v.as_bool());
+        if n_prompt_tokens.is_some() || is_processing.is_some() {
+            Some(crate::models::ai::LlamaSlot {
+                id,
+                n_ctx: slot.get("n_ctx").and_then(|v| v.as_u64()).map(|v| v as u32),
+                n_prompt_tokens,
+                is_processing,
+                n_decoded: slot
+                    .get("next_token")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|t| t.get("n_decoded"))
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
+                n_remain: slot
+                    .get("next_token")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|t| t.get("n_remain"))
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32),
+                n_prompt_tokens_cache: slot.get("n_prompt_tokens_cache").and_then(|v| v.as_u64()),
+                n_predict: slot
+                    .get("params")
+                    .and_then(|p| p.get("n_predict"))
+                    .and_then(|v| v.as_i64())
+                    .map(|v| if v > 0 { v as u32 } else { 0 }),
+            })
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn test_slot_idle_is_processing_false() {
+        let json = serde_json::json!({
+            "n_ctx": 4096,
+            "n_prompt_tokens": 0,
+            "is_processing": false,
+            "next_token": [{"n_decoded": 0, "n_remain": -1}],
+            "params": {"n_predict": -1}
+        });
+        let slot = parse_slot_value(&json, 0).expect("slot should parse");
+        assert_eq!(slot.is_processing, Some(false));
+        assert_eq!(slot.n_ctx, Some(4096));
+    }
+
+    #[test]
+    fn test_slot_live_is_processing_true() {
+        let json = serde_json::json!({
+            "n_ctx": 8192,
+            "n_prompt_tokens": 512,
+            "is_processing": true,
+            "next_token": [{"n_decoded": 128, "n_remain": 384}],
+            "params": {"n_predict": 512}
+        });
+        let slot = parse_slot_value(&json, 0).expect("slot should parse");
+        assert_eq!(slot.is_processing, Some(true));
+        assert_eq!(slot.n_prompt_tokens, Some(512));
+        assert_eq!(slot.n_decoded, Some(128));
+    }
+
+    #[test]
+    fn test_slot_missing_fields_yields_none() {
+        let json = serde_json::json!({});
+        let slot = parse_slot_value(&json, 0);
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn test_slot_empty_array_yields_no_slots() {
+        let val: serde_json::Value = serde_json::from_str("[]").unwrap();
+        let arr = val.as_array().unwrap();
+        let slots: Vec<_> = arr
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| parse_slot_value(s, i as u32))
+            .collect();
+        assert!(slots.is_empty());
+    }
+
+    #[test]
+    fn test_slot_malformed_json_does_not_panic() {
+        let result = serde_json::from_str::<serde_json::Value>("not valid json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_slot_negative_n_predict_clamped_to_zero() {
+        let json = serde_json::json!({
+            "n_prompt_tokens": 100,
+            "is_processing": true,
+            "params": {"n_predict": -1}
+        });
+        let slot = parse_slot_value(&json, 0).unwrap();
+        assert_eq!(slot.n_predict, Some(0));
+    }
 }

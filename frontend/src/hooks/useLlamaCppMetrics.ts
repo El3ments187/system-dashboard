@@ -2,12 +2,17 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from "react";
 import { AiMetrics, MetricHistoryPoint } from "../types/metrics";
 
 type HistorySetter = Dispatch<SetStateAction<MetricHistoryPoint[] | null>>;
+
+const BUSY_INTERVAL_MS = 1000;
+const IDLE_INTERVAL_MS = 5000;
+const BUFFER_SIZE = 120;
 
 function appendHistory(
   setter: HistorySetter,
@@ -36,11 +41,7 @@ function appendNull(setter: HistorySetter, bufferSize: number) {
   });
 }
 
-/**
- * Hook for polling AI metrics from the backend API.
- * Maintains a rolling 120-second history buffer focused on operational metrics.
- */
-export function useAiMetrics(isPaused?: boolean): {
+export function useLlamaCppMetrics(isPaused?: boolean): {
   currentMetrics: AiMetrics | null;
   genTpsHistory: MetricHistoryPoint[] | null;
   promptTpsHistory: MetricHistoryPoint[] | null;
@@ -51,9 +52,6 @@ export function useAiMetrics(isPaused?: boolean): {
   error: string | null;
   retry: () => void;
 } {
-  const intervalMs = 15000;
-  const bufferSize = Math.ceil(120000 / intervalMs);
-
   const [currentMetrics, setCurrentMetrics] = useState<AiMetrics | null>(null);
   const [genTpsHistory, setGenTpsHistory] = useState<
     MetricHistoryPoint[] | null
@@ -73,7 +71,12 @@ export function useAiMetrics(isPaused?: boolean): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const isBusyRef = useRef(false);
+  const fetchingRef = useRef(false);
+
+  const fetchData = useCallback(async (): Promise<void> => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       const response = await fetch("/api/ai/metrics");
       if (!response.ok) {
@@ -82,51 +85,94 @@ export function useAiMetrics(isPaused?: boolean): {
       const json = await response.json();
       const data: AiMetrics = json.data;
 
-      setCurrentMetrics(data);
+      const isProcessing = data.slots?.[0]?.is_processing ?? false;
+      isBusyRef.current = isProcessing || (data.active_requests ?? 0) > 0;
 
-      appendHistory(setGenTpsHistory, data.gen_tps ?? null, bufferSize);
-      appendHistory(setPromptTpsHistory, data.prompt_tps ?? null, bufferSize);
+      setCurrentMetrics(data);
+      appendHistory(setGenTpsHistory, data.gen_tps ?? null, BUFFER_SIZE);
+      appendHistory(setPromptTpsHistory, data.prompt_tps ?? null, BUFFER_SIZE);
       appendHistory(
         setActiveRequestsHistory,
         data.active_requests ?? null,
-        bufferSize,
+        BUFFER_SIZE,
       );
       appendHistory(
         setQueuedRequestsHistory,
         data.queued_requests ?? null,
-        bufferSize,
+        BUFFER_SIZE,
       );
       appendHistory(
         setContextTokensHistory,
         data.context_tokens ?? null,
-        bufferSize,
+        BUFFER_SIZE,
       );
-
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-      appendNull(setGenTpsHistory, bufferSize);
-      appendNull(setPromptTpsHistory, bufferSize);
-      appendNull(setActiveRequestsHistory, bufferSize);
-      appendNull(setQueuedRequestsHistory, bufferSize);
-      appendNull(setContextTokensHistory, bufferSize);
+      appendNull(setGenTpsHistory, BUFFER_SIZE);
+      appendNull(setPromptTpsHistory, BUFFER_SIZE);
+      appendNull(setActiveRequestsHistory, BUFFER_SIZE);
+      appendNull(setQueuedRequestsHistory, BUFFER_SIZE);
+      appendNull(setContextTokensHistory, BUFFER_SIZE);
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
     }
-  }, [bufferSize]);
+  }, []);
 
   const retry = useCallback(() => {
     fetchData();
   }, [fetchData]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
-    if (!isPaused) {
-      const interval = setInterval(fetchData, intervalMs);
-      return () => clearInterval(interval);
-    }
-  }, [fetchData, intervalMs, isPaused]);
+    if (isPaused) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    let tabVisible = !document.hidden;
+
+    const clearTimer = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const schedule = () => {
+      clearTimer();
+      if (cancelled || !tabVisible) return;
+      const delay = isBusyRef.current ? BUSY_INTERVAL_MS : IDLE_INTERVAL_MS;
+      timer = setTimeout(async () => {
+        if (!cancelled && tabVisible) {
+          await fetchData();
+          schedule();
+        }
+      }, delay);
+    };
+
+    const handleVisibility = () => {
+      tabVisible = !document.hidden;
+      if (tabVisible) {
+        fetchData().then(() => {
+          if (!cancelled) schedule();
+        });
+      } else {
+        clearTimer();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    fetchData().then(() => {
+      if (!cancelled) schedule();
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimer();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [isPaused, fetchData]);
 
   return {
     currentMetrics,

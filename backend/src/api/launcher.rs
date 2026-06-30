@@ -1437,6 +1437,28 @@ fn metrics_http_client() -> &'static reqwest::Client {
     })
 }
 
+fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-compute-apps=pid,used_gpu_memory",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, ',');
+        if let (Some(pid_str), Some(mb_str)) = (parts.next(), parts.next())
+            && let (Ok(line_pid), Ok(mb)) =
+                (pid_str.trim().parse::<u32>(), mb_str.trim().parse::<f64>())
+            && line_pid == pid
+        {
+            return Some(mb);
+        }
+    }
+    None
+}
+
 async fn update_profile_metrics_for_script(script_path: &str) {
     let port = get_profile_parsed_args(script_path).and_then(|a| a.port);
     let system = sysinfo::System::new_all();
@@ -1545,7 +1567,7 @@ async fn update_profile_metrics_for_script(script_path: &str) {
                 status: "running".to_string(),
                 llama_server_pid,
                 start_time,
-                peak_vram_mb: None,
+                peak_vram_mb: query_vram_mb_for_pid(llama_pid),
                 peak_ram_mb: Some(peak_ram_mb),
                 current_tps,
             },

@@ -1,7 +1,7 @@
 import { render, waitFor } from '@testing-library/react';
 import PerCoreCpuChart from '../charts/PerCoreCpuChart';
 import { MetricHistoryPoint } from '../types/metrics';
-import { collectPerCoreColors, resetThemeAttributes, setAccent, setAccentMode } from './helpers/themeAssertions';
+import { collectPerCoreColors, resetThemeAttributes, setAccentMode } from './helpers/themeAssertions';
 
 vi.mock('recharts', () => ({
   LineChart: vi.fn(() => <div data-testid="line-chart">LineChart</div>),

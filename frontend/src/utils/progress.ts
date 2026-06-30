@@ -76,7 +76,9 @@ export function getProgressGradient(percent: number): string {
   const state = getProgressState(percent);
   const mode = getAccentMode();
   const isAnimated = mode === 'animated-gradient' || mode === 'rainbow-wave';
-  const colorVar = state === 'critical' ? 'var(--danger)' : state === 'warning' ? 'var(--warning)' : 'var(--accent-primary)';
+  let colorVar = 'var(--accent-primary)';
+  if (state === 'critical') colorVar = 'var(--danger)';
+  else if (state === 'warning') colorVar = 'var(--warning)';
 
   if (isAnimated) {
     return `linear-gradient(90deg, ${colorVar}, color-mix(in srgb, ${colorVar} 70%, white))`;

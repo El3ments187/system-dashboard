@@ -293,13 +293,15 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     icon: React.ReactNode,
   ) => (
     <div key={key} className="settings-field">
-      <div className="settings-field-label">
+      <label htmlFor={key} className="settings-field-label">
         {icon}
         {label}
-      </div>
+      </label>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input
           type="url"
+          id={key}
+          name={key}
           className="settings-input"
           value={settings[key]}
           onChange={(e) =>
@@ -431,13 +433,15 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
             )}
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="llama-working-dir" className="settings-field-label">
               <Folder size={12} />
               Working Directory
-            </div>
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="text"
+                id="llama-working-dir"
+                name="llama-working-dir"
                 className="settings-input"
                 value={llamaDir}
                 readOnly
@@ -457,13 +461,15 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           </div>
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="launcher-scan-dir" className="settings-field-label">
               <Folder size={12} />
               Run Models Scan Directory
-            </div>
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="text"
+                id="launcher-scan-dir"
+                name="launcher-scan-dir"
                 className="settings-input"
                 value={scanDir}
                 readOnly
@@ -513,12 +519,14 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
 
         <div className="settings-card-body">
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="llama-cpp-version" className="settings-field-label">
               <Tag size={12} />
               llama.cpp Version
-            </div>
+            </label>
             <input
               type="text"
+              id="llama-cpp-version"
+              name="llama-cpp-version"
               className="settings-input"
               style={{ width: "100%" }}
               value={docSettings.llamaCppVersion}
@@ -599,12 +607,14 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           </div>
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="github-repo" className="settings-field-label">
               <GitBranch size={12} />
               GitHub Repository
-            </div>
+            </label>
             <input
               type="text"
+              id="github-repo"
+              name="github-repo"
               className="settings-input"
               style={{
                 width: "100%",
@@ -629,12 +639,14 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           </div>
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="tag-prefix" className="settings-field-label">
               <Tag size={12} />
               Build Tag Prefix
-            </div>
+            </label>
             <input
               type="text"
+              id="tag-prefix"
+              name="tag-prefix"
               className="settings-input"
               style={{
                 width: "100%",
@@ -659,13 +671,15 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           </div>
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="readme-url" className="settings-field-label">
               <BookOpen size={12} />
               README URL
-            </div>
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="url"
+                id="readme-url"
+                name="readme-url"
                 className="settings-input"
                 value={docSettings.readmeUrl}
                 onChange={(e) =>
@@ -701,13 +715,15 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           </div>
 
           <div className="settings-field">
-            <div className="settings-field-label">
+            <label htmlFor="build-notes-url" className="settings-field-label">
               <FileText size={12} />
               Build Notes URL
-            </div>
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="url"
+                id="build-notes-url"
+                name="build-notes-url"
                 className="settings-input"
                 value={docSettings.buildNotesUrl}
                 onChange={(e) =>

@@ -1,6 +1,6 @@
 import { useMultiMetrics } from '../hooks/useMultiMetrics';
 import { useStorageMetrics } from '../hooks/useStorageMetrics';
-import { useAiMetrics } from '../hooks/useAiMetrics';
+import { useLlamaCppMetrics } from '../hooks/useLlamaCppMetrics';
 import { useLiveDataControlsContext } from './LiveDataControlsContext';
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { StorageHistoryPoint, MetricHistoryPoint } from '../types/metrics';
@@ -102,9 +102,9 @@ interface MetricsContextValue {
   aiActiveRequestsHistory: MetricHistoryPoint[] | null;
   aiQueuedRequestsHistory: MetricHistoryPoint[] | null;
   aiContextTokensHistory: MetricHistoryPoint[] | null;
-  aiLoading: boolean;
+  llamaCppLoading: boolean;
   aiError: string | null;
-  retryAi: () => void;
+  retryLlamaCpp: () => void;
   retryCpu: () => void;
   retryMemory: () => void;
   retryGpu: () => void;
@@ -204,7 +204,7 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
 
  const storage = useStorageMetrics(isPaused);
 
-  const ai = useAiMetrics(isPaused);
+  const ai = useLlamaCppMetrics(isPaused);
 
   const value: MetricsContextValue = {
       cpuCurrentValues: cpu.currentValues,
@@ -240,9 +240,9 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
       aiActiveRequestsHistory: ai.activeRequestsHistory,
       aiQueuedRequestsHistory: ai.queuedRequestsHistory,
       aiContextTokensHistory: ai.contextTokensHistory,
-      aiLoading: ai.loading,
+      llamaCppLoading: ai.loading,
       aiError: ai.error,
-      retryAi: ai.retry,
+      retryLlamaCpp: ai.retry,
       retryCpu: cpu.retry,
      retryMemory: memory.retry,
      retryGpu: gpu.retry,

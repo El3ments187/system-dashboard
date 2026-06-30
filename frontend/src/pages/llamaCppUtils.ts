@@ -1,3 +1,21 @@
+/**
+ * Extract the most specific GGUF quant token from a model filename.
+ * Matches mid-string; requires a delimiter (hyphen, underscore, dot, or start)
+ * before the token so partial false positives like A3B or UD are rejected.
+ * Returns the longest match, or empty string if none found.
+ */
+export function extractQuant(fileName: string): string {
+  const re = /(?:^|[-_.])(B?F16|B?F32|I?Q\d(?:_[A-Z0-9]+)*)/gi;
+  let best = "";
+  let m;
+  while ((m = re.exec(fileName)) !== null) {
+    const tok = m[1];
+    if (tok.length > best.length) best = tok;
+  }
+  return best;
+}
+
+
 const SPEC_LABELS: Record<string, string> = {
   draft: "Draft",
   "draft-mtp": "MTP",

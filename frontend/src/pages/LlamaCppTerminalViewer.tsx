@@ -14,10 +14,10 @@ function getWsUrl(): string {
     window.location.href = "/llama-cpp?error=no_pts";
     return "";
   }
-  return `${WS_BASE}/api/ai/terminal/ws/${encodeURIComponent(ptsName)}`;
+  return `${WS_BASE}/api/llama/terminal/ws/${encodeURIComponent(ptsName)}`;
 }
 
-export default function AiTerminalViewer() {
+export default function LlamaCppTerminalViewer() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState<string | null>(null);

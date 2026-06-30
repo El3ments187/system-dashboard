@@ -178,7 +178,9 @@ function MetadataLine({
 
 export default function LlamaCppCard() {
   const { aiCurrentMetrics } = useMetricsContext();
-  const [dirPath, setDirPath] = useState("");
+  const [dirPath] = useState(
+    () => localStorage.getItem("llama_cpp_dir") ?? "",
+  );
   const [ptsName, setPtsName] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     msg: string;
@@ -186,7 +188,10 @@ export default function LlamaCppCard() {
   } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [outputOpen, setOutputOpen] = useState(false);
-  const [updateScript, setUpdateScript] = useState(DEFAULT_UPDATE_SCRIPT);
+  const [updateScript] = useState(
+    () =>
+      localStorage.getItem("llama_cpp_update_script") ?? DEFAULT_UPDATE_SCRIPT,
+  );
   const [updateState, setUpdateState] = useState<
     "idle" | "running" | "done" | "error"
   >("idle");
@@ -194,10 +199,17 @@ export default function LlamaCppCard() {
   const [updateOutput, setUpdateOutput] = useState("");
   const updatePtsRef = useRef<string | null>(null);
   const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const largestContextRef = useRef<number>(0);
-  const [llamaVersion, setLlamaVersion] = useState("");
-  const [readmeUrl, setReadmeUrl] = useState("");
-  const [buildNotesUrl, setBuildNotesUrl] = useState(DEFAULT_BUILD_NOTES_URL);
+  const [largestContextPeak, setLargestContextPeak] = useState<number>(0);
+  const [llamaVersion] = useState(
+    () => localStorage.getItem("llama_cpp_version") ?? "",
+  );
+  const [readmeUrl] = useState(
+    () => localStorage.getItem("llama_cpp_readme_url") ?? "",
+  );
+  const [buildNotesUrl] = useState(
+    () =>
+      localStorage.getItem("llama_cpp_build_notes_url") ?? DEFAULT_BUILD_NOTES_URL,
+  );
 
   const showToast = useCallback((msg: string, type: "error" | "info") => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -209,19 +221,6 @@ export default function LlamaCppCard() {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
-  }, []);
-
-  useEffect(() => {
-    const s = localStorage.getItem("llama_cpp_dir");
-    if (s) setDirPath(s);
-    const script = localStorage.getItem("llama_cpp_update_script");
-    if (script) setUpdateScript(script);
-    const v = localStorage.getItem("llama_cpp_version");
-    if (v) setLlamaVersion(v);
-    const r = localStorage.getItem("llama_cpp_readme_url");
-    if (r) setReadmeUrl(r);
-    const b = localStorage.getItem("llama_cpp_build_notes_url");
-    if (b) setBuildNotesUrl(b);
   }, []);
 
   useEffect(() => {
@@ -249,11 +248,10 @@ export default function LlamaCppCard() {
       ? Math.round((contextTokens / maxContext) * 1000) / 10
       : null;
 
-  if (contextTokens != null && contextTokens > largestContextRef.current) {
-    largestContextRef.current = contextTokens;
+  if (contextTokens != null && contextTokens > largestContextPeak) {
+    setLargestContextPeak(contextTokens);
   }
-  const largestContext =
-    largestContextRef.current > 0 ? largestContextRef.current : null;
+  const largestContext = largestContextPeak > 0 ? largestContextPeak : null;
 
   const fmtNum = (v: unknown): string => {
     if (v == null || v === "") return "";
@@ -273,20 +271,20 @@ export default function LlamaCppCard() {
     if (updatePtsRef.current) {
       setPtsName(updatePtsRef.current);
       window.open(
-        `/ai/terminal?pts=${encodeURIComponent(updatePtsRef.current)}`,
+        `/llama-cpp/terminal?pts=${encodeURIComponent(updatePtsRef.current)}`,
         "_blank",
       );
       return;
     }
     if (ptsName) {
-      window.open(`/ai/terminal?pts=${encodeURIComponent(ptsName)}`, "_blank");
+      window.open(`/llama-cpp/terminal?pts=${encodeURIComponent(ptsName)}`, "_blank");
       return;
     }
     try {
       const resp = await ptySpawnTerminal(dirPath);
       setPtsName(resp.pts_name);
       window.open(
-        `/ai/terminal?pts=${encodeURIComponent(resp.pts_name)}`,
+        `/llama-cpp/terminal?pts=${encodeURIComponent(resp.pts_name)}`,
         "_blank",
       );
     } catch (e: any) {
@@ -643,7 +641,7 @@ export default function LlamaCppCard() {
               </button>
               {ptsName && (
                 <a
-                  href={`/ai/terminal?pts=${encodeURIComponent(ptsName)}`}
+                  href={`/llama-cpp/terminal?pts=${encodeURIComponent(ptsName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ ...mgmtBtnStyle, textDecoration: "none" }}

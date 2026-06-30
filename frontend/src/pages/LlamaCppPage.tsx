@@ -72,6 +72,7 @@ import {
   fmtUptime,
   fmtKb,
   calcBuildsBehind,
+  extractQuant,
 } from "./llamaCppUtils";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -446,8 +447,6 @@ function CapPill({
   );
 }
 
-
-
 // ─── InfoCell ─────────────────────────────────────────────────────────────────
 
 function InfoCell({
@@ -458,7 +457,6 @@ function InfoCell({
 }: {
   label: string;
   value: string;
-  important?: boolean;
   accent?: boolean;
   success?: boolean;
 }) {
@@ -529,9 +527,10 @@ function RadialGauge({
   const pctClamped = Math.min(100, Math.max(0, pct ?? 0));
   const progressDeg = (pctClamped / 100) * totalDeg;
   const trackPath = `M ${pt(0)} A ${r} ${r} 0 1 1 ${pt(totalDeg)}`;
+  const largeArcFlag = progressDeg > 180 ? 1 : 0;
   const progPath =
     progressDeg > 0
-      ? `M ${pt(0)} A ${r} ${r} 0 ${progressDeg > 180 ? 1 : 0} 1 ${pt(progressDeg)}`
+      ? `M ${pt(0)} A ${r} ${r} 0 ${largeArcFlag} 1 ${pt(progressDeg)}`
       : "";
   const gaugeColor = color ?? "var(--accent-primary)";
   return (
@@ -678,6 +677,13 @@ function MiniRing({
   );
 }
 
+function rowBackground(running: boolean, idx: number): string | undefined {
+  if (running)
+    return "color-mix(in srgb, var(--accent-primary) 9%, var(--bg-card))";
+  if (idx % 2 === 1) return "rgba(255,255,255,0.015)";
+  return undefined;
+}
+
 // ─── RunModelsSection (export, preserved) ─────────────────────────────────────
 
 const SORTABLE_COLUMNS: SortColumn[] = [
@@ -711,11 +717,11 @@ export function RunModelsSection() {
     column: null,
     direction: "none",
   });
-  const originalOrderRef = useRef<string[]>([]);
+
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadProfiles = useCallback(async () => {
-    setLoading(true);
+  const loadProfiles = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/launch/profiles");
@@ -730,7 +736,7 @@ export function RunModelsSection() {
       console.error("[RunModels] Failed to load profiles:", e);
       setError("Failed to load profiles");
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, []);
 
@@ -738,12 +744,6 @@ export function RunModelsSection() {
     const t = setTimeout(loadProfiles, 0);
     return () => clearTimeout(t);
   }, [loadProfiles]);
-
-  useEffect(() => {
-    if (profiles.length > 0 && originalOrderRef.current.length === 0) {
-      originalOrderRef.current = profiles.map((p) => p.id);
-    }
-  }, [profiles]);
 
   const handleSort = useCallback((column: SortColumn) => {
     setSortConfig((prev) => {
@@ -766,16 +766,9 @@ export function RunModelsSection() {
   }, [profiles, states, metadata, sortConfig]);
 
   useEffect(() => {
-    const hasActive = Object.values(states).some(
-      (s) =>
-        s.status === "running" ||
-        s.status === "starting" ||
-        s.status === "loading",
-    );
-    const ms = hasActive ? 1000 : 15000;
-    const timer = setInterval(loadProfiles, ms);
+    const timer = setInterval(() => loadProfiles(false), 30000);
     return () => clearInterval(timer);
-  }, [loadProfiles, states]);
+  }, [loadProfiles]);
 
   const handleLaunchWithRetry = useCallback(
     async (profileId: string, retries = 3) => {
@@ -832,6 +825,12 @@ export function RunModelsSection() {
     },
     [loadProfiles],
   );
+
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    };
+  }, []);
 
   const getProfileStatus = (profile: LaunchProfile): string =>
     states[profile.script_path]?.status || "stopped";
@@ -930,7 +929,7 @@ export function RunModelsSection() {
           )}
         </div>
         <button
-          onClick={loadProfiles}
+          onClick={() => loadProfiles()}
           disabled={loading}
           style={{
             display: "flex",
@@ -1101,6 +1100,12 @@ export function RunModelsSection() {
             const active = isActive(profile);
             const state = states[profile.script_path];
             const meta = profile.filename_meta;
+            const modelFile =
+              (profile.parsed_args?.model_path ?? "")
+                .split("/")
+                .pop()
+                ?.replace(/\.gguf$/i, "") ?? "";
+            const derivedQuant = extractQuant(modelFile) || meta?.quant || "";
             const profileMeta = metadata[profile.script_path];
             const specType = profile.parsed_args?.spec_type;
             const vram = running
@@ -1112,12 +1117,7 @@ export function RunModelsSection() {
             const tps = running
               ? (state?.current_tps ?? profileMeta?.avg_gen_tps)
               : profileMeta?.avg_gen_tps;
-            let rowBg: string | undefined;
-            if (running) {
-              rowBg = "color-mix(in srgb, var(--accent-primary) 9%, var(--bg-card))";
-            } else if (idx % 2 === 1) {
-              rowBg = "rgba(255,255,255,0.015)";
-            }
+            const rowBg = rowBackground(running, idx);
             const modelNameStyle: React.CSSProperties = running
               ? { fontWeight: 700, color: "var(--accent-primary)" }
               : { fontWeight: 600, color: "var(--text-primary)" };
@@ -1197,9 +1197,9 @@ export function RunModelsSection() {
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
-                  title={meta?.quant || ""}
+                  title={derivedQuant}
                 >
-                  {meta?.quant || "\u2014"}
+                  {derivedQuant || "\u2014"}
                 </span>
                 <span
                   style={{
@@ -1217,9 +1217,7 @@ export function RunModelsSection() {
                     fontSize: 10,
                     fontWeight: 700,
                     color:
-                      vram != null
-                        ? "var(--metric-vram)"
-                        : "var(--text-muted)",
+                      vram != null ? "var(--metric-vram)" : "var(--text-muted)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
@@ -1231,9 +1229,7 @@ export function RunModelsSection() {
                     fontSize: 10,
                     fontWeight: 700,
                     color:
-                      ram != null
-                        ? "var(--metric-ram)"
-                        : "var(--text-muted)",
+                      ram != null ? "var(--metric-ram)" : "var(--text-muted)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
@@ -1334,8 +1330,6 @@ export function RunModelsSection() {
           })}
         </div>
       )}
-
-
     </div>
   );
 }
@@ -1432,13 +1426,25 @@ function LlamaCppHardwareFooter({
   );
 }
 
+function contextGaugeLabel(
+  contextPct: number | null | undefined,
+  llamaOnline: boolean,
+): string {
+  if (contextPct != null) {
+    if (contextPct > 0 && contextPct < 1) return "<1";
+    return contextPct.toFixed(0);
+  }
+  if (llamaOnline) return "—";
+  return "0";
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export default function LlamaCppPage() {
   const {
     aiCurrentMetrics,
-    aiLoading,
+    llamaCppLoading,
     cpuCurrentValues,
     memoryCurrentValues,
     gpuCurrentValues,
@@ -1447,8 +1453,6 @@ export default function LlamaCppPage() {
     gpuHistory,
     gpuVramUtilHistory,
     gpuTemperatureHistory,
-    aiGenTpsHistory,
-    aiPromptTpsHistory,
   } = useMetricsContext();
 
   const mgmt = useLlamaCppManagement();
@@ -1505,12 +1509,53 @@ export default function LlamaCppPage() {
 
   const pageModelAlias: string = m?.model_alias || "";
   const tokenUsage = m?.token_usage;
-  const contextTokens: number | null = m?.context_tokens ?? null;
-  const maxContext: number | null = m?.max_context ?? null;
+
+  // Slot-based context data from /slots[0]
+  const slot0 = m?.slots && m.slots.length > 0 ? m.slots[0] : null;
+  const slotCtx: number | null = slot0?.n_ctx ?? null;
+  const slotCurrentTokens: number | null = slot0?.n_prompt_tokens ?? null;
   const contextPct =
-    contextTokens != null && maxContext != null && maxContext > 0
-      ? Math.round((contextTokens / maxContext) * 1000) / 10
+    slotCurrentTokens != null && slotCtx != null && slotCtx > 0
+      ? Math.round((slotCurrentTokens / slotCtx) * 1000) / 10
       : null;
+
+  // During active processing, n_prompt_tokens_cache is the prefix-cache reuse count (tokens
+  // loaded from KV cache instead of recomputed). When idle, that field resets to 0 even though
+  // all n_prompt_tokens remain buffered in the KV prefix cache. Fall back to contextPct so the
+  // ring always reflects the actual cached-token fraction.
+  const promptBufPct: number | null =
+    slotCtx != null &&
+    slot0 != null &&
+    slot0.n_prompt_tokens_cache != null &&
+    slot0.n_prompt_tokens_cache > 0
+      ? Math.round((slot0.n_prompt_tokens_cache / slotCtx) * 1000) / 10
+      : null;
+
+  const tokCached: number | null =
+    slot0?.n_prompt_tokens_cache != null
+      ? slot0.n_prompt_tokens_cache
+      : (m?.tokens_cached ?? null);
+
+  const tokCachedModelRef = useRef<string>("");
+  const [tokCachedHistory, setTokCachedHistory] = useState<
+    MetricHistoryPoint[]
+  >([]);
+
+  useEffect(() => {
+    if (fullModelPath !== tokCachedModelRef.current) {
+      tokCachedModelRef.current = fullModelPath;
+      setTokCachedHistory([]);
+      return;
+    }
+    if (tokCached == null) return;
+    setTokCachedHistory((prev) => {
+      const trimmed = prev.length >= 120 ? prev.slice(1) : prev;
+      return [
+        ...trimmed,
+        { slot: trimmed.length, timestamp: new Date(), value: tokCached },
+      ];
+    });
+  }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctxColor = getCtxColor(contextPct);
   const hasDir = !!mgmt.dirPath;
@@ -1525,8 +1570,6 @@ export default function LlamaCppPage() {
   const gpuTemp = gpuCurrentValues[1];
   const vramUsed = gpuCurrentValues[2];
   const vramTotal = gpuCurrentValues[3];
-
-  const kvStats = m?.kv_cache_stats?.[0] ?? null;
 
   const gpuOffload: GpuOffloadInfo | null = m?.gpu_offload ?? null;
   const gpuTotalLoaded =
@@ -1550,8 +1593,6 @@ export default function LlamaCppPage() {
     mgmt.repoInfo?.local_build_tag,
     mgmt.repoInfo?.latest_build_tag,
   );
-  const buildInfo: string = m?.build_info || "";
-
   const modelNameRef = useFitText(cleanModelName);
 
   // ── Shared button style for action rail
@@ -1560,8 +1601,7 @@ export default function LlamaCppPage() {
     alignItems: "center",
     gap: 8,
     padding: "0 14px",
-    flex: 1,
-    minHeight: 38,
+    height: 38,
     width: "100%",
     fontSize: 12.5,
     fontWeight: 500,
@@ -1589,14 +1629,14 @@ export default function LlamaCppPage() {
   ) => (
     <div
       style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "4px 0",
-      borderBottom: "1px dashed var(--border-light, var(--border-color))",
-      fontSize: 12,
-      gap: 8,
-      minWidth: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "4px 0",
+        borderBottom: "1px dashed var(--border-light, var(--border-color))",
+        fontSize: 12,
+        gap: 8,
+        minWidth: 0,
       }}
     >
       <span
@@ -1887,7 +1927,7 @@ export default function LlamaCppPage() {
                     params
                   </span>
                 )}
-                {maxContext != null && (
+                {slotCtx != null && (
                   <span
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
@@ -1906,7 +1946,7 @@ export default function LlamaCppPage() {
                         fontWeight: 600,
                       }}
                     >
-                      {formatCtx(maxContext)}
+                      {formatCtx(slotCtx)}
                     </b>{" "}
                     ctx
                   </span>
@@ -1967,8 +2007,7 @@ export default function LlamaCppPage() {
                   {
                     icon: <SlidersHorizontal size={10} />,
                     label: "Top-P",
-                    value:
-                      m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
+                    value: m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
                   },
                   {
                     icon: <RotateCcw size={10} />,
@@ -2065,7 +2104,7 @@ export default function LlamaCppPage() {
                   overflow: "hidden",
                 }}
               >
-                {!llamaOnline && !aiLoading && (
+                {!llamaOnline && !llamaCppLoading && (
                   <div
                     className="error-banner"
                     style={{
@@ -2091,11 +2130,7 @@ export default function LlamaCppPage() {
                       lineHeight: 1,
                     }}
                   >
-                    {contextPct != null
-                      ? contextPct.toFixed(0)
-                      : llamaOnline
-                        ? "—"
-                        : "0"}
+                    {contextGaugeLabel(contextPct, llamaOnline)}
                   </span>
                   {contextPct != null && (
                     <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
@@ -2115,13 +2150,12 @@ export default function LlamaCppPage() {
                   }}
                 >
                   <span style={{ color: ctxColor, fontWeight: 600 }}>
-                    {contextTokens != null
-                      ? contextTokens.toLocaleString()
+                    {slotCurrentTokens != null
+                      ? slotCurrentTokens.toLocaleString()
                       : "—"}
                   </span>
                   <span>
-                    /{" "}
-                    {maxContext != null ? maxContext.toLocaleString() : "—"} tok
+                    / {slotCtx != null ? slotCtx.toLocaleString() : "—"} tok
                   </span>
                 </div>
                 {/* Usage bar */}
@@ -2144,36 +2178,117 @@ export default function LlamaCppPage() {
                   }}
                 >
                   <MiniRing
-                    pct={m?.kv_cache_usage_percent ?? null}
-                    color={thresholdColor(m?.kv_cache_usage_percent)}
-                    label="KV Cache"
-                    value={
-                      m?.kv_cache_usage_percent != null
-                        ? `${m.kv_cache_usage_percent.toFixed(0)}%`
-                        : "—"
-                    }
-                  />
-                  <MiniRing
-                    pct={m?.prompt_buffer_usage_percent ?? null}
-                    color={thresholdColor(m?.prompt_buffer_usage_percent)}
+                    pct={promptBufPct}
+                    color={thresholdColor(promptBufPct)}
                     label="Prompt Buf"
                     value={
-                      m?.prompt_buffer_usage_percent != null
-                        ? `${m.prompt_buffer_usage_percent.toFixed(0)}%`
-                        : "—"
-                    }
-                  />
-                  <MiniRing
-                    pct={kvStats?.gpu_cache_usage_pct ?? null}
-                    color={thresholdColor(kvStats?.gpu_cache_usage_pct)}
-                    label="GPU Cache"
-                    value={
-                      kvStats?.gpu_cache_usage_pct != null
-                        ? `${kvStats.gpu_cache_usage_pct.toFixed(0)}%`
+                      promptBufPct != null
+                        ? `${Math.round(promptBufPct * 10) / 10}%`
                         : "—"
                     }
                   />
                 </div>
+
+                {/* Live generation progress */}
+                {slot0 && slotCtx != null && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: "6px 10px",
+                      background:
+                        "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+                      borderRadius: 6,
+                      border:
+                        "1px solid var(--border-light, var(--border-color))",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 9.5,
+                          fontWeight: 600,
+                          color: "var(--text-muted)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Generation Progress
+                      </span>
+                      <span
+                        style={{ color: "var(--text-muted)", fontSize: 9.5 }}
+                      >
+                        ·
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontFamily:
+                            '"JetBrains Mono", "Fira Code", monospace',
+                          fontWeight: 600,
+                          color: slot0.is_processing
+                            ? "var(--accent-primary)"
+                            : "var(--text-muted)",
+                        }}
+                      >
+                        {slot0.is_processing ? "Generating…" : "Idle"}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        color: "var(--text-secondary)",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {(() => {
+                        const nd = slot0.n_decoded;
+                        const np = slot0.n_predict;
+                        const nr = slot0.n_remain;
+                        const unbounded = np == null || np <= 0;
+                        return unbounded ? (
+                          <>{nd != null ? nd.toLocaleString() : "—"} tok</>
+                        ) : (
+                          <>
+                            {nd != null ? nd.toLocaleString() : "—"} /{" "}
+                            {np.toLocaleString()} tok
+                            {" · "}
+                            Remaining: {nr != null ? nr.toLocaleString() : "—"}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className="card-progress" style={{ height: 3 }}>
+                      <div
+                        className={`card-progress-bar ${thresholdClass(
+                          (() => {
+                            const nd = slot0.n_decoded;
+                            const np = slot0.n_predict;
+                            return nd != null && np != null && np > 0
+                              ? (nd / np) * 100
+                              : undefined;
+                          })(),
+                        )}`}
+                        style={{
+                          width: `${(() => {
+                            const nd = slot0.n_decoded;
+                            const np = slot0.n_predict;
+                            return nd != null && np != null && np > 0
+                              ? Math.round((nd / np) * 100)
+                              : 0;
+                          })()}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </PanelCard>
 
@@ -2189,32 +2304,15 @@ export default function LlamaCppPage() {
                   gridTemplateColumns: "1fr 1fr",
                   gap: "11px 14px",
                   padding: "13px 15px 11px",
-                  flex: 1,
                 }}
               >
                 <InfoCell
-                  label="Version"
-                  value={mgmt.llamaVersion || "\u2014"}
-                  accent
-                />
-                <InfoCell label="Build" value={buildInfo || "\u2014"} />
-                <InfoCell
-                  label="Branch"
-                  value={mgmt.gitInfo?.branch || "\u2014"}
-                  accent
-                />
-                <InfoCell
-                  label="Commit"
-                  value={mgmt.gitInfo?.commit_hash || "\u2014"}
-                  accent
-                />
-                <InfoCell
-                  label="Local Tag"
+                  label="Current build"
                   value={mgmt.repoInfo?.local_build_tag || "\u2014"}
                   accent
                 />
                 <InfoCell
-                  label="Latest Release"
+                  label="Latest build"
                   value={mgmt.repoInfo?.latest_build_tag || "\u2014"}
                   success
                 />
@@ -2381,7 +2479,7 @@ export default function LlamaCppPage() {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 8,
+                justifyContent: "space-evenly",
                 height: "100%",
               }}
             >
@@ -2437,7 +2535,7 @@ export default function LlamaCppPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "660px 1fr",
+            gridTemplateColumns: "660px minmax(0, 1fr)",
             gap: 14,
             flex: 1,
             minHeight: 0,
@@ -2460,8 +2558,6 @@ export default function LlamaCppPage() {
                 style={{
                   display: "flex",
                   alignItems: "stretch",
-                  borderBottom:
-                    "1px solid var(--border-light, var(--border-color))",
                 }}
               >
                 {/* Gen TPS — hero */}
@@ -2487,7 +2583,10 @@ export default function LlamaCppPage() {
                     }}
                   >
                     <span
-                      style={{ color: "var(--accent-primary)", display: "flex" }}
+                      style={{
+                        color: "var(--accent-primary)",
+                        display: "flex",
+                      }}
                     >
                       <Zap size={12} />
                     </span>
@@ -2545,7 +2644,10 @@ export default function LlamaCppPage() {
                     }}
                   >
                     <span
-                      style={{ color: "var(--accent-primary)", display: "flex" }}
+                      style={{
+                        color: "var(--accent-primary)",
+                        display: "flex",
+                      }}
                     >
                       <Activity size={12} />
                     </span>
@@ -2603,7 +2705,10 @@ export default function LlamaCppPage() {
                     }}
                   >
                     <span
-                      style={{ color: "var(--text-secondary)", display: "flex" }}
+                      style={{
+                        color: "var(--text-secondary)",
+                        display: "flex",
+                      }}
                     >
                       <Send size={12} />
                     </span>
@@ -2637,9 +2742,7 @@ export default function LlamaCppPage() {
                 </div>
 
                 {/* Generated tokens */}
-                <div
-                  style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}
-                >
+                <div style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}>
                   <div
                     style={{
                       display: "flex",
@@ -2653,7 +2756,10 @@ export default function LlamaCppPage() {
                     }}
                   >
                     <span
-                      style={{ color: "var(--text-secondary)", display: "flex" }}
+                      style={{
+                        color: "var(--text-secondary)",
+                        display: "flex",
+                      }}
                     >
                       <Cpu size={12} />
                     </span>
@@ -2686,67 +2792,6 @@ export default function LlamaCppPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Row 2: aligned sparkline graphs on recessed background */}
-              <div
-                style={{
-                  display: "flex",
-                  background:
-                    "color-mix(in srgb, var(--bg-secondary) 55%, transparent)",
-                  borderRadius:
-                    "0 0 var(--radius-md) var(--radius-md)",
-                }}
-              >
-                {/* Gen TPS graph — flex:2 matches number column above */}
-                <div
-                  style={{
-                    flex: 2,
-                    height: 44,
-                    overflow: "hidden",
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                    padding: "3px 0",
-                  }}
-                >
-                  {aiGenTpsHistory && aiGenTpsHistory.length > 0 && (
-                    <Sparkline
-                      data={aiGenTpsHistory}
-                      color="var(--accent-primary)"
-                      height={38}
-                    />
-                  )}
-                </div>
-                {/* Prompt TPS graph — flex:1.5 matches column above */}
-                <div
-                  style={{
-                    flex: 1.5,
-                    height: 44,
-                    overflow: "hidden",
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                    padding: "3px 0",
-                  }}
-                >
-                  {aiPromptTpsHistory && aiPromptTpsHistory.length > 0 && (
-                    <Sparkline
-                      data={aiPromptTpsHistory}
-                      color="var(--accent-primary)"
-                      height={38}
-                    />
-                  )}
-                </div>
-                {/* Prompt — cumulative counter, no graph */}
-                <div
-                  style={{
-                    flex: 1,
-                    height: 44,
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                  }}
-                />
-                {/* Generated — cumulative counter, no graph */}
-                <div style={{ flex: 1, height: 44 }} />
-              </div>
             </PanelCard>
 
             {/* Runtime Information card */}
@@ -2755,169 +2800,168 @@ export default function LlamaCppPage() {
                 icon={<Activity size={13} />}
                 title="Runtime Information"
               />
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0 22px",
-                padding: "8px 15px",
-                overflow: "auto",
-                flex: 1,
-              }}
-            >
-              {/* Left column */}
-              <div>
-                {kvRow(
-                  <Server size={12} />,
-                  "Server",
-                  llamaOnline ? "Online" : "Offline",
-                  llamaOnline ? "var(--success)" : "var(--text-muted)",
-                )}
-                {kvRow(
-                  <Fingerprint size={12} />,
-                  "PID",
-                  proc?.pid != null ? String(proc.pid) : "\u2014",
-                )}
-                {kvRow(
-                  <Globe size={12} />,
-                  "Port",
-                  runningArgs?.port != null
-                    ? String(runningArgs.port)
-                    : "\u2014",
-                )}
-                {kvRow(
-                  <Brain size={12} />,
-                  "Context",
-                  maxContext != null ? formatCtx(maxContext) : "\u2014",
-                )}
-                {kvRow(
-                  <Zap size={12} />,
-                  "Speculative",
-                  boolLabel(m?.speculative),
-                  m?.speculative ? "var(--success)" : undefined,
-                )}
-                {kvRow(
-                  <Tag size={12} />,
-                  "Alias",
-                  pageModelAlias || "\u2014",
-                  pageModelAlias ? "var(--accent-primary)" : undefined,
-                )}
-                {kvRow(
-                  <Send size={12} />,
-                  "Total Sent",
-                  fmtNum(m?.total_tokens_sent) || "0",
-                )}
-              </div>
-
-              {/* Right column */}
-              <div>
-                {kvRow(
-                  <Clock3 size={12} />,
-                  "Uptime",
-                  fmtUptime(proc?.uptime_seconds),
-                )}
-                {kvRow(
-                  <Cpu size={12} />,
-                  "CPU",
-                  proc?.cpu_percent != null
-                    ? `${proc.cpu_percent.toFixed(1)}%`
-                    : "\u2014",
-                )}
-                {kvRow(
-                  <MemoryStick size={12} />,
-                  "Memory",
-                  fmtKb(proc?.memory_kb),
-                )}
-                {kvRow(
-                  <Layers size={12} />,
-                  "CPU Layers",
-                  gpuOffload != null
-                    ? `${gpuOffload.main_loaded} / ${gpuOffload.main_total}`
-                    : "\u2014",
-                  gpuOffload != null ? "var(--success)" : undefined,
-                )}
-                {kvRow(
-                  <Layers size={12} />,
-                  "Draft Layers",
-                  hasDraft && gpuOffload != null
-                    ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
-                    : "\u2014",
-                  hasDraft ? "var(--success)" : undefined,
-                )}
-                {kvRow(
-                  <MonitorCog size={12} />,
-                  "GPU Layers",
-                  gpuTotalLoaded != null && gpuTotalLayers != null
-                    ? `${gpuTotalLoaded}/${gpuTotalLayers} (${gpuOffloadPct}%)`
-                    : "\u2014",
-                  gpuOffloadPct === 100 ? "var(--success)" : undefined,
-                )}
-                {kvRow(
-                  <Zap size={12} />,
-                  "Load Time",
-                  m?.model_load_time_ms != null
-                    ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
-                    : "\u2014",
-                )}
-                {kvRow(
-                  <Database size={12} />,
-                  "Tokens Cached",
-                  m?.tokens_cached != null ? fmtNum(m.tokens_cached) : "—",
-                  m?.tokens_cached == null ? "var(--text-muted)" : undefined,
-                )}
-              </div>
-            </div>
-
-            {/* Live Activity */}
-            <div
-              style={{
-                padding: "7px 15px 9px",
-                borderTop:
-                  "1px dashed var(--border-light, var(--border-color))",
-                flexShrink: 0,
-              }}
-            >
               <div
                 style={{
-                  fontSize: 9.5,
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  marginBottom: 6,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0 22px",
+                  padding: "8px 15px",
+                  overflow: "auto",
+                  flex: 1,
                 }}
               >
-                Live Activity
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <FooterStat
-                  icon={<Send size={13} />}
-                  label="Total Sent"
-                  value={fmtNum(m?.total_tokens_sent) || "0"}
-                  color="var(--accent-primary)"
-                />
-                <FooterStat
-                  icon={<Zap size={13} />}
-                  label="Load Time"
-                  value={
+                {/* Left column */}
+                <div>
+                  {kvRow(
+                    <Server size={12} />,
+                    "Server",
+                    llamaOnline ? "Online" : "Offline",
+                    llamaOnline ? "var(--success)" : "var(--text-muted)",
+                  )}
+                  {kvRow(
+                    <Fingerprint size={12} />,
+                    "PID",
+                    proc?.pid != null ? String(proc.pid) : "\u2014",
+                  )}
+                  {kvRow(
+                    <Globe size={12} />,
+                    "Port",
+                    runningArgs?.port != null
+                      ? String(runningArgs.port)
+                      : "\u2014",
+                  )}
+                  {kvRow(
+                    <Brain size={12} />,
+                    "Context",
+                    slotCtx != null ? formatCtx(slotCtx) : "\u2014",
+                  )}
+                  {kvRow(
+                    <Zap size={12} />,
+                    "Speculative",
+                    boolLabel(m?.speculative),
+                    m?.speculative ? "var(--success)" : undefined,
+                  )}
+                  {kvRow(
+                    <Tag size={12} />,
+                    "Alias",
+                    pageModelAlias || "\u2014",
+                    pageModelAlias ? "var(--accent-primary)" : undefined,
+                  )}
+                  {kvRow(
+                    <Zap size={12} />,
+                    "Load Time",
                     m?.model_load_time_ms != null
                       ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
-                      : "—"
-                  }
-                  color="var(--text-secondary)"
-                />
-                <FooterStat
-                  icon={<Database size={13} />}
-                  label="Tok Cached"
-                  value={
-                    m?.tokens_cached != null ? fmtNum(m.tokens_cached) : "—"
-                  }
-                  color="var(--success)"
-                  history={gpuVramUtilHistory}
-                />
+                      : "\u2014",
+                  )}
+                </div>
+
+                {/* Right column */}
+                <div>
+                  {kvRow(
+                    <Clock3 size={12} />,
+                    "Uptime",
+                    fmtUptime(proc?.uptime_seconds),
+                  )}
+                  {kvRow(
+                    <Cpu size={12} />,
+                    "CPU",
+                    proc?.cpu_percent != null
+                      ? `${proc.cpu_percent.toFixed(1)}%`
+                      : "\u2014",
+                  )}
+                  {kvRow(
+                    <MemoryStick size={12} />,
+                    "Memory",
+                    fmtKb(proc?.memory_kb),
+                  )}
+                  {kvRow(
+                    <Layers size={12} />,
+                    "CPU Layers",
+                    gpuOffload != null
+                      ? `${gpuOffload.main_total - gpuOffload.main_loaded} / ${gpuOffload.main_total}`
+                      : "\u2014",
+                    gpuOffload != null &&
+                      gpuOffload.main_loaded === gpuOffload.main_total
+                      ? "var(--success)"
+                      : undefined,
+                  )}
+                  {kvRow(
+                    <Layers size={12} />,
+                    "Draft Layers",
+                    hasDraft && gpuOffload != null
+                      ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
+                      : "\u2014",
+                    hasDraft ? "var(--success)" : undefined,
+                  )}
+                  {kvRow(
+                    <MonitorCog size={12} />,
+                    "GPU Layers",
+                    gpuTotalLoaded != null && gpuTotalLayers != null
+                      ? `${gpuTotalLoaded}/${gpuTotalLayers} (${gpuOffloadPct}%)`
+                      : "\u2014",
+                    gpuOffloadPct === 100 ? "var(--success)" : undefined,
+                  )}
+                  {kvRow(
+                    <Database size={12} />,
+                    "Tokens Cached",
+                    fmtNum(slot0?.n_prompt_tokens_cache ?? m?.tokens_cached),
+                    slot0?.n_prompt_tokens_cache == null &&
+                      m?.tokens_cached == null
+                      ? "var(--text-muted)"
+                      : undefined,
+                  )}
+                </div>
               </div>
-            </div>
-          </PanelCard>
+
+              {/* Live Activity */}
+              <div
+                style={{
+                  padding: "7px 15px 9px",
+                  borderTop:
+                    "1px dashed var(--border-light, var(--border-color))",
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: 6,
+                  }}
+                >
+                  Live Activity
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <FooterStat
+                    icon={<Send size={13} />}
+                    label="Total Sent"
+                    value={fmtNum(m?.total_tokens_sent) || "0"}
+                    color="var(--accent-primary)"
+                  />
+                  <FooterStat
+                    icon={<Zap size={13} />}
+                    label="Load Time"
+                    value={
+                      m?.model_load_time_ms != null
+                        ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
+                        : "—"
+                    }
+                    color="var(--text-secondary)"
+                  />
+                  <FooterStat
+                    icon={<Database size={13} />}
+                    label="Tok Cached"
+                    value={tokCached != null ? fmtNum(tokCached) : "—"}
+                    color="var(--success)"
+                    history={tokCachedHistory}
+                  />
+                </div>
+              </div>
+            </PanelCard>
           </div>
 
           {/* ── Right lower column: Run Models + Console ── */}

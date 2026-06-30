@@ -274,6 +274,26 @@ pub struct LlamaProps {
     pub context_tokens: Option<u32>,
 }
 
+/// Per-slot state from /slots endpoint
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct LlamaSlot {
+    pub id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_ctx: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_prompt_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_processing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_decoded: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_remain: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_prompt_tokens_cache: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_predict: Option<u32>,
+}
+
 /// GPU layer offload information parsed from llama.cpp startup logs
 #[derive(Debug, Clone, Serialize)]
 pub struct GpuOffloadInfo {
@@ -364,6 +384,10 @@ pub struct AiMetrics {
     pub context_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context: Option<u32>,
+
+    /// Per-slot state parsed from /slots endpoint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slots: Option<Vec<LlamaSlot>>,
 
     /// Props from /props endpoint
     #[serde(skip_serializing_if = "Option::is_none")]

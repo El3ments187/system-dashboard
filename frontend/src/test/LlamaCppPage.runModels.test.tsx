@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { RunModelsSection } from "../pages/LlamaCppPage";
 import {
-  RunModelsSection,
   formatCtx,
   formatGB,
   formatTps,
   specLabel,
-} from "../pages/LlamaCppPage";
+} from "../pages/llamaCppUtils";
 import type { ProfileResponse } from "../types/metrics";
 
 function profilesResponse(overrides: Partial<ProfileResponse> = {}): {

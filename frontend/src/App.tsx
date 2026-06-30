@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "./components/Header";
 import ThemePanel from "./components/ThemePanel";
@@ -22,7 +22,7 @@ import GpuPage from "./pages/GpuPage";
 import CpuPage from "./pages/CpuPage";
 import LlamaCppPage from "./pages/LlamaCppPage";
 import AiPage from "./pages/AiPage";
-import AiTerminalViewer from "./pages/AiTerminalViewer";
+import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
@@ -40,13 +40,14 @@ export default function App() {
   } = useTheme();
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const isInitialMount = useRef(true);
   const [activePage, setActivePage] = useState<
     "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings"
   >(() => {
     if (window.location.pathname === "/gpu") return "gpu";
     if (window.location.pathname === "/cpu") return "cpu";
     if (window.location.pathname === "/llama-cpp") return "llama-cpp";
-    if (window.location.pathname === "/ai/terminal") return "terminal";
+    if (window.location.pathname === "/llama-cpp/terminal") return "terminal";
     if (window.location.pathname === "/ai") return "ai";
     if (window.location.pathname === "/settings") return "settings";
     return "overview";
@@ -71,12 +72,17 @@ export default function App() {
       activePage === "overview"
         ? "/"
         : activePage === "terminal"
-          ? "/ai/terminal"
+          ? "/llama-cpp/terminal"
           : activePage === "llama-cpp"
             ? "/llama-cpp"
             : `/${activePage}`;
     const search = activePage === "terminal" ? window.location.search : "";
-    window.history.pushState({ page: activePage }, "", path + search);
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      window.history.replaceState({ page: activePage }, "", path + search);
+    } else {
+      window.history.pushState({ page: activePage }, "", path + search);
+    }
   }, [activePage]);
 
   // Handle browser back/forward
@@ -88,7 +94,7 @@ export default function App() {
         setActivePage("cpu");
       } else if (window.location.pathname === "/llama-cpp") {
         setActivePage("llama-cpp");
-      } else if (window.location.pathname === "/ai/terminal") {
+      } else if (window.location.pathname === "/llama-cpp/terminal") {
         setActivePage("terminal");
       } else if (window.location.pathname === "/ai") {
         setActivePage("ai");
@@ -151,7 +157,7 @@ export default function App() {
                 onGlowChange={setGlow}
               />
               {activePage === "terminal" ? (
-                <AiTerminalViewer />
+                <LlamaCppTerminalViewer />
               ) : activePage === "overview" ? (
                 <main className="dashboard-grid">
                   <div className="dashboard-row overview-gpu-row">

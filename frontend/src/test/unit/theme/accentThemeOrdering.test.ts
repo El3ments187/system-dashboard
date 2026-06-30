@@ -85,7 +85,7 @@ describe('ACCENT_THEMES ordering - color wheel smoothness', () => {
   });
 
   it('still has exactly 32 entries and no duplicate ids or colors', () => {
-    expect(ACCENT_THEMES.length).toBe(32);
+    expect(ACCENT_THEMES).toHaveLength(32);
     expect(new Set(ACCENT_THEMES.map(t => t.id)).size).toBe(32);
     expect(new Set(ACCENT_THEMES.map(t => t.color.toLowerCase())).size).toBe(32);
   });

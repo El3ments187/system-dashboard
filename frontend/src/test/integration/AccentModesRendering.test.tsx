@@ -53,6 +53,7 @@ describe.each(MODES)('%s mode - card rendering', (mode) => {
         <CpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
       </div>,
     );
+    expect(container.firstChild).not.toBeNull();
     expectNoBlackElements(container);
   });
 
@@ -63,6 +64,7 @@ describe.each(MODES)('%s mode - card rendering', (mode) => {
         <CpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
       </div>,
     );
+    expect(container.firstChild).not.toBeNull();
     expectNoInvalidCssValues(container);
   });
 });

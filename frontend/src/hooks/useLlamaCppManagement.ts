@@ -87,13 +87,13 @@ export function useLlamaCppManagement(): LlamaCppManagement {
   useEffect(() => {
     if (!dirPath) return;
     let cancelled = false;
-    fetch(`/api/ai/directory-info?path=${encodeURIComponent(dirPath)}`)
+    fetch(`/api/llama/directory-info?path=${encodeURIComponent(dirPath)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { data?: { git_info?: GitInfo | null } } | null) => {
         if (!cancelled && d?.data?.git_info) setGitInfo(d.data.git_info);
       })
       .catch(() => {});
-    fetch(`/api/ai/repo-info?path=${encodeURIComponent(dirPath)}`)
+    fetch(`/api/llama/repo-info?path=${encodeURIComponent(dirPath)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { data?: RepoInfo } | null) => {
         if (!cancelled && d?.data) setRepoInfo(d.data);
@@ -116,20 +116,23 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     if (updatePtsRef.current) {
       setPtsName(updatePtsRef.current);
       window.open(
-        `/ai/terminal?pts=${encodeURIComponent(updatePtsRef.current)}`,
+        `/llama-cpp/terminal?pts=${encodeURIComponent(updatePtsRef.current)}`,
         "_blank",
       );
       return;
     }
     if (ptsName) {
-      window.open(`/ai/terminal?pts=${encodeURIComponent(ptsName)}`, "_blank");
+      window.open(
+        `/llama-cpp/terminal?pts=${encodeURIComponent(ptsName)}`,
+        "_blank",
+      );
       return;
     }
     try {
       const resp = await ptySpawnTerminal(dirPath);
       setPtsName(resp.pts_name);
       window.open(
-        `/ai/terminal?pts=${encodeURIComponent(resp.pts_name)}`,
+        `/llama-cpp/terminal?pts=${encodeURIComponent(resp.pts_name)}`,
         "_blank",
       );
     } catch (e: unknown) {
