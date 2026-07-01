@@ -12,13 +12,16 @@ const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
 const DEFAULT_BUILD_NOTES_URL =
   "https://github.com/ggml-org/llama.cpp/releases";
+const DEFAULT_LOCAL_VERSION_CMD =
+  "git tag --sort=-version:refname | grep '^b' | head -1";
+const DEFAULT_LATEST_VERSION_CMD =
+  "git ls-remote --tags --sort=-version:refname origin 'refs/tags/b*' | head -1 | sed 's|.*refs/tags/||'";
 const DONE_MARKER = "__LLAMA_UPDATE_DONE__";
 
 export type UpdateState = "idle" | "running" | "done" | "error";
 
 export interface LlamaCppManagement {
   dirPath: string;
-  llamaVersion: string;
   readmeUrl: string;
   buildNotesUrl: string;
   updateScript: string;
@@ -38,11 +41,14 @@ export interface LlamaCppManagement {
 export function useLlamaCppManagement(): LlamaCppManagement {
   // Lazy initializers avoid the need for a useEffect to read localStorage on mount.
   const [dirPath] = useState(() => localStorage.getItem("llama_cpp_dir") ?? "");
-  const [llamaVersion] = useState(
-    () => localStorage.getItem("llama_cpp_version") ?? "",
-  );
   const [readmeUrl] = useState(
     () => localStorage.getItem("llama_cpp_readme_url") ?? "",
+  );
+  const [localVersionCmd] = useState(
+    () => localStorage.getItem("llama_cpp_local_version_cmd") ?? DEFAULT_LOCAL_VERSION_CMD,
+  );
+  const [latestVersionCmd] = useState(
+    () => localStorage.getItem("llama_cpp_latest_version_cmd") ?? DEFAULT_LATEST_VERSION_CMD,
   );
   const [buildNotesUrl] = useState(
     () =>
@@ -93,7 +99,10 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         if (!cancelled && d?.data?.git_info) setGitInfo(d.data.git_info);
       })
       .catch(() => {});
-    fetch(`/api/llama/repo-info?path=${encodeURIComponent(dirPath)}`)
+    const repoParams = new URLSearchParams({ path: dirPath });
+    if (localVersionCmd) repoParams.set("local_cmd", localVersionCmd);
+    if (latestVersionCmd) repoParams.set("latest_cmd", latestVersionCmd);
+    fetch(`/api/llama/repo-info?${repoParams.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { data?: RepoInfo } | null) => {
         if (!cancelled && d?.data) setRepoInfo(d.data);
@@ -224,7 +233,6 @@ export function useLlamaCppManagement(): LlamaCppManagement {
 
   return {
     dirPath,
-    llamaVersion,
     readmeUrl,
     buildNotesUrl,
     updateScript,

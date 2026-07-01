@@ -200,9 +200,6 @@ export default function LlamaCppCard() {
   const updatePtsRef = useRef<string | null>(null);
   const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [largestContextPeak, setLargestContextPeak] = useState<number>(0);
-  const [llamaVersion] = useState(
-    () => localStorage.getItem("llama_cpp_version") ?? "",
-  );
   const [readmeUrl] = useState(
     () => localStorage.getItem("llama_cpp_readme_url") ?? "",
   );
@@ -441,7 +438,7 @@ export default function LlamaCppCard() {
           <ModelTitle filename={modelFile || modelAlias || "\u2014"} />
           <MetadataLine
             alias={modelAlias || "\u2014"}
-            version={llamaVersion || ""}
+            version={""}
             build={buildInfo || ""}
             online={llamaOnline}
           />
@@ -788,7 +785,7 @@ export default function LlamaCppCard() {
                     textShadow: "var(--text-shadow-sm)",
                   }}
                 >
-                  {llamaVersion || "\u2014"}
+                  {"\u2014"}
                 </span>
               </div>
               <button

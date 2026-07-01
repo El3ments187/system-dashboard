@@ -7,9 +7,11 @@ interface EditUpdateScriptModalProps {
   onSave: (script: string) => void;
   script: string;
   defaultScript: string;
+  title?: string;
+  description?: string;
 }
 
-export default function EditUpdateScriptModal({ isOpen, onClose, onSave, script, defaultScript }: EditUpdateScriptModalProps) {
+export default function EditUpdateScriptModal({ isOpen, onClose, onSave, script, defaultScript, title = 'Edit Update Commands', description = 'One command per line. Executed in order in the working directory.' }: EditUpdateScriptModalProps) {
   const [value, setValue] = useState(script);
 
   useEffect(() => { if (isOpen) setValue(script); }, [isOpen, script]);
@@ -22,7 +24,7 @@ export default function EditUpdateScriptModal({ isOpen, onClose, onSave, script,
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Settings size={14} style={{ color: 'var(--accent-primary)' }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Edit Update Commands</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
           </div>
           <button onClick={onClose} style={{ padding: '2px 6px', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: 'var(--text-muted)' }}>
             <X size={14} />
@@ -31,7 +33,7 @@ export default function EditUpdateScriptModal({ isOpen, onClose, onSave, script,
 
         <div style={{ padding: 14 }}>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            One command per line. Executed in order in the working directory.
+            {description}
           </div>
           <textarea
             value={value}

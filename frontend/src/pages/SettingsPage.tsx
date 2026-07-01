@@ -18,9 +18,9 @@ import {
   Folder,
   GitBranch,
   Link2,
-  Tag,
   FileText,
   ExternalLink,
+  Terminal,
 } from "lucide-react";
 import DirectoryBrowserModal from "../components/DirectoryBrowserModal";
 import EditUpdateScriptModal from "../components/EditUpdateScriptModal";
@@ -29,8 +29,10 @@ const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
 const DEFAULT_BUILD_NOTES_URL =
   "https://github.com/ggml-org/llama.cpp/releases";
-const DEFAULT_GITHUB_REPO = "ggml-org/llama.cpp";
-const DEFAULT_TAG_PREFIX = "b";
+const DEFAULT_LOCAL_VERSION_CMD =
+  "git tag --sort=-version:refname | grep '^b' | head -1";
+const DEFAULT_LATEST_VERSION_CMD =
+  "git ls-remote --tags --sort=-version:refname origin 'refs/tags/b*' | head -1 | sed 's|.*refs/tags/||'";
 
 interface SettingsPageProps {
   accent: { color: string; glow: string };
@@ -68,37 +70,33 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
   const [browserOpen, setBrowserOpen] = useState(false);
   const [scanBrowserOpen, setScanBrowserOpen] = useState(false);
   const [editScriptOpen, setEditScriptOpen] = useState(false);
+  const [editLocalCmdOpen, setEditLocalCmdOpen] = useState(false);
+  const [editLatestCmdOpen, setEditLatestCmdOpen] = useState(false);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
 
   const [docSettings, setDocSettings] = useState(() => ({
-    llamaCppVersion: localStorage.getItem("llama_cpp_version") ?? "",
     readmeUrl: localStorage.getItem("llama_cpp_readme_url") ?? "",
     buildNotesUrl:
       localStorage.getItem("llama_cpp_build_notes_url") ??
       DEFAULT_BUILD_NOTES_URL,
-    githubRepo:
-      localStorage.getItem("llama_cpp_github_repo") ?? DEFAULT_GITHUB_REPO,
-    tagPrefix:
-      localStorage.getItem("llama_cpp_tag_prefix") ?? DEFAULT_TAG_PREFIX,
+    localVersionCmd:
+      localStorage.getItem("llama_cpp_local_version_cmd") ?? DEFAULT_LOCAL_VERSION_CMD,
+    latestVersionCmd:
+      localStorage.getItem("llama_cpp_latest_version_cmd") ?? DEFAULT_LATEST_VERSION_CMD,
   }));
   const [docErrors, setDocErrors] = useState<{
     readmeUrl?: string;
     buildNotesUrl?: string;
-    githubRepo?: string;
-    tagPrefix?: string;
   }>({});
   const [docSaveState, setDocSaveState] = useState<"idle" | "success">("idle");
 
   useEffect(() => {
     if (!localStorage.getItem("llama_cpp_build_notes_url"))
-      localStorage.setItem(
-        "llama_cpp_build_notes_url",
-        DEFAULT_BUILD_NOTES_URL,
-      );
-    if (!localStorage.getItem("llama_cpp_github_repo"))
-      localStorage.setItem("llama_cpp_github_repo", DEFAULT_GITHUB_REPO);
-    if (!localStorage.getItem("llama_cpp_tag_prefix"))
-      localStorage.setItem("llama_cpp_tag_prefix", DEFAULT_TAG_PREFIX);
+      localStorage.setItem("llama_cpp_build_notes_url", DEFAULT_BUILD_NOTES_URL);
+    if (!localStorage.getItem("llama_cpp_local_version_cmd"))
+      localStorage.setItem("llama_cpp_local_version_cmd", DEFAULT_LOCAL_VERSION_CMD);
+    if (!localStorage.getItem("llama_cpp_latest_version_cmd"))
+      localStorage.setItem("llama_cpp_latest_version_cmd", DEFAULT_LATEST_VERSION_CMD);
   }, []);
 
   useEffect(() => {
@@ -107,10 +105,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       setRepoInfo(null);
       return;
     }
-    getRepoInfo(llamaDir, docSettings.githubRepo, docSettings.tagPrefix)
+    getRepoInfo(llamaDir, docSettings.localVersionCmd, docSettings.latestVersionCmd)
       .then(setRepoInfo)
       .catch(() => setRepoInfo(null));
-  }, [llamaDir, docSettings.githubRepo, docSettings.tagPrefix]);
+  }, [llamaDir, docSettings.localVersionCmd, docSettings.latestVersionCmd]);
 
   // Auto-fill README URL from the detected git remote if the user hasn't set one yet.
   useEffect(() => {
@@ -141,32 +139,14 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       errors.buildNotesUrl = "Build Notes URL is required";
     else if (!isValidUrl(docSettings.buildNotesUrl.trim()))
       errors.buildNotesUrl = "Enter a valid URL";
-    if (!docSettings.githubRepo.trim())
-      errors.githubRepo = "GitHub repository is required";
-    else if (!/^[^/\s]+\/[^/\s]+$/.test(docSettings.githubRepo.trim()))
-      errors.githubRepo = "Use the format owner/repo";
-    if (!docSettings.tagPrefix.trim())
-      errors.tagPrefix = "Tag prefix is required";
     setDocErrors(errors);
     if (Object.keys(errors).length > 0) {
       setDocSaveState("idle");
       return;
     }
 
-    localStorage.setItem(
-      "llama_cpp_version",
-      docSettings.llamaCppVersion.trim(),
-    );
     localStorage.setItem("llama_cpp_readme_url", docSettings.readmeUrl.trim());
-    localStorage.setItem(
-      "llama_cpp_build_notes_url",
-      docSettings.buildNotesUrl.trim(),
-    );
-    localStorage.setItem(
-      "llama_cpp_github_repo",
-      docSettings.githubRepo.trim(),
-    );
-    localStorage.setItem("llama_cpp_tag_prefix", docSettings.tagPrefix.trim());
+    localStorage.setItem("llama_cpp_build_notes_url", docSettings.buildNotesUrl.trim());
     setDocSaveState("success");
     setTimeout(() => setDocSaveState("idle"), 2000);
   };
@@ -184,6 +164,16 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
   const handleSaveScript = (script: string) => {
     setUpdateScript(script);
     localStorage.setItem("llama_cpp_update_script", script);
+  };
+
+  const handleSaveLocalCmd = (cmd: string) => {
+    localStorage.setItem("llama_cpp_local_version_cmd", cmd);
+    setDocSettings((prev) => ({ ...prev, localVersionCmd: cmd }));
+  };
+
+  const handleSaveLatestCmd = (cmd: string) => {
+    localStorage.setItem("llama_cpp_latest_version_cmd", cmd);
+    setDocSettings((prev) => ({ ...prev, latestVersionCmd: cmd }));
   };
 
   const initialLlamaDirRef = useRef(llamaDir);
@@ -534,162 +524,85 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
           <div>
             <div className="settings-card-title">LLAMA.CPP Documentation</div>
             <div className="settings-card-subtitle">
-              Version label and documentation links shown on the AI page
+              Documentation links shown on the AI page
             </div>
           </div>
         </div>
 
         <div className="settings-card-body">
+          {(repoInfo?.local_build_tag || repoInfo?.latest_build_tag) && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+              {repoInfo?.local_build_tag && (
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  Installed tag:{" "}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      color: "var(--accent-primary)",
+                    }}
+                  >
+                    {repoInfo.local_build_tag}
+                  </span>
+                </div>
+              )}
+              {repoInfo?.latest_build_tag && (
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  Latest available:{" "}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      color:
+                        repoInfo.local_build_tag &&
+                        repoInfo.local_build_tag !== repoInfo.latest_build_tag
+                          ? "var(--warning)"
+                          : "var(--text-primary)",
+                    }}
+                  >
+                    {repoInfo.latest_build_tag}
+                  </span>
+                  {repoInfo.local_build_tag &&
+                    repoInfo.local_build_tag !== repoInfo.latest_build_tag && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          color: "var(--warning)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Update available
+                      </span>
+                    )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="settings-field">
-            <label htmlFor="llama-cpp-version" className="settings-field-label">
-              <Tag size={12} />
-              llama.cpp Version
-            </label>
-            <input
-              type="text"
-              id="llama-cpp-version"
-              name="llama-cpp-version"
-              className="settings-input"
-              style={{ width: "100%" }}
-              value={docSettings.llamaCppVersion}
-              onChange={(e) =>
-                setDocSettings((prev) => ({
-                  ...prev,
-                  llamaCppVersion: e.target.value,
-                }))
-              }
-              placeholder="b4774 (2025-06-20)"
-            />
-            {repoInfo?.local_build_tag && (
-              <button
-                onClick={() =>
-                  setDocSettings((prev) => ({
-                    ...prev,
-                    llamaCppVersion: repoInfo.local_build_tag!,
-                  }))
-                }
-                style={{
-                  marginTop: 6,
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  textAlign: "left",
-                }}
-              >
-                Installed tag:{" "}
-                <span
-                  style={{
-                    fontFamily: "monospace",
-                    color: "var(--accent-primary)",
-                  }}
-                >
-                  {repoInfo.local_build_tag}
-                </span>{" "}
-                — click to use
-              </button>
-            )}
-            {repoInfo?.latest_build_tag && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                }}
-              >
-                Latest available:{" "}
-                <span
-                  style={{
-                    fontFamily: "monospace",
-                    color:
-                      repoInfo.local_build_tag &&
-                      repoInfo.local_build_tag !== repoInfo.latest_build_tag
-                        ? "var(--warning)"
-                        : "var(--text-primary)",
-                  }}
-                >
-                  {repoInfo.latest_build_tag}
-                </span>
-                {repoInfo.local_build_tag &&
-                  repoInfo.local_build_tag !== repoInfo.latest_build_tag && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        color: "var(--warning)",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Update available
-                    </span>
-                  )}
-              </div>
-            )}
+            <div className="settings-field-label">
+              <Terminal size={12} />
+              Installed Version Command
+            </div>
+            <button
+              className="settings-btn settings-btn-accent"
+              onClick={() => setEditLocalCmdOpen(true)}
+            >
+              <Terminal size={13} />
+              Edit Installed Version Command
+            </button>
           </div>
 
           <div className="settings-field">
-            <label htmlFor="github-repo" className="settings-field-label">
-              <GitBranch size={12} />
-              GitHub Repository
-            </label>
-            <input
-              type="text"
-              id="github-repo"
-              name="github-repo"
-              className="settings-input"
-              style={{
-                width: "100%",
-                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-              }}
-              value={docSettings.githubRepo}
-              onChange={(e) =>
-                setDocSettings((prev) => ({
-                  ...prev,
-                  githubRepo: e.target.value,
-                }))
-              }
-              placeholder="ggml-org/llama.cpp"
-            />
-            {docErrors.githubRepo && (
-              <div
-                style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
-              >
-                {docErrors.githubRepo}
-              </div>
-            )}
-          </div>
-
-          <div className="settings-field">
-            <label htmlFor="tag-prefix" className="settings-field-label">
-              <Tag size={12} />
-              Build Tag Prefix
-            </label>
-            <input
-              type="text"
-              id="tag-prefix"
-              name="tag-prefix"
-              className="settings-input"
-              style={{
-                width: "100%",
-                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-              }}
-              value={docSettings.tagPrefix}
-              onChange={(e) =>
-                setDocSettings((prev) => ({
-                  ...prev,
-                  tagPrefix: e.target.value,
-                }))
-              }
-              placeholder="b"
-            />
-            {docErrors.tagPrefix && (
-              <div
-                style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
-              >
-                {docErrors.tagPrefix}
-              </div>
-            )}
+            <div className="settings-field-label">
+              <Terminal size={12} />
+              Latest Version Command
+            </div>
+            <button
+              className="settings-btn settings-btn-accent"
+              onClick={() => setEditLatestCmdOpen(true)}
+            >
+              <Terminal size={13} />
+              Edit Latest Version Command
+            </button>
           </div>
 
           <div className="settings-field">
@@ -819,6 +732,24 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
         onSave={handleSaveScript}
         script={updateScript}
         defaultScript={DEFAULT_UPDATE_SCRIPT}
+      />
+      <EditUpdateScriptModal
+        isOpen={editLocalCmdOpen}
+        onClose={() => setEditLocalCmdOpen(false)}
+        onSave={handleSaveLocalCmd}
+        script={docSettings.localVersionCmd}
+        defaultScript={DEFAULT_LOCAL_VERSION_CMD}
+        title="Edit Installed Version Command"
+        description="Shell command run in the working directory. Output is used as the installed version tag."
+      />
+      <EditUpdateScriptModal
+        isOpen={editLatestCmdOpen}
+        onClose={() => setEditLatestCmdOpen(false)}
+        onSave={handleSaveLatestCmd}
+        script={docSettings.latestVersionCmd}
+        defaultScript={DEFAULT_LATEST_VERSION_CMD}
+        title="Edit Latest Version Command"
+        description="Shell command run in the working directory. Output is used as the latest available version tag."
       />
     </main>
   );

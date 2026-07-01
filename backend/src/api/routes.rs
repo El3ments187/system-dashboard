@@ -326,22 +326,21 @@ async fn directory_info_handler(
 pub struct RepoInfoQuery {
     pub path: String,
     #[serde(default)]
-    pub github_repo: Option<String>,
+    pub local_cmd: Option<String>,
     #[serde(default)]
-    pub tag_prefix: Option<String>,
+    pub latest_cmd: Option<String>,
 }
 
 async fn repo_info_handler(
     query: axum::extract::Query<RepoInfoQuery>,
 ) -> axum::response::Json<Value> {
     let path = &query.path;
-    let github_repo = query.github_repo.as_deref().unwrap_or("ggml-org/llama.cpp");
-    let tag_prefix = query.tag_prefix.as_deref().unwrap_or("b");
-
     let readme_url = ai_mgmt::get_repo_readme_url(path);
     let version = ai_mgmt::get_repo_version(path);
-    let local_build_tag = ai_mgmt::get_local_build_tag(path, tag_prefix);
-    let latest_build_tag = ai_mgmt::get_latest_release_tag(github_repo).await;
+    let local_build_tag = query.local_cmd.as_deref()
+        .and_then(|cmd| ai_mgmt::run_version_cmd(path, cmd));
+    let latest_build_tag = query.latest_cmd.as_deref()
+        .and_then(|cmd| ai_mgmt::run_version_cmd(path, cmd));
     Json(json!({
         "data": {
             "readme_url": readme_url,

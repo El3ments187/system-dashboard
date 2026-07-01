@@ -112,7 +112,6 @@ function baseCtx(metricsOverrides: Partial<AiMetrics> = {}) {
 function baseMgmt(overrides: Record<string, unknown> = {}) {
   return {
     dirPath: "",
-    llamaVersion: "",
     readmeUrl: "",
     buildNotesUrl: "https://github.com/ggml-org/llama.cpp/releases",
     updateScript: "",

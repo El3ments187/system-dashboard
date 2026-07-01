@@ -211,38 +211,20 @@ fn remote_url_to_readme_url(remote: &str) -> Option<String> {
     ))
 }
 
-pub fn get_local_build_tag(dir: &str, tag_prefix: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["tag", "--sort=-version:refname"])
+pub fn run_version_cmd(dir: &str, cmd: &str) -> Option<String> {
+    if cmd.trim().is_empty() {
+        return None;
+    }
+    let output = std::process::Command::new("sh")
+        .args(["-c", cmd])
         .current_dir(dir)
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .find(|l| l.starts_with(tag_prefix))
-        .map(|s| s.trim().to_string())
-}
-
-pub async fn get_latest_release_tag(github_repo: &str) -> Option<String> {
-    let client = reqwest::Client::new();
-    let url = format!(
-        "https://api.github.com/repos/{}/releases/latest",
-        github_repo
-    );
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "system-dashboard")
-        .send()
-        .await
-        .ok()?;
-    let json: serde_json::Value = resp.json().await.ok()?;
-    json.get("tag_name")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if result.is_empty() { None } else { Some(result) }
 }
 
 pub fn get_repo_version(dir: &str) -> Option<String> {

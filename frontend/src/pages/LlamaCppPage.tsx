@@ -1301,6 +1301,7 @@ export default function LlamaCppPage() {
   } | null>(null);
   const [cacheHits, setCacheHits] = useState(0);
   const prevTokCachedRef = useRef<number | null>(null);
+  const lastGenProgressRef = useRef<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -2349,28 +2350,24 @@ export default function LlamaCppPage() {
                       {slot0.is_processing ? "Generating" : "Idle"}
                     </span>
                   </div>
-                  <div className="card-progress" style={{ height: 8, background: "var(--bg-tertiary)" }}>
-                    <div
-                      data-testid="gen-progress-bar"
-                      className={`card-progress-bar ${thresholdClass(
-                        (() => {
-                          const nd = slot0.n_decoded;
-                          const np = slot0.n_predict;
-                          return nd != null && np != null && np > 0
-                            ? (nd / np) * 100
-                            : undefined;
-                        })(),
-                      )}`}
-                      style={{
-                        width: `${(() => {
-                          const nd = slot0.n_decoded;
-                          const np = slot0.n_predict;
-                          return nd != null && np != null && np > 0
-                            ? Math.round((nd / np) * 100)
-                            : 0;
-                        })()}%`,
-                      }}
-                    />
+                  <div className="card-progress" style={{ height: 8 }}>
+                    {(() => {
+                      const nd = slot0.n_decoded;
+                      const np = slot0.n_predict;
+                      const livePct =
+                        nd != null && np != null && np > 0
+                          ? Math.round((nd / np) * 100)
+                          : null;
+                      if (livePct != null) lastGenProgressRef.current = livePct;
+                      const pct = livePct ?? lastGenProgressRef.current;
+                      return (
+                        <div
+                          data-testid="gen-progress-bar"
+                          className={`card-progress-bar ${thresholdClass(pct > 0 ? pct : null)}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      );
+                    })()}
                   </div>
                   <div
                     style={{

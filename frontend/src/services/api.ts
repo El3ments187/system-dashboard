@@ -113,12 +113,12 @@ export async function getDirectoryInfo(path: string): Promise<DirectoryInfo> {
 
 export async function getRepoInfo(
   path: string,
-  githubRepo?: string,
-  tagPrefix?: string,
+  localCmd?: string,
+  latestCmd?: string,
 ): Promise<RepoInfo> {
   const params = new URLSearchParams({ path });
-  if (githubRepo) params.set("github_repo", githubRepo);
-  if (tagPrefix) params.set("tag_prefix", tagPrefix);
+  if (localCmd) params.set("local_cmd", localCmd);
+  if (latestCmd) params.set("latest_cmd", latestCmd);
   const res = await fetch(`${BASE_URL}/llama/repo-info?${params.toString()}`);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as RepoInfo;
