@@ -501,6 +501,28 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
               Edit Update Script
             </button>
           </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginTop: 16,
+            }}
+          >
+            <button
+              className="settings-btn settings-btn-accent"
+              onClick={handleSave}
+              disabled={saving}
+              style={{ padding: "10px 24px" }}
+            >
+              {saving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Save size={14} />
+              )}
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
+          </div>
         </div>
       </div>
 
