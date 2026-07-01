@@ -36,11 +36,8 @@ import {
   Clock3,
   Fingerprint,
   Zap,
-  Tag,
   Layers,
   MonitorCog,
-  SlidersHorizontal,
-  RotateCcw,
   Send,
   TriangleAlert,
   ArrowUp,
@@ -94,13 +91,6 @@ function thresholdClass(pct: number | null | undefined): string {
   if (pct >= 85) return "progress-bar-critical";
   if (pct >= 70) return "progress-bar-warning";
   return "progress-bar-normal";
-}
-
-function thresholdColor(pct: number | null | undefined): string {
-  if (pct == null) return "var(--accent-primary)";
-  if (pct >= 85) return "var(--danger)";
-  if (pct >= 70) return "var(--warning)";
-  return "var(--accent-primary)";
 }
 
 function updateStateColor(state: string): string {
@@ -447,59 +437,6 @@ function CapPill({
   );
 }
 
-// ─── InfoCell ─────────────────────────────────────────────────────────────────
-
-function InfoCell({
-  label,
-  value,
-  accent,
-  success,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-  success?: boolean;
-}) {
-  let valueColor: string;
-  if (accent) {
-    valueColor = "var(--accent-primary)";
-  } else if (success) {
-    valueColor = "var(--success)";
-  } else {
-    valueColor = "var(--text-primary)";
-  }
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div
-        style={{
-          fontSize: 9.5,
-          fontWeight: 500,
-          color: "var(--text-muted)",
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-          marginBottom: 2,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: valueColor,
-          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          marginTop: 2,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 // ─── RadialGauge ──────────────────────────────────────────────────────────────
 
 function RadialGauge({
@@ -572,107 +509,6 @@ function RadialGauge({
           {children}
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── MiniRing ─────────────────────────────────────────────────────────────────
-
-function MiniRing({
-  pct,
-  color,
-  size = 42,
-  label,
-  value,
-}: {
-  pct: number | null;
-  color?: string;
-  size?: number;
-  label: string;
-  value: string;
-}) {
-  const stroke = 3.5;
-  const r = (size - stroke * 2) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = pct != null ? Math.min(1, pct / 100) * circ : 0;
-  const ringColor = color ?? "var(--accent-primary)";
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 4,
-        minWidth: 56,
-      }}
-    >
-      <div style={{ position: "relative", width: size, height: size }}>
-        <svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          style={{ display: "block", transform: "rotate(-90deg)" }}
-        >
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke="var(--bg-secondary)"
-            strokeWidth={stroke}
-          />
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke={ringColor}
-            strokeWidth={stroke}
-            strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round"
-          />
-        </svg>
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 9,
-            fontWeight: 700,
-            fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            color: ringColor,
-          }}
-        >
-          {pct != null ? `${Math.round(pct)}` : "\u2014"}
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: 9,
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          color: "var(--text-muted)",
-          textAlign: "center",
-          fontWeight: 500,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-          color: ringColor,
-        }}
-      >
-        {value}
-      </div>
     </div>
   );
 }
@@ -1444,6 +1280,8 @@ function contextGaugeLabel(
 export default function LlamaCppPage() {
   const {
     aiCurrentMetrics,
+    aiGenTpsHistory,
+    aiPromptTpsHistory,
     llamaCppLoading,
     cpuCurrentValues,
     memoryCurrentValues,
@@ -1519,43 +1357,10 @@ export default function LlamaCppPage() {
       ? Math.round((slotCurrentTokens / slotCtx) * 1000) / 10
       : null;
 
-  // During active processing, n_prompt_tokens_cache is the prefix-cache reuse count (tokens
-  // loaded from KV cache instead of recomputed). When idle, that field resets to 0 even though
-  // all n_prompt_tokens remain buffered in the KV prefix cache. Fall back to contextPct so the
-  // ring always reflects the actual cached-token fraction.
-  const promptBufPct: number | null =
-    slotCtx != null &&
-    slot0 != null &&
-    slot0.n_prompt_tokens_cache != null &&
-    slot0.n_prompt_tokens_cache > 0
-      ? Math.round((slot0.n_prompt_tokens_cache / slotCtx) * 1000) / 10
-      : null;
-
   const tokCached: number | null =
     slot0?.n_prompt_tokens_cache != null
       ? slot0.n_prompt_tokens_cache
       : (m?.tokens_cached ?? null);
-
-  const tokCachedModelRef = useRef<string>("");
-  const [tokCachedHistory, setTokCachedHistory] = useState<
-    MetricHistoryPoint[]
-  >([]);
-
-  useEffect(() => {
-    if (fullModelPath !== tokCachedModelRef.current) {
-      tokCachedModelRef.current = fullModelPath;
-      setTokCachedHistory([]);
-      return;
-    }
-    if (tokCached == null) return;
-    setTokCachedHistory((prev) => {
-      const trimmed = prev.length >= 120 ? prev.slice(1) : prev;
-      return [
-        ...trimmed,
-        { slot: trimmed.length, timestamp: new Date(), value: tokCached },
-      ];
-    });
-  }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctxColor = getCtxColor(contextPct);
   const hasDir = !!mgmt.dirPath;
@@ -1594,31 +1399,6 @@ export default function LlamaCppPage() {
     mgmt.repoInfo?.latest_build_tag,
   );
   const modelNameRef = useFitText(cleanModelName);
-
-  // ── Shared button style for action rail
-  const railBtn: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "0 14px",
-    height: 38,
-    width: "100%",
-    fontSize: 12.5,
-    fontWeight: 500,
-    background: "var(--bg-card)",
-    border: "1px solid var(--border-color)",
-    borderRadius: 9,
-    cursor: "pointer",
-    color: "var(--text-secondary)",
-    whiteSpace: "nowrap" as const,
-    textDecoration: "none",
-    boxSizing: "border-box" as const,
-  };
-  const railBtnDisabled: React.CSSProperties = {
-    ...railBtn,
-    opacity: 0.4,
-    cursor: "not-allowed",
-  };
 
   // ── Inline KV row renderer for runtime/info cards
   const kvRow = (
@@ -1715,236 +1495,176 @@ export default function LlamaCppPage() {
           flexDirection: "column",
           flex: 1,
           minHeight: 0,
-          gap: 12,
-          padding: "12px 14px",
+          gap: 9,
+          padding: "11px 13px",
           overflow: "hidden",
         }}
       >
-        {/* ════════════════════════════════════════════
-            TOP ROW: Model header (678px) | Runtime + llama.cpp info + buttons
-            ════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════════
+            TOP ROW: Active Model | Throughput | Context
+            ══════════════════════════════════════════════════ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "660px 1fr 1fr 196px",
-            gap: 14,
+            gridTemplateColumns: "10fr 6fr 8fr",
+            gap: 9,
             flexShrink: 0,
-            alignItems: "stretch",
           }}
         >
-          {/* ── Model header card ── */}
-          <PanelCard
-            style={{
-              padding: "16px 18px 14px",
-              gap: 12,
-            }}
-          >
-            <div style={{ flex: 1 }}>
-              {/* Icon badge + eyebrow + model name */}
+          {/* ── Active Model card ── */}
+          <PanelCard style={{ padding: "15px 17px 13px", gap: 10 }}>
+            {/* Eyebrow */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 2,
+              }}
+            >
               <div
                 style={{
                   display: "flex",
-                  gap: 14,
-                  alignItems: "flex-start",
-                  marginBottom: 12,
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "1px",
                 }}
               >
-                <div
-                  style={{
-                    width: 50,
-                    height: 50,
-                    borderRadius: 13,
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "var(--accent-tint-15)",
-                    border:
-                      "1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent)",
-                    boxShadow:
-                      "0 0 24px -7px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.06)",
-                  }}
+                <span
+                  style={{ color: "var(--accent-primary)", display: "flex" }}
                 >
-                  <Cpu size={27} style={{ color: "var(--accent-primary)" }} />
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  {/* Eyebrow: LLAMA.CPP + ONLINE/OFFLINE */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 7,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        letterSpacing: "0.5px",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      LLAMA.CPP
-                    </span>
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: llamaOnline
-                          ? "var(--success)"
-                          : "var(--text-muted)",
-                        background: llamaOnline
-                          ? "rgba(34,197,94,0.13)"
-                          : "rgba(255,255,255,0.05)",
-                        padding: "2px 8px",
-                        borderRadius: 6,
-                        boxShadow: llamaOnline
-                          ? "inset 0 0 0 1px rgba(34,197,94,0.25)"
-                          : "inset 0 0 0 1px var(--border-color)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          background: llamaOnline
-                            ? "var(--success)"
-                            : "var(--text-muted)",
-                          animation: llamaOnline
-                            ? "dot-pulse 1.8s ease-in-out infinite"
-                            : undefined,
-                          flexShrink: 0,
-                        }}
-                      />
-                      {llamaOnline ? "ONLINE" : "OFFLINE"}
-                    </span>
-                  </div>
-                  {/* Model name hero — auto-shrinks via useFitText; falls back to middleTruncate */}
-                  <div
-                    ref={modelNameRef}
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 26,
-                      fontWeight: 700,
-                      letterSpacing: "-1px",
-                      lineHeight: 1.06,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      color: "var(--text-primary)",
-                    }}
-                    title={cleanModelName || "\u2014"}
-                  >
-                    {cleanModelName ? (
-                      <>
-                        {middleTruncate(modelHead, 40)}
-                        {modelQuant && (
-                          <span
-                            className="accent-text"
-                            style={{
-                              textShadow: "0 0 18px var(--accent-glow)",
-                            }}
-                          >
-                            {modelQuant}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      "\u2014"
-                    )}
-                  </div>
-                </div>
+                  <Cpu size={14} />
+                </span>
+                Active Model
               </div>
-
-              {/* File size */}
+              <span
+                style={{
+                  fontSize: 9,
+                  fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                  color: "var(--border-color)",
+                }}
+              >
+                01
+              </span>
+            </div>
+            {/* Accent line */}
+            <div
+              style={{
+                height: 2,
+                width: 36,
+                background: "var(--accent-fill)",
+                backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                borderRadius: 2,
+                marginBottom: 6,
+              }}
+            />
+            {/* Model name hero */}
+            <div
+              ref={modelNameRef}
+              style={{
+                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                fontSize: 26,
+                fontWeight: 700,
+                letterSpacing: "-1px",
+                lineHeight: 1.06,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                color: "var(--text-primary)",
+                marginBottom: 10,
+              }}
+              title={cleanModelName || "\u2014"}
+            >
+              {cleanModelName ? (
+                <>
+                  {middleTruncate(modelHead, 40)}
+                  {modelQuant && (
+                    <span
+                      className="accent-text"
+                      style={{ textShadow: "0 0 18px var(--accent-glow)" }}
+                    >
+                      {modelQuant}
+                    </span>
+                  )}
+                </>
+              ) : (
+                "\u2014"
+              )}
+            </div>
+            {/* Meta row: size + tags + running status */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
               {m?.gguf_size_gib != null && (
-                <div
+                <span
+                  className="accent-text"
                   style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    gap: 9,
-                    marginBottom: 12,
+                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                    fontSize: 21,
+                    fontWeight: 700,
+                    letterSpacing: "-0.5px",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <span
-                    className="accent-text"
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 24,
-                      fontWeight: 600,
-                      letterSpacing: "-0.8px",
-                    }}
-                  >
-                    {(m.gguf_size_gib as number).toFixed(2)} GiB
-                  </span>
+                  {(m.gguf_size_gib as number).toFixed(2)}{" "}
                   <span
                     style={{
-                      fontSize: 10.5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.6px",
+                      fontSize: 11,
                       color: "var(--text-muted)",
+                      fontWeight: 400,
                     }}
                   >
-                    Model File Size
+                    GiB
                   </span>
-                </div>
+                </span>
               )}
-
-              {/* Meta chips */}
               <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 7,
-                  marginBottom: 14,
-                }}
+                style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}
               >
                 {runningMeta?.params && (
                   <span
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 11.5,
+                      fontSize: 10,
                       color: "var(--text-muted)",
                       background: "var(--bg-secondary)",
                       border:
                         "1px solid var(--border-light, var(--border-color))",
                       borderRadius: 7,
-                      padding: "4px 9px",
+                      padding: "3px 8px",
                     }}
                   >
                     <b
-                      style={{
-                        color: "var(--text-primary)",
-                        fontWeight: 600,
-                      }}
+                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
                     >
                       {runningMeta.params}
-                    </b>{" "}
-                    params
+                    </b>
                   </span>
                 )}
                 {slotCtx != null && (
                   <span
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 11.5,
+                      fontSize: 10,
                       color: "var(--text-muted)",
                       background: "var(--bg-secondary)",
                       border:
                         "1px solid var(--border-light, var(--border-color))",
                       borderRadius: 7,
-                      padding: "4px 9px",
+                      padding: "3px 8px",
                     }}
                   >
                     <b
-                      style={{
-                        color: "var(--text-primary)",
-                        fontWeight: 600,
-                      }}
+                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
                     >
                       {formatCtx(slotCtx)}
                     </b>{" "}
@@ -1955,36 +1675,84 @@ export default function LlamaCppPage() {
                   <span
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 11.5,
+                      fontSize: 10,
                       color: "var(--text-muted)",
                       background: "var(--bg-secondary)",
                       border:
                         "1px solid var(--border-light, var(--border-color))",
                       borderRadius: 7,
-                      padding: "4px 9px",
+                      padding: "3px 8px",
                     }}
                   >
                     <b
-                      style={{
-                        color: "var(--text-primary)",
-                        fontWeight: 600,
-                      }}
+                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
                     >
                       {modelQuant}
-                    </b>{" "}
-                    quant
+                    </b>
+                  </span>
+                )}
+                {pageModelAlias && (
+                  <span
+                    style={{
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      fontSize: 10,
+                      color: "var(--accent-primary)",
+                      background:
+                        "color-mix(in srgb, var(--accent-primary) 12%, transparent)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                      borderRadius: 7,
+                      padding: "3px 8px",
+                    }}
+                  >
+                    alias <b style={{ fontWeight: 600 }}>{pageModelAlias}</b>
                   </span>
                 )}
               </div>
+              <StatusIndicator status={llamaOnline ? "running" : "stopped"} />
             </div>
-
-            {/* Sampling params sub-row */}
+            {/* Capability pills */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginBottom: 10,
+              }}
+            >
+              <CapPill
+                icon={<Activity size={12} />}
+                label="Metrics"
+                enabled={m?.endpoint_metrics}
+              />
+              <CapPill
+                icon={<Globe size={12} />}
+                label="WebUI"
+                enabled={m?.webui}
+              />
+              <CapPill
+                icon={<Eye size={12} />}
+                label="Vision"
+                enabled={m?.vision}
+              />
+              <CapPill
+                icon={<AudioLines size={12} />}
+                label="Audio"
+                enabled={m?.audio}
+              />
+              <CapPill
+                icon={<VideoIcon size={12} />}
+                label="Video"
+                enabled={m?.video}
+              />
+            </div>
+            {/* Sampling tiles */}
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(4, 1fr)",
-                gap: 10,
-                paddingTop: 10,
+                gap: 6,
+                paddingTop: 9,
                 borderTop:
                   "1px dashed var(--border-light, var(--border-color))",
               }}
@@ -1992,64 +1760,54 @@ export default function LlamaCppPage() {
               {(
                 [
                   {
-                    icon: <Thermometer size={10} />,
-                    label: "Temp",
+                    label: "Temperature",
                     value:
                       m?.temperature != null
                         ? m.temperature.toFixed(2)
                         : "\u2014",
                   },
+                  { label: "Top-K", value: fmtNum(m?.top_k) || "\u2014" },
                   {
-                    icon: <SlidersHorizontal size={10} />,
-                    label: "Top-K",
-                    value: fmtNum(m?.top_k) || "\u2014",
-                  },
-                  {
-                    icon: <SlidersHorizontal size={10} />,
                     label: "Top-P",
                     value: m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
                   },
                   {
-                    icon: <RotateCcw size={10} />,
-                    label: "Repeat",
+                    label: "Repeat Penalty",
                     value:
                       m?.repeat_penalty != null
                         ? m.repeat_penalty.toFixed(2)
                         : "\u2014",
                   },
-                ] as { icon: React.ReactNode; label: string; value: string }[]
-              ).map(({ icon, label, value }) => (
+                ] as { label: string; value: string }[]
+              ).map(({ label, value }) => (
                 <div
                   key={label}
-                  style={{ display: "flex", flexDirection: "column", gap: 3 }}
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 10,
+                    padding: "8px 5px",
+                    textAlign: "center",
+                  }}
                 >
                   <div
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 9.5,
-                      color: "var(--text-muted)",
+                      fontSize: 8,
                       textTransform: "uppercase",
+                      color: "var(--text-muted)",
                       letterSpacing: "0.5px",
+                      marginBottom: 1,
                     }}
                   >
-                    <span
-                      style={{
-                        color: "var(--accent-primary)",
-                        display: "flex",
-                      }}
-                    >
-                      {icon}
-                    </span>
                     {label}
                   </div>
                   <div
                     style={{
-                      fontSize: 14,
-                      fontWeight: 600,
+                      fontSize: 13,
+                      fontWeight: 700,
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                       color: "var(--text-primary)",
+                      marginTop: 1,
                     }}
                   >
                     {value}
@@ -2057,73 +1815,270 @@ export default function LlamaCppPage() {
                 </div>
               ))}
             </div>
+          </PanelCard>
 
-            {/* Capability badges */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <CapPill
-                icon={<Activity size={13} />}
-                label="Metrics"
-                enabled={m?.endpoint_metrics}
-              />
-              <CapPill
-                icon={<Globe size={13} />}
-                label="WebUI"
-                enabled={m?.webui}
-              />
-              <CapPill
-                icon={<Eye size={13} />}
-                label="Vision"
-                enabled={m?.vision}
-              />
-              <CapPill
-                icon={<AudioLines size={13} />}
-                label="Audio"
-                enabled={m?.audio}
-              />
-              <CapPill
-                icon={<VideoIcon size={13} />}
-                label="Video"
-                enabled={m?.video}
-              />
+          {/* ── Throughput card ── */}
+          <PanelCard>
+            <PanelHead
+              icon={<Zap size={13} />}
+              title="Throughput"
+              right={
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                    color: "var(--border-color)",
+                  }}
+                >
+                  02
+                </span>
+              }
+            />
+            <div
+              style={{
+                padding: "10px 13px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 7,
+                flex: 1,
+              }}
+            >
+              {/* Gen Speed banner */}
+              <div
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary))",
+                  border:
+                    "1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)",
+                  borderRadius: 11,
+                  padding: "8px 13px",
+                  boxShadow:
+                    "inset 0 0 20px -5px color-mix(in srgb, var(--accent-primary) 12%, transparent)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9.5,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.6px",
+                    color: "var(--text-muted)",
+                    marginBottom: 2,
+                  }}
+                >
+                  Generation Speed
+                </div>
+                <div
+                  style={{ display: "flex", alignItems: "baseline", gap: 3 }}
+                >
+                  <span
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 700,
+                      color: "var(--accent-primary)",
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {m?.gen_tps != null ? m.gen_tps.toFixed(1) : "\u2014"}
+                  </span>
+                  {m?.gen_tps != null && (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {" "}
+                      t/s
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 4, height: 14 }}>
+                  <Sparkline
+                    data={aiGenTpsHistory ?? []}
+                    color="var(--accent-primary)"
+                    width={200}
+                    height={14}
+                  />
+                </div>
+              </div>
+
+              {/* Prompt Speed banner */}
+              <div
+                style={{
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border-light, var(--border-color))",
+                  borderRadius: 11,
+                  padding: "8px 13px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9.5,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.6px",
+                    color: "var(--text-muted)",
+                    marginBottom: 2,
+                  }}
+                >
+                  Prompt Speed
+                </div>
+                <div
+                  style={{ display: "flex", alignItems: "baseline", gap: 3 }}
+                >
+                  <span
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {m?.prompt_tps != null ? m.prompt_tps.toFixed(1) : "\u2014"}
+                  </span>
+                  {m?.prompt_tps != null && (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {" "}
+                      t/s
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 4, height: 14 }}>
+                  <Sparkline
+                    data={aiPromptTpsHistory ?? []}
+                    color="var(--text-secondary)"
+                    width={200}
+                    height={14}
+                  />
+                </div>
+              </div>
+
+              {/* Prompt Tokens + Generated tiles */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 9,
+                    padding: "6px 10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Prompt Tokens
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      marginTop: 1,
+                    }}
+                  >
+                    {fmtNum(tokenUsage?.prompt_tokens) || "0"}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 9,
+                    padding: "6px 10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Generated
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      marginTop: 1,
+                    }}
+                  >
+                    {fmtNum(tokenUsage?.completion_tokens) || "0"}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        fontWeight: 400,
+                        marginLeft: 2,
+                      }}
+                    >
+                      tok
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </PanelCard>
 
-          {/* ── Context | llama.cpp info | Action buttons ── */}
-          <div style={{ display: "contents" }}>
-            {/* ── Context card ── */}
-            <PanelCard>
-              <PanelHead icon={<Brain size={13} />} title="Context" />
+          {/* ── Context card ── */}
+          <PanelCard>
+            <PanelHead
+              icon={<Brain size={13} />}
+              title="Context"
+              right={
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                    color: "var(--border-color)",
+                  }}
+                >
+                  03
+                </span>
+              }
+            />
+            <div
+              style={{
+                padding: "10px 13px 12px",
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                overflow: "hidden",
+              }}
+            >
+              {!llamaOnline && !llamaCppLoading && (
+                <div
+                  className="error-banner"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    borderRadius: 6,
+                    width: "100%",
+                  }}
+                >
+                  <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                  llama.cpp server offline
+                </div>
+              )}
+              {/* Gauge + tiles row */}
               <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  padding: "12px 14px 14px",
-                  gap: 10,
-                  flex: 1,
-                  overflow: "hidden",
-                }}
+                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
               >
-                {!llamaOnline && !llamaCppLoading && (
-                  <div
-                    className="error-banner"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      borderRadius: 6,
-                      width: "100%",
-                    }}
-                  >
-                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
-                    llama.cpp server offline
-                  </div>
-                )}
-                {/* Radial gauge */}
-                <RadialGauge pct={contextPct} color={ctxColor} size={110}>
+                <RadialGauge pct={contextPct} color={ctxColor} size={82}>
                   <span
                     style={{
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: 700,
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                       color: ctxColor,
@@ -2133,847 +2088,796 @@ export default function LlamaCppPage() {
                     {contextGaugeLabel(contextPct, llamaOnline)}
                   </span>
                   {contextPct != null && (
-                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                    <span style={{ fontSize: 8, color: "var(--text-muted)" }}>
                       %
                     </span>
                   )}
-                </RadialGauge>
-                {/* Token counts */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    width: "100%",
-                    fontSize: 11,
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  <span style={{ color: ctxColor, fontWeight: 600 }}>
-                    {slotCurrentTokens != null
-                      ? slotCurrentTokens.toLocaleString()
-                      : "—"}
-                  </span>
-                  <span>
-                    / {slotCtx != null ? slotCtx.toLocaleString() : "—"} tok
-                  </span>
-                </div>
-                {/* Usage bar */}
-                <div style={{ width: "100%" }}>
-                  <div className="card-progress" style={{ height: 4 }}>
-                    <div
-                      className={`card-progress-bar ${thresholdClass(contextPct)}`}
-                      style={{ width: `${contextPct ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-                {/* Mini rings */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    justifyContent: "center",
-                    marginTop: "auto",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <MiniRing
-                    pct={promptBufPct}
-                    color={thresholdColor(promptBufPct)}
-                    label="Prompt Buf"
-                    value={
-                      promptBufPct != null
-                        ? `${Math.round(promptBufPct * 10) / 10}%`
-                        : "—"
-                    }
-                  />
-                </div>
-
-                {/* Live generation progress */}
-                {slot0 && slotCtx != null && (
-                  <div
+                  <span
                     style={{
-                      marginTop: 8,
-                      padding: "6px 10px",
-                      background:
-                        "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
-                      borderRadius: 6,
-                      border:
-                        "1px solid var(--border-light, var(--border-color))",
+                      fontSize: 7,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
                     }}
                   >
+                    Full
+                  </span>
+                </RadialGauge>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 5,
+                  }}
+                >
+                  {(
+                    [
+                      {
+                        label: "Current",
+                        value:
+                          slotCurrentTokens != null
+                            ? slotCurrentTokens.toLocaleString()
+                            : "\u2014",
+                        accent: true,
+                        span: false,
+                      },
+                      {
+                        label: "Max",
+                        value:
+                          slotCtx != null ? slotCtx.toLocaleString() : "\u2014",
+                        accent: false,
+                        span: false,
+                      },
+                      {
+                        label: "Remaining",
+                        value:
+                          slotCtx != null && slotCurrentTokens != null
+                            ? (slotCtx - slotCurrentTokens).toLocaleString()
+                            : "\u2014",
+                        accent: false,
+                        span: false,
+                      },
+                      {
+                        label: "Cached",
+                        value: tokCached != null ? fmtNum(tokCached) : "\u2014",
+                        accent: false,
+                        span: false,
+                      },
+                      {
+                        label: "Largest Seen",
+                        value:
+                          m?.context_tokens != null
+                            ? m.context_tokens.toLocaleString()
+                            : "\u2014",
+                        accent: false,
+                        span: true,
+                      },
+                    ] as {
+                      label: string;
+                      value: string;
+                      accent: boolean;
+                      span: boolean;
+                    }[]
+                  ).map(({ label, value, accent, span }) => (
                     <div
+                      key={label}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        marginBottom: 4,
+                        background: "var(--bg-secondary)",
+                        border: "1px solid var(--border-color)",
+                        borderRadius: 8,
+                        padding: "4px 9px",
+                        gridColumn: span ? "1 / -1" : undefined,
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          fontSize: 9.5,
-                          fontWeight: 600,
-                          color: "var(--text-muted)",
+                          fontSize: 8.5,
                           textTransform: "uppercase",
-                          letterSpacing: "0.5px",
+                          letterSpacing: "0.4px",
+                          color: "var(--text-muted)",
                         }}
                       >
-                        Generation Progress
-                      </span>
-                      <span
-                        style={{ color: "var(--text-muted)", fontSize: 9.5 }}
-                      >
-                        ·
-                      </span>
-                      <span
+                        {label}
+                      </div>
+                      <div
                         style={{
-                          fontSize: 10,
+                          fontSize: 15,
+                          fontWeight: 700,
                           fontFamily:
                             '"JetBrains Mono", "Fira Code", monospace',
-                          fontWeight: 600,
-                          color: slot0.is_processing
+                          marginTop: 1,
+                          color: accent
                             ? "var(--accent-primary)"
-                            : "var(--text-muted)",
+                            : "var(--text-primary)",
                         }}
                       >
-                        {slot0.is_processing ? "Generating…" : "Idle"}
-                      </span>
+                        {value}
+                      </div>
                     </div>
-                    <div
+                  ))}
+                </div>
+              </div>
+              {/* Generation Progress strip */}
+              {slot0 && slotCtx != null && (
+                <div
+                  style={{
+                    paddingTop: 7,
+                    borderTop:
+                      "1px solid var(--border-light, var(--border-color))",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 5,
+                    }}
+                  >
+                    <span
                       style={{
-                        fontSize: 10,
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        color: "var(--text-secondary)",
-                        marginBottom: 3,
+                        fontSize: 9.5,
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
                       }}
                     >
-                      {(() => {
-                        const nd = slot0.n_decoded;
-                        const np = slot0.n_predict;
-                        const nr = slot0.n_remain;
-                        const unbounded = np == null || np <= 0;
-                        return unbounded ? (
-                          <>{nd != null ? nd.toLocaleString() : "—"} tok</>
-                        ) : (
-                          <>
-                            {nd != null ? nd.toLocaleString() : "—"} /{" "}
-                            {np.toLocaleString()} tok
-                            {" · "}
-                            Remaining: {nr != null ? nr.toLocaleString() : "—"}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <div className="card-progress" style={{ height: 3 }}>
-                      <div
-                        className={`card-progress-bar ${thresholdClass(
-                          (() => {
-                            const nd = slot0.n_decoded;
-                            const np = slot0.n_predict;
-                            return nd != null && np != null && np > 0
-                              ? (nd / np) * 100
-                              : undefined;
-                          })(),
-                        )}`}
-                        style={{
-                          width: `${(() => {
-                            const nd = slot0.n_decoded;
-                            const np = slot0.n_predict;
-                            return nd != null && np != null && np > 0
-                              ? Math.round((nd / np) * 100)
-                              : 0;
-                          })()}%`,
-                        }}
-                      />
-                    </div>
+                      Generation Progress
+                    </span>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 8,
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontWeight: 600,
+                        padding: "1px 6px",
+                        borderRadius: 5,
+                        background: slot0.is_processing
+                          ? "color-mix(in srgb, var(--accent-primary) 12%, transparent)"
+                          : "transparent",
+                        color: slot0.is_processing
+                          ? "var(--accent-primary)"
+                          : "var(--text-muted)",
+                      }}
+                    >
+                      {slot0.is_processing && (
+                        <span
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: "var(--accent-primary)",
+                            animation: "dot-pulse 1.8s ease-in-out infinite",
+                          }}
+                        />
+                      )}
+                      {slot0.is_processing ? "Generating" : "Idle"}
+                    </span>
                   </div>
+                  <div className="card-progress" style={{ height: 5 }}>
+                    <div
+                      className={`card-progress-bar ${thresholdClass(
+                        (() => {
+                          const nd = slot0.n_decoded;
+                          const np = slot0.n_predict;
+                          return nd != null && np != null && np > 0
+                            ? (nd / np) * 100
+                            : undefined;
+                        })(),
+                      )}`}
+                      style={{
+                        width: `${(() => {
+                          const nd = slot0.n_decoded;
+                          const np = slot0.n_predict;
+                          return nd != null && np != null && np > 0
+                            ? Math.round((nd / np) * 100)
+                            : 0;
+                        })()}%`,
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 8,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: "var(--text-muted)",
+                      marginTop: 4,
+                    }}
+                  >
+                    {(() => {
+                      const nd = slot0.n_decoded;
+                      const np = slot0.n_predict;
+                      const nr = slot0.n_remain;
+                      const unbounded = np == null || np <= 0;
+                      return unbounded ? (
+                        <span>
+                          {nd != null ? nd.toLocaleString() : "\u2014"} tok
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            {nd != null ? nd.toLocaleString() : "\u2014"} /{" "}
+                            {np.toLocaleString()} tok
+                          </span>
+                          <span>
+                            Remaining{" "}
+                            {nr != null ? nr.toLocaleString() : "\u2014"}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </PanelCard>
+        </div>
+
+        {/* ══════════════════════════════════════════════════
+            LOWER ROW: Left rail | Work area
+            ══════════════════════════════════════════════════ */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "250px minmax(0, 1fr)",
+            gap: 9,
+            flex: 1,
+            minHeight: 0,
+            alignItems: "stretch",
+          }}
+        >
+          {/* ── Left Rail ── */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 9,
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
+            {/* Runtime card */}
+            <PanelCard style={{ flex: 1, minHeight: 0 }}>
+              <PanelHead
+                icon={<Activity size={13} />}
+                title="Runtime"
+                right={
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: "var(--border-color)",
+                    }}
+                  >
+                    04
+                  </span>
+                }
+              />
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  padding: "6px 13px 8px",
+                }}
+              >
+                {kvRow(
+                  <Server size={11} />,
+                  "Server",
+                  llamaOnline ? "Online" : "Offline",
+                  llamaOnline ? "var(--success)" : "var(--text-muted)",
+                )}
+                {kvRow(
+                  <Clock3 size={11} />,
+                  "Uptime",
+                  fmtUptime(proc?.uptime_seconds),
+                )}
+                {kvRow(
+                  <Zap size={11} />,
+                  "Load Time",
+                  m?.model_load_time_ms != null
+                    ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <Fingerprint size={11} />,
+                  "PID",
+                  proc?.pid != null ? String(proc.pid) : "\u2014",
+                )}
+                {kvRow(
+                  <Globe size={11} />,
+                  "Port",
+                  runningArgs?.port != null
+                    ? String(runningArgs.port)
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <MemoryStick size={11} />,
+                  "Memory",
+                  fmtKb(proc?.memory_kb),
+                )}
+                {kvRow(
+                  <Cpu size={11} />,
+                  "CPU",
+                  proc?.cpu_percent != null
+                    ? `${proc.cpu_percent.toFixed(1)}%`
+                    : "\u2014",
+                )}
+                {kvRow(
+                  <Brain size={11} />,
+                  "Context",
+                  slotCtx != null ? formatCtx(slotCtx) : "\u2014",
+                )}
+                {kvRow(
+                  <MonitorCog size={11} />,
+                  "GPU Layers",
+                  gpuTotalLoaded != null && gpuTotalLayers != null
+                    ? `${gpuTotalLoaded} / ${gpuTotalLayers}`
+                    : "\u2014",
+                  gpuOffloadPct === 100 ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Layers size={11} />,
+                  "CPU Layers",
+                  gpuOffload != null
+                    ? `${gpuOffload.main_total - gpuOffload.main_loaded} / ${gpuOffload.main_total}`
+                    : "\u2014",
+                  gpuOffload != null &&
+                    gpuOffload.main_loaded === gpuOffload.main_total
+                    ? "var(--success)"
+                    : undefined,
+                )}
+                {kvRow(
+                  <Layers size={11} />,
+                  "Draft Layers",
+                  hasDraft && gpuOffload != null
+                    ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
+                    : "\u2014",
+                  hasDraft ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Zap size={11} />,
+                  "Speculative",
+                  boolLabel(m?.speculative),
+                  m?.speculative ? "var(--success)" : undefined,
+                )}
+                {kvRow(
+                  <Database size={11} />,
+                  "Tokens Cached",
+                  fmtNum(slot0?.n_prompt_tokens_cache ?? m?.tokens_cached),
                 )}
               </div>
             </PanelCard>
 
-            {/* ── llama.cpp Information card ── */}
-            <PanelCard>
+            {/* llama.cpp card */}
+            <PanelCard style={{ flexShrink: 0 }}>
               <PanelHead
                 icon={<Package size={13} />}
-                title="llama.cpp Information"
+                title="llama.cpp"
+                right={
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: "var(--border-color)",
+                    }}
+                  >
+                    05
+                  </span>
+                }
               />
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "11px 14px",
-                  padding: "13px 15px 11px",
-                }}
-              >
-                <InfoCell
-                  label="Current build"
-                  value={mgmt.repoInfo?.local_build_tag || "\u2014"}
-                  accent
-                />
-                <InfoCell
-                  label="Latest build"
-                  value={mgmt.repoInfo?.latest_build_tag || "\u2014"}
-                  success
-                />
-              </div>
-
-              {/* Update row: "N builds behind" chip + tinted Update CTA */}
-              <div
-                style={{
+                  padding: "10px 13px",
                   display: "flex",
-                  alignItems: "center",
+                  flexDirection: "column",
                   gap: 8,
-                  padding: "0 15px 12px",
                 }}
               >
+                {/* Build boxes */}
+                <div style={{ display: "flex", gap: 7 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 10,
+                      padding: "7px 10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 8,
+                        textTransform: "uppercase",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Current
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        marginTop: 1,
+                      }}
+                    >
+                      {mgmt.repoInfo?.local_build_tag || "\u2014"}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "var(--bg-secondary)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                      borderRadius: 10,
+                      padding: "7px 10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 8,
+                        textTransform: "uppercase",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Latest
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        marginTop: 1,
+                        color: "var(--accent-primary)",
+                      }}
+                    >
+                      {mgmt.repoInfo?.latest_build_tag || "\u2014"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* N behind + Update button */}
                 {behind != null && behind > 0 && (
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 6,
-                      flex: 1,
                       background:
                         "color-mix(in srgb, var(--warning) 10%, transparent)",
                       border:
                         "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
                       color: "var(--warning)",
-                      borderRadius: 7,
+                      borderRadius: 9,
                       padding: "5px 10px",
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: 500,
                     }}
                   >
                     <TriangleAlert
-                      size={13}
+                      size={11}
                       style={{
                         flexShrink: 0,
                         animation: "pulse 2s ease-in-out infinite",
                       }}
                     />
-                    {behind} build{behind === 1 ? "" : "s"} behind latest
+                    <span style={{ flex: 1 }}>
+                      {behind} build{behind === 1 ? "" : "s"} behind
+                    </span>
+                    <button
+                      onClick={mgmt.runUpdate}
+                      disabled={!hasDir || mgmt.updateState === "running"}
+                      style={{
+                        background: "var(--accent-fill)",
+                        backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 7,
+                        padding: "3px 10px",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor:
+                          !hasDir || mgmt.updateState === "running"
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          !hasDir || mgmt.updateState === "running" ? 0.5 : 1,
+                        fontFamily: "inherit",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <RefreshCw
+                        size={9}
+                        className={
+                          mgmt.updateState === "running" ? "spin" : undefined
+                        }
+                      />
+                      Update
+                    </button>
                   </div>
                 )}
-                <button
-                  onClick={mgmt.runUpdate}
-                  disabled={!hasDir || mgmt.updateState === "running"}
-                  className="settings-btn settings-btn-accent"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "5px 11px",
-                    fontSize: 11,
-                    borderRadius: 7,
-                    whiteSpace: "nowrap",
-                    cursor:
-                      !hasDir || mgmt.updateState === "running"
-                        ? "not-allowed"
-                        : "pointer",
-                    opacity:
-                      !hasDir || mgmt.updateState === "running" ? 0.5 : 1,
-                  }}
-                >
-                  <RefreshCw
-                    size={12}
-                    className={
-                      mgmt.updateState === "running" ? "spin" : undefined
-                    }
-                  />
-                  Update to latest
-                </button>
-              </div>
 
-              {/* Update progress bar */}
-              {mgmt.updateState !== "idle" && (
+                {/* Update progress bar */}
+                {mgmt.updateState !== "idle" && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    {mgmt.updateState === "running" && (
+                      <Loader2
+                        size={10}
+                        className="spin"
+                        style={{
+                          color: "var(--accent-primary)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        flexShrink: 0,
+                        color: updateStateColor(mgmt.updateState),
+                      }}
+                    >
+                      {updateStateText(mgmt.updateState)}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 4,
+                        borderRadius: 2,
+                        background: "var(--bg-secondary)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${mgmt.updateProgress}%`,
+                          height: "100%",
+                          borderRadius: 2,
+                          background:
+                            mgmt.updateState === "error"
+                              ? "var(--danger)"
+                              : "var(--accent-fill)",
+                          backgroundSize:
+                            mgmt.updateState !== "error"
+                              ? "var(--accent-fill-size, 200% 200%)"
+                              : undefined,
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        flexShrink: 0,
+                        width: 28,
+                        textAlign: "right",
+                      }}
+                    >
+                      {mgmt.updateProgress}%
+                    </span>
+                    <button
+                      onClick={() => mgmt.setOutputOpen(true)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                        padding: "2px 5px",
+                        fontSize: 9,
+                        fontWeight: 600,
+                        background: "var(--bg-secondary)",
+                        border: "1px solid var(--border-color)",
+                        borderRadius: 5,
+                        cursor: "pointer",
+                        color: "var(--text-primary)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <ExternalLink size={8} />
+                      Log
+                    </button>
+                  </div>
+                )}
+
+                {/* Terminal / Readme / Release buttons */}
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "0 15px 11px",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: 6,
                   }}
                 >
-                  {mgmt.updateState === "running" && (
-                    <Loader2
-                      size={10}
-                      className="spin"
-                      style={{ color: "var(--accent-primary)", flexShrink: 0 }}
-                    />
-                  )}
-                  <span
+                  <button
+                    onClick={() => mgmt.openTerminal()}
+                    disabled={!hasDir}
                     style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                      color: updateStateColor(mgmt.updateState),
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "8px 4px",
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 10,
+                      fontSize: 9,
+                      color: !hasDir
+                        ? "var(--text-muted)"
+                        : "var(--text-secondary)",
+                      cursor: !hasDir ? "not-allowed" : "pointer",
+                      opacity: !hasDir ? 0.4 : 1,
+                      fontWeight: 500,
+                      fontFamily: "inherit",
                     }}
                   >
-                    {updateStateText(mgmt.updateState)}
+                    <TermIcon
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    Terminal
+                  </button>
+                  <button
+                    onClick={() =>
+                      mgmt.readmeUrl &&
+                      window.open(
+                        mgmt.readmeUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      )
+                    }
+                    disabled={!mgmt.readmeUrl}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "8px 4px",
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 10,
+                      fontSize: 9,
+                      color: !mgmt.readmeUrl
+                        ? "var(--text-muted)"
+                        : "var(--text-secondary)",
+                      cursor: !mgmt.readmeUrl ? "not-allowed" : "pointer",
+                      opacity: !mgmt.readmeUrl ? 0.4 : 1,
+                      fontWeight: 500,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <BookOpen
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    Readme
+                  </button>
+                  <a
+                    href="https://github.com/ggml-org/llama.cpp/releases"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "8px 4px",
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 10,
+                      fontSize: 9,
+                      color: "var(--text-secondary)",
+                      cursor: "pointer",
+                      fontWeight: 500,
+                      textDecoration: "none",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <ArrowDown
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    Release
+                  </a>
+                </div>
+              </div>
+            </PanelCard>
+
+            {/* Live Activity card */}
+            <PanelCard style={{ flexShrink: 0 }}>
+              <PanelHead
+                icon={<Send size={13} />}
+                title="Live Activity"
+                right={
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      color: "var(--border-color)",
+                    }}
+                  >
+                    06
                   </span>
+                }
+              />
+              <div
+                style={{ padding: "10px 13px 12px", display: "flex", gap: 8 }}
+              >
+                {(
+                  [
+                    {
+                      label: "Total Sent",
+                      value: fmtNum(m?.total_tokens_sent) || "0",
+                    },
+                    {
+                      label: "Active Req",
+                      value: fmtNum(m?.active_requests) || "0",
+                    },
+                    {
+                      label: "Tok Cached",
+                      value: tokCached != null ? fmtNum(tokCached) : "\u2014",
+                    },
+                  ] as { label: string; value: string }[]
+                ).map(({ label, value }) => (
                   <div
+                    key={label}
                     style={{
                       flex: 1,
-                      height: 5,
-                      borderRadius: 2,
                       background: "var(--bg-secondary)",
-                      overflow: "hidden",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 10,
+                      padding: "10px 11px",
+                      textAlign: "center",
                     }}
                   >
                     <div
                       style={{
-                        width: `${mgmt.updateProgress}%`,
-                        height: "100%",
-                        borderRadius: 2,
-                        background:
-                          mgmt.updateState === "error"
-                            ? "var(--danger)"
-                            : "var(--accent-fill)",
-                        backgroundSize:
-                          mgmt.updateState !== "error"
-                            ? "var(--accent-fill-size, 200% 200%)"
-                            : undefined,
-                        transition: "width 0.3s ease",
-                      }}
-                    />
-                  </div>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "var(--text-primary)",
-                      flexShrink: 0,
-                      width: 28,
-                      textAlign: "right",
-                    }}
-                  >
-                    {mgmt.updateProgress}%
-                  </span>
-                  <button
-                    onClick={() => mgmt.setOutputOpen(true)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      padding: "2px 6px",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: "var(--radius-sm)",
-                      cursor: "pointer",
-                      color: "var(--text-primary)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <ExternalLink size={9} />
-                    Output
-                  </button>
-                </div>
-              )}
-            </PanelCard>
-
-            {/* ── Action buttons column: 4 secondary buttons ── */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-evenly",
-                height: "100%",
-              }}
-            >
-              <button
-                onClick={() => mgmt.openTerminal()}
-                disabled={!hasDir}
-                className="settings-btn"
-                style={!hasDir ? railBtnDisabled : railBtn}
-              >
-                <TermIcon
-                  size={15}
-                  style={{ color: "var(--accent-primary)" }}
-                />
-                Terminal
-              </button>
-
-              <button
-                onClick={() =>
-                  mgmt.readmeUrl &&
-                  window.open(mgmt.readmeUrl, "_blank", "noopener,noreferrer")
-                }
-                disabled={!mgmt.readmeUrl}
-                className="settings-btn"
-                style={!mgmt.readmeUrl ? railBtnDisabled : railBtn}
-              >
-                <BookOpen
-                  size={15}
-                  style={{ color: "var(--accent-primary)" }}
-                />
-                Readme
-              </button>
-
-              <a
-                href="https://github.com/ggml-org/llama.cpp/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="settings-btn"
-                style={{ ...railBtn, textDecoration: "none" }}
-              >
-                <ArrowDown
-                  size={15}
-                  style={{ color: "var(--accent-primary)" }}
-                />
-                Release Notes
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* ════════════════════════════════════════════
-            LOWER ROW: Runtime (660px) | Run Models + Console
-            ════════════════════════════════════════════ */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "660px minmax(0, 1fr)",
-            gap: 14,
-            flex: 1,
-            minHeight: 0,
-            alignItems: "stretch",
-          }}
-        >
-          {/* ── Lower-left: Telemetry rail + Runtime card ── */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              minHeight: 0,
-            }}
-          >
-            {/* Telemetry rail — two rows: numbers on top, aligned sparklines below */}
-            <PanelCard style={{ flexShrink: 0 }}>
-              {/* Row 1: metric numbers */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "stretch",
-                }}
-              >
-                {/* Gen TPS — hero */}
-                <div
-                  style={{
-                    flex: 2,
-                    padding: "10px 14px",
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                    minWidth: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 9.5,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "var(--accent-primary)",
-                        display: "flex",
-                      }}
-                    >
-                      <Zap size={12} />
-                    </span>
-                    Gen TPS
-                  </div>
-                  <div
-                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 30,
-                        fontWeight: 800,
-                        color: "var(--accent-primary)",
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        fontVariantNumeric: "tabular-nums",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {m?.gen_tps != null ? m.gen_tps.toFixed(1) : "—"}
-                    </span>
-                    {m?.gen_tps != null && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--text-muted)",
-                          fontWeight: 500,
-                        }}
-                      >
-                        t/s
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Prompt TPS */}
-                <div
-                  style={{
-                    flex: 1.5,
-                    padding: "10px 12px",
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                    minWidth: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 9.5,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "var(--accent-primary)",
-                        display: "flex",
-                      }}
-                    >
-                      <Activity size={12} />
-                    </span>
-                    Prompt TPS
-                  </div>
-                  <div
-                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 20,
-                        fontWeight: 700,
-                        color: "var(--text-primary)",
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        fontVariantNumeric: "tabular-nums",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {m?.prompt_tps != null ? m.prompt_tps.toFixed(1) : "—"}
-                    </span>
-                    {m?.prompt_tps != null && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--text-muted)",
-                          fontWeight: 500,
-                        }}
-                      >
-                        t/s
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Prompt tokens */}
-                <div
-                  style={{
-                    flex: 1,
-                    padding: "10px 12px",
-                    borderRight:
-                      "1px solid var(--border-light, var(--border-color))",
-                    minWidth: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 9.5,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "var(--text-secondary)",
-                        display: "flex",
-                      }}
-                    >
-                      <Send size={12} />
-                    </span>
-                    Prompt
-                  </div>
-                  <div
-                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 700,
-                        color: "var(--text-primary)",
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        fontVariantNumeric: "tabular-nums",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {fmtNum(tokenUsage?.prompt_tokens) || "0"}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 9.5,
+                        fontSize: 8,
+                        textTransform: "uppercase",
                         color: "var(--text-muted)",
-                        fontWeight: 500,
+                        letterSpacing: "0.5px",
                       }}
                     >
-                      tok
-                    </span>
-                  </div>
-                </div>
-
-                {/* Generated tokens */}
-                <div style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 9.5,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span
+                      {label}
+                    </div>
+                    <div
                       style={{
-                        color: "var(--text-secondary)",
-                        display: "flex",
-                      }}
-                    >
-                      <Cpu size={12} />
-                    </span>
-                    Generated
-                  </div>
-                  <div
-                    style={{ display: "flex", alignItems: "baseline", gap: 4 }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: 700,
-                        color: "var(--text-primary)",
                         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        fontVariantNumeric: "tabular-nums",
-                        lineHeight: 1,
+                        marginTop: 3,
                       }}
                     >
-                      {fmtNum(tokenUsage?.completion_tokens) || "0"}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 9.5,
-                        color: "var(--text-muted)",
-                        fontWeight: 500,
-                      }}
-                    >
-                      tok
-                    </span>
+                      {value}
+                    </div>
                   </div>
-                </div>
-              </div>
-            </PanelCard>
-
-            {/* Runtime Information card */}
-            <PanelCard style={{ flex: 1, minHeight: 0 }}>
-              <PanelHead
-                icon={<Activity size={13} />}
-                title="Runtime Information"
-              />
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "0 22px",
-                  padding: "8px 15px",
-                  overflow: "auto",
-                  flex: 1,
-                }}
-              >
-                {/* Left column */}
-                <div>
-                  {kvRow(
-                    <Server size={12} />,
-                    "Server",
-                    llamaOnline ? "Online" : "Offline",
-                    llamaOnline ? "var(--success)" : "var(--text-muted)",
-                  )}
-                  {kvRow(
-                    <Fingerprint size={12} />,
-                    "PID",
-                    proc?.pid != null ? String(proc.pid) : "\u2014",
-                  )}
-                  {kvRow(
-                    <Globe size={12} />,
-                    "Port",
-                    runningArgs?.port != null
-                      ? String(runningArgs.port)
-                      : "\u2014",
-                  )}
-                  {kvRow(
-                    <Brain size={12} />,
-                    "Context",
-                    slotCtx != null ? formatCtx(slotCtx) : "\u2014",
-                  )}
-                  {kvRow(
-                    <Zap size={12} />,
-                    "Speculative",
-                    boolLabel(m?.speculative),
-                    m?.speculative ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <Tag size={12} />,
-                    "Alias",
-                    pageModelAlias || "\u2014",
-                    pageModelAlias ? "var(--accent-primary)" : undefined,
-                  )}
-                  {kvRow(
-                    <Zap size={12} />,
-                    "Load Time",
-                    m?.model_load_time_ms != null
-                      ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
-                      : "\u2014",
-                  )}
-                </div>
-
-                {/* Right column */}
-                <div>
-                  {kvRow(
-                    <Clock3 size={12} />,
-                    "Uptime",
-                    fmtUptime(proc?.uptime_seconds),
-                  )}
-                  {kvRow(
-                    <Cpu size={12} />,
-                    "CPU",
-                    proc?.cpu_percent != null
-                      ? `${proc.cpu_percent.toFixed(1)}%`
-                      : "\u2014",
-                  )}
-                  {kvRow(
-                    <MemoryStick size={12} />,
-                    "Memory",
-                    fmtKb(proc?.memory_kb),
-                  )}
-                  {kvRow(
-                    <Layers size={12} />,
-                    "CPU Layers",
-                    gpuOffload != null
-                      ? `${gpuOffload.main_total - gpuOffload.main_loaded} / ${gpuOffload.main_total}`
-                      : "\u2014",
-                    gpuOffload != null &&
-                      gpuOffload.main_loaded === gpuOffload.main_total
-                      ? "var(--success)"
-                      : undefined,
-                  )}
-                  {kvRow(
-                    <Layers size={12} />,
-                    "Draft Layers",
-                    hasDraft && gpuOffload != null
-                      ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
-                      : "\u2014",
-                    hasDraft ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <MonitorCog size={12} />,
-                    "GPU Layers",
-                    gpuTotalLoaded != null && gpuTotalLayers != null
-                      ? `${gpuTotalLoaded}/${gpuTotalLayers} (${gpuOffloadPct}%)`
-                      : "\u2014",
-                    gpuOffloadPct === 100 ? "var(--success)" : undefined,
-                  )}
-                  {kvRow(
-                    <Database size={12} />,
-                    "Tokens Cached",
-                    fmtNum(slot0?.n_prompt_tokens_cache ?? m?.tokens_cached),
-                    slot0?.n_prompt_tokens_cache == null &&
-                      m?.tokens_cached == null
-                      ? "var(--text-muted)"
-                      : undefined,
-                  )}
-                </div>
-              </div>
-
-              {/* Live Activity */}
-              <div
-                style={{
-                  padding: "7px 15px 9px",
-                  borderTop:
-                    "1px dashed var(--border-light, var(--border-color))",
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: 6,
-                  }}
-                >
-                  Live Activity
-                </div>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <FooterStat
-                    icon={<Send size={13} />}
-                    label="Total Sent"
-                    value={fmtNum(m?.total_tokens_sent) || "0"}
-                    color="var(--accent-primary)"
-                  />
-                  <FooterStat
-                    icon={<Zap size={13} />}
-                    label="Load Time"
-                    value={
-                      m?.model_load_time_ms != null
-                        ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
-                        : "—"
-                    }
-                    color="var(--text-secondary)"
-                  />
-                  <FooterStat
-                    icon={<Database size={13} />}
-                    label="Tok Cached"
-                    value={tokCached != null ? fmtNum(tokCached) : "—"}
-                    color="var(--success)"
-                    history={tokCachedHistory}
-                  />
-                </div>
+                ))}
               </div>
             </PanelCard>
           </div>
 
-          {/* ── Right lower column: Run Models + Console ── */}
+          {/* ── Work area: Run Models + Console ── */}
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 12,
+              gap: 9,
               minHeight: 0,
             }}
           >
-            {/* Run Models card — fixed height showing 5 rows, rest scrolls */}
+            {/* Run Models */}
             <div
               className="card-accent-spine"
               style={{
@@ -2992,7 +2896,7 @@ export default function LlamaCppPage() {
               <RunModelsSection />
             </div>
 
-            {/* Console card — fills remaining height */}
+            {/* Console */}
             <div
               className="card-accent-spine"
               style={{
