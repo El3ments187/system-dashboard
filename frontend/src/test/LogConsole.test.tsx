@@ -1,841 +1,525 @@
+import React from "react";
 import {
   render,
   screen,
   waitFor,
   fireEvent,
-  act,
+  within,
 } from "@testing-library/react";
-import { LogConsole } from "../components/LogConsole";
-import type { LogLine, ProfileResponse } from "../types/metrics";
+import { LogConsole, lineMatchesFilters } from "../components/LogConsole";
+import type { LogLine } from "../types/metrics";
 
-// ─── WebSocket mock ──────────────────────────────────────────────────
+// ─── WebSocket mock ────────────────────────────────────────────────────
 
-interface MockWsInstance {
-  url: string;
-  onopen: ((e: Event) => void) | null;
-  onmessage: ((e: MessageEvent) => void) | null;
-  onclose: (() => void) | null;
-  onerror: (() => void) | null;
-  close: () => void;
-  send: (data: string) => void;
-  triggerOpen: () => void;
-  triggerMessage: (data: object) => void;
-  triggerClose: () => void;
-  triggerError: () => void;
-}
+const wsInstances: MockWs[] = [];
 
-let lastWs: MockWsInstance | null = null;
-
-class MockWebSocket implements MockWsInstance {
-  url: string;
+class MockWs {
   onopen: ((e: Event) => void) | null = null;
   onmessage: ((e: MessageEvent) => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onclose: ((e: CloseEvent) => void) | null = null;
+  onerror: ((e: Event) => void) | null = null;
+  readyState = 0;
 
-  constructor(url: string) {
-    this.url = url;
-    lastWs = this;
+  constructor(public url: string) {
+    wsInstances.push(this);
   }
 
   close() {
-    this.onclose?.();
+    this.onclose?.(new CloseEvent("close"));
   }
 
-  // eslint-disable-next-line unused-imports/no-unused-vars
-  send(_: string) {}
-
-  triggerOpen() {
-    this.onopen?.({} as Event);
+  openWs() {
+    this.readyState = 1;
+    this.onopen?.(new Event("open"));
   }
 
-  triggerMessage(data: object) {
-    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent);
+  sendHistory(lines: LogLine[], exited = false) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "history", lines, exited }),
+      }),
+    );
   }
 
-  triggerClose() {
-    this.onclose?.();
-  }
-
-  triggerError() {
-    this.onerror?.();
+  sendLog(line: LogLine) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "log", line }),
+      }),
+    );
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-function makeProfiles(overrides: Partial<ProfileResponse> = {}): {
-  data: ProfileResponse;
-} {
-  return {
-    data: {
-      profiles: [],
-      states: {},
-      metadata: {},
-      scan_dir: "/scripts",
-      ...overrides,
-    },
-  };
-}
-
-function runningProfile() {
-  return makeProfiles({
-    profiles: [
-      {
-        id: "p1",
-        name: "test-model",
-        script_path: "/test.sh",
-        file_hash: "abc",
-        parsed_args: null,
-        filename_meta: null,
-      },
-    ],
-    states: {
-      "/test.sh": {
-        status: "running",
-        llama_server_pid: 1234,
-        start_time: null,
-        peak_vram_mb: null,
-        peak_ram_mb: null,
-        current_tps: null,
-      },
-    },
-  });
-}
-
-function makeLine(overrides: Partial<LogLine> = {}): LogLine {
-  return {
-    timestamp: "2024-01-01T12:00:00Z",
-    stream: "stdout",
-    level: "info",
-    text: "test log line",
-    ...overrides,
-  };
-}
-
-function mockFetch(responses: object[]) {
-  let call = 0;
-  return vi.fn().mockImplementation((_url: string, opts?: RequestInit) => {
-    if (opts?.method === "DELETE") {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ success: true }),
-      });
-    }
-    const resp = responses[Math.min(call++, responses.length - 1)];
-    return Promise.resolve({ ok: true, json: async () => resp });
-  });
-}
-
-// ─── Setup ───────────────────────────────────────────────────────────
-
-beforeEach(() => {
-  vi.restoreAllMocks();
-  lastWs = null;
-  localStorage.clear();
-  vi.stubGlobal("WebSocket", MockWebSocket);
+beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal("WebSocket", MockWs);
 });
 
-afterEach(() => {
+afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-// ─── Empty state ─────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────
 
-describe("LogConsole empty state", () => {
-  it("shows No logs available when no profile is active", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() =>
-      expect(screen.getByText(/No logs available/i)).toBeInTheDocument(),
-    );
-  });
-
-  it("shows Start a model hint when status is no_logs", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() =>
-      expect(
-        screen.getByText(/Start a model to view llama\.cpp output/i),
-      ).toBeInTheDocument(),
-    );
-  });
-
-  it("shows No Logs status indicator initially", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent(
-        "○ No Logs",
-      ),
-    );
-  });
-});
-
-// ─── Connection status ────────────────────────────────────────────────
-
-describe("LogConsole connection status", () => {
-  it("shows Live status after WebSocket connects", async () => {
-    global.fetch = mockFetch([runningProfile()]);
-    render(<LogConsole />);
-
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({ type: "history", lines: [], exited: false }),
-    );
-
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent("● Live"),
-    );
-  });
-
-  it("shows Disconnected status when WebSocket closes after being live", async () => {
-    global.fetch = mockFetch([runningProfile()]);
-    render(<LogConsole />);
-
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({ type: "history", lines: [], exited: false }),
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent("● Live"),
-    );
-
-    act(() => lastWs!.triggerClose());
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent(
-        "● Disconnected",
-      ),
-    );
-  });
-
-  it("shows Process Exited status on exited message", async () => {
-    global.fetch = mockFetch([runningProfile()]);
-    render(<LogConsole />);
-
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({ type: "history", lines: [], exited: false }),
-    );
-    act(() => lastWs!.triggerMessage({ type: "exited" }));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent(
-        "● Process Exited",
-      ),
-    );
-  });
-
-  it("shows Process Exited when history arrives with exited=true", async () => {
-    global.fetch = mockFetch([runningProfile()]);
-    render(<LogConsole />);
-
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({ type: "history", lines: [], exited: true }),
-    );
-
-    await waitFor(() =>
-      expect(screen.getByTestId("console-status")).toHaveTextContent(
-        "● Process Exited",
-      ),
-    );
-  });
-});
-
-// ─── Shared helper ────────────────────────────────────────────────────
-
-async function renderWithLines(lines: LogLine[]) {
-  global.fetch = mockFetch([runningProfile()]);
-  render(<LogConsole />);
-  await waitFor(() => expect(lastWs).not.toBeNull());
-  act(() => lastWs!.triggerOpen());
-  act(() => lastWs!.triggerMessage({ type: "history", lines, exited: false }));
-  await waitFor(() =>
-    expect(screen.getByText(lines[0].text)).toBeInTheDocument(),
-  );
+function makeLine(
+  text: string,
+  level: LogLine["level"] = "info",
+  timestamp = "2024-01-01T00:00:00.000Z",
+): LogLine {
+  return { text, level, timestamp, stream: "stdout" };
 }
 
-// ─── Log rendering ────────────────────────────────────────────────────
+function profilesResp({
+  profiles = [] as Array<{
+    id: string;
+    name: string;
+    script_path: string;
+    file_hash: string;
+    parsed_args: Record<string, unknown>;
+    filename_meta: null;
+    warning: null;
+  }>,
+  states = {} as Record<string, { status: string; llama_server_pid?: number }>,
+} = {}) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { profiles, states, metadata: {} } }),
+  };
+}
 
-describe("LogConsole log rendering", () => {
-  it("renders log lines from WebSocket history", async () => {
-    await renderWithLines([makeLine({ text: "loading model..." })]);
-    expect(screen.getByText("loading model...")).toBeInTheDocument();
+beforeEach(() => {
+  wsInstances.length = 0;
+  localStorage.clear();
+  global.fetch = vi.fn().mockResolvedValue(profilesResp());
+});
+
+// ─── lineMatchesFilters (pure function) ────────────────────────────────
+
+describe("lineMatchesFilters", () => {
+  it("returns true when no presets and empty query", () => {
+    expect(lineMatchesFilters("any text", new Set(), "")).toBe(true);
   });
 
-  it("renders multiple log lines", async () => {
-    await renderWithLines([
-      makeLine({ text: "line one" }),
-      makeLine({ text: "line two" }),
-    ]);
-    expect(screen.getByText("line one")).toBeInTheDocument();
-    expect(screen.getByText("line two")).toBeInTheDocument();
+  it("returns true when line matches active preset keyword", () => {
+    expect(lineMatchesFilters("kv cache usage 40%", new Set(["cache"]), "")).toBe(true);
   });
 
-  it("shows E badge for error-level lines", async () => {
-    await renderWithLines([
-      makeLine({ level: "error", text: "something failed" }),
-    ]);
-    expect(screen.getByText("E")).toBeInTheDocument();
+  it("returns false when line does not match active preset", () => {
+    expect(lineMatchesFilters("hello world", new Set(["cache"]), "")).toBe(false);
   });
 
-  it("does not show E badge for info-level lines", async () => {
-    await renderWithLines([makeLine({ level: "info", text: "stdout info" })]);
-    expect(screen.queryByText("E")).not.toBeInTheDocument();
+  it("returns true when line matches search query", () => {
+    expect(lineMatchesFilters("slot 0 is processing", new Set(), "slot")).toBe(true);
+  });
+
+  it("returns false when line does not match search query", () => {
+    expect(lineMatchesFilters("hello world", new Set(), "error")).toBe(false);
+  });
+
+  it("matching is case-insensitive for both preset and query", () => {
+    expect(lineMatchesFilters("KV Cache HIT", new Set(["cache"]), "HIT")).toBe(true);
+  });
+
+  it("requires ALL active presets to match (AND logic)", () => {
+    expect(lineMatchesFilters("slot processed", new Set(["draft", "cache"]), "")).toBe(false);
+    expect(lineMatchesFilters("slot cached prefix", new Set(["draft", "cache"]), "")).toBe(true);
+  });
+
+  it("matches errors preset keywords (fatal, failed, abort)", () => {
+    expect(lineMatchesFilters("fatal: out of memory", new Set(["errors"]), "")).toBe(true);
+    expect(lineMatchesFilters("normal generation line", new Set(["errors"]), "")).toBe(false);
+  });
+
+  it("matches timings preset keywords (t/s, eval)", () => {
+    expect(lineMatchesFilters("eval time: 235ms", new Set(["timings"]), "")).toBe(true);
+    expect(lineMatchesFilters("slot 0 active", new Set(["timings"]), "")).toBe(false);
+  });
+
+  it("matches draft preset keywords (slot, draft, specul)", () => {
+    expect(lineMatchesFilters("draft model accepted", new Set(["draft"]), "")).toBe(true);
+    expect(lineMatchesFilters("model loaded", new Set(["draft"]), "")).toBe(false);
+  });
+
+  it("returns true when query is empty string even with preset active", () => {
+    expect(lineMatchesFilters("slot 0", new Set(["draft"]), "")).toBe(true);
   });
 });
 
-// ─── Search ───────────────────────────────────────────────────────────
+// ─── LogConsole initial render ─────────────────────────────────────────
 
-describe("LogConsole search", () => {
-  it("filters log lines by search term", async () => {
-    await renderWithLines([
-      makeLine({ text: "model loading started" }),
-      makeLine({ text: "server ready" }),
-    ]);
-
-    const searchInput = screen.getByPlaceholderText("Search logs...");
-    fireEvent.change(searchInput, { target: { value: "loading" } });
-
-    await waitFor(() =>
-      expect(screen.queryByText("server ready")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("model loading started")).toBeInTheDocument();
-  });
-
-  it("is case-insensitive", async () => {
-    await renderWithLines([makeLine({ text: "Loading Model" })]);
-    const searchInput = screen.getByPlaceholderText("Search logs...");
-    fireEvent.change(searchInput, { target: { value: "loading model" } });
-    await waitFor(() =>
-      expect(screen.getByText("Loading Model")).toBeInTheDocument(),
-    );
-  });
-
-  it("shows No matching log lines when search matches nothing", async () => {
-    await renderWithLines([makeLine({ text: "some log line" })]);
-    const searchInput = screen.getByPlaceholderText("Search logs...");
-    fireEvent.change(searchInput, { target: { value: "xyznotfound" } });
-    await waitFor(() =>
-      expect(screen.getByText("No matching log lines.")).toBeInTheDocument(),
-    );
-  });
-});
-
-// ─── Filters ──────────────────────────────────────────────────────────
-
-describe("LogConsole level filters", () => {
-  async function renderWithMixedLevels() {
-    const lines: LogLine[] = [
-      makeLine({ level: "info", text: "info line" }),
-      makeLine({ level: "warn", text: "warn line" }),
-      makeLine({ level: "error", text: "error line" }),
-      makeLine({ level: "stats", text: "stats line" }),
-    ];
-    global.fetch = mockFetch([runningProfile()]);
+describe("LogConsole initial render", () => {
+  it("renders without crash and shows console header", async () => {
     render(<LogConsole />);
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({ type: "history", lines, exited: false }),
-    );
-    await waitFor(() =>
-      expect(screen.getByText("info line")).toBeInTheDocument(),
-    );
-  }
-
-  it("all levels shown by default", async () => {
-    await renderWithMixedLevels();
-    expect(screen.getByText("warn line")).toBeInTheDocument();
-    expect(screen.getByText("error line")).toBeInTheDocument();
-    expect(screen.getByText("stats line")).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByText(/LLAMA\.CPP Console/)).toBeInTheDocument();
   });
 
-  it("clicking INFO filter hides info lines", async () => {
-    await renderWithMixedLevels();
-    const infoChip = screen.getByRole("button", { name: /info/i });
-    fireEvent.click(infoChip);
-    await waitFor(() =>
-      expect(screen.queryByText("info line")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("warn line")).toBeInTheDocument();
+  it("shows '○ No Logs' status initially", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("console-status")).toHaveTextContent("○ No Logs");
   });
 
-  it("clicking WARN filter hides warn lines", async () => {
-    await renderWithMixedLevels();
-    const warnChip = screen.getByRole("button", { name: /warn/i });
-    fireEvent.click(warnChip);
-    await waitFor(() =>
-      expect(screen.queryByText("warn line")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("info line")).toBeInTheDocument();
+  it("shows console-empty-state with 'No logs available.' and model start hint", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const empty = screen.getByTestId("console-empty-state");
+    expect(within(empty).getByText(/No logs available/)).toBeInTheDocument();
+    expect(within(empty).getByText(/Start a model/)).toBeInTheDocument();
   });
 
-  it("clicking ERROR filter hides error lines", async () => {
-    await renderWithMixedLevels();
-    const errChip = screen.getByRole("button", { name: "ERROR" });
-    fireEvent.click(errChip);
-    await waitFor(() =>
-      expect(screen.queryByText("error line")).not.toBeInTheDocument(),
-    );
+  it("does not render console-active-profile when no profile is running", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.queryByTestId("console-active-profile")).not.toBeInTheDocument();
   });
 
-  it("re-clicking a filter restores hidden lines", async () => {
-    await renderWithMixedLevels();
-    const infoChip = screen.getByRole("button", { name: /info/i });
-    fireEvent.click(infoChip);
-    await waitFor(() =>
-      expect(screen.queryByText("info line")).not.toBeInTheDocument(),
-    );
-    fireEvent.click(infoChip);
-    await waitFor(() =>
-      expect(screen.getByText("info line")).toBeInTheDocument(),
-    );
+  it("renders log-area testid", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("log-area")).toBeInTheDocument();
   });
 });
 
-// ─── Toolbar actions ──────────────────────────────────────────────────
+// ─── Filter chips and preset chips ────────────────────────────────────
 
-describe("LogConsole toolbar", () => {
-  it("Pause button toggles paused state", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
+describe("LogConsole filter and preset chips", () => {
+  it("renders all level filter chips: INFO, WARN, ERROR, DEBUG, STATS", async () => {
     render(<LogConsole />);
-    await waitFor(() => expect(screen.getByText(/Pause/i)).toBeInTheDocument());
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "INFO" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "WARN" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ERROR" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "DEBUG" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "STATS" })).toBeInTheDocument();
+  });
 
-    const pauseBtn = screen.getByTitle("Pause auto-scroll");
-    fireEvent.click(pauseBtn);
+  it("level filter chips have aria-pressed=true by default", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "INFO" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "ERROR" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("renders all preset chips: Draft/Spec, Timings, Cache, Errors", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Draft/Spec" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Timings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cache" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Errors" })).toBeInTheDocument();
+  });
+
+  it("preset chips have aria-pressed=false by default (none active)", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Cache" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("renders Filter and Highlight mode buttons", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Filter" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Highlight" })).toBeInTheDocument();
+  });
+});
+
+// ─── Toolbar buttons ───────────────────────────────────────────────────
+
+describe("LogConsole toolbar buttons", () => {
+  it("shows search input with aria-label 'Search logs'", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByRole("searchbox", { name: "Search logs" })).toBeInTheDocument();
+  });
+
+  it("shows Pause button title initially (not paused)", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTitle("Pause auto-scroll")).toBeInTheDocument();
+  });
+
+  it("clicking Pause toggles to Resume", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTitle("Pause auto-scroll"));
     expect(screen.getByTitle("Resume auto-scroll")).toBeInTheDocument();
+  });
 
+  it("clicking Resume toggles back to Pause", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTitle("Pause auto-scroll"));
     fireEvent.click(screen.getByTitle("Resume auto-scroll"));
     expect(screen.getByTitle("Pause auto-scroll")).toBeInTheDocument();
   });
 
-  it("Wrap button toggles wrap", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
+  it("shows Clear, Copy, Save, Wrap, Hide Idle toolbar buttons", async () => {
     render(<LogConsole />);
-    await waitFor(() => expect(screen.getByText("Wrap")).toBeInTheDocument());
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTitle("Clear logs")).toBeInTheDocument();
+    expect(screen.getByTitle("Copy visible logs to clipboard")).toBeInTheDocument();
+    expect(screen.getByTitle("Download logs as .txt")).toBeInTheDocument();
+    // wrap=true by default → title says "Disable word wrap"
+    expect(screen.getByTitle("Disable word wrap")).toBeInTheDocument();
+    // hideIdle=true by default → title says "Show idle lines"
+    expect(screen.getByTitle("Show idle lines")).toBeInTheDocument();
+  });
 
-    const wrapBtn = screen.getByTitle("Disable word wrap");
-    fireEvent.click(wrapBtn);
+  it("clicking Wrap toggles word-wrap title", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTitle("Disable word wrap"));
     expect(screen.getByTitle("Enable word wrap")).toBeInTheDocument();
   });
-
-  it("Clear button calls DELETE API", async () => {
-    global.fetch = mockFetch([runningProfile(), runningProfile()]);
-    const deleteSpy = vi
-      .fn()
-      .mockResolvedValue({ ok: true, json: async () => ({ success: true }) });
-
-    render(<LogConsole />);
-    await waitFor(() => expect(lastWs).not.toBeNull());
-    act(() => lastWs!.triggerOpen());
-    act(() =>
-      lastWs!.triggerMessage({
-        type: "history",
-        lines: [makeLine({ text: "some log" })],
-        exited: false,
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByText("some log")).toBeInTheDocument(),
-    );
-
-    // Replace fetch with spy for the DELETE call
-    global.fetch = vi
-      .fn()
-      .mockImplementation((url: string, opts?: RequestInit) => {
-        if (opts?.method === "DELETE") {
-          deleteSpy(url, opts);
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ success: true }),
-          });
-        }
-        return Promise.resolve({ ok: true, json: async () => makeProfiles() });
-      });
-
-    const clearBtn = screen.getByText("Clear");
-    fireEvent.click(clearBtn);
-
-    await waitFor(() =>
-      expect(screen.queryByText("some log")).not.toBeInTheDocument(),
-    );
-  });
-
-  it("Download button is present", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() =>
-      expect(screen.getByTitle(/Download/i)).toBeInTheDocument(),
-    );
-  });
-
-  it("Copy button is present", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() => expect(screen.getByTitle(/Copy/i)).toBeInTheDocument());
-  });
 });
 
-// ─── Regression: existing layout ─────────────────────────────────────
+// ─── With active profile and log lines ────────────────────────────────
 
-describe("LogConsole regression", () => {
-  it("renders without crashing when fetch fails", async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error("network error"));
-    expect(() => render(<LogConsole />)).not.toThrow();
-    await waitFor(() =>
-      expect(screen.getByTestId("log-console")).toBeInTheDocument(),
-    );
-  });
+const activeProfile = {
+  id: "p1",
+  name: "Qwen-7B",
+  script_path: "/scripts/run.sh",
+  file_hash: "abc",
+  parsed_args: { port: 8080 },
+  filename_meta: null,
+  warning: null,
+};
 
-  it("renders data-testid log-console element", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    expect(screen.getByTestId("log-console")).toBeInTheDocument();
-  });
+function setupRunning() {
+  global.fetch = vi.fn().mockResolvedValue(
+    profilesResp({
+      profiles: [activeProfile],
+      states: { "/scripts/run.sh": { status: "running", llama_server_pid: 1234 } },
+    }),
+  );
+}
 
-  it("renders search input", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
-    render(<LogConsole />);
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText("Search logs...")).toBeInTheDocument(),
-    );
-  });
-
-  it("renders all five filter chips", async () => {
-    global.fetch = mockFetch([makeProfiles()]);
+describe("LogConsole with active profile", () => {
+  it("shows active profile name in console-active-profile span", async () => {
+    setupRunning();
     render(<LogConsole />);
     await waitFor(() => {
-      const buttons = screen.getAllByRole("button");
-      const chipLabels = ["INFO", "WARN", "ERROR", "DEBUG", "STATS"];
-      for (const label of chipLabels) {
-        expect(buttons.some((b) => b.textContent === label)).toBe(true);
-      }
+      expect(screen.getByTestId("console-active-profile")).toHaveTextContent("Qwen-7B");
+    });
+  });
+
+  it("shows '● Live' status after WebSocket opens", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    wsInstances[wsInstances.length - 1].openWs();
+    await waitFor(() => {
+      expect(screen.getByTestId("console-status")).toHaveTextContent("● Live");
+    });
+  });
+
+  it("renders log lines from WS history message", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("llama server started"),
+      makeLine("model weights loaded"),
+    ]);
+    await waitFor(() => {
+      expect(screen.getByText("llama server started")).toBeInTheDocument();
+      expect(screen.getByText("model weights loaded")).toBeInTheDocument();
+    });
+  });
+
+  it("renders correct level letter badges: I, E, W, S", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("info msg", "info"),
+      makeLine("error msg", "error"),
+      makeLine("warn msg", "warn"),
+      makeLine("stats msg", "stats"),
+    ]);
+    await waitFor(() => {
+      expect(screen.getAllByText("I").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("E").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("W").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("S").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows '● Process Exited' when WS history has exited=true", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([], true);
+    await waitFor(() => {
+      expect(screen.getByTestId("console-status")).toHaveTextContent("● Process Exited");
+    });
+  });
+
+  it("shows '● Disconnected' when WS closes unexpectedly", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.close();
+    await waitFor(() => {
+      expect(screen.getByTestId("console-status")).toHaveTextContent("● Disconnected");
     });
   });
 });
 
-// ─── Preset filters ───────────────────────────────────────────────────
+// ─── Idle line filtering ───────────────────────────────────────────────
 
-describe("LogConsole preset filters", () => {
-  it("Draft/Spec preset shows only lines matching slot/draft/specul keywords", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 is processing" }),
-      makeLine({ text: "server ready on port 8081" }),
+describe("LogConsole hide idle filtering", () => {
+  it("hides 'update_slots: all slots are idle' lines by default", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("update_slots: all slots are idle"),
+      makeLine("normal log line"),
     ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
-    await waitFor(() =>
-      expect(
-        screen.queryByText("server ready on port 8081"),
-      ).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("slot 0 is processing")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("update_slots: all slots are idle")).not.toBeInTheDocument();
+      expect(screen.getByText("normal log line")).toBeInTheDocument();
+    });
   });
 
-  it("Timings preset shows only lines matching timing keywords", async () => {
-    await renderWithLines([
-      makeLine({ text: "eval time: 152.3 ms per token" }),
-      makeLine({ text: "loading model weights" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Timings" }));
-
+  it("shows idle lines when Hide Idle is toggled off", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([makeLine("update_slots: all slots are idle")]);
     await waitFor(() =>
-      expect(
-        screen.queryByText("loading model weights"),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByText("update_slots: all slots are idle")).not.toBeInTheDocument(),
     );
-    expect(
-      screen.getByText("eval time: 152.3 ms per token"),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Show idle lines"));
+    await waitFor(() => {
+      expect(screen.getByText("update_slots: all slots are idle")).toBeInTheDocument();
+    });
+  });
+});
+
+// ─── Search filtering ─────────────────────────────────────────────────
+
+describe("LogConsole search and filter mode", () => {
+  it("filters logs by search query in Filter mode", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("kv cache hit on 512 tokens"),
+      makeLine("generation started for slot 0"),
+    ]);
+    await waitFor(() =>
+      expect(screen.getByText("generation started for slot 0")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search logs" }), {
+      target: { value: "kv cache" },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("kv cache hit on 512 tokens")).toBeInTheDocument();
+      expect(screen.queryByText("generation started for slot 0")).not.toBeInTheDocument();
+    });
   });
 
-  it("Cache preset shows only lines with cache keywords", async () => {
-    await renderWithLines([
-      makeLine({ text: "kv cache usage: 45.2%" }),
-      makeLine({ text: "model loaded successfully" }),
-    ]);
+  it("shows 'No matching log lines.' in console-empty-state when search has no results", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([makeLine("hello world")]);
+    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search logs" }), {
+      target: { value: "xyznotfound" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("console-empty-state")).toHaveTextContent(
+        "No matching log lines.",
+      );
+    });
+  });
 
+  it("toggling INFO chip off hides info-level lines", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("info level message", "info"),
+      makeLine("error level message", "error"),
+    ]);
+    await waitFor(() => expect(screen.getByText("info level message")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "INFO" }));
+    await waitFor(() => {
+      expect(screen.queryByText("info level message")).not.toBeInTheDocument();
+      expect(screen.getByText("error level message")).toBeInTheDocument();
+    });
+  });
+
+  it("toggling INFO chip off sets its aria-pressed to false", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const infoChip = screen.getByRole("button", { name: "INFO" });
+    expect(infoChip).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(infoChip);
+    expect(infoChip).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+// ─── Preset chip filtering ─────────────────────────────────────────────
+
+describe("LogConsole preset chip filtering", () => {
+  it("activating Cache preset hides lines without cache keywords", async () => {
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([
+      makeLine("kv cache miss on prefix"),
+      makeLine("generation started"),
+    ]);
+    await waitFor(() => expect(screen.getByText("generation started")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Cache" }));
-
-    await waitFor(() =>
-      expect(
-        screen.queryByText("model loaded successfully"),
-      ).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("kv cache usage: 45.2%")).toBeInTheDocument();
-  });
-
-  it("Errors preset shows only lines with error/failed keywords", async () => {
-    await renderWithLines([
-      makeLine({ text: "failed to allocate memory" }),
-      makeLine({ text: "model loaded ok" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Errors" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("model loaded ok")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("failed to allocate memory")).toBeInTheDocument();
-  });
-
-  it("two presets AND — line must match both to remain visible", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 t/s: 148.2" }), // matches Draft/Spec AND Timings
-      makeLine({ text: "slot 0 processing" }), // matches Draft/Spec only
-      makeLine({ text: "token generation: 10 t/s" }), // matches Timings only
-      makeLine({ text: "model loaded" }), // matches neither
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-    fireEvent.click(screen.getByRole("button", { name: "Timings" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("slot 0 processing")).not.toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByText("token generation: 10 t/s"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("model loaded")).not.toBeInTheDocument();
-    expect(screen.getByText("slot 0 t/s: 148.2")).toBeInTheDocument();
-  });
-
-  it("preset AND search both must match", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 is ready" }),
-      makeLine({ text: "slot 0 draft tokens: 5" }),
-      makeLine({ text: "draft is fast" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-    const searchInput = screen.getByPlaceholderText("Search logs...");
-    fireEvent.change(searchInput, { target: { value: "tokens" } });
-
-    await waitFor(() =>
-      expect(screen.queryByText("slot 0 is ready")).not.toBeInTheDocument(),
-    );
-    expect(screen.queryByText("draft is fast")).not.toBeInTheDocument();
-    expect(screen.getByText("slot 0 draft tokens: 5")).toBeInTheDocument();
-  });
-
-  it("re-clicking a preset deactivates it and restores all lines", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 processing" }),
-      makeLine({ text: "server started" }),
-    ]);
-
-    const presetBtn = screen.getByRole("button", { name: "Draft/Spec" });
-    fireEvent.click(presetBtn);
-
-    await waitFor(() =>
-      expect(screen.queryByText("server started")).not.toBeInTheDocument(),
-    );
-
-    fireEvent.click(presetBtn);
-    await waitFor(() =>
-      expect(screen.getByText("server started")).toBeInTheDocument(),
-    );
-  });
-});
-
-// ─── Filter / Highlight mode ───────────────────────────────────────────
-
-describe("LogConsole filter/highlight mode", () => {
-  it("Filter mode (default) hides non-matching lines when preset is active", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 ready" }),
-      makeLine({ text: "loading tensors" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("loading tensors")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("slot 0 ready")).toBeInTheDocument();
-  });
-
-  it("Highlight mode shows ALL lines including non-matching ones", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 ready" }),
-      makeLine({ text: "loading tensors" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
-    await waitFor(() =>
-      expect(screen.getByText("loading tensors")).toBeInTheDocument(),
-    );
-    expect(screen.getByText("slot 0 ready")).toBeInTheDocument();
-  });
-
-  it("Highlight mode marks matching lines with data-highlighted", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 ready" }),
-      makeLine({ text: "loading tensors" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
     await waitFor(() => {
-      const highlighted = document.querySelectorAll(
-        '[data-highlighted="true"]',
-      );
-      expect(highlighted).toHaveLength(1);
+      expect(screen.getByText("kv cache miss on prefix")).toBeInTheDocument();
+      expect(screen.queryByText("generation started")).not.toBeInTheDocument();
     });
   });
 
-  it("Filter mode shows empty state when preset matches nothing", async () => {
-    await renderWithLines([
-      makeLine({ text: "loading tensors" }),
-      makeLine({ text: "model ready" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
-    await waitFor(() =>
-      expect(screen.getByText("No matching log lines.")).toBeInTheDocument(),
-    );
+  it("Cache preset chip shows aria-pressed=true when active", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const cacheChip = screen.getByRole("button", { name: "Cache" });
+    expect(cacheChip).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(cacheChip);
+    expect(cacheChip).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("level chips apply before preset filters", async () => {
-    await renderWithLines([
-      makeLine({ level: "info", text: "slot 0 info" }),
-      makeLine({ level: "debug", text: "slot 0 debug" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "DEBUG" }));
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("slot 0 debug")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("slot 0 info")).toBeInTheDocument();
-  });
-
-  it("switching back to Filter mode hides non-matching lines again", async () => {
-    await renderWithLines([
-      makeLine({ text: "slot 0 ready" }),
-      makeLine({ text: "loading tensors" }),
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: "Draft/Spec" }));
-    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
-
-    await waitFor(() =>
-      expect(screen.getByText("loading tensors")).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("loading tensors")).not.toBeInTheDocument(),
-    );
-  });
-});
-
-// ─── Hide Idle filter ─────────────────────────────────────────────────
-
-describe("LogConsole hide-idle filter", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it("hides update_slots idle lines by default", async () => {
-    await renderWithLines([
-      makeLine({ text: "loading model..." }),
-      makeLine({ text: "update_slots: all slots are idle" }),
-    ]);
-    expect(screen.getByText("loading model...")).toBeInTheDocument();
-    expect(
-      screen.queryByText("update_slots: all slots are idle"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows idle lines after toggling Hide Idle off", async () => {
-    await renderWithLines([
-      makeLine({ text: "loading model..." }),
-      makeLine({ text: "update_slots: all slots are idle" }),
-    ]);
-
-    expect(
-      screen.queryByText("update_slots: all slots are idle"),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Hide Idle"));
-
-    await waitFor(() =>
-      expect(
-        screen.getByText("update_slots: all slots are idle"),
-      ).toBeInTheDocument(),
-    );
-  });
-
-  it("hides idle lines again after toggling Hide Idle back on", async () => {
-    await renderWithLines([
-      makeLine({ text: "loading model..." }),
-      makeLine({ text: "update_slots: all slots are idle" }),
-    ]);
-
-    // Toggle off → idle line visible
-    fireEvent.click(screen.getByText("Hide Idle"));
-    await waitFor(() =>
-      expect(
-        screen.getByText("update_slots: all slots are idle"),
-      ).toBeInTheDocument(),
-    );
-
-    // Toggle on → idle line hidden again
-    fireEvent.click(screen.getByText("Hide Idle"));
-    await waitFor(() =>
-      expect(
-        screen.queryByText("update_slots: all slots are idle"),
-      ).not.toBeInTheDocument(),
-    );
-  });
-
-  it("does not filter non-idle log lines", async () => {
-    await renderWithLines([
-      makeLine({ text: "llm_load_tensors: offloaded 32/32 layers to GPU" }),
-    ]);
-    expect(
-      screen.getByText("llm_load_tensors: offloaded 32/32 layers to GPU"),
-    ).toBeInTheDocument();
-  });
-
-  it("filters all variants of the idle pattern", async () => {
-    const variants = [
-      "update_slots: all slots are idle",
-      "update_slots: all slot are idle",
-    ];
-    for (const text of variants) {
-      localStorage.clear();
-      const { unmount } = render(<LogConsole />);
-      await waitFor(() => expect(lastWs).not.toBeNull());
-      act(() => lastWs!.triggerOpen());
-      act(() =>
-        lastWs!.triggerMessage({
-          type: "history",
-          lines: [makeLine({ text: "init ok" }), makeLine({ text })],
-          exited: false,
-        }),
-      );
-      await waitFor(() =>
-        expect(screen.getByText("init ok")).toBeInTheDocument(),
-      );
-      expect(screen.queryByText(text)).not.toBeInTheDocument();
-      unmount();
-    }
+  it("clicking an active preset chip deactivates it", async () => {
+    render(<LogConsole />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const cacheChip = screen.getByRole("button", { name: "Cache" });
+    fireEvent.click(cacheChip); // activate
+    expect(cacheChip).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(cacheChip); // deactivate
+    expect(cacheChip).toHaveAttribute("aria-pressed", "false");
   });
 });

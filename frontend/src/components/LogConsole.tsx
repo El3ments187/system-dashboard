@@ -115,7 +115,7 @@ function formatTimestamp(ts: string): string {
   }
 }
 
-function lineMatchesFilters(
+export function lineMatchesFilters(
   text: string,
   presets: Set<string>,
   query: string,
@@ -668,6 +668,7 @@ export function LogConsole({
           </span>
           {activeProfileName && (
             <span
+              data-testid="console-active-profile"
               style={{
                 fontSize: 9,
                 color: "var(--text-muted)",
@@ -854,6 +855,7 @@ export function LogConsole({
       >
         {hasNoLogs || hasNoMatches ? (
           <div
+            data-testid="console-empty-state"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -903,6 +905,7 @@ export function LogConsole({
             }}
           >
             <button
+              data-testid="jump-to-latest"
               onClick={() => {
                 isAtBottomRef.current = true;
                 setIsScrolledUp(false);

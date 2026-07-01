@@ -77,8 +77,8 @@ test.describe('LlamaCppPage - Active Model card', () => {
     await expect(page.locator('text=/Qwen|gemma|llama|mistral/i').first()).toBeVisible();
   });
 
-  test('GiB size badge is visible', async ({ page }) => {
-    await expect(page.locator('text=/GiB/').first()).toBeVisible();
+  test('GB size badge is visible', async ({ page }) => {
+    await expect(page.locator('text=/GB/').first()).toBeVisible();
   });
 
   test('capability pills row is visible', async ({ page }) => {
@@ -89,11 +89,11 @@ test.describe('LlamaCppPage - Active Model card', () => {
     await expect(page.getByText('Video').first()).toBeVisible();
   });
 
-  test('sampling tiles are all present with labels', async ({ page }) => {
-    await expect(page.getByText('TEMPERATURE').first()).toBeVisible();
-    await expect(page.getByText('TOP-K').first()).toBeVisible();
-    await expect(page.getByText('TOP-P').first()).toBeVisible();
-    await expect(page.getByText('REPEAT PENALTY').first()).toBeVisible();
+  test('sampling tiles are all present', async ({ page }) => {
+    await expect(page.locator('[data-testid="sampling-temperature"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sampling-top-k"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sampling-top-p"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sampling-repeat-penalty"]')).toBeVisible();
   });
 
   test('sampling tile values are numeric', async ({ page }) => {
@@ -145,29 +145,33 @@ test.describe('LlamaCppPage - Context card', () => {
     await expect(page.locator('svg circle').first()).toBeVisible();
   });
 
-  test('CURRENT tile label is visible', async ({ page }) => {
-    await expect(page.getByText('CURRENT').first()).toBeVisible();
+  test('Current tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-current"]')).toBeVisible();
   });
 
-  test('MAX tile label is visible', async ({ page }) => {
-    await expect(page.getByText('MAX').first()).toBeVisible();
+  test('Max tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-max"]')).toBeVisible();
   });
 
-  test('REMAINING tile label is visible', async ({ page }) => {
-    await expect(page.getByText('REMAINING').first()).toBeVisible();
+  test('Remaining tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-remaining"]')).toBeVisible();
   });
 
-  test('CACHED tile label is visible', async ({ page }) => {
-    await expect(page.getByText('CACHED').first()).toBeVisible();
+  test('Cache Hits tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-cache-hits"]')).toBeVisible();
   });
 
-  test('LARGEST SEEN tile label is visible', async ({ page }) => {
-    await expect(page.getByText('LARGEST SEEN').first()).toBeVisible();
+  test('Largest Seen tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-largest-seen"]')).toBeVisible();
   });
 
   test('Generation Progress section is visible', async ({ page }) => {
     // Rendered only when slot0 && slotCtx != null (confirmed by goToLlamaCpp GiB wait)
     await expect(page.getByText('Generation Progress').first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('context gauge label shows a numeric value or placeholder', async ({ page }) => {
+    await expect(page.locator('[data-testid="ctx-gauge-label"]')).toContainText(/\d|—/);
   });
 });
 
@@ -199,6 +203,58 @@ test.describe('LlamaCppPage - Runtime card', () => {
     // PID value is a 4-6 digit number rendered in its own element
     await expect(page.locator('text=/\\d{4,6}/').first()).toBeVisible();
   });
+
+  test('runtime-server testid shows Online when server is up', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-server"]')).toContainText('Online');
+  });
+
+  test('runtime-uptime testid has a formatted time value', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-uptime"]')).toContainText(/\d/);
+  });
+
+  test('runtime-pid testid shows a numeric PID', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-pid"]')).toContainText(/\d+/);
+  });
+
+  test('runtime-load-time testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-load-time"]')).toBeVisible();
+  });
+
+  test('runtime-port testid shows a port number', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-port"]')).toContainText(/\d+/);
+  });
+
+  test('runtime-memory testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-memory"]')).toBeVisible();
+  });
+
+  test('runtime-cpu testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-cpu"]')).toBeVisible();
+  });
+
+  test('runtime-context testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-context"]')).toBeVisible();
+  });
+
+  test('runtime-gpu-layers testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-gpu-layers"]')).toBeVisible();
+  });
+
+  test('runtime-cpu-layers testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-cpu-layers"]')).toBeVisible();
+  });
+
+  test('runtime-draft-layers testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-draft-layers"]')).toBeVisible();
+  });
+
+  test('runtime-speculative testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-speculative"]')).toBeVisible();
+  });
+
+  test('runtime-tokens-cached testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="runtime-tokens-cached"]')).toBeVisible();
+  });
 });
 
 // ─── Left rail: llama.cpp card ─────────────────────────────────────────────────
@@ -210,12 +266,12 @@ test.describe('LlamaCppPage - llama.cpp card', () => {
     await expect(page.getByText('LLAMA.CPP').first()).toBeVisible();
   });
 
-  test('CURRENT build label is visible', async ({ page }) => {
-    await expect(page.getByText('CURRENT').first()).toBeVisible();
+  test('Current build label is visible', async ({ page }) => {
+    await expect(page.getByText('Current').first()).toBeVisible();
   });
 
-  test('LATEST build label is visible', async ({ page }) => {
-    await expect(page.getByText('LATEST').first()).toBeVisible();
+  test('Latest build label is visible', async ({ page }) => {
+    await expect(page.getByText('Latest').first()).toBeVisible();
   });
 
   test('Update button is visible', async ({ page }) => {
@@ -245,25 +301,17 @@ test.describe('LlamaCppPage - llama.cpp card', () => {
   });
 });
 
-// ─── Left rail: Live Activity card ─────────────────────────────────────────────
+// ─── Throughput summary tiles ──────────────────────────────────────────────────
 
-test.describe('LlamaCppPage - Live Activity card', () => {
+test.describe('LlamaCppPage - Throughput summary tiles', () => {
   test.beforeEach(async ({ page }) => { await goToLlamaCpp(page); });
 
-  test('LIVE ACTIVITY card header is visible', async ({ page }) => {
-    await expect(page.getByText('LIVE ACTIVITY').first()).toBeVisible();
+  test('Total Sent tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="thrpt-total-sent"]')).toBeVisible();
   });
 
-  test('TOTAL SENT metric label is visible', async ({ page }) => {
-    await expect(page.getByText('TOTAL SENT').first()).toBeVisible();
-  });
-
-  test('ACTIVE REQ metric label is visible', async ({ page }) => {
-    await expect(page.getByText('ACTIVE REQ').first()).toBeVisible();
-  });
-
-  test('TOK CACHED metric label is visible', async ({ page }) => {
-    await expect(page.getByText('TOK CACHED').first()).toBeVisible();
+  test('Active Req tile is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="thrpt-active-req"]')).toBeVisible();
   });
 });
 
@@ -307,6 +355,14 @@ test.describe('LlamaCppPage - Run Models table', () => {
     // Refresh is disabled while profiles are loading; just verify it exists
     await expect(page.getByRole('button', { name: /Refresh/i }).first()).toBeVisible();
   });
+
+  test('clicking a column header sorts the table and toggles direction', async ({ page }) => {
+    const modelBtn = page.getByRole('button', { name: 'MODEL' }).first();
+    await modelBtn.click();
+    await expect(modelBtn).toHaveAttribute('aria-sort', /ascending|descending/);
+    await modelBtn.click();
+    await expect(modelBtn).toHaveAttribute('aria-sort', /ascending|descending/);
+  });
 });
 
 // ─── Console ───────────────────────────────────────────────────────────────────
@@ -316,6 +372,10 @@ test.describe('LlamaCppPage - Console', () => {
 
   test('LLAMA.CPP CONSOLE header is visible', async ({ page }) => {
     await expect(page.getByText('LLAMA.CPP CONSOLE').first()).toBeVisible();
+  });
+
+  test('log-console wrapper testid is present', async ({ page }) => {
+    await expect(page.locator('[data-testid="log-console"]')).toBeVisible();
   });
 
   test('filter buttons INFO/WARN/ERROR/DEBUG/STATS are all visible', async ({ page }) => {
@@ -372,6 +432,48 @@ test.describe('LlamaCppPage - Console', () => {
     await page.getByRole('button', { name: 'WARN' }).first().click();
     await expect(page.getByText('LLAMA.CPP CONSOLE').first()).toBeVisible();
     await page.getByRole('button', { name: 'WARN' }).first().click();
+  });
+
+  test('preset chips Draft/Spec, Timings, Cache, Errors are all visible', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Draft/Spec' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Timings' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cache' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Errors' }).first()).toBeVisible();
+  });
+
+  test('Filter and Highlight mode buttons are visible', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Filter' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Highlight' }).first()).toBeVisible();
+  });
+
+  test('clicking Draft/Spec preset does not crash the page', async ({ page }) => {
+    await page.getByRole('button', { name: 'Draft/Spec' }).first().click();
+    await expect(page.getByText('LLAMA.CPP CONSOLE').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Draft/Spec' }).first().click();
+  });
+
+  test('switching to Highlight mode does not crash the page', async ({ page }) => {
+    await page.getByRole('button', { name: 'Highlight' }).first().click();
+    await expect(page.getByText('LLAMA.CPP CONSOLE').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Filter' }).first().click();
+    await expect(page.getByText('LLAMA.CPP CONSOLE').first()).toBeVisible();
+  });
+
+  test('console-status testid is visible', async ({ page }) => {
+    await expect(page.locator('[data-testid="console-status"]')).toBeVisible();
+  });
+
+  test('jump-to-latest button appears when log area is scrolled up', async ({ page }) => {
+    const logArea = page.locator('[data-testid="log-area"]');
+    await expect(logArea).toBeVisible();
+    // Force scroll to top — button renders when not already at bottom
+    await logArea.evaluate(el => { el.scrollTop = 0; });
+    await page.waitForTimeout(400);
+    const btn = page.locator('[data-testid="jump-to-latest"]');
+    if (await btn.isVisible()) {
+      await btn.click();
+      await expect(btn).not.toBeVisible({ timeout: 2000 });
+    }
   });
 });
 

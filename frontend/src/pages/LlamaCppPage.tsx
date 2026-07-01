@@ -38,7 +38,6 @@ import {
   Zap,
   Layers,
   MonitorCog,
-  Send,
   TriangleAlert,
   ArrowUp,
   ArrowDown,
@@ -74,7 +73,7 @@ import {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function fmtNum(v: unknown): string {
+export function fmtNum(v: unknown): string {
   if (v == null || v === "") return "";
   const n = Number(v);
   return isNaN(n) ? String(v) : n.toLocaleString();
@@ -86,7 +85,7 @@ function getCtxColor(pct: number | null): string {
   return "var(--accent-primary)";
 }
 
-function thresholdClass(pct: number | null | undefined): string {
+export function thresholdClass(pct: number | null | undefined): string {
   if (pct == null) return "";
   if (pct >= 85) return "progress-bar-critical";
   if (pct >= 70) return "progress-bar-warning";
@@ -110,7 +109,7 @@ function splitModelName(name: string): { head: string; quant: string } {
   return { head: name.slice(0, i), quant: name.slice(i) };
 }
 
-function boolLabel(val: boolean | null | undefined): string {
+export function boolLabel(val: boolean | null | undefined): string {
   if (val == null) return "\u2014";
   return val ? "Yes" : "No";
 }
@@ -121,7 +120,7 @@ function updateStateText(state: string): string {
   return "Update failed";
 }
 
-function middleTruncate(s: string, max = 46): string {
+export function middleTruncate(s: string, max = 46): string {
   if (s.length <= max) return s;
   const keep = max - 1;
   const head = Math.ceil(keep * 0.6);
@@ -1262,7 +1261,7 @@ function LlamaCppHardwareFooter({
   );
 }
 
-function contextGaugeLabel(
+export function contextGaugeLabel(
   contextPct: number | null | undefined,
   llamaOnline: boolean,
 ): string {
@@ -1416,6 +1415,7 @@ export default function LlamaCppPage() {
     label: string,
     value: string,
     valueColor?: string,
+    testId?: string,
   ) => (
     <div
       style={{
@@ -1451,6 +1451,7 @@ export default function LlamaCppPage() {
         {label}
       </span>
       <span
+        data-testid={testId}
         style={{
           color: valueColor ?? "var(--text-primary)",
           fontFamily: '"JetBrains Mono", "Fira Code", monospace',
@@ -1511,12 +1512,12 @@ export default function LlamaCppPage() {
         }}
       >
         {/* ══════════════════════════════════════════════════
-            TOP ROW: Active Model | Throughput | Context | Live Activity
+            TOP ROW: Active Model | Throughput | Context
             ══════════════════════════════════════════════════ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "12fr 6fr 10fr 2fr",
+            gridTemplateColumns: "12fr 8fr 10fr",
             gap: 9,
             flexShrink: 0,
           }}
@@ -1775,11 +1776,13 @@ export default function LlamaCppPage() {
                       m?.temperature != null
                         ? m.temperature.toFixed(2)
                         : "\u2014",
+                    testId: "sampling-temperature",
                   },
-                  { label: "Top-K Sampling", value: fmtNum(m?.top_k) || "\u2014" },
+                  { label: "Top-K Sampling", value: fmtNum(m?.top_k) || "\u2014", testId: "sampling-top-k" },
                   {
                     label: "Top-P (Nucleus) Sampling",
                     value: m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
+                    testId: "sampling-top-p",
                   },
                   {
                     label: "Repeat Penalty",
@@ -1787,11 +1790,13 @@ export default function LlamaCppPage() {
                       m?.repeat_penalty != null
                         ? m.repeat_penalty.toFixed(2)
                         : "\u2014",
+                    testId: "sampling-repeat-penalty",
                   },
-                ] as { label: string; value: string }[]
-              ).map(({ label, value }) => (
+                ] as { label: string; value: string; testId: string }[]
+              ).map(({ label, value, testId }) => (
                 <div
                   key={label}
+                  data-testid={testId}
                   style={{
                     background: "var(--bg-secondary)",
                     border: "1px solid var(--border-color)",
@@ -1855,11 +1860,15 @@ export default function LlamaCppPage() {
             >
               {/* Gen Speed banner */}
               <div
+                data-testid="thrpt-gen-tps"
                 style={{
                   background: "var(--bg-secondary)",
                   border: "1px solid var(--border-light, var(--border-color))",
                   borderRadius: 11,
                   padding: "8px 13px",
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
                 <div
@@ -1894,23 +1903,27 @@ export default function LlamaCppPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 4, height: 14 }}>
+                <div style={{ marginTop: 6, flex: 1, minHeight: 28, display: "flex", alignItems: "flex-end" }}>
                   <Sparkline
                     data={aiGenTpsHistory ?? []}
                     color="var(--text-secondary)"
                     width={200}
-                    height={14}
+                    height={28}
                   />
                 </div>
               </div>
 
               {/* Prompt Speed banner */}
               <div
+                data-testid="thrpt-prompt-tps"
                 style={{
                   background: "var(--bg-secondary)",
                   border: "1px solid var(--border-light, var(--border-color))",
                   borderRadius: 11,
                   padding: "8px 13px",
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
                 <div
@@ -1945,25 +1958,26 @@ export default function LlamaCppPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 4, height: 14 }}>
+                <div style={{ marginTop: 6, flex: 1, minHeight: 28, display: "flex", alignItems: "flex-end" }}>
                   <Sparkline
                     data={aiPromptTpsHistory ?? []}
                     color="var(--text-secondary)"
                     width={200}
-                    height={14}
+                    height={28}
                   />
                 </div>
               </div>
 
-              {/* Prompt Tokens + Generated tiles */}
+              {/* Prompt Tokens | Generated | Total Sent | Active Req tiles */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
                   gap: 6,
                 }}
               >
                 <div
+                  data-testid="thrpt-prompt-tokens"
                   style={{
                     background: "var(--bg-secondary)",
                     border: "1px solid var(--border-color)",
@@ -1993,6 +2007,7 @@ export default function LlamaCppPage() {
                   </div>
                 </div>
                 <div
+                  data-testid="thrpt-generated"
                   style={{
                     background: "var(--bg-secondary)",
                     border: "1px solid var(--border-color)",
@@ -2029,6 +2044,66 @@ export default function LlamaCppPage() {
                     >
                       token
                     </span>
+                  </div>
+                </div>
+                <div
+                  data-testid="thrpt-total-sent"
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 9,
+                    padding: "6px 10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Total Sent
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      marginTop: 1,
+                    }}
+                  >
+                    {fmtNum(m?.total_tokens_sent) || "0"}
+                  </div>
+                </div>
+                <div
+                  data-testid="thrpt-active-req"
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 9,
+                    padding: "6px 10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Active Req
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      marginTop: 1,
+                    }}
+                  >
+                    {fmtNum(m?.active_requests) || "0"}
                   </div>
                 </div>
               </div>
@@ -2079,10 +2154,11 @@ export default function LlamaCppPage() {
               )}
               {/* Gauge + tiles row */}
               <div
-                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+                style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1 }}
               >
-                <RadialGauge pct={contextPct} color={ctxColor} size={100}>
+                <RadialGauge pct={contextPct} color={ctxColor} size={120}>
                   <span
+                    data-testid="ctx-gauge-label"
                     style={{
                       fontSize: 20,
                       fontWeight: 700,
@@ -2113,8 +2189,9 @@ export default function LlamaCppPage() {
                   style={{
                     flex: 1,
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gridTemplateColumns: "1fr 1fr",
                     gap: 5,
+                    alignContent: "start",
                   }}
                 >
                   {(
@@ -2127,6 +2204,7 @@ export default function LlamaCppPage() {
                             : "\u2014",
                         accent: true,
                         span: false,
+                        testId: "ctx-current",
                       },
                       {
                         label: "Max",
@@ -2134,6 +2212,7 @@ export default function LlamaCppPage() {
                           slotCtx != null ? slotCtx.toLocaleString() : "\u2014",
                         accent: false,
                         span: false,
+                        testId: "ctx-max",
                       },
                       {
                         label: "Remaining",
@@ -2143,12 +2222,14 @@ export default function LlamaCppPage() {
                             : "\u2014",
                         accent: false,
                         span: false,
+                        testId: "ctx-remaining",
                       },
                       {
                         label: "Cache Hits",
                         value: String(cacheHits),
                         accent: false,
                         span: false,
+                        testId: "ctx-cache-hits",
                       },
                       {
                         label: "Largest Seen",
@@ -2157,22 +2238,25 @@ export default function LlamaCppPage() {
                             ? m.context_tokens.toLocaleString()
                             : "\u2014",
                         accent: false,
-                        span: false,
+                        span: true,
+                        testId: "ctx-largest-seen",
                       },
                     ] as {
                       label: string;
                       value: string;
                       accent: boolean;
                       span: boolean;
+                      testId?: string;
                     }[]
-                  ).map(({ label, value, accent, span }) => (
+                  ).map(({ label, value, accent, span, testId }) => (
                     <div
                       key={label}
+                      data-testid={testId}
                       style={{
                         background: "var(--bg-secondary)",
                         border: "1px solid var(--border-color)",
                         borderRadius: 8,
-                        padding: "4px 9px",
+                        padding: "6px 10px",
                         gridColumn: span ? "1 / -1" : undefined,
                       }}
                     >
@@ -2188,11 +2272,11 @@ export default function LlamaCppPage() {
                       </div>
                       <div
                         style={{
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: 700,
                           fontFamily:
                             '"JetBrains Mono", "Fira Code", monospace',
-                          marginTop: 1,
+                          marginTop: 2,
                           color: accent
                             ? "var(--accent-primary)"
                             : "var(--text-primary)",
@@ -2233,6 +2317,7 @@ export default function LlamaCppPage() {
                       Generation Progress
                     </span>
                     <span
+                      data-testid="gen-status-badge"
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
@@ -2264,8 +2349,9 @@ export default function LlamaCppPage() {
                       {slot0.is_processing ? "Generating" : "Idle"}
                     </span>
                   </div>
-                  <div className="card-progress" style={{ height: 5 }}>
+                  <div className="card-progress" style={{ height: 8, background: "var(--bg-tertiary)" }}>
                     <div
+                      data-testid="gen-progress-bar"
                       className={`card-progress-bar ${thresholdClass(
                         (() => {
                           const nd = slot0.n_decoded;
@@ -2324,81 +2410,6 @@ export default function LlamaCppPage() {
             </div>
           </PanelCard>
 
-          {/* ── Live Activity card ── */}
-          <PanelCard>
-            <PanelHead
-              icon={<Send size={13} />}
-              title="Live Activity"
-              right={
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    color: "var(--border-color)",
-                  }}
-                >
-                  06
-                </span>
-              }
-            />
-            <div
-              style={{
-                padding: "10px 13px 12px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              {(
-                [
-                  {
-                    label: "Total Sent",
-                    value: fmtNum(m?.total_tokens_sent) || "0",
-                  },
-                  {
-                    label: "Active Req",
-                    value: fmtNum(m?.active_requests) || "0",
-                  },
-                  {
-                    label: "Cache Hits",
-                    value: String(cacheHits),
-                  },
-                ] as { label: string; value: string }[]
-              ).map(({ label, value }) => (
-                <div
-                  key={label}
-                  style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 10,
-                    padding: "8px 11px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 8,
-                      textTransform: "uppercase",
-                      color: "var(--text-muted)",
-                      letterSpacing: "0.5px",
-                    }}
-                  >
-                    {label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 17,
-                      fontWeight: 700,
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      marginTop: 3,
-                    }}
-                  >
-                    {value}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </PanelCard>
         </div>
 
         {/* ══════════════════════════════════════════════════
@@ -2453,11 +2464,14 @@ export default function LlamaCppPage() {
                   "Server",
                   llamaOnline ? "Online" : "Offline",
                   llamaOnline ? "var(--success)" : "var(--text-muted)",
+                  "runtime-server",
                 )}
                 {kvRow(
                   <Clock3 size={11} />,
                   "Uptime",
                   fmtUptime(proc?.uptime_seconds),
+                  undefined,
+                  "runtime-uptime",
                 )}
                 {kvRow(
                   <Zap size={11} />,
@@ -2465,11 +2479,15 @@ export default function LlamaCppPage() {
                   m?.model_load_time_ms != null
                     ? `${(m.model_load_time_ms / 1000).toFixed(2)}s`
                     : "\u2014",
+                  undefined,
+                  "runtime-load-time",
                 )}
                 {kvRow(
                   <Fingerprint size={11} />,
                   "PID",
                   proc?.pid != null ? String(proc.pid) : "\u2014",
+                  undefined,
+                  "runtime-pid",
                 )}
                 {kvRow(
                   <Globe size={11} />,
@@ -2477,11 +2495,15 @@ export default function LlamaCppPage() {
                   runningArgs?.port != null
                     ? String(runningArgs.port)
                     : "\u2014",
+                  undefined,
+                  "runtime-port",
                 )}
                 {kvRow(
                   <MemoryStick size={11} />,
                   "Memory",
                   fmtKb(proc?.memory_kb),
+                  undefined,
+                  "runtime-memory",
                 )}
                 {kvRow(
                   <Cpu size={11} />,
@@ -2489,11 +2511,15 @@ export default function LlamaCppPage() {
                   proc?.cpu_percent != null
                     ? `${proc.cpu_percent.toFixed(1)}%`
                     : "\u2014",
+                  undefined,
+                  "runtime-cpu",
                 )}
                 {kvRow(
                   <Brain size={11} />,
                   "Context",
                   slotCtx != null ? formatCtx(slotCtx) : "\u2014",
+                  undefined,
+                  "runtime-context",
                 )}
                 {kvRow(
                   <MonitorCog size={11} />,
@@ -2502,6 +2528,7 @@ export default function LlamaCppPage() {
                     ? `${gpuTotalLoaded} / ${gpuTotalLayers}`
                     : "\u2014",
                   gpuOffloadPct === 100 ? "var(--success)" : undefined,
+                  "runtime-gpu-layers",
                 )}
                 {kvRow(
                   <Layers size={11} />,
@@ -2513,6 +2540,7 @@ export default function LlamaCppPage() {
                     gpuOffload.main_loaded === gpuOffload.main_total
                     ? "var(--success)"
                     : undefined,
+                  "runtime-cpu-layers",
                 )}
                 {kvRow(
                   <Layers size={11} />,
@@ -2521,17 +2549,21 @@ export default function LlamaCppPage() {
                     ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
                     : "\u2014",
                   hasDraft ? "var(--success)" : undefined,
+                  "runtime-draft-layers",
                 )}
                 {kvRow(
                   <Zap size={11} />,
                   "Speculative",
                   boolLabel(m?.speculative),
                   m?.speculative ? "var(--success)" : undefined,
+                  "runtime-speculative",
                 )}
                 {kvRow(
                   <Database size={11} />,
                   "Tokens Cached",
                   fmtNum(slot0?.n_prompt_tokens_cache ?? m?.tokens_cached),
+                  undefined,
+                  "runtime-tokens-cached",
                 )}
               </div>
             </PanelCard>
@@ -2628,6 +2660,7 @@ export default function LlamaCppPage() {
                 {/* N behind + Update button */}
                 {behind != null && behind > 0 && (
                   <div
+                    data-testid="builds-behind-banner"
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -2705,6 +2738,7 @@ export default function LlamaCppPage() {
                       />
                     )}
                     <span
+                      data-testid="update-state-text"
                       style={{
                         fontSize: 10,
                         fontWeight: 600,
@@ -2724,6 +2758,7 @@ export default function LlamaCppPage() {
                       }}
                     >
                       <div
+                        data-testid="update-progress-bar"
                         style={{
                           width: `${mgmt.updateProgress}%`,
                           height: "100%",
@@ -2741,6 +2776,7 @@ export default function LlamaCppPage() {
                       />
                     </div>
                     <span
+                      data-testid="update-progress-pct"
                       style={{
                         fontSize: 10,
                         fontWeight: 700,
