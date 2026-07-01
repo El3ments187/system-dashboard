@@ -91,16 +91,16 @@ describe('formatCtx', () => {
 // ─── formatGB ────────────────────────────────────────────────────────────────
 
 describe('formatGB', () => {
-  it('formats 13619.2 MB as 13.3G', () => {
-    expect(formatGB(13619.2)).toBe('13.3G');
+  it('formats 13619.2 MB as 13.3 GB', () => {
+    expect(formatGB(13619.2)).toBe('13.3 GB');
   });
 
-  it('formats 1024 MB as 1.0G', () => {
-    expect(formatGB(1024)).toBe('1.0G');
+  it('formats 1024 MB as 1.0 GB', () => {
+    expect(formatGB(1024)).toBe('1.0 GB');
   });
 
-  it('formats 7372.8 MB as 7.2G', () => {
-    expect(formatGB(7372.8)).toBe('7.2G');
+  it('formats 7372.8 MB as 7.2 GB', () => {
+    expect(formatGB(7372.8)).toBe('7.2 GB');
   });
 
   it('returns em-dash for null', () => {

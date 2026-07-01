@@ -30,7 +30,7 @@ export function formatCtx(contextSize?: number | null): string {
 
 export function formatGB(mb?: number | null): string {
   if (mb == null) return "\u2014";
-  return `${(mb / 1024).toFixed(1)}G`;
+  return `${(mb / 1024).toFixed(1)} GB`;
 }
 
 export function formatTps(tps?: number | null): string {

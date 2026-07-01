@@ -417,13 +417,13 @@ describe("LlamaCppPage context section", () => {
     expect(screen.getAllByText("Prompt Buf").length).toBeGreaterThan(0);
   });
 
-  it("shows Tok Cached and Total Sent stat labels", async () => {
+  it("shows Cache Hits and Total Sent stat labels", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({ tokens_cached: 500, total_tokens_sent: 2000 }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Tok Cached").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Total Sent").length).toBeGreaterThan(0);
   });
 });
@@ -450,17 +450,17 @@ describe("LlamaCppPage generation section", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Temp").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Top-K").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Top-P").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Repeat").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Temperature").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Top-K Sampling").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Top-P (Nucleus) Sampling").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Repeat Penalty").length).toBeGreaterThan(0);
   });
 
   it("shows sampling parameter grid labels", async () => {
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Temp").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Repeat").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Temperature").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Repeat Penalty").length).toBeGreaterThan(0);
   });
 });
 
@@ -535,7 +535,7 @@ describe("LlamaCppPage server activity section", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getAllByText("Live Activity").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Total Sent").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tok Cached").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
   });
 
   it("always renders Live Activity section", async () => {
@@ -837,7 +837,7 @@ describe("LlamaCppPage GGUF size", () => {
     mockedCtx.mockReturnValue(baseCtx({ gguf_size_gib: 13.26 }));
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByText("13.26 GiB")).toBeInTheDocument();
+    expect(screen.getByText("13.26 GB")).toBeInTheDocument();
   });
 
   it("hides GGUF size when not available", async () => {
@@ -1189,16 +1189,16 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     expect(screen.queryByText("999")).not.toBeInTheDocument();
   });
 
-  it("renders Tok Cached label and does not crash when slot0 is absent", async () => {
+  it("renders Cache Hits label and does not crash when slot0 is absent", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({ tokens_cached: null, slots: undefined }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Tok Cached").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
   });
 
-  it("Live Activity Tok Cached and Runtime Tokens Cached both derive from slot n_prompt_tokens_cache", async () => {
+  it("Runtime Tokens Cached derives from slot n_prompt_tokens_cache", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
         tokens_cached: null,
@@ -1215,9 +1215,9 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    // Both Live Activity "Tok Cached" and Runtime "Tokens Cached" show 512
+    // Runtime "Tokens Cached" row shows 512; Cache Hits tiles show cumulative count
     const matches = screen.queryAllByText(/\b512\b/);
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("history buffer caps at 120 and resets cleanly on model change", async () => {
@@ -1252,6 +1252,6 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     rerender(<LlamaCppPage />);
 
     // Component still renders correctly after cap + reset
-    expect(screen.getAllByText("Tok Cached").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
   });
 });

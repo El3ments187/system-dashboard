@@ -489,14 +489,14 @@ export default function LlamaCppCard() {
               <MetricTile
                 label="Current"
                 value={fmtNum(contextTokens)}
-                unit=" tok"
+                unit=" token"
                 color={ctxColor}
               />
-              <MetricTile label="Max" value={fmtNum(maxContext)} unit=" tok" />
+              <MetricTile label="Max" value={fmtNum(maxContext)} unit=" token" />
               <MetricTile
                 label="Largest Seen"
                 value={fmtNum(largestContext)}
-                unit=" tok"
+                unit=" token"
               />
             </div>
             {contextPct != null && (
@@ -550,30 +550,30 @@ export default function LlamaCppCard() {
               <MetricTile
                 label="Gen TPS"
                 value={fmtNum(m?.gen_tps)}
-                unit=" tok/s"
+                unit=" token/s"
               />
               <MetricTile
                 label="Prompt TPS"
                 value={fmtNum(m?.prompt_tps)}
-                unit=" tok/s"
+                unit=" token/s"
               />
               <MetricTile
                 label="Prompt"
                 value={fmtNum(tokenUsage?.prompt_tokens)}
-                unit=" tok"
+                unit=" token"
               />
               <MetricTile
                 label="Generated"
                 value={fmtNum(tokenUsage?.completion_tokens)}
-                unit=" tok"
+                unit=" token"
               />
               <MetricTile
                 label="Temperature"
                 value={m?.temperature != null ? m.temperature.toFixed(2) : null}
               />
-              <MetricTile label="Top-K" value={fmtNum(m?.top_k)} />
+              <MetricTile label="Top-K Sampling" value={fmtNum(m?.top_k)} />
               <MetricTile
-                label="Top-P"
+                label="Top-P (Nucleus) Sampling"
                 value={m?.top_p != null ? m.top_p.toFixed(2) : null}
               />
               <MetricTile

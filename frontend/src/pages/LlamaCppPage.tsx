@@ -1300,6 +1300,8 @@ export default function LlamaCppPage() {
     params?: string;
     quant?: string;
   } | null>(null);
+  const [cacheHits, setCacheHits] = useState(0);
+  const prevTokCachedRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1361,6 +1363,14 @@ export default function LlamaCppPage() {
     slot0?.n_prompt_tokens_cache != null
       ? slot0.n_prompt_tokens_cache
       : (m?.tokens_cached ?? null);
+
+  useEffect(() => {
+    const prev = prevTokCachedRef.current;
+    prevTokCachedRef.current = tokCached;
+    if ((prev == null || prev === 0) && tokCached != null && tokCached > 0) {
+      setCacheHits((n) => n + 1);
+    }
+  }, [tokCached]);
 
   const ctxColor = getCtxColor(contextPct);
   const hasDir = !!mgmt.dirPath;
@@ -1501,12 +1511,12 @@ export default function LlamaCppPage() {
         }}
       >
         {/* ══════════════════════════════════════════════════
-            TOP ROW: Active Model | Throughput | Context
+            TOP ROW: Active Model | Throughput | Context | Live Activity
             ══════════════════════════════════════════════════ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "10fr 6fr 8fr",
+            gridTemplateColumns: "12fr 6fr 10fr 2fr",
             gap: 9,
             flexShrink: 0,
           }}
@@ -1623,7 +1633,7 @@ export default function LlamaCppPage() {
                       fontWeight: 400,
                     }}
                   >
-                    GiB
+                    GB
                   </span>
                 </span>
               )}
@@ -1766,9 +1776,9 @@ export default function LlamaCppPage() {
                         ? m.temperature.toFixed(2)
                         : "\u2014",
                   },
-                  { label: "Top-K", value: fmtNum(m?.top_k) || "\u2014" },
+                  { label: "Top-K Sampling", value: fmtNum(m?.top_k) || "\u2014" },
                   {
-                    label: "Top-P",
+                    label: "Top-P (Nucleus) Sampling",
                     value: m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
                   },
                   {
@@ -1846,14 +1856,10 @@ export default function LlamaCppPage() {
               {/* Gen Speed banner */}
               <div
                 style={{
-                  background:
-                    "color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary))",
-                  border:
-                    "1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border-light, var(--border-color))",
                   borderRadius: 11,
                   padding: "8px 13px",
-                  boxShadow:
-                    "inset 0 0 20px -5px color-mix(in srgb, var(--accent-primary) 12%, transparent)",
                 }}
               >
                 <div
@@ -1874,7 +1880,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 24,
                       fontWeight: 700,
-                      color: "var(--accent-primary)",
+                      color: "var(--text-primary)",
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                       lineHeight: 1,
                     }}
@@ -1891,7 +1897,7 @@ export default function LlamaCppPage() {
                 <div style={{ marginTop: 4, height: 14 }}>
                   <Sparkline
                     data={aiGenTpsHistory ?? []}
-                    color="var(--accent-primary)"
+                    color="var(--text-secondary)"
                     width={200}
                     height={14}
                   />
@@ -2021,7 +2027,7 @@ export default function LlamaCppPage() {
                         marginLeft: 2,
                       }}
                     >
-                      tok
+                      token
                     </span>
                   </div>
                 </div>
@@ -2075,7 +2081,7 @@ export default function LlamaCppPage() {
               <div
                 style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
               >
-                <RadialGauge pct={contextPct} color={ctxColor} size={82}>
+                <RadialGauge pct={contextPct} color={ctxColor} size={100}>
                   <span
                     style={{
                       fontSize: 20,
@@ -2107,7 +2113,7 @@ export default function LlamaCppPage() {
                   style={{
                     flex: 1,
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
+                    gridTemplateColumns: "1fr 1fr 1fr",
                     gap: 5,
                   }}
                 >
@@ -2139,8 +2145,8 @@ export default function LlamaCppPage() {
                         span: false,
                       },
                       {
-                        label: "Cached",
-                        value: tokCached != null ? fmtNum(tokCached) : "\u2014",
+                        label: "Cache Hits",
+                        value: String(cacheHits),
                         accent: false,
                         span: false,
                       },
@@ -2151,7 +2157,7 @@ export default function LlamaCppPage() {
                             ? m.context_tokens.toLocaleString()
                             : "\u2014",
                         accent: false,
-                        span: true,
+                        span: false,
                       },
                     ] as {
                       label: string;
@@ -2297,13 +2303,13 @@ export default function LlamaCppPage() {
                       const unbounded = np == null || np <= 0;
                       return unbounded ? (
                         <span>
-                          {nd != null ? nd.toLocaleString() : "\u2014"} tok
+                          {nd != null ? nd.toLocaleString() : "\u2014"} token
                         </span>
                       ) : (
                         <>
                           <span>
                             {nd != null ? nd.toLocaleString() : "\u2014"} /{" "}
-                            {np.toLocaleString()} tok
+                            {np.toLocaleString()} token
                           </span>
                           <span>
                             Remaining{" "}
@@ -2317,6 +2323,82 @@ export default function LlamaCppPage() {
               )}
             </div>
           </PanelCard>
+
+          {/* ── Live Activity card ── */}
+          <PanelCard>
+            <PanelHead
+              icon={<Send size={13} />}
+              title="Live Activity"
+              right={
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                    color: "var(--border-color)",
+                  }}
+                >
+                  06
+                </span>
+              }
+            />
+            <div
+              style={{
+                padding: "10px 13px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {(
+                [
+                  {
+                    label: "Total Sent",
+                    value: fmtNum(m?.total_tokens_sent) || "0",
+                  },
+                  {
+                    label: "Active Req",
+                    value: fmtNum(m?.active_requests) || "0",
+                  },
+                  {
+                    label: "Cache Hits",
+                    value: String(cacheHits),
+                  },
+                ] as { label: string; value: string }[]
+              ).map(({ label, value }) => (
+                <div
+                  key={label}
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 10,
+                    padding: "8px 11px",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 8,
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    {label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 700,
+                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                      marginTop: 3,
+                    }}
+                  >
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </PanelCard>
         </div>
 
         {/* ══════════════════════════════════════════════════
@@ -2325,7 +2407,7 @@ export default function LlamaCppPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "250px minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(250px, 1fr) minmax(0, 3fr)",
             gap: 9,
             flex: 1,
             minHeight: 0,
@@ -2795,77 +2877,6 @@ export default function LlamaCppPage() {
               </div>
             </PanelCard>
 
-            {/* Live Activity card */}
-            <PanelCard style={{ flexShrink: 0 }}>
-              <PanelHead
-                icon={<Send size={13} />}
-                title="Live Activity"
-                right={
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      color: "var(--border-color)",
-                    }}
-                  >
-                    06
-                  </span>
-                }
-              />
-              <div
-                style={{ padding: "10px 13px 12px", display: "flex", gap: 8 }}
-              >
-                {(
-                  [
-                    {
-                      label: "Total Sent",
-                      value: fmtNum(m?.total_tokens_sent) || "0",
-                    },
-                    {
-                      label: "Active Req",
-                      value: fmtNum(m?.active_requests) || "0",
-                    },
-                    {
-                      label: "Tok Cached",
-                      value: tokCached != null ? fmtNum(tokCached) : "\u2014",
-                    },
-                  ] as { label: string; value: string }[]
-                ).map(({ label, value }) => (
-                  <div
-                    key={label}
-                    style={{
-                      flex: 1,
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: 10,
-                      padding: "10px 11px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 8,
-                        textTransform: "uppercase",
-                        color: "var(--text-muted)",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      {label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 17,
-                        fontWeight: 700,
-                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                        marginTop: 3,
-                      }}
-                    >
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </PanelCard>
           </div>
 
           {/* ── Work area: Run Models + Console ── */}

@@ -56,15 +56,15 @@ describe("formatCtx", () => {
 });
 
 describe("formatGB", () => {
-  it("converts MB to G with one decimal", () => {
-    expect(formatGB(14540)).toBe("14.2G");
-    expect(formatGB(1024)).toBe("1.0G");
+  it("converts MB to GB with one decimal", () => {
+    expect(formatGB(14540)).toBe("14.2 GB");
+    expect(formatGB(1024)).toBe("1.0 GB");
   });
 
   it("falls back to em-dash for null/undefined, but shows real zero", () => {
     expect(formatGB(null)).toBe("—");
     expect(formatGB(undefined)).toBe("—");
-    expect(formatGB(0)).toBe("0.0G");
+    expect(formatGB(0)).toBe("0.0 GB");
   });
 });
 
@@ -171,8 +171,8 @@ describe("RunModelsSection table", () => {
     expect(screen.getByText("35B")).toBeInTheDocument();
     expect(screen.getByText("Q3_K_M")).toBeInTheDocument();
     expect(screen.getByText("128K")).toBeInTheDocument();
-    expect(screen.getByText("14.2G")).toBeInTheDocument();
-    expect(screen.getByText("18.6G")).toBeInTheDocument();
+    expect(screen.getByText("14.2 GB")).toBeInTheDocument();
+    expect(screen.getByText("18.6 GB")).toBeInTheDocument();
     expect(screen.getByText("MTP")).toBeInTheDocument();
     expect(screen.getByText("11")).toBeInTheDocument();
     expect(screen.getByText("Stop")).toBeInTheDocument();
@@ -219,8 +219,8 @@ describe("RunModelsSection table", () => {
       expect(screen.getByText("Qwen3.6-35B-Quality")).toBeInTheDocument(),
     );
 
-    expect(screen.getByText("15.4G")).toBeInTheDocument(); // 15800 / 1024
-    expect(screen.getByText("19.8G")).toBeInTheDocument(); // 20300 / 1024
+    expect(screen.getByText("15.4 GB")).toBeInTheDocument(); // 15800 / 1024
+    expect(screen.getByText("19.8 GB")).toBeInTheDocument(); // 20300 / 1024
     expect(screen.getByText("9")).toBeInTheDocument();
     expect(screen.getByText("None")).toBeInTheDocument(); // no spec_type configured
   });

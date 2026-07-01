@@ -132,6 +132,7 @@ function mockFetch(responses: object[]) {
 beforeEach(() => {
   vi.restoreAllMocks();
   lastWs = null;
+  localStorage.clear();
   vi.stubGlobal("WebSocket", MockWebSocket);
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
 });

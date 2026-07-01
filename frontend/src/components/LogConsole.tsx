@@ -309,7 +309,14 @@ export function LogConsole({
   const [paused, setPaused] = useState(false);
   const [search, setSearch] = useState("");
   const [wrap, setWrap] = useState(true);
-  const [filters, setFilters] = useState<LogFilter>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<LogFilter>(() => {
+    try {
+      const stored = localStorage.getItem("log_console_filters");
+      return stored ? { ...DEFAULT_FILTERS, ...JSON.parse(stored) } : DEFAULT_FILTERS;
+    } catch {
+      return DEFAULT_FILTERS;
+    }
+  });
   const [status, setStatus] = useState<ConsoleStatus>("no_logs");
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [activeProfileName, setActiveProfileName] = useState<string | null>(
@@ -338,6 +345,14 @@ export function LogConsole({
       // ignore storage errors
     }
   }, [hideIdle]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("log_console_filters", JSON.stringify(filters));
+    } catch {
+      // ignore storage errors
+    }
+  }, [filters]);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedSearch(search), 150);
