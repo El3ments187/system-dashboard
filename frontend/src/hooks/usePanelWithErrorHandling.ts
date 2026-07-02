@@ -33,7 +33,6 @@ export function usePanelWithErrorHandling<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<PanelErrorInfo | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
   const fetchFnRef = useRef(fetchFn);
   useEffect(() => {
@@ -64,19 +63,9 @@ export function usePanelWithErrorHandling<T>(
     fetchData();
   }, [...deps, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Retry on explicit call
   const retry = useCallback(() => {
-    setRetryCount((c) => c + 1);
     fetchData();
   }, [fetchData]);
-
-  // Re-fetch when retryCount changes
-  useEffect(() => {
-    if (retryCount > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchData();
-    }
-  }, [retryCount, fetchData]);
 
   return {
     data,
@@ -153,14 +142,27 @@ function classifyErrorInstance(
   const msg = err.message || "";
   const lower = msg.toLowerCase();
 
-  const networkResult = classifyNetworkOrTimeout(msg, lower, err, panelName, timestamp);
+  const networkResult = classifyNetworkOrTimeout(
+    msg,
+    lower,
+    err,
+    panelName,
+    timestamp,
+  );
   if (networkResult) return networkResult;
 
   const httpResult = classifyHttpError(msg, err, panelName, timestamp);
   if (httpResult) return httpResult;
 
   if (lower.includes("json") || lower.includes("parse")) {
-    return { timestamp, message: msg, name: "ParseError", stack: err.stack, type: "parse", endpoint: panelName };
+    return {
+      timestamp,
+      message: msg,
+      name: "ParseError",
+      stack: err.stack,
+      type: "parse",
+      endpoint: panelName,
+    };
   }
 
   if (
@@ -168,18 +170,53 @@ function classifyErrorInstance(
     lower.includes("cannot convert") ||
     lower.includes("undefined")
   ) {
-    return { timestamp, message: msg, name: "RuntimeError", stack: err.stack, type: "runtime", endpoint: panelName };
+    return {
+      timestamp,
+      message: msg,
+      name: "RuntimeError",
+      stack: err.stack,
+      type: "runtime",
+      endpoint: panelName,
+    };
   }
 
-  return { timestamp, message: msg, name: err.name || "Error", stack: err.stack, type: "unknown", endpoint: panelName };
+  return {
+    timestamp,
+    message: msg,
+    name: err.name || "Error",
+    stack: err.stack,
+    type: "unknown",
+    endpoint: panelName,
+  };
 }
 
 function classifyError(err: any, panelName: string): PanelErrorInfo {
   const timestamp = Date.now();
-  if (err instanceof Error) return classifyErrorInstance(err, panelName, timestamp);
-  if (typeof err === "string") return { timestamp, message: err, name: "Error", type: "unknown", endpoint: panelName };
-  if (typeof err === "object" && err !== null) return { timestamp, message: JSON.stringify(err), name: "Error", type: "unknown", endpoint: panelName };
-  return { timestamp, message: "Unknown error occurred", name: "Error", type: "unknown", endpoint: panelName };
+  if (err instanceof Error)
+    return classifyErrorInstance(err, panelName, timestamp);
+  if (typeof err === "string")
+    return {
+      timestamp,
+      message: err,
+      name: "Error",
+      type: "unknown",
+      endpoint: panelName,
+    };
+  if (typeof err === "object" && err !== null)
+    return {
+      timestamp,
+      message: JSON.stringify(err),
+      name: "Error",
+      type: "unknown",
+      endpoint: panelName,
+    };
+  return {
+    timestamp,
+    message: "Unknown error occurred",
+    name: "Error",
+    type: "unknown",
+    endpoint: panelName,
+  };
 }
 
 /**

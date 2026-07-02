@@ -18,6 +18,57 @@ function reindexSlots(points: MetricHistoryPoint[]): MetricHistoryPoint[] {
   return points.map((p, idx) => ({ ...p, slot: idx }));
 }
 
+// Module-level extractor arrays so their references are stable across renders
+const CPU_EXTRACTORS = [
+  (data: any) => data?.utilization_percent ?? null,
+  (data: any) => data?.temperature_celsius ?? null,
+  (data: any) => data?.frequency_mhz ?? null,
+  (data: any) => data?.physical_cores ?? null,
+  (data: any) => data?.threads ?? null,
+  (data: any) => data?.load_1m ?? null,
+  (data: any) => data?.load_5m ?? null,
+  (data: any) => data?.load_15m ?? null,
+  (data: any) => data?.freq_max_mhz ?? null,
+];
+const CPU_TRACK = [true, true, false, false, false, false, false, false, false];
+
+const MEMORY_EXTRACTORS = [
+  (data: any) => data?.utilization_percent ?? null,
+  (data: any) => data?.used_gb ?? null,
+  (data: any) => data?.total_gb ?? null,
+  (data: any) => data?.swap_used_gb ?? null,
+  (data: any) => data?.swap_total_gb ?? null,
+  (data: any) =>
+    data?.swap_total_gb && data.swap_total_gb > 0
+      ? (data.swap_used_gb / data.swap_total_gb) * 100
+      : null,
+];
+const MEMORY_TRACK = [true, false, false, false, false, true];
+
+function gpuField(data: any, field: string): any {
+  const gpu = Array.isArray(data) && data.length > 0 ? data[0] : data;
+  return gpu?.[field] ?? null;
+}
+
+const GPU_EXTRACTORS = [
+  (data: any) => gpuField(data, "utilization_percent"),
+  (data: any) => gpuField(data, "temperature_celsius"),
+  (data: any) => gpuField(data, "vram_used_gb"),
+  (data: any) => gpuField(data, "vram_total_gb"),
+  (data: any) => gpuField(data, "power_usage_watts"),
+  (data: any) => gpuField(data, "power_limit_watts"),
+  (data: any) => {
+    const gpu = Array.isArray(data) && data.length > 0 ? data[0] : data;
+    const vramUsed = gpu?.vram_used_gb;
+    const vramTotal = gpu?.vram_total_gb;
+    if (vramUsed != null && vramTotal != null && vramTotal > 0) {
+      return (vramUsed / vramTotal) * 100;
+    }
+    return null;
+  },
+];
+const GPU_TRACK = [true, true, false, false, false, false, true];
+
 /**
  * Hook for tracking per-core CPU utilization histories.
  * Extracts core data from raw CPU metrics without duplicate API calls.
@@ -29,30 +80,22 @@ function usePerCoreHistory(
   const [histories, setHistories] = useState<
     Array<MetricHistoryPoint[] | null>
   >(() => []);
-  const rawDataRef = useRef(rawData);
   const isPausedRef = useRef(isPaused);
 
   useEffect(() => {
-    rawDataRef.current = rawData;
     isPausedRef.current = isPaused;
-  }, [rawData, isPaused]);
+  }, [isPaused]);
 
-  // Adjust-during-render: initialize or resize history buffers when core count changes
-  const numCores = rawData?.cores?.length ?? 0;
-  if (numCores > 0 && histories.length !== numCores) {
-    setHistories(Array.from({ length: numCores }, () => makeCoreHistorySlots(120)));
-  }
-
-  // Update histories when raw data changes
   useEffect(() => {
     if (!rawData?.cores || !Array.isArray(rawData.cores) || isPausedRef.current)
       return;
 
     const cores = rawData.cores;
     setHistories((prev) => {
-      // Reinitialize if core count changed
       if (prev.length !== cores.length) {
-        return Array.from({ length: cores.length }, () => makeCoreHistorySlots(120));
+        return Array.from({ length: cores.length }, () =>
+          makeCoreHistorySlots(120),
+        );
       }
       return prev.map((h, i) => {
         if (!h) return null;
@@ -66,6 +109,91 @@ function usePerCoreHistory(
   }, [rawData?.cores]);
 
   return histories;
+}
+
+interface PerGpuHistories {
+  utilHistories: Array<MetricHistoryPoint[] | null>;
+  tempHistories: Array<MetricHistoryPoint[] | null>;
+  vramUtilHistories: Array<MetricHistoryPoint[] | null>;
+}
+
+const GPU_BUFFER_SIZE = 120;
+
+function makeGpuHistorySlots(): MetricHistoryPoint[] {
+  const now = new Date();
+  return Array.from({ length: GPU_BUFFER_SIZE }, (_, j) => ({
+    slot: j,
+    timestamp: new Date(now.getTime() - (GPU_BUFFER_SIZE - j) * 500),
+    value: 0,
+  }));
+}
+
+function buildGpuHistoryUpdate(
+  gpus: any[],
+  getValue: (gpu: any) => number | null,
+): (
+  prev: Array<MetricHistoryPoint[] | null>,
+) => Array<MetricHistoryPoint[] | null> {
+  return (prev) => {
+    const base =
+      prev.length !== gpus.length
+        ? Array.from({ length: gpus.length }, () => makeGpuHistorySlots())
+        : prev;
+    return base.map((h, i) => {
+      if (!h) return null;
+      return reindexSlots([
+        ...h.slice(1),
+        {
+          slot: GPU_BUFFER_SIZE - 1,
+          timestamp: new Date(),
+          value: getValue(gpus[i]),
+        },
+      ]);
+    });
+  };
+}
+
+function usePerGpuHistory(
+  rawData: any | null,
+  isPaused?: boolean,
+): PerGpuHistories {
+  const [utilHistories, setUtilHistories] = useState<
+    Array<MetricHistoryPoint[] | null>
+  >([]);
+  const [tempHistories, setTempHistories] = useState<
+    Array<MetricHistoryPoint[] | null>
+  >([]);
+  const [vramUtilHistories, setVramUtilHistories] = useState<
+    Array<MetricHistoryPoint[] | null>
+  >([]);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  useEffect(() => {
+    if (!rawData || isPausedRef.current) return;
+    const gpus: any[] = Array.isArray(rawData) ? rawData : [rawData];
+
+    setUtilHistories(
+      buildGpuHistoryUpdate(gpus, (gpu) => gpu?.utilization_percent ?? null),
+    );
+    setTempHistories(
+      buildGpuHistoryUpdate(gpus, (gpu) => gpu?.temperature_celsius ?? null),
+    );
+    setVramUtilHistories(
+      buildGpuHistoryUpdate(gpus, (gpu) => {
+        const used = gpu?.vram_used_gb;
+        const total = gpu?.vram_total_gb;
+        return used != null && total != null && total > 0
+          ? (used / total) * 100
+          : null;
+      }),
+    );
+  }, [rawData]);
+
+  return { utilHistories, tempHistories, vramUtilHistories };
 }
 
 interface MetricsContextValue {
@@ -84,7 +212,9 @@ interface MetricsContextValue {
   gpuHistory: any | null;
   gpuTemperatureHistory: any | null;
   gpuVramUtilHistory: any | null;
-  perCoreCpuHistories: Array<any | null>;
+  perCoreCpuHistories: Array<MetricHistoryPoint[] | null>;
+  perGpuHistories: PerGpuHistories;
+  cpuCurrentFrequency: number;
   cpuMaxFrequency: number;
   cpuLoading: boolean;
   memoryLoading: boolean;
@@ -124,39 +254,19 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
 
   const cpu = useMultiMetrics(
     "/cpu",
-    [
-      (data: any) => data?.utilization_percent ?? null,
-      (data: any) => data?.temperature_celsius ?? null,
-      (data: any) => data?.frequency_mhz ?? null,
-      (data: any) => data?.physical_cores ?? null,
-      (data: any) => data?.threads ?? null,
-      (data: any) => data?.load_1m ?? null,
-      (data: any) => data?.load_5m ?? null,
-      (data: any) => data?.load_15m ?? null,
-    ],
-    [true, true, false, false, false, false, false, false],
+    CPU_EXTRACTORS,
+    CPU_TRACK,
     500,
     60000,
     isPaused,
   );
 
-  // Track per-core histories from raw CPU data without duplicate API calls
   const perCoreHistories = usePerCoreHistory(cpu.rawData, isPaused);
 
   const memory = useMultiMetrics(
     "/memory",
-    [
-      (data: any) => data?.utilization_percent ?? null,
-      (data: any) => data?.used_gb ?? null,
-      (data: any) => data?.total_gb ?? null,
-      (data: any) => data?.swap_used_gb ?? null,
-      (data: any) => data?.swap_total_gb ?? null,
-      (data: any) =>
-        data?.swap_total_gb && data.swap_total_gb > 0
-          ? (data.swap_used_gb / data.swap_total_gb) * 100
-          : null,
-    ],
-    [true, false, false, false, false, true],
+    MEMORY_EXTRACTORS,
+    MEMORY_TRACK,
     1000,
     60000,
     isPaused,
@@ -164,57 +274,14 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
 
   const gpu = useMultiMetrics(
     "/gpu",
-    [
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.utilization_percent ?? null;
-        return data?.utilization_percent ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.temperature_celsius ?? null;
-        return data?.temperature_celsius ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.vram_used_gb ?? null;
-        return data?.vram_used_gb ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.vram_total_gb ?? null;
-        return data?.vram_total_gb ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.power_usage_watts ?? null;
-        return data?.power_usage_watts ?? null;
-      },
-      (data: any) => {
-        if (Array.isArray(data) && data.length > 0)
-          return data[0]?.power_limit_watts ?? null;
-        return data?.power_limit_watts ?? null;
-      },
-      (data: any) => {
-        const vramUsed =
-          Array.isArray(data) && data.length > 0
-            ? data[0]?.vram_used_gb
-            : data?.vram_used_gb;
-        const vramTotal =
-          Array.isArray(data) && data.length > 0
-            ? data[0]?.vram_total_gb
-            : data?.vram_total_gb;
-        if (vramUsed != null && vramTotal != null && vramTotal > 0) {
-          return (vramUsed / vramTotal) * 100;
-        }
-        return null;
-      },
-    ],
-    [true, true, false, false, false, false, true],
+    GPU_EXTRACTORS,
+    GPU_TRACK,
     500,
     120000,
     isPaused,
   );
+
+  const perGpuHistories = usePerGpuHistory(gpu.rawData, isPaused);
 
   const storage = useStorageMetrics(isPaused);
 
@@ -237,7 +304,9 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     gpuTemperatureHistory: gpu.histories?.[1] ?? null,
     gpuVramUtilHistory: gpu.histories?.[6] ?? null,
     perCoreCpuHistories: perCoreHistories,
-    cpuMaxFrequency: cpu.currentValues?.[2] ?? 0,
+    perGpuHistories,
+    cpuCurrentFrequency: cpu.currentValues?.[2] ?? 0,
+    cpuMaxFrequency: cpu.currentValues?.[8] ?? 0,
     cpuLoading: cpu.loading,
     memoryLoading: memory.loading,
     gpuLoading: gpu.loading,

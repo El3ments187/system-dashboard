@@ -29,6 +29,9 @@ export interface GpuMetrics {
   vram_total_gb: number;
   power_usage_watts: number;
   power_limit_watts: number;
+  fan_speed_rpm: number;
+  clock_speed_mhz: number | null;
+  memory_clock_mhz: number | null;
 }
 
 export interface StorageMetrics {

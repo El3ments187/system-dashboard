@@ -76,8 +76,7 @@ export default function ChartCard({
       const p = promptTpsHistory?.[i];
       return {
         x: i,
-        timestampMs:
-          g?.timestamp instanceof Date ? g.timestamp.getTime() : 0,
+        timestampMs: g?.timestamp instanceof Date ? g.timestamp.getTime() : 0,
         timeLabel: g ? formatTime(g.timestamp) : "",
         genTps:
           g?.value != null ? Math.round((g.value as number) * 10) / 10 : null,

@@ -2,15 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "./components/Header";
 import ThemePanel from "./components/ThemePanel";
-import CpuCard from "./components/cards/CpuCard";
-import MemoryCard from "./components/cards/MemoryCard";
-import GpuCard from "./components/cards/GpuCard";
-import CpuChart from "./charts/CpuChart";
-import MemoryChart from "./charts/MemoryChart";
-
-import GpuChart from "./charts/GpuChart";
-import StorageCard from "./components/cards/StorageCard";
-import StoragePerformanceCard from "./components/cards/StoragePerformanceCard";
 import { MetricsProvider } from "./context/MetricsContext";
 import { LiveDataControlsProvider } from "./context/LiveDataControlsContext";
 import { AlertsProvider } from "./context/AlertsContext";
@@ -24,15 +15,10 @@ import LlamaCppPage from "./pages/LlamaCppPage";
 import AiPage from "./pages/AiPage";
 import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
+import OverviewPage from "./pages/OverviewPage";
 
 type ActivePage =
-  | "overview"
-  | "gpu"
-  | "cpu"
-  | "llama-cpp"
-  | "ai"
-  | "terminal"
-  | "settings";
+  "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings";
 
 function getPageFromPathname(pathname: string): ActivePage {
   if (pathname === "/gpu") return "gpu";
@@ -64,26 +50,7 @@ function PageContent({
   if (activePage === "llama-cpp") return <LlamaCppPage />;
   if (activePage === "settings") return <SettingsPage accent={accent} />;
   if (activePage === "ai") return <AiPage />;
-  return (
-    <main className="dashboard-grid">
-      <div className="dashboard-row overview-gpu-row">
-        <GpuCard accent={accent} />
-        <GpuChart accent={accent} />
-      </div>
-      <div className="dashboard-row overview-cpu-row">
-        <CpuCard accent={accent} />
-        <CpuChart accent={accent} />
-      </div>
-      <div className="dashboard-row overview-memory-row">
-        <MemoryCard accent={accent} />
-        <MemoryChart accent={accent} />
-      </div>
-      <div className="dashboard-row storage-row">
-        <StorageCard accent={accent} />
-        <StoragePerformanceCard />
-      </div>
-    </main>
-  );
+  return <OverviewPage accent={accent} />;
 }
 
 export default function App() {
@@ -102,6 +69,7 @@ export default function App() {
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
   const isInitialMount = useRef(true);
+  const isNavigatingRef = useRef(false);
   const [activePage, setActivePage] = useState<ActivePage>(() =>
     getPageFromPathname(window.location.pathname),
   );
@@ -121,6 +89,10 @@ export default function App() {
 
   // Sync URL with active page (preserve query params for terminal to keep pts param)
   useEffect(() => {
+    if (isNavigatingRef.current) {
+      isNavigatingRef.current = false;
+      return;
+    }
     const path = getPathForPage(activePage);
     const search = activePage === "terminal" ? window.location.search : "";
     if (isInitialMount.current) {
@@ -133,8 +105,10 @@ export default function App() {
 
   // Handle browser back/forward
   useEffect(() => {
-    const handler = () =>
+    const handler = () => {
+      isNavigatingRef.current = true;
       setActivePage(getPageFromPathname(window.location.pathname));
+    };
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);

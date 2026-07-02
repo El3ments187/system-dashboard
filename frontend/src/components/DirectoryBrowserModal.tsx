@@ -23,20 +23,34 @@ function DirectoryContent({
   onNavigate: (path: string) => void;
 }) {
   if (loading) {
-    return <div style={{ ...centeredPaneStyle, color: "var(--text-muted)" }}>Loading…</div>;
+    return (
+      <div style={{ ...centeredPaneStyle, color: "var(--text-muted)" }}>
+        Loading…
+      </div>
+    );
   }
   if (error) {
-    return <div style={{ ...centeredPaneStyle, color: "var(--danger)" }}>{error}</div>;
+    return (
+      <div style={{ ...centeredPaneStyle, color: "var(--danger)" }}>
+        {error}
+      </div>
+    );
   }
   if (entries.length === 0) {
-    return <div style={{ ...centeredPaneStyle, color: "var(--text-muted)" }}>No subdirectories</div>;
+    return (
+      <div style={{ ...centeredPaneStyle, color: "var(--text-muted)" }}>
+        No subdirectories
+      </div>
+    );
   }
   return (
     <>
       {entries.map((entry) => (
         <div
           key={entry.name}
-          onClick={() => onNavigate(`${currentPath.replace(/\/$/, "")}/${entry.name}`)}
+          onClick={() =>
+            onNavigate(`${currentPath.replace(/\/$/, "")}/${entry.name}`)
+          }
           style={{
             display: "flex",
             alignItems: "center",
@@ -47,8 +61,12 @@ function DirectoryContent({
             color: "var(--text-primary)",
             fontSize: 12,
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--bg-secondary)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
         >
           <Folder size={14} style={{ color: "var(--accent-primary)" }} />
           {entry.name}

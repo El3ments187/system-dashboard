@@ -20,9 +20,17 @@ function appendHistory(
   bufferSize: number,
 ) {
   setter((prev) => {
-    const entry = { slot: bufferSize - 1, timestamp: new Date(), value };
-    if (!prev || prev.length < bufferSize) return [...(prev ?? []), entry];
-    return [...prev.slice(1), entry].map((p, idx) => ({ ...p, slot: idx }));
+    const ts = new Date();
+    if (!prev || prev.length < bufferSize) {
+      return [
+        ...(prev ?? []),
+        { slot: prev?.length ?? 0, timestamp: ts, value },
+      ];
+    }
+    return [
+      ...prev.slice(1),
+      { slot: bufferSize - 1, timestamp: ts, value },
+    ].map((p, idx) => ({ ...p, slot: idx }));
   });
 }
 

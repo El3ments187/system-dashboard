@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 /* ---- color utilities ---- */
 
@@ -217,12 +217,12 @@ export function useTheme() {
     return localStorage.getItem("dashboard-glow") === "neon";
   });
 
-  const resetTheme = () => {
+  const resetTheme = useCallback(() => {
     setAccent(DEFAULT_ACCENT);
     setBg(DEFAULT_BG);
     setAccentMode(DEFAULT_ACCENT_MODE);
     setGlow(false);
-  };
+  }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
   // `current.color`/`current.glow` resolve through CSS variables (not literal hex) so that

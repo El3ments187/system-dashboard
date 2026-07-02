@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
-import { setAccentMode } from '../helpers/e2eThemeAssertions';
+import { test, expect, type Page } from "@playwright/test";
+import { setAccentMode } from "../helpers/e2eThemeAssertions";
 
 /**
  * Regression coverage for: dual-line charts using an unrelated contrasting hue for the
@@ -9,19 +9,21 @@ import { setAccentMode } from '../helpers/e2eThemeAssertions';
  * is too insensitive to catch this (two thin lines are a tiny fraction of total pixels), so
  * this suite inspects the rendered SVG stroke/stroke-dasharray attributes directly.
  */
-const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173';
-const MODES = ['solid', 'animated-gradient', 'rainbow-wave', 'spectrum'];
+const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";
+const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
 
 async function getDashedAndSolidStrokes(page: Page) {
   return page.evaluate(() => {
-    const paths = Array.from(document.querySelectorAll<SVGPathElement>('path[stroke]'));
+    const paths = Array.from(
+      document.querySelectorAll<SVGPathElement>("path[stroke]"),
+    );
     const solid: string[] = [];
     const dashed: string[] = [];
     for (const p of paths) {
-      const stroke = p.getAttribute('stroke');
-      const dash = p.getAttribute('stroke-dasharray');
-      if (!stroke || stroke === 'none' || stroke.startsWith('url(')) continue;
-      if (dash && dash !== '0') dashed.push(stroke.toLowerCase());
+      const stroke = p.getAttribute("stroke");
+      const dash = p.getAttribute("stroke-dasharray");
+      if (!stroke || stroke === "none" || stroke.startsWith("url(")) continue;
+      if (dash && dash !== "0") dashed.push(stroke.toLowerCase());
       else solid.push(stroke.toLowerCase());
     }
     return { solid, dashed };
@@ -40,18 +42,21 @@ function sameHueFamily(a: string, b: string): boolean {
   const rgbA = hexToRgbTuple(a);
   const rgbB = hexToRgbTuple(b);
   if (!rgbA || !rgbB) return false;
-  const rank = (rgb: [number, number, number]) => [0, 1, 2].sort((i, j) => rgb[j] - rgb[i]);
+  const rank = (rgb: [number, number, number]) =>
+    [0, 1, 2].sort((i, j) => rgb[j] - rgb[i]);
   return JSON.stringify(rank(rgbA)) === JSON.stringify(rank(rgbB));
 }
 
-test.describe('Memory chart (Overview) - dual-line series', () => {
+test.describe("Memory chart (Overview) - dual-line series", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${BASE_URL}/`);
-    await page.waitForSelector('text=MEMORY UTILIZATION HISTORY');
+    await page.waitForSelector("text=MEMORY UTILIZATION HISTORY");
   });
 
   for (const mode of MODES) {
-    test(`${mode}: secondary line is dashed and in the same color family as the primary`, async ({ page }) => {
+    test(`${mode}: secondary line is dashed and in the same color family as the primary`, async ({
+      page,
+    }) => {
       await setAccentMode(page, mode);
       await page.waitForTimeout(150);
       const { solid, dashed } = await getDashedAndSolidStrokes(page);
@@ -63,13 +68,19 @@ test.describe('Memory chart (Overview) - dual-line series', () => {
     });
   }
 
-  test('secondary line colors update when switching accent in Solid mode', async ({ page }) => {
-    await setAccentMode(page, 'solid');
-    await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'turquoise'));
+  test("secondary line colors update when switching accent in Solid mode", async ({
+    page,
+  }) => {
+    await setAccentMode(page, "solid");
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-accent", "turquoise"),
+    );
     await page.waitForTimeout(150);
     const before = await getDashedAndSolidStrokes(page);
 
-    await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'crimson'));
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-accent", "crimson"),
+    );
     await page.waitForTimeout(150);
     const after = await getDashedAndSolidStrokes(page);
 
@@ -77,14 +88,16 @@ test.describe('Memory chart (Overview) - dual-line series', () => {
   });
 });
 
-test.describe('CPU dual-axis chart (Utilization + Temperature) - dual-line series', () => {
+test.describe("CPU dual-axis chart (Utilization + Temperature) - dual-line series", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${BASE_URL}/cpu`);
-    await page.waitForSelector('text=CPU UTILIZATION');
+    await page.waitForSelector("text=CPU UTILIZATION");
   });
 
   for (const mode of MODES) {
-    test(`${mode}: secondary (temperature) line is dashed and related to the primary`, async ({ page }) => {
+    test(`${mode}: secondary (temperature) line is dashed and related to the primary`, async ({
+      page,
+    }) => {
       await setAccentMode(page, mode);
       await page.waitForTimeout(150);
       const { solid, dashed } = await getDashedAndSolidStrokes(page);
@@ -96,23 +109,25 @@ test.describe('CPU dual-axis chart (Utilization + Temperature) - dual-line serie
   }
 });
 
-test.describe('Dual-line series - theme transitions', () => {
+test.describe("Dual-line series - theme transitions", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${BASE_URL}/`);
-    await page.waitForSelector('text=MEMORY UTILIZATION HISTORY');
+    await page.waitForSelector("text=MEMORY UTILIZATION HISTORY");
   });
 
   const TRANSITIONS: Array<[string, string]> = [
-    ['solid', 'animated-gradient'],
-    ['animated-gradient', 'solid'],
-    ['solid', 'spectrum'],
-    ['spectrum', 'solid'],
-    ['solid', 'rainbow-wave'],
-    ['rainbow-wave', 'solid'],
+    ["solid", "animated-gradient"],
+    ["animated-gradient", "solid"],
+    ["solid", "spectrum"],
+    ["spectrum", "solid"],
+    ["solid", "rainbow-wave"],
+    ["rainbow-wave", "solid"],
   ];
 
   for (const [from, to] of TRANSITIONS) {
-    test(`${from} -> ${to}: secondary line stays dashed and related, never becomes identical to primary`, async ({ page }) => {
+    test(`${from} -> ${to}: secondary line stays dashed and related, never becomes identical to primary`, async ({
+      page,
+    }) => {
       await setAccentMode(page, from);
       await page.waitForTimeout(100);
       await setAccentMode(page, to);

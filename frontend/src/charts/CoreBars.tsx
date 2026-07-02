@@ -17,8 +17,6 @@ function resolveVar(name: string): string {
     .trim();
 }
 
-/* ─── Derive per-core colors from the active accent mode ─── */
-
 function getCoreColors(count: number): string[] {
   return resolveAccentColors(count, true);
 }
@@ -29,21 +27,25 @@ const CoreRow = ({
   index,
   util,
   color,
+  danger,
+  warning,
 }: {
   index: number;
   util: number;
   color: string;
+  danger: string;
+  warning: string;
 }) => {
-  const bg = resolveVar("--bg-secondary") || "#1a1f2e";
-  const textMuted = resolveVar("--text-muted") || "#8b95a5";
-  const textPrimary = resolveVar("--text-primary") || "#e2e8f0";
   const state = getProgressState(util);
   let barColor: string;
   if (state === "normal") {
     barColor = color;
+  } else if (state === "critical") {
+    barColor = danger;
   } else {
-    barColor = resolveVar(state === "critical" ? "--danger" : "--warning");
+    barColor = warning;
   }
+
   return (
     <div
       className="core-row"
@@ -60,7 +62,7 @@ const CoreRow = ({
       <span
         style={{
           fontSize: 9,
-          color: textMuted,
+          color: "var(--text-muted)",
           fontFamily: "'JetBrains Mono', monospace",
           textAlign: "right",
           flexShrink: 0,
@@ -72,7 +74,7 @@ const CoreRow = ({
         style={{
           width: "100%",
           height: 14,
-          background: bg,
+          background: "var(--bg-secondary)",
           borderRadius: 4,
           overflow: "hidden",
           position: "relative",
@@ -98,7 +100,7 @@ const CoreRow = ({
       <span
         style={{
           fontSize: 9,
-          color: textPrimary,
+          color: "var(--text-primary)",
           fontFamily: "'JetBrains Mono', monospace",
           textAlign: "right",
           flexShrink: 0,
@@ -120,19 +122,30 @@ export default function CoreBars({ cores, accent }: CoreBarProps) {
   const textMuted = resolveVar("--text-muted") || "#8b95a5";
   const borderColor = resolveVar("--border-color") || "#2a3143";
 
-  const totalCores = cores.filter((c) => c != null).length;
+  const indexedCores = useMemo(
+    () =>
+      cores
+        .map((c, i) =>
+          c != null ? { index: i, util: c.utilization_percent } : null,
+        )
+        .filter((c): c is { index: number; util: number } => c != null),
+    [cores],
+  );
+
+  const totalCores = indexedCores.length;
 
   const colors = useMemo(
     () => getCoreColors(totalCores),
     [totalCores, themeTick], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const indexedCores = useMemo(() => {
-    return cores.map((c, i) => ({
-      index: i,
-      util: c?.utilization_percent ?? 0,
-    }));
-  }, [cores]);
+  const { danger, warning } = useMemo(
+    () => ({
+      danger: resolveVar("--danger"),
+      warning: resolveVar("--warning"),
+    }),
+    [themeTick], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const half = Math.ceil(indexedCores.length / 2);
   const colA = indexedCores.slice(0, half);
@@ -192,6 +205,8 @@ export default function CoreBars({ cores, accent }: CoreBarProps) {
                   index={c.index}
                   util={c.util}
                   color={colors[c.index]}
+                  danger={danger}
+                  warning={warning}
                 />
               ))}
             </div>

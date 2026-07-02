@@ -78,7 +78,9 @@ export default function MemoryCard({ accent }: CardProps) {
           </div>
         </div>
         <div className="card-value">
-          {memoryLoading || currentValue === null ? "\u2014" : currentValue.toFixed(1)}
+          {memoryLoading || currentValue === null
+            ? "\u2014"
+            : currentValue.toFixed(1)}
           <span className="card-unit">%</span>
         </div>
         <ProgressBar percent={currentValue ?? 0} />

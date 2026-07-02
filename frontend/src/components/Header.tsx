@@ -1,17 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getSystemMetrics } from "../services/api";
 import { SystemMetrics } from "../types/metrics";
-import {
-  Wifi,
-  WifiOff,
-  Pause,
-  Play,
-  Bell,
-  Trash2,
-  Server,
-  Clock,
-  RefreshCw,
-} from "lucide-react";
+import { Bell, Trash2 } from "lucide-react";
 import { useLiveDataControlsContext } from "../context/LiveDataControlsContext";
 import { useAlertsContext, AlertSeverity } from "../context/AlertsContext";
 import { useFetchAlerts } from "../hooks/useFetchAlerts";
@@ -61,6 +51,7 @@ export default function Header({
   const pages: Array<
     "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "settings"
   > = ["overview", "gpu", "cpu", "llama-cpp", "ai", "settings"];
+
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ["metrics", "system"],
     queryFn: getSystemMetrics,
@@ -79,14 +70,13 @@ export default function Header({
     }
     return merged;
   }, [backendAlerts, frontendAlerts]);
+
   const [showAlerts, setShowAlerts] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (showAlerts) {
-      refetchAlerts();
-    }
+    if (showAlerts) refetchAlerts();
   }, [showAlerts, refetchAlerts]);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (healthOk === false) {
@@ -105,220 +95,188 @@ export default function Header({
   }, []);
 
   const uptime = (() => {
-    if (!system) return "0m";
-    const seconds = system.uptime_seconds;
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    if (days > 0) return `${days}d ${hours}h ${mins}m`;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
+    if (!system) return "—";
+    const s = system.uptime_seconds;
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
   })();
 
   return (
-    <>
-      <header className="dashboard-header">
-        <div className="header-left">
-          <div
-            className="accent-fill"
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 5,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+    <header className="dashboard-header">
+      {/* ── Left: logo + title + nav ── */}
+      <div className="header-left">
+        <div className="dash-logo-tile">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            width="17"
+            height="17"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v4l-2 2 1-3M12 22v-4l-2-2 1-3M2 12h4l2-2-3-1M22 12h-4l-2 2 3-1" />
-            </svg>
-          </div>
-          <span className="header-title">System Dashboard</span>
-          <nav
-            style={{
-              display: "flex",
-              gap: 3,
-              marginLeft: 12,
-              alignItems: "center",
-            }}
-          >
-            {pages.map((page) => (
-              <button
-                key={page}
-                onClick={() => onPageChange?.(page)}
-                style={{
-                  background:
-                    activePage === page
-                      ? "var(--accent-tint-15)"
-                      : "transparent",
-                  color:
-                    activePage === page
-                      ? accent.color
-                      : "var(--text-secondary)",
-                  padding: "3px 10px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "12px",
-                  fontWeight: activePage === page ? 600 : 400,
-                  transition: "all 0.15s ease",
-                  border:
-                    activePage === page
-                      ? "1px solid var(--accent-tint-40)"
-                      : "1px solid transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (activePage !== page) {
-                    e.currentTarget.style.color = accent.color;
-                    e.currentTarget.style.background = "var(--accent-tint-10)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activePage !== page) {
-                    e.currentTarget.style.color = "var(--text-secondary)";
-                    e.currentTarget.style.background = "transparent";
-                  }
-                }}
-              >
-                {PAGE_LABELS[page] ?? page}
-              </button>
-            ))}
-          </nav>
+            <path d="m12 14 4-4" />
+            <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+          </svg>
         </div>
-        <div className="header-center">
-          {system && (
-            <div className="header-info">
-              <Server
-                size={11}
-                style={{ color: "var(--text-muted)", flexShrink: 0 }}
-              />
-              <span className="header-info-label">Host</span>
-              <span style={{ color: accent.color }}>{system.hostname}</span>
-            </div>
-          )}
-          <div className="header-info">
-            <Clock
-              size={11}
-              style={{ color: "var(--text-muted)", flexShrink: 0 }}
-            />
-            <span className="header-info-label">Uptime</span>
-            <span style={{ color: accent.color }}>{uptime}</span>
-          </div>
-          <div className="header-info">
-            <RefreshCw
-              size={11}
-              style={{ color: "var(--text-muted)", flexShrink: 0 }}
-            />
-            <span className="header-info-label">Updated</span>
-            <span style={{ color: accent.color }}>
-              {system?.last_update ?? "Just now"}
-            </span>
-          </div>
-          <div className="header-info">
-            {healthOk ? (
-              <Wifi
-                size={12}
-                style={{ color: "var(--success)", flexShrink: 0 }}
-              />
-            ) : (
-              <WifiOff
-                size={12}
-                style={{ color: "var(--danger)", flexShrink: 0 }}
-              />
-            )}
-            <span
-              className="header-info-label"
-              style={{ color: healthOk ? "var(--success)" : "var(--danger)" }}
-            >
-              {healthOk ? "Online" : "Offline"}
-            </span>
-          </div>
-        </div>
-        <div className="header-right">
-          <button
-            className="live-toggle-btn"
-            onClick={toggleLiveData}
-            style={{
-              background: isPaused ? "var(--warning)20" : "var(--success)20",
-              color: isPaused ? "var(--warning)" : "var(--success)",
-              border: `1px solid ${isPaused ? "var(--warning)40" : "var(--success)40"}`,
-            }}
-            title={isPaused ? "Resume Live Updates" : "Pause Live Updates"}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: isPaused ? "var(--warning)" : "var(--success)",
-                display: "inline-block",
-                marginRight: 4,
-                animation: isPaused ? "none" : "pulse 2s infinite",
-              }}
-            />
-            {isPaused ? "PAUSED" : "LIVE"}
-            {isPaused ? (
-              <Play size={12} style={{ marginLeft: 4 }} />
-            ) : (
-              <Pause size={12} style={{ marginLeft: 4 }} />
-            )}
-          </button>
-          <div style={{ position: "relative" }} ref={panelRef}>
+        <span className="header-title">System Dashboard</span>
+        <nav className="dash-nav">
+          {pages.map((page) => (
             <button
-              className="alerts-btn"
-              onClick={() => setShowAlerts(!showAlerts)}
-              style={{
-                background: "transparent",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "4px 8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
+              key={page}
+              onClick={() => onPageChange?.(page)}
+              className={`dash-nav-btn${activePage === page ? " active" : ""}`}
+              style={
+                activePage === page
+                  ? {
+                      color: accent.color,
+                      background: "var(--accent-tint-15)",
+                      borderColor: "var(--accent-tint-40)",
+                    }
+                  : undefined
+              }
+              onMouseEnter={(e) => {
+                if (activePage !== page) {
+                  e.currentTarget.style.color = accent.color;
+                  e.currentTarget.style.background = "var(--accent-tint-10)";
+                }
               }}
-              title="Alerts"
+              onMouseLeave={(e) => {
+                if (activePage !== page) {
+                  e.currentTarget.style.color = "";
+                  e.currentTarget.style.background = "";
+                }
+              }}
             >
-              <Bell size={14} />
+              {PAGE_LABELS[page] ?? page}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* ── Right: chips + actions ── */}
+      <div className="dash-right">
+        <div className="dash-chips">
+          {/* Host chip */}
+          {system && (
+            <span className="status-chip">
+              <span className="chip-label">Host</span>
+              <span className="chip-value" style={{ color: accent.color }}>
+                {system.hostname}
+              </span>
+            </span>
+          )}
+
+          {/* Uptime chip */}
+          <span className="status-chip">
+            <span className="chip-label">Uptime</span>
+            <span className="chip-value" style={{ color: accent.color }}>
+              {uptime}
+            </span>
+          </span>
+
+          {/* Updated chip */}
+          {system && (
+            <span className="status-chip">
+              <span className="chip-label">Updated</span>
+              <span className="chip-value" style={{ color: accent.color }}>
+                {system.last_update}
+              </span>
+            </span>
+          )}
+
+          {/* Online / Offline chip */}
+          <span
+            className="status-chip accent"
+            style={
+              healthOk === false
+                ? {
+                    color: "var(--danger)",
+                    background:
+                      "color-mix(in srgb, var(--danger) 15%, transparent)",
+                  }
+                : {
+                    color: accent.color,
+                    background: "var(--accent-tint-15)",
+                  }
+            }
+          >
+            <span
+              className="chip-dot"
+              style={{
+                background: healthOk === false ? "var(--danger)" : accent.color,
+              }}
+            />
+            {healthOk === false ? "Offline" : "Online"}
+          </span>
+
+          {/* Live / Paused chip (clickable) */}
+          <button
+            onClick={toggleLiveData}
+            className="status-chip accent"
+            style={
+              isPaused
+                ? {
+                    color: "var(--warning)",
+                    background:
+                      "color-mix(in srgb, var(--warning) 15%, transparent)",
+                    cursor: "pointer",
+                    border: "none",
+                    fontFamily: "inherit",
+                  }
+                : {
+                    color: accent.color,
+                    background: "var(--accent-tint-15)",
+                    cursor: "pointer",
+                    border: "none",
+                    fontFamily: "inherit",
+                  }
+            }
+            title={isPaused ? "Resume live updates" : "Pause live updates"}
+          >
+            <span
+              className={`chip-dot${isPaused ? "" : " live"}`}
+              style={{
+                background: isPaused ? "var(--warning)" : accent.color,
+              }}
+            />
+            {isPaused ? "Paused" : "Live"}
+          </button>
+        </div>
+
+        {/* ── Actions: bell + theme ── */}
+        <div className="dash-actions" ref={panelRef}>
+          <div style={{ position: "relative" }}>
+            <button
+              className="dash-iconbtn"
+              onClick={() => setShowAlerts(!showAlerts)}
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
               {alerts.length > 0 && (
-                <span
-                  style={{
-                    background: "var(--danger)",
-                    color: "white",
-                    borderRadius: 10,
-                    padding: "1px 6px",
-                    fontSize: "10px",
-                    fontWeight: 600,
-                    minWidth: 16,
-                    textAlign: "center",
-                  }}
-                >
+                <span className="dash-nbadge">
                   {alerts.length > 99 ? "99+" : alerts.length}
                 </span>
               )}
             </button>
+
             {showAlerts && (
               <div
                 style={{
                   position: "absolute",
-                  top: "calc(100% + 8px)",
+                  top: "calc(100% + 12px)",
                   right: 0,
-                  width: 380,
+                  width: 296,
                   maxHeight: 480,
-                  background: "var(--surface)",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+                  background: "var(--bg-secondary)",
+                  borderRadius: 12,
+                  border: "1px solid var(--border-color)",
+                  boxShadow: "0 16px 40px rgba(0,0,0,.4)",
                   overflow: "hidden",
                   zIndex: 100,
                 }}
@@ -328,18 +286,20 @@ export default function Header({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    padding: "10px 12px",
-                    borderBottom: "1px solid var(--border)",
+                    padding: "9px 10px 7px",
+                    borderBottom: "1px solid var(--border-color)",
                   }}
                 >
                   <span
                     style={{
-                      fontWeight: 600,
-                      fontSize: 13,
-                      color: "var(--text-primary)",
+                      fontSize: 11,
+                      letterSpacing: ".09em",
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      fontWeight: 500,
                     }}
                   >
-                    Alerts
+                    Notifications
                   </span>
                   <button
                     onClick={clearAlerts}
@@ -355,7 +315,6 @@ export default function Header({
                       padding: "2px 6px",
                       borderRadius: 4,
                     }}
-                    title="Clear Alerts"
                   >
                     <Trash2 size={12} />
                     Clear
@@ -371,7 +330,7 @@ export default function Header({
                         fontSize: 12,
                       }}
                     >
-                      No alerts
+                      No notifications
                     </div>
                   )}
                   {alerts
@@ -382,10 +341,10 @@ export default function Header({
                         key={alert.id}
                         style={{
                           display: "flex",
-                          alignItems: "flex-start",
-                          gap: 8,
-                          padding: "8px 12px",
-                          borderBottom: "1px solid var(--border)",
+                          gap: 10,
+                          padding: "9px 10px",
+                          borderRadius: 9,
+                          borderBottom: "1px solid var(--border-color)",
                           background: severityBgColors[alert.severity],
                         }}
                       >
@@ -396,90 +355,80 @@ export default function Header({
                             borderRadius: "50%",
                             background: severityColors[alert.severity],
                             flexShrink: 0,
-                            marginTop: 3,
+                            marginTop: 5,
                           }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginBottom: 2,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: severityColors[alert.severity],
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              {alert.subsystem}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 10,
-                                color: "var(--text-secondary)",
-                              }}
-                            >
-                              {new Date(alert.timestamp).toLocaleTimeString()}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 12,
+                              fontSize: 12.5,
                               color: "var(--text-primary)",
-                              lineHeight: 1.3,
+                              lineHeight: 1.45,
                             }}
                           >
                             {alert.message}
                           </div>
+                          <span
+                            style={{
+                              color: "var(--text-muted)",
+                              fontSize: 11,
+                              display: "block",
+                              marginTop: 2,
+                              fontFamily:
+                                "'JetBrains Mono', 'Fira Code', monospace",
+                            }}
+                          >
+                            {new Date(alert.timestamp).toLocaleTimeString()}
+                          </span>
                         </div>
-                        <button
-                          onClick={() => {
-                            const url = `/api/alerts?severity=${alert.severity}&subsystem=${alert.subsystem}&message=${encodeURIComponent(alert.message)}`;
-                            if (url) {
-                              // close button only - alert removal handled by context
-                            }
-                          }}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            color: "var(--text-secondary)",
-                            cursor: "pointer",
-                            padding: 2,
-                            flexShrink: 0,
-                          }}
-                        >
-                          <span style={{ fontSize: 14, lineHeight: 1 }}>×</span>
-                        </button>
                       </div>
                     ))}
                 </div>
               </div>
             )}
           </div>
+
           <button
-            className="theme-toggle-btn"
+            className="dash-iconbtn"
             onClick={onToggleThemePanel}
-            title="Theme Settings"
+            aria-label="Theme settings"
           >
             <svg
-              width="18"
-              height="18"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              width="18"
+              height="18"
             >
-              <circle cx="12" cy="12" r="5" />
-              <path d="M12 2 L12 5 L10 4 L12 2 M12 22 L12 19 L14 20 L12 22 M2 12 L5 12 L4 10 L2 12 M22 12 L19 12 L20 14 L22 12 M4.93 4.93 L7 7 L5.5 5.5 L4.93 4.93 M19.07 19.07 L17 17 L18.5 18.5 L19.07 19.07 M4.93 19.07 L7 17 L5.5 18.5 L4.93 19.07 M19.07 4.93 L17 7 L18.5 5.5 L19.07 4.93" />
+              <path d="M12 3a9 9 0 0 0 0 18c1 0 1.7-.8 1.7-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7z" />
+              <circle
+                cx="7.5"
+                cy="10.5"
+                r="1.1"
+                fill="currentColor"
+                stroke="none"
+              />
+              <circle
+                cx="12"
+                cy="7.5"
+                r="1.1"
+                fill="currentColor"
+                stroke="none"
+              />
+              <circle
+                cx="16.5"
+                cy="10.5"
+                r="1.1"
+                fill="currentColor"
+                stroke="none"
+              />
             </svg>
           </button>
         </div>
-      </header>
-    </>
+      </div>
+    </header>
   );
 }

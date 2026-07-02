@@ -1,4 +1,5 @@
 import { useMetricsContext } from "../../context/MetricsContext";
+import { DeviceStorageInfo } from "../../types/metrics";
 import { HardDrive } from "lucide-react";
 import PanelErrorBoundary from "../common/PanelErrorBoundary";
 import PanelErrorState from "../common/PanelErrorState";
@@ -13,11 +14,13 @@ interface CardProps {
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 0) return "0 B";
+  if (bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(1024));
-  return (Math.abs(bytes) / Math.pow(1024, i)).toFixed(1) + " " + units[i];
+  const i = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  return (bytes / Math.pow(1024, i)).toFixed(1) + " " + units[i];
 }
 
 function formatThroughput(bps: number): string {
@@ -67,32 +70,6 @@ function getDeviceStateColor(state: string): string {
   }
 }
 
-interface StorageMount {
-  device: string;
-  mount_point: string;
-  filesystem: string;
-  total_bytes: number;
-  used_bytes: number;
-  free_bytes: number;
-  utilization_percent: number;
-}
-
-interface DeviceStorageInfo {
-  device: string;
-  io_stats: {
-    reads: number;
-    writes: number;
-    read_sectors: number;
-    write_sectors: number;
-    read_bytes_per_sec: number;
-    write_bytes_per_sec: number;
-    read_iops: number;
-    write_iops: number;
-  } | null;
-  mounts: StorageMount[];
-  temperature_celsius?: number | null;
-}
-
 export default function StorageCard(_props: CardProps) {
   const tooltip = useTooltip();
   const { storageDevices, storageLoading, storageError, retryStorage } =
@@ -107,19 +84,6 @@ export default function StorageCard(_props: CardProps) {
 
   const { color: statusColor, label: statusLabel } =
     useProgressStatus(overallUtil);
-
-  if (storageError) {
-    return (
-      <PanelErrorBoundary panelName="Storage">
-        <PanelErrorState
-          panelName="Storage"
-          error={new Error(storageError)}
-          errorInfo={null}
-          onRetry={retryStorage}
-        />
-      </PanelErrorBoundary>
-    );
-  }
 
   if (storageLoading) {
     return (
@@ -154,6 +118,19 @@ export default function StorageCard(_props: CardProps) {
             <div className="skeleton" style={{ height: 40, width: "100%" }} />
           </div>
         </div>
+      </PanelErrorBoundary>
+    );
+  }
+
+  if (storageError) {
+    return (
+      <PanelErrorBoundary panelName="Storage">
+        <PanelErrorState
+          panelName="Storage"
+          error={new Error(storageError)}
+          errorInfo={null}
+          onRetry={retryStorage}
+        />
       </PanelErrorBoundary>
     );
   }

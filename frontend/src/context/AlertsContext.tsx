@@ -1,18 +1,7 @@
 import { createContext, useContext, useCallback, useState } from "react";
+import { AlertSeverity, type Alert } from "../types/metrics";
 
-export enum AlertSeverity {
-  Info = "info",
-  Warning = "warning",
-  Error = "error",
-}
-
-export interface Alert {
-  id: string;
-  timestamp: string;
-  severity: AlertSeverity;
-  subsystem: string;
-  message: string;
-}
+export { AlertSeverity, type Alert };
 
 interface AlertsContextValue {
   alerts: Alert[];
@@ -24,7 +13,7 @@ interface AlertsContextValue {
   removeAlert: (id: string) => void;
   clearAlerts: () => Promise<void>;
   setAlerts: (alerts: Alert[]) => void;
-  unreadCount: number;
+  alertCount: number;
 }
 
 const AlertsContext = createContext<AlertsContextValue | null>(null);
@@ -50,15 +39,17 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearAlerts = useCallback(async () => {
-    await fetch("/api/alerts", { method: "DELETE" });
-    setAlerts([]);
+    const response = await fetch("/api/alerts", { method: "DELETE" });
+    if (response.ok) {
+      setAlerts([]);
+    }
   }, []);
 
   const setAlertsValue = useCallback((alerts: Alert[]) => {
     setAlerts(alerts);
   }, []);
 
-  const unreadCount = alerts.length;
+  const alertCount = alerts.length;
 
   const value: AlertsContextValue = {
     alerts,
@@ -66,7 +57,7 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
     removeAlert,
     clearAlerts,
     setAlerts: setAlertsValue,
-    unreadCount,
+    alertCount,
   };
 
   return (

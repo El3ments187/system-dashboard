@@ -1,17 +1,17 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: './tests',
+  testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : 4,
-  reporter: 'list',
+  reporter: "list",
   timeout: 90000,
   use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    baseURL: "http://localhost:5173",
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   expect: {
     toHaveScreenshot: {
@@ -20,9 +20,9 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: "chromium",
       use: {
-        browserName: 'chromium',
+        browserName: "chromium",
         viewport: { width: 1440, height: 900 },
       },
     },

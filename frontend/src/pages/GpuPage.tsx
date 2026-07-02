@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMetricsContext } from "../context/MetricsContext";
 import MetricChart from "../charts/MetricChart";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
@@ -11,7 +12,7 @@ import {
   Activity,
   Fan,
 } from "lucide-react";
-import { useResolvedAccentColor } from "../utils/accentColors";
+import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
 import {
   getProgressState,
   getTempState,
@@ -19,6 +20,7 @@ import {
   getStateLabel,
   worseState,
 } from "../utils/progress";
+import { GpuMetrics, MetricHistoryPoint } from "../types/metrics";
 
 const GPU_HISTORY_LABEL = "(Last 2m)";
 
@@ -45,24 +47,40 @@ function resolveVar(name: string): string {
     .trim();
 }
 
-function getUtilBarColor(value: number, base: string): string {
+function getUtilBarColor(
+  value: number,
+  base: string,
+  danger: string,
+  warning: string,
+): string {
   const state = getProgressState(value);
   if (state === "normal") return base;
-  return resolveVar(state === "critical" ? "--danger" : "--warning");
+  return state === "critical" ? danger : warning;
 }
 
-function getTempBarColor(temp: number, base: string): string {
+function getTempBarColor(
+  temp: number,
+  base: string,
+  danger: string,
+  warning: string,
+): string {
   const state = getTempState(temp);
   if (state === "normal") return base;
-  return resolveVar(state === "critical" ? "--danger" : "--warning");
+  return state === "critical" ? danger : warning;
 }
 
-function getPowerBarColor(value: number, limit: number, base: string): string {
+function getPowerBarColor(
+  value: number,
+  limit: number,
+  base: string,
+  danger: string,
+  warning: string,
+): string {
   if (limit <= 0) return base;
   const pct = (value / limit) * 100;
   const state = getProgressState(pct);
   if (state === "normal") return base;
-  return resolveVar(state === "critical" ? "--danger" : "--warning");
+  return state === "critical" ? danger : warning;
 }
 
 /* ─── Vertical Progress Bar ─── */
@@ -74,6 +92,8 @@ function VerticalProgress({
   max = 100,
   limit,
   accent,
+  danger,
+  warning,
 }: {
   value: number;
   label: string;
@@ -81,19 +101,21 @@ function VerticalProgress({
   max?: number;
   limit?: number;
   accent: string;
+  danger: string;
+  warning: string;
 }) {
   const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
   if (type === "temp") {
-    color = getTempBarColor(value, accent);
+    color = getTempBarColor(value, accent, danger, warning);
     displayValue = `${Math.round(value)}°C`;
   } else if (type === "power") {
-    color = getPowerBarColor(value, limit ?? max, accent);
+    color = getPowerBarColor(value, limit ?? max, accent, danger, warning);
     displayValue = `${Math.round(value)}W`;
   } else {
-    color = getUtilBarColor(value, accent);
+    color = getUtilBarColor(value, accent, danger, warning);
     displayValue = `${Math.round(value)}%`;
   }
 
@@ -112,7 +134,7 @@ function VerticalProgress({
         style={{
           fontSize: 18,
           fontWeight: 700,
-          color: resolveVar("--text-primary"),
+          color: "var(--text-primary)",
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           lineHeight: 1,
           flexShrink: 0,
@@ -124,10 +146,10 @@ function VerticalProgress({
         style={{
           position: "relative",
           width: 40,
-          background: resolveVar("--bg-secondary"),
+          background: "var(--bg-secondary)",
           borderRadius: 6,
           overflow: "hidden",
-          border: `1px solid ${resolveVar("--border-color")}`,
+          border: "1px solid var(--border-color)",
           flex: 1,
           minHeight: 0,
         }}
@@ -151,7 +173,7 @@ function VerticalProgress({
             left: 3,
             right: 3,
             height: 1,
-            background: resolveVar("--border-color"),
+            background: "var(--border-color)",
             opacity: 0.25,
           }}
         />
@@ -162,7 +184,7 @@ function VerticalProgress({
             left: 3,
             right: 3,
             height: 1,
-            background: resolveVar("--border-color"),
+            background: "var(--border-color)",
             opacity: 0.25,
           }}
         />
@@ -170,7 +192,7 @@ function VerticalProgress({
       <div
         style={{
           fontSize: 9,
-          color: resolveVar("--text-muted"),
+          color: "var(--text-muted)",
           textTransform: "uppercase",
           letterSpacing: 1.2,
           flexShrink: 0,
@@ -189,17 +211,31 @@ function GpuSummaryCard({
   accent,
   index,
 }: {
-  gpu: any;
+  gpu: GpuMetrics;
   accent: { color: string; glow: string };
   index: number;
 }) {
   const barColor = useResolvedAccentColor();
+  const [danger, setDanger] = useState(() => resolveVar("--danger"));
+  const [warning, setWarning] = useState(() => resolveVar("--warning"));
+  useAccentSync(() => {
+    setDanger(resolveVar("--danger"));
+    setWarning(resolveVar("--warning"));
+  });
+
   const vramPct =
     gpu.vram_total_gb > 0 ? (gpu.vram_used_gb / gpu.vram_total_gb) * 100 : 0;
   const { color: statusColor, label: statusLabel } = getStatusColor(
     gpu.utilization_percent,
     gpu.temperature_celsius,
   );
+
+  const powerMax =
+    gpu.power_limit_watts > 0
+      ? gpu.power_limit_watts
+      : Math.max(gpu.power_usage_watts * 1.5, 1);
+  const powerLimit =
+    gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined;
 
   return (
     <div
@@ -254,7 +290,7 @@ function GpuSummaryCard({
         }}
       />
 
-      {/* Metrics grid - compact 2-column layout */}
+      {/* Metrics grid */}
       <div
         className="card-details gpu-metrics-grid"
         style={{ margin: "0 2px", flexShrink: 0 }}
@@ -364,7 +400,7 @@ function GpuSummaryCard({
         }}
       />
 
-      {/* Vertical utilization bars - fill remaining space */}
+      {/* Vertical utilization bars */}
       <div
         style={{
           display: "flex",
@@ -380,22 +416,34 @@ function GpuSummaryCard({
           value={gpu.utilization_percent}
           label="GPU UTIL"
           accent={barColor}
+          danger={danger}
+          warning={warning}
         />
-        <VerticalProgress value={vramPct} label="VRAM" accent={barColor} />
+        <VerticalProgress
+          value={vramPct}
+          label="VRAM"
+          accent={barColor}
+          danger={danger}
+          warning={warning}
+        />
         <VerticalProgress
           value={gpu.temperature_celsius}
           label="TEMP"
           type="temp"
           max={120}
           accent={barColor}
+          danger={danger}
+          warning={warning}
         />
         <VerticalProgress
           value={gpu.power_usage_watts}
           label="POWER"
           type="power"
-          max={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : 300}
-          limit={gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined}
+          max={powerMax}
+          limit={powerLimit}
           accent={barColor}
+          danger={danger}
+          warning={warning}
         />
       </div>
     </div>
@@ -413,13 +461,13 @@ function GpuRow({
   gpuVramUtilHistory,
   gpuTemperatureHistory,
 }: {
-  gpu: any;
+  gpu: GpuMetrics;
   index: number;
   accent: { color: string; glow: string };
   hasHistory: boolean;
-  gpuHistory: any[];
-  gpuVramUtilHistory: any[];
-  gpuTemperatureHistory: any[];
+  gpuHistory: MetricHistoryPoint[] | null;
+  gpuVramUtilHistory: MetricHistoryPoint[] | null;
+  gpuTemperatureHistory: MetricHistoryPoint[] | null;
 }) {
   return (
     <div className="gpu-row">
@@ -439,28 +487,31 @@ function GpuRow({
           minHeight: 0,
         }}
       >
-        {hasHistory && (
-          <>
-            <MetricChart
-              accent={accent}
-              title="GPU Utilization History"
-              data={gpuHistory}
-              timeFrame={GPU_HISTORY_LABEL}
-            />
-            <MetricChart
-              accent={accent}
-              title="VRAM Utilization History"
-              data={gpuVramUtilHistory}
-              timeFrame={GPU_HISTORY_LABEL}
-            />
-            <MetricChart
-              accent={accent}
-              title="GPU Temperature History"
-              data={gpuTemperatureHistory}
-              timeFrame={GPU_HISTORY_LABEL}
-            />
-          </>
-        )}
+        {hasHistory &&
+          gpuHistory &&
+          gpuVramUtilHistory &&
+          gpuTemperatureHistory && (
+            <>
+              <MetricChart
+                accent={accent}
+                title="GPU Utilization History"
+                data={gpuHistory}
+                timeFrame={GPU_HISTORY_LABEL}
+              />
+              <MetricChart
+                accent={accent}
+                title="VRAM Utilization History"
+                data={gpuVramUtilHistory}
+                timeFrame={GPU_HISTORY_LABEL}
+              />
+              <MetricChart
+                accent={accent}
+                title="GPU Temperature History"
+                data={gpuTemperatureHistory}
+                timeFrame={GPU_HISTORY_LABEL}
+              />
+            </>
+          )}
       </div>
     </div>
   );
@@ -469,17 +520,12 @@ function GpuRow({
 /* ─── Main Page ─── */
 
 export default function GpuPage({ accent }: GpuPageProps) {
-  const {
-    gpuHistory,
-    gpuTemperatureHistory,
-    gpuVramUtilHistory,
-    gpuError,
-    retryGpu,
-    gpuRawData,
-  } = useMetricsContext();
-  const gpuData: any[] = (() => {
-    if (Array.isArray(gpuRawData)) return gpuRawData;
-    if (gpuRawData) return [gpuRawData];
+  const { gpuError, retryGpu, gpuRawData, perGpuHistories } =
+    useMetricsContext();
+
+  const gpuData: GpuMetrics[] = (() => {
+    if (Array.isArray(gpuRawData)) return gpuRawData as GpuMetrics[];
+    if (gpuRawData) return [gpuRawData as GpuMetrics];
     return [];
   })();
 
@@ -498,23 +544,27 @@ export default function GpuPage({ accent }: GpuPageProps) {
     );
   }
 
-  const hasHistory = gpuHistory && gpuHistory.length > 0;
-
   return (
     <main className="dashboard-grid">
       {gpuData.length > 0 ? (
-        gpuData.map((gpu: any, i: number) => (
-          <GpuRow
-            key={i}
-            gpu={gpu}
-            index={i + 1}
-            accent={accent}
-            hasHistory={hasHistory}
-            gpuHistory={gpuHistory}
-            gpuVramUtilHistory={gpuVramUtilHistory}
-            gpuTemperatureHistory={gpuTemperatureHistory}
-          />
-        ))
+        gpuData.map((gpu, i) => {
+          const utilHistory = perGpuHistories.utilHistories[i] ?? null;
+          const tempHistory = perGpuHistories.tempHistories[i] ?? null;
+          const vramUtilHistory = perGpuHistories.vramUtilHistories[i] ?? null;
+          const hasHistory = !!(utilHistory && utilHistory.length > 0);
+          return (
+            <GpuRow
+              key={gpu.name || String(i)}
+              gpu={gpu}
+              index={i + 1}
+              accent={accent}
+              hasHistory={hasHistory}
+              gpuHistory={utilHistory}
+              gpuVramUtilHistory={vramUtilHistory}
+              gpuTemperatureHistory={tempHistory}
+            />
+          );
+        })
       ) : (
         <div className="dashboard-row">
           <div

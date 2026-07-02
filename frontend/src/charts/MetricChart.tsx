@@ -15,7 +15,6 @@ interface ChartProps {
   color?: string;
   timeFrame?: string;
   dataKeys?: string[];
-  chartHeight?: number;
   yDomain?: [number, number];
   yAxisTickValues?: number[];
   unit?: string;
@@ -60,9 +59,7 @@ function formatTime(date: Date): string {
 
 function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
   if (!p) return 0;
-  if (typeof p.timestamp === "number") return p.timestamp;
-  if (p.timestamp instanceof Date) return p.timestamp.getTime();
-  return new Date(String(p.timestamp)).getTime();
+  return p.timestamp.getTime();
 }
 
 export default function MetricChart({
@@ -71,7 +68,6 @@ export default function MetricChart({
   color: _color,
   timeFrame,
   dataKeys,
-  chartHeight,
   yDomain,
   yAxisTickValues,
   unit,
@@ -120,7 +116,7 @@ export default function MetricChart({
     ro.observe(el);
     updateSize();
     return () => ro.disconnect();
-  }, [chartComponents, chartHeight]);
+  }, [chartComponents]);
 
   useAccentSync(() => {
     setChartColors(getChartColors());
@@ -566,7 +562,6 @@ export default function MetricChart({
                 height={chartSize.height}
                 barGap={2}
                 margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                padding={{ top: 0, right: 0, left: 0, bottom: 0 }}
               >
                 <CartesianGrid
                   stroke={chartColors.grid}
@@ -619,7 +614,6 @@ export default function MetricChart({
                 width={chartSize.width}
                 height={chartSize.height}
                 margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                padding={{ top: 0, right: 0, left: 0, bottom: 0 }}
               >
                 {fillGradientDefs}
                 <CartesianGrid

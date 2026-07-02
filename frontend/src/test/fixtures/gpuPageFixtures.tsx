@@ -45,6 +45,27 @@ export const mockMetricsContext = (
   gpuLoading: false,
   gpuError: null,
   retryGpu: vi.fn(),
+  cpuMaxFrequency: 0,
+  perGpuHistories: {
+    utilHistories: [
+      [
+        { slot: 0, timestamp: new Date(Date.now() - 60000), value: 70 },
+        { slot: 1, timestamp: new Date(), value: 65 },
+      ],
+    ],
+    tempHistories: [
+      [
+        { slot: 0, timestamp: new Date(Date.now() - 60000), value: 75 },
+        { slot: 1, timestamp: new Date(), value: 72 },
+      ],
+    ],
+    vramUtilHistories: [
+      [
+        { slot: 0, timestamp: new Date(Date.now() - 60000), value: 37.5 },
+        { slot: 1, timestamp: new Date(), value: 35.4 },
+      ],
+    ],
+  },
   ...overrides,
 });
 

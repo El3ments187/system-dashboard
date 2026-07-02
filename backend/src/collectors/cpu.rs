@@ -14,6 +14,7 @@ pub static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| {
 });
 
 static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(read_physical_cores);
+static CPU_MAX_FREQ_MHZ: LazyLock<f64> = LazyLock::new(read_cpu_max_freq);
 
 pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
     let status = read_cpu_utilization().await;
@@ -44,6 +45,7 @@ pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
         load_15m: load15,
         cores: status.cores,
         frequency_mhz: freq,
+        freq_max_mhz: *CPU_MAX_FREQ_MHZ,
     };
 
     (metrics, status.status)
@@ -242,6 +244,17 @@ pub fn parse_physical_cores(content: &str) -> usize {
         core_ids.insert(cid);
     }
     core_ids.len()
+}
+
+fn read_cpu_max_freq() -> f64 {
+    if let Ok(content) =
+        std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
+    {
+        if let Ok(khz) = content.trim().parse::<u64>() {
+            return khz as f64 / 1000.0;
+        }
+    }
+    0.0
 }
 
 fn read_physical_cores() -> usize {

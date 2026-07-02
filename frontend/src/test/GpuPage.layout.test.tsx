@@ -194,9 +194,11 @@ describe("GpuPage - history charts", () => {
 
   it("does not render history charts when no data available", () => {
     const { container } = renderGpuPage(<GpuPage accent={accent} />, {
-      gpuHistory: [],
-      gpuVramUtilHistory: [],
-      gpuTemperatureHistory: [],
+      perGpuHistories: {
+        utilHistories: [[]],
+        tempHistories: [[]],
+        vramUtilHistories: [[]],
+      },
     });
     expect(container.querySelectorAll(".metric-card").length).toBe(1);
   });

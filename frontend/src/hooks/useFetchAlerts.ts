@@ -41,7 +41,13 @@ export function useFetchAlerts() {
   });
 
   useEffect(() => {
-    if (data && data !== prevDataRef.current) {
+    if (!data) return;
+    const prev = prevDataRef.current;
+    const changed =
+      !prev ||
+      prev.length !== data.length ||
+      data.some((a, i) => a.id !== prev[i].id || a.message !== prev[i].message);
+    if (changed) {
       prevDataRef.current = data;
       setAlerts(data);
     }

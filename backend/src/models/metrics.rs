@@ -19,6 +19,7 @@ pub struct CpuMetrics {
     pub load_15m: f64,
     pub cores: Vec<CpuCoreInfo>,
     pub frequency_mhz: f64,
+    pub freq_max_mhz: f64,
 }
 
 #[derive(Debug, Serialize)]

@@ -25,7 +25,9 @@ function buildDeviceBuffer(
   points: StorageHistoryPoint[],
   bufferSize: number,
 ): StorageHistoryPoint[] {
-  const buffer: (StorageHistoryPoint | null)[] = new Array(bufferSize).fill(null);
+  const buffer: (StorageHistoryPoint | null)[] = new Array(bufferSize).fill(
+    null,
+  );
   const offset = bufferSize - points.length;
   for (let i = 0; i < points.length; i++) {
     const slotIdx = offset + i;
@@ -90,7 +92,10 @@ export function useStorageMetrics(isPaused?: boolean): {
       const grouped = groupHistoryByDevice(history);
       const buffered = new Map<string, StorageHistoryPoint[]>();
       for (const [device, points] of grouped.entries()) {
-        buffered.set(device, buildDeviceBuffer(device, points, STORAGE_BUFFER_SIZE));
+        buffered.set(
+          device,
+          buildDeviceBuffer(device, points, STORAGE_BUFFER_SIZE),
+        );
       }
       setStorageHistories(buffered);
     } catch (err) {

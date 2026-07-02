@@ -81,7 +81,9 @@ export default function CpuCard({ accent }: CardProps) {
           </div>
         </div>
         <div className="card-value">
-          {cpuLoading || currentValue === null ? "\u2014" : currentValue.toFixed(1)}
+          {cpuLoading || currentValue === null
+            ? "\u2014"
+            : currentValue.toFixed(1)}
           <span className="card-unit">%</span>
         </div>
         <ProgressBar percent={currentValue ?? 0} />

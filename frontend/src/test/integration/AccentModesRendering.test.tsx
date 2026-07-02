@@ -42,7 +42,9 @@ describe.each(MODES)("%s mode - card rendering", (mode) => {
   });
 
   it("sets the mode attribute on the document element", () => {
-    expect(document.documentElement.getAttribute("data-accent-mode")).toBe(mode);
+    expect(document.documentElement.getAttribute("data-accent-mode")).toBe(
+      mode,
+    );
   });
 
   it("renders GPU + CPU cards with no black elements", () => {

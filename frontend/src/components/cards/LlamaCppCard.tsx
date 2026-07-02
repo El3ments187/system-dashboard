@@ -346,9 +346,7 @@ export default function LlamaCppCard() {
             updateOutputRef.current = next;
             const pct = extractLatestPercent(next);
             if (pct != null) setUpdateProgress(pct);
-            const donePattern = new RegExp(
-              `(^|\\n)${DONE_MARKER}(\\r|\\n|$)`,
-            );
+            const donePattern = new RegExp(`(^|\\n)${DONE_MARKER}(\\r|\\n|$)`);
             if (donePattern.test(next)) {
               setUpdateProgress(100);
               setUpdateState("done");
