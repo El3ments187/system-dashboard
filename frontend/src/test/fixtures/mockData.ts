@@ -1,5 +1,5 @@
 export const mockCpuMetrics = {
-  model: 'AMD Ryzen 9 7950X',
+  model: "AMD Ryzen 9 7950X",
   cores: Array.from({ length: 32 }, (_, i) => ({
     utilization_percent: 40 + (i % 5) * 5,
     temperature_celsius: 60 + (i % 3),
@@ -8,7 +8,7 @@ export const mockCpuMetrics = {
 
 export const mockGpuMetrics = [
   {
-    name: 'NVIDIA GeForce RTX 4090',
+    name: "NVIDIA GeForce RTX 4090",
     utilization_percent: 65,
     temperature_celsius: 72,
     vram_used_gb: 8.5,
@@ -31,7 +31,7 @@ export const mockMemoryMetrics = {
 
 export const mockStorageDevices = [
   {
-    device: '/dev/sda',
+    device: "/dev/sda",
     io_stats: {
       reads: 150000,
       writes: 320000,
@@ -44,9 +44,9 @@ export const mockStorageDevices = [
     },
     mounts: [
       {
-        device: '/dev/sda',
-        mount_point: '/',
-        filesystem: 'ext4',
+        device: "/dev/sda",
+        mount_point: "/",
+        filesystem: "ext4",
         total_bytes: 536870912000,
         used_bytes: 375809638400,
         free_bytes: 161061273600,

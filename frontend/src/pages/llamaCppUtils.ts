@@ -15,7 +15,6 @@ export function extractQuant(fileName: string): string {
   return best;
 }
 
-
 const SPEC_LABELS: Record<string, string> = {
   draft: "Draft",
   "draft-mtp": "MTP",

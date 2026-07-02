@@ -1,17 +1,21 @@
-import { useEffect, useState, type DependencyList } from 'react';
-import { ACCENT_THEMES } from '../hooks/useTheme';
+import { useEffect, useState, type DependencyList } from "react";
+import { ACCENT_THEMES } from "../hooks/useTheme";
 
 /** Full 32-color palette used by Spectrum Per-Element mode. */
-const SPECTRUM = ACCENT_THEMES.map(t => t.color);
+const SPECTRUM = ACCENT_THEMES.map((t) => t.color);
 
 /** Attributes that affect resolved accent colors — pass to MutationObserver's attributeFilter. */
-export const ACCENT_OBSERVER_ATTRS = ['data-bg', 'data-accent', 'data-accent-mode'];
+export const ACCENT_OBSERVER_ATTRS = [
+  "data-bg",
+  "data-accent",
+  "data-accent-mode",
+];
 
 /** Modes whose colors shift over time and so need more than a one-shot resolve. */
-const ANIMATED_MODES = new Set(['animated-gradient', 'rainbow-wave']);
+const ANIMATED_MODES = new Set(["animated-gradient", "rainbow-wave"]);
 
 export function getAccentMode(): string {
-  return document.documentElement.getAttribute('data-accent-mode') || 'solid';
+  return document.documentElement.getAttribute("data-accent-mode") || "solid";
 }
 
 /**
@@ -21,11 +25,17 @@ export function getAccentMode(): string {
  * on a lightweight interval while an animated mode (Animated Gradient / Rainbow Wave) is
  * active, so charts visibly participate in the animation without per-frame re-renders.
  */
-export function useAccentSync(callback: () => void, deps: DependencyList = []): void {
+export function useAccentSync(
+  callback: () => void,
+  deps: DependencyList = [],
+): void {
   useEffect(() => {
     callback();
     const observer = new MutationObserver(callback);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ACCENT_OBSERVER_ATTRS });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ACCENT_OBSERVER_ATTRS,
+    });
     const interval = window.setInterval(() => {
       if (ANIMATED_MODES.has(getAccentMode())) callback();
     }, 800);
@@ -50,10 +60,10 @@ let probeEl: HTMLElement | null = null;
 function toHex(colorValue: string): string {
   if (!colorValue) return colorValue;
   if (/^#[0-9a-f]{6}$/i.test(colorValue)) return colorValue.toLowerCase();
-  if (typeof document === 'undefined') return colorValue;
+  if (typeof document === "undefined") return colorValue;
   if (!probeEl) {
-    probeEl = document.createElement('div');
-    probeEl.style.display = 'none';
+    probeEl = document.createElement("div");
+    probeEl.style.display = "none";
     document.body.appendChild(probeEl);
   }
   probeEl.style.color = colorValue;
@@ -62,18 +72,20 @@ function toHex(colorValue: string): string {
   if (!m) return colorValue;
   // Legacy `rgb(r, g, b)` reports channels 0-255; the CSS Color 4 `color(srgb r g b)`
   // syntax (what color-mix() resolves to in some browsers) reports channels 0-1.
-  const scale = resolved.startsWith('color(') ? 255 : 1;
-  const [r, g, b] = m.slice(0, 3).map(v => Math.round(parseFloat(v) * scale));
-  const toByte = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
+  const scale = resolved.startsWith("color(") ? 255 : 1;
+  const [r, g, b] = m.slice(0, 3).map((v) => Math.round(parseFloat(v) * scale));
+  const toByte = (v: number) =>
+    Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0");
   return `#${toByte(r)}${toByte(g)}${toByte(b)}`;
 }
 
 function hexToHsl(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
+  const h = hex.replace("#", "");
   const r = parseInt(h.substring(0, 2), 16) / 255;
   const g = parseInt(h.substring(2, 4), 16) / 255;
   const b = parseInt(h.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
   let hue = 0;
   const l = (max + min) / 2;
   const d = max - min;
@@ -95,8 +107,8 @@ function hexToHsl(hex: string): [number, number, number] {
  * assigned accent color" hue can never be mistaken for a warning/critical/normal state color.
  */
 const SEMANTIC_HUE_BANDS: Array<[number, number]> = [
-  [340, 20],  // danger red (wraps through 0)
-  [20, 58],   // warning amber
+  [340, 20], // danger red (wraps through 0)
+  [20, 58], // warning amber
   [122, 162], // success green
 ];
 
@@ -130,8 +142,14 @@ function avoidSemanticHues(hue: number): number {
  * duplicate colors. `spreadHues` instead distributes hues directly within the allowed arcs, so
  * every generated hue is unique by construction regardless of N.
  */
-const ALLOWED_HUE_SEGMENTS: Array<[number, number]> = [[58, 122], [162, 340]];
-const ALLOWED_HUE_TOTAL = ALLOWED_HUE_SEGMENTS.reduce((sum, [start, end]) => sum + (end - start), 0);
+const ALLOWED_HUE_SEGMENTS: Array<[number, number]> = [
+  [58, 122],
+  [162, 340],
+];
+const ALLOWED_HUE_TOTAL = ALLOWED_HUE_SEGMENTS.reduce(
+  (sum, [start, end]) => sum + (end - start),
+  0,
+);
 
 function mapFractionToAllowedHue(fraction: number): number {
   let offset = (((fraction % 1) + 1) % 1) * ALLOWED_HUE_TOTAL;
@@ -161,23 +179,44 @@ function hueToAllowedFraction(hue: number): number {
 /** Distributes `n` hues evenly across the allowed (non-semantic) hue space, starting near `startHue`. */
 function spreadHues(startHue: number, n: number): number[] {
   const baseFraction = hueToAllowedFraction(startHue);
-  return Array.from({ length: n }, (_, i) => mapFractionToAllowedHue(baseFraction + i / n));
+  return Array.from({ length: n }, (_, i) =>
+    mapFractionToAllowedHue(baseFraction + i / n),
+  );
 }
 
 function hslToHex(h: number, s: number, l: number): string {
   h = ((h % 360) + 360) % 360;
-  s /= 100; l /= 100;
+  s /= 100;
+  l /= 100;
   const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; }
-  else if (h < 120) { r = x; g = c; }
-  else if (h < 180) { g = c; b = x; }
-  else if (h < 240) { g = x; b = c; }
-  else if (h < 300) { r = x; b = c; }
-  else { r = c; b = x; }
-  const toByte = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (h < 60) {
+    r = c;
+    g = x;
+  } else if (h < 120) {
+    r = x;
+    g = c;
+  } else if (h < 180) {
+    g = c;
+    b = x;
+  } else if (h < 240) {
+    g = x;
+    b = c;
+  } else if (h < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
+  const toByte = (v: number) =>
+    Math.round((v + m) * 255)
+      .toString(16)
+      .padStart(2, "0");
   return `#${toByte(r)}${toByte(g)}${toByte(b)}`;
 }
 
@@ -186,7 +225,7 @@ function hslToHex(h: number, s: number, l: number): string {
  * wide. Centralized so a chart can never accidentally ship a different pattern (or a solid
  * line) for what's supposed to be the secondary series.
  */
-export const SECONDARY_LINE_DASH = '6 4';
+export const SECONDARY_LINE_DASH = "6 4";
 
 /**
  * Derives the dual-line chart's secondary color from its primary: same hue and saturation,
@@ -204,15 +243,18 @@ export function getSecondarySeriesColor(primaryHex: string): string {
 }
 
 /** Resolves the single "primary" series color for the active mode, ignoring count entirely. */
-function resolvePrimaryModeColor(mode: string, cs: CSSStyleDeclaration): string {
-  if (mode === 'spectrum') {
+function resolvePrimaryModeColor(
+  mode: string,
+  cs: CSSStyleDeclaration,
+): string {
+  if (mode === "spectrum") {
     return SPECTRUM[0];
   }
-  if (mode === 'rainbow-wave') {
-    const spin = parseFloat(cs.getPropertyValue('--accent-spin')) || 0;
+  if (mode === "rainbow-wave") {
+    const spin = parseFloat(cs.getPropertyValue("--accent-spin")) || 0;
     return hslToHex(avoidSemanticHues(spin), 85, 60);
   }
-  return toHex(cs.getPropertyValue('--accent-primary').trim()) || '#6366f1';
+  return toHex(cs.getPropertyValue("--accent-primary").trim()) || "#6366f1";
 }
 
 /**
@@ -226,7 +268,10 @@ function resolvePrimaryModeColor(mode: string, cs: CSSStyleDeclaration): string 
  * multi-series consumer with n > 2 (e.g. StorageHistoryChart's per-device colors) must keep
  * participating in the live accent like any other Solid-mode element.
  */
-export function resolveAccentColors(count: number, perCoreExemption = false): string[] {
+export function resolveAccentColors(
+  count: number,
+  perCoreExemption = false,
+): string[] {
   const n = Math.max(1, count);
   const mode = getAccentMode();
   const cs = getComputedStyle(document.documentElement);
@@ -242,28 +287,29 @@ export function resolveAccentColors(count: number, perCoreExemption = false): st
     return [primary, getSecondarySeriesColor(primary)];
   }
 
-  if (mode === 'spectrum') {
+  if (mode === "spectrum") {
     return Array.from({ length: n }, (_, i) => SPECTRUM[i % SPECTRUM.length]);
   }
 
-  if (mode === 'rainbow-wave') {
+  if (mode === "rainbow-wave") {
     // Offset by the live --accent-spin so discrete multi-series colors actually rotate over
     // time too (read via the synced interval in useAccentSync), not just a fixed index spread.
     // Normalized to hex (not left as an `hsl()` string) so callers can safely alpha-suffix it.
-    const spin = parseFloat(cs.getPropertyValue('--accent-spin')) || 0;
-    return spreadHues(spin, n).map(hue => hslToHex(hue, 85, 60));
+    const spin = parseFloat(cs.getPropertyValue("--accent-spin")) || 0;
+    return spreadHues(spin, n).map((hue) => hslToHex(hue, 85, 60));
   }
 
   // Only the per-core utilization chart ignores the accent in Solid mode and falls back to
   // the fixed palette, per spec. Every other n > 2 consumer (e.g. multi-device storage
   // colors) falls through to the hue-spread-from-accent below, same as Animated Gradient.
-  if (mode === 'solid' && perCoreExemption) {
+  if (mode === "solid" && perCoreExemption) {
     return Array.from({ length: n }, (_, i) => SPECTRUM[i % SPECTRUM.length]);
   }
 
-  const primary = toHex(cs.getPropertyValue('--accent-primary').trim()) || '#6366f1';
+  const primary =
+    toHex(cs.getPropertyValue("--accent-primary").trim()) || "#6366f1";
   const [h, s, l] = hexToHsl(primary);
-  return spreadHues(h, n).map(hue => hslToHex(hue, s, l));
+  return spreadHues(h, n).map((hue) => hslToHex(hue, s, l));
 }
 
 export function resolveAccentColor(): string {

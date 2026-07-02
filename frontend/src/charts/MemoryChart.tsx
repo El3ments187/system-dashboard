@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { useMetricsContext } from '../context/MetricsContext';
-import MetricChart from './MetricChart';
+import { useMemo } from "react";
+import { useMetricsContext } from "../context/MetricsContext";
+import MetricChart from "./MetricChart";
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -16,21 +16,39 @@ export default function MemoryChart({ accent }: ChartProps) {
       if (point.value != null) memMap.set(point.slot, point.value);
     }
     const result: any[] = [];
-    const allSlots = new Set([...memMap.keys(), ...swapHistory.map((p: any) => p.slot)]);
+    const allSlots = new Set([
+      ...memMap.keys(),
+      ...swapHistory.map((p: any) => p.slot),
+    ]);
     for (const slot of allSlots) {
       const memPoint = memoryHistory.find((p: any) => p.slot === slot);
       const swapPoint = swapHistory.find((p: any) => p.slot === slot);
-      const ts = memPoint?.timestamp ? new Date(memPoint.timestamp) : new Date();
+      const ts = memPoint?.timestamp
+        ? new Date(memPoint.timestamp)
+        : new Date();
       result.push({
         slot,
         timestamp: ts,
-        name: ts.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        memory: memPoint?.value != null ? Math.round((memPoint.value as number) * 10) / 10 : null,
-        swap: swapPoint?.value != null ? Math.round((swapPoint.value as number) * 10) / 10 : null,
+        name: ts.toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        memory:
+          memPoint?.value != null
+            ? Math.round((memPoint.value as number) * 10) / 10
+            : null,
+        swap:
+          swapPoint?.value != null
+            ? Math.round((swapPoint.value as number) * 10) / 10
+            : null,
       });
     }
-   const sorted = result.sort((a, b) => (a.slot as number) - (b.slot as number));
-      return sorted;
+    const sorted = result.sort(
+      (a, b) => (a.slot as number) - (b.slot as number),
+    );
+    return sorted;
   }, [memoryHistory, swapHistory]);
 
   return (
@@ -38,7 +56,7 @@ export default function MemoryChart({ accent }: ChartProps) {
       accent={accent}
       title="Memory Utilization History"
       data={mergedData}
-      dataKeys={['memory', 'swap']}
+      dataKeys={["memory", "swap"]}
       timeFrame="(Last 60s)"
     />
   );

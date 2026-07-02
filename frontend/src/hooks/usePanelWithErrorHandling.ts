@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from "react";
 
 interface PanelErrorInfo {
   timestamp: number;
@@ -9,7 +9,7 @@ interface PanelErrorInfo {
   statusCode?: number;
   statusText?: string;
   endpoint?: string;
-  type: 'network' | 'http' | 'parse' | 'data' | 'runtime' | 'unknown';
+  type: "network" | "http" | "parse" | "data" | "runtime" | "unknown";
 }
 
 interface UsePanelErrorHandlingReturn<T> {
@@ -50,6 +50,7 @@ export function usePanelWithErrorHandling<T>(
       setError(null);
     } catch (err) {
       const errorInfo = classifyError(err, panelName);
+      // eslint-disable-next-line no-console
       console.error(`[Panel Error] ${panelName}:`, errorInfo);
       setError(errorInfo);
     } finally {
@@ -59,19 +60,20 @@ export function usePanelWithErrorHandling<T>(
 
   // Initial fetch
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, [...deps, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Retry on explicit call
   const retry = useCallback(() => {
-    setRetryCount(c => c + 1);
+    setRetryCount((c) => c + 1);
     fetchData();
   }, [fetchData]);
 
   // Re-fetch when retryCount changes
   useEffect(() => {
     if (retryCount > 0) {
-      setLoading(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchData();
     }
   }, [retryCount, fetchData]);
@@ -86,151 +88,133 @@ export function usePanelWithErrorHandling<T>(
   };
 }
 
-/**
- * Classify an error and create a detailed error info object.
- */
-function classifyError(err: any, panelName: string): PanelErrorInfo {
-  const timestamp = Date.now();
-
-  // Handle Error objects
-  if (err instanceof Error) {
-    const msg = err.message || '';
-    const lower = msg.toLowerCase();
-
-    // Network errors
-    if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed')) {
-      return {
-        timestamp,
-        message: msg,
-        name: err.name || 'NetworkError',
-        stack: err.stack,
-        type: 'network',
-        endpoint: panelName,
-      };
-    }
-
-    // Timeout errors
-    if (lower.includes('timeout')) {
-      return {
-        timestamp,
-        message: msg,
-        name: 'TimeoutError',
-        stack: err.stack,
-        type: 'network',
-        endpoint: panelName,
-      };
-    }
-
-    // HTTP status code errors
-    const httpMatch = msg.match(/HTTP (\d+): (.+)/);
-    if (httpMatch) {
-      const statusCode = parseInt(httpMatch[1], 10);
-      const statusText = httpMatch[2];
-      const type: PanelErrorInfo['type'] =
-        statusCode >= 500 ? 'http' : statusCode >= 400 ? 'http' : 'unknown';
-      return {
-        timestamp,
-        message: msg,
-        name: `HTTP ${statusCode} Error`,
-        stack: err.stack,
-        statusCode,
-        statusText,
-        type,
-        endpoint: panelName,
-      };
-    }
-
-    // JSON parse errors
-    if (lower.includes('json') || lower.includes('parse')) {
-      return {
-        timestamp,
-        message: msg,
-        name: 'ParseError',
-        stack: err.stack,
-        type: 'parse',
-        endpoint: panelName,
-      };
-    }
-
-    // Runtime errors in card rendering
-    if (lower.includes('cannot read') || lower.includes('cannot convert') || lower.includes('undefined')) {
-      return {
-        timestamp,
-        message: msg,
-        name: 'RuntimeError',
-        stack: err.stack,
-        type: 'runtime',
-        endpoint: panelName,
-      };
-    }
-
-    // Default: unknown error
+function classifyNetworkOrTimeout(
+  msg: string,
+  lower: string,
+  err: Error,
+  panelName: string,
+  timestamp: number,
+): PanelErrorInfo | null {
+  if (
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("failed")
+  ) {
     return {
       timestamp,
       message: msg,
-      name: err.name || 'Error',
+      name: err.name || "NetworkError",
       stack: err.stack,
-      type: 'unknown',
+      type: "network",
       endpoint: panelName,
     };
   }
-
-  // Handle non-Error objects
-  if (typeof err === 'string') {
+  if (lower.includes("timeout")) {
     return {
       timestamp,
-      message: err,
-      name: 'Error',
-      type: 'unknown',
+      message: msg,
+      name: "TimeoutError",
+      stack: err.stack,
+      type: "network",
       endpoint: panelName,
     };
   }
+  return null;
+}
 
-  if (typeof err === 'object' && err !== null) {
-    return {
-      timestamp,
-      message: JSON.stringify(err),
-      name: 'Error',
-      type: 'unknown',
-      endpoint: panelName,
-    };
-  }
-
+function classifyHttpError(
+  msg: string,
+  err: Error,
+  panelName: string,
+  timestamp: number,
+): PanelErrorInfo | null {
+  const httpMatch = msg.match(/HTTP (\d+): (.+)/);
+  if (!httpMatch) return null;
+  const statusCode = parseInt(httpMatch[1], 10);
+  const statusText = httpMatch[2];
+  const type: PanelErrorInfo["type"] = statusCode >= 400 ? "http" : "unknown";
   return {
     timestamp,
-    message: 'Unknown error occurred',
-    name: 'Error',
-    type: 'unknown',
+    message: msg,
+    name: `HTTP ${statusCode} Error`,
+    stack: err.stack,
+    statusCode,
+    statusText,
+    type,
     endpoint: panelName,
   };
+}
+
+function classifyErrorInstance(
+  err: Error,
+  panelName: string,
+  timestamp: number,
+): PanelErrorInfo {
+  const msg = err.message || "";
+  const lower = msg.toLowerCase();
+
+  const networkResult = classifyNetworkOrTimeout(msg, lower, err, panelName, timestamp);
+  if (networkResult) return networkResult;
+
+  const httpResult = classifyHttpError(msg, err, panelName, timestamp);
+  if (httpResult) return httpResult;
+
+  if (lower.includes("json") || lower.includes("parse")) {
+    return { timestamp, message: msg, name: "ParseError", stack: err.stack, type: "parse", endpoint: panelName };
+  }
+
+  if (
+    lower.includes("cannot read") ||
+    lower.includes("cannot convert") ||
+    lower.includes("undefined")
+  ) {
+    return { timestamp, message: msg, name: "RuntimeError", stack: err.stack, type: "runtime", endpoint: panelName };
+  }
+
+  return { timestamp, message: msg, name: err.name || "Error", stack: err.stack, type: "unknown", endpoint: panelName };
+}
+
+function classifyError(err: any, panelName: string): PanelErrorInfo {
+  const timestamp = Date.now();
+  if (err instanceof Error) return classifyErrorInstance(err, panelName, timestamp);
+  if (typeof err === "string") return { timestamp, message: err, name: "Error", type: "unknown", endpoint: panelName };
+  if (typeof err === "object" && err !== null) return { timestamp, message: JSON.stringify(err), name: "Error", type: "unknown", endpoint: panelName };
+  return { timestamp, message: "Unknown error occurred", name: "Error", type: "unknown", endpoint: panelName };
 }
 
 /**
  * Generate a user-friendly error message based on the error type.
  */
-function getFriendlyMessage(error: PanelErrorInfo | null, panelName: string): string {
-  if (!error) return '';
+function getFriendlyMessage(
+  error: PanelErrorInfo | null,
+  panelName: string,
+): string {
+  if (!error) return "";
 
-  const label = panelName || 'Panel';
+  const label = panelName || "Panel";
 
   switch (error.type) {
-    case 'network':
+    case "network":
       return `Unable to connect to the ${label} metrics service. Check your network connection or try again later.`;
-    case 'http':
-      if (error.statusCode === 500 || error.statusCode === 502 || error.statusCode === 503) {
+    case "http":
+      if (
+        error.statusCode === 500 ||
+        error.statusCode === 502 ||
+        error.statusCode === 503
+      ) {
         return `The ${label} backend server is temporarily unavailable. Please try again.`;
       }
       if (error.statusCode === 404) {
         return `The ${label} data endpoint is not available. The backend may need to be updated.`;
       }
       return `The ${label} endpoint returned an error (HTTP ${error.statusCode}). Please try again.`;
-    case 'parse':
+    case "parse":
       return `The ${label} data format is invalid. The backend may have changed its response format.`;
-    case 'data':
+    case "data":
       return `The ${label} data returned unexpected values. Data may be incomplete.`;
-    case 'runtime':
+    case "runtime":
       return `An error occurred while displaying ${label.toLowerCase()} data. Please try refreshing the panel.`;
-    case 'unknown':
+    case "unknown":
     default:
       return `Unable to load ${label} data. Please try refreshing the panel.`;
   }

@@ -45,10 +45,14 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     () => localStorage.getItem("llama_cpp_readme_url") ?? "",
   );
   const [localVersionCmd] = useState(
-    () => localStorage.getItem("llama_cpp_local_version_cmd") ?? DEFAULT_LOCAL_VERSION_CMD,
+    () =>
+      localStorage.getItem("llama_cpp_local_version_cmd") ??
+      DEFAULT_LOCAL_VERSION_CMD,
   );
   const [latestVersionCmd] = useState(
-    () => localStorage.getItem("llama_cpp_latest_version_cmd") ?? DEFAULT_LATEST_VERSION_CMD,
+    () =>
+      localStorage.getItem("llama_cpp_latest_version_cmd") ??
+      DEFAULT_LATEST_VERSION_CMD,
   );
   const [buildNotesUrl] = useState(
     () =>
@@ -111,7 +115,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     return () => {
       cancelled = true;
     };
-  }, [dirPath]);
+  }, [dirPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopPolling = useCallback(() => {
     if (updatePollRef.current) {

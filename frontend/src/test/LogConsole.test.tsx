@@ -102,15 +102,21 @@ describe("lineMatchesFilters", () => {
   });
 
   it("returns true when line matches active preset keyword", () => {
-    expect(lineMatchesFilters("kv cache usage 40%", new Set(["cache"]), "")).toBe(true);
+    expect(
+      lineMatchesFilters("kv cache usage 40%", new Set(["cache"]), ""),
+    ).toBe(true);
   });
 
   it("returns false when line does not match active preset", () => {
-    expect(lineMatchesFilters("hello world", new Set(["cache"]), "")).toBe(false);
+    expect(lineMatchesFilters("hello world", new Set(["cache"]), "")).toBe(
+      false,
+    );
   });
 
   it("returns true when line matches search query", () => {
-    expect(lineMatchesFilters("slot 0 is processing", new Set(), "slot")).toBe(true);
+    expect(lineMatchesFilters("slot 0 is processing", new Set(), "slot")).toBe(
+      true,
+    );
   });
 
   it("returns false when line does not match search query", () => {
@@ -118,27 +124,45 @@ describe("lineMatchesFilters", () => {
   });
 
   it("matching is case-insensitive for both preset and query", () => {
-    expect(lineMatchesFilters("KV Cache HIT", new Set(["cache"]), "HIT")).toBe(true);
+    expect(lineMatchesFilters("KV Cache HIT", new Set(["cache"]), "HIT")).toBe(
+      true,
+    );
   });
 
   it("requires ALL active presets to match (AND logic)", () => {
-    expect(lineMatchesFilters("slot processed", new Set(["draft", "cache"]), "")).toBe(false);
-    expect(lineMatchesFilters("slot cached prefix", new Set(["draft", "cache"]), "")).toBe(true);
+    expect(
+      lineMatchesFilters("slot processed", new Set(["draft", "cache"]), ""),
+    ).toBe(false);
+    expect(
+      lineMatchesFilters("slot cached prefix", new Set(["draft", "cache"]), ""),
+    ).toBe(true);
   });
 
   it("matches errors preset keywords (fatal, failed, abort)", () => {
-    expect(lineMatchesFilters("fatal: out of memory", new Set(["errors"]), "")).toBe(true);
-    expect(lineMatchesFilters("normal generation line", new Set(["errors"]), "")).toBe(false);
+    expect(
+      lineMatchesFilters("fatal: out of memory", new Set(["errors"]), ""),
+    ).toBe(true);
+    expect(
+      lineMatchesFilters("normal generation line", new Set(["errors"]), ""),
+    ).toBe(false);
   });
 
   it("matches timings preset keywords (t/s, eval)", () => {
-    expect(lineMatchesFilters("eval time: 235ms", new Set(["timings"]), "")).toBe(true);
-    expect(lineMatchesFilters("slot 0 active", new Set(["timings"]), "")).toBe(false);
+    expect(
+      lineMatchesFilters("eval time: 235ms", new Set(["timings"]), ""),
+    ).toBe(true);
+    expect(lineMatchesFilters("slot 0 active", new Set(["timings"]), "")).toBe(
+      false,
+    );
   });
 
   it("matches draft preset keywords (slot, draft, specul)", () => {
-    expect(lineMatchesFilters("draft model accepted", new Set(["draft"]), "")).toBe(true);
-    expect(lineMatchesFilters("model loaded", new Set(["draft"]), "")).toBe(false);
+    expect(
+      lineMatchesFilters("draft model accepted", new Set(["draft"]), ""),
+    ).toBe(true);
+    expect(lineMatchesFilters("model loaded", new Set(["draft"]), "")).toBe(
+      false,
+    );
   });
 
   it("returns true when query is empty string even with preset active", () => {
@@ -172,7 +196,9 @@ describe("LogConsole initial render", () => {
   it("does not render console-active-profile when no profile is running", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.queryByTestId("console-active-profile")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("console-active-profile"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders log-area testid", async () => {
@@ -198,14 +224,22 @@ describe("LogConsole filter and preset chips", () => {
   it("level filter chips have aria-pressed=true by default", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "INFO" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "ERROR" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "INFO" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "ERROR" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("renders all preset chips: Draft/Spec, Timings, Cache, Errors", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "Draft/Spec" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Draft/Spec" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Timings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cache" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Errors" })).toBeInTheDocument();
@@ -214,14 +248,19 @@ describe("LogConsole filter and preset chips", () => {
   it("preset chips have aria-pressed=false by default (none active)", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "Cache" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Cache" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("renders Filter and Highlight mode buttons", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Filter" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Highlight" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Highlight" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -231,7 +270,9 @@ describe("LogConsole toolbar buttons", () => {
   it("shows search input with aria-label 'Search logs'", async () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByRole("searchbox", { name: "Search logs" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search logs" }),
+    ).toBeInTheDocument();
   });
 
   it("shows Pause button title initially (not paused)", async () => {
@@ -259,7 +300,9 @@ describe("LogConsole toolbar buttons", () => {
     render(<LogConsole />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByTitle("Clear logs")).toBeInTheDocument();
-    expect(screen.getByTitle("Copy visible logs to clipboard")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Copy visible logs to clipboard"),
+    ).toBeInTheDocument();
     expect(screen.getByTitle("Download logs as .txt")).toBeInTheDocument();
     // wrap=true by default → title says "Disable word wrap"
     expect(screen.getByTitle("Disable word wrap")).toBeInTheDocument();
@@ -291,7 +334,9 @@ function setupRunning() {
   global.fetch = vi.fn().mockResolvedValue(
     profilesResp({
       profiles: [activeProfile],
-      states: { "/scripts/run.sh": { status: "running", llama_server_pid: 1234 } },
+      states: {
+        "/scripts/run.sh": { status: "running", llama_server_pid: 1234 },
+      },
     }),
   );
 }
@@ -301,7 +346,9 @@ describe("LogConsole with active profile", () => {
     setupRunning();
     render(<LogConsole />);
     await waitFor(() => {
-      expect(screen.getByTestId("console-active-profile")).toHaveTextContent("Qwen-7B");
+      expect(screen.getByTestId("console-active-profile")).toHaveTextContent(
+        "Qwen-7B",
+      );
     });
   });
 
@@ -359,7 +406,9 @@ describe("LogConsole with active profile", () => {
     ws.openWs();
     ws.sendHistory([], true);
     await waitFor(() => {
-      expect(screen.getByTestId("console-status")).toHaveTextContent("● Process Exited");
+      expect(screen.getByTestId("console-status")).toHaveTextContent(
+        "● Process Exited",
+      );
     });
   });
 
@@ -371,7 +420,9 @@ describe("LogConsole with active profile", () => {
     ws.openWs();
     ws.close();
     await waitFor(() => {
-      expect(screen.getByTestId("console-status")).toHaveTextContent("● Disconnected");
+      expect(screen.getByTestId("console-status")).toHaveTextContent(
+        "● Disconnected",
+      );
     });
   });
 });
@@ -390,7 +441,9 @@ describe("LogConsole hide idle filtering", () => {
       makeLine("normal log line"),
     ]);
     await waitFor(() => {
-      expect(screen.queryByText("update_slots: all slots are idle")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("update_slots: all slots are idle"),
+      ).not.toBeInTheDocument();
       expect(screen.getByText("normal log line")).toBeInTheDocument();
     });
   });
@@ -403,11 +456,15 @@ describe("LogConsole hide idle filtering", () => {
     ws.openWs();
     ws.sendHistory([makeLine("update_slots: all slots are idle")]);
     await waitFor(() =>
-      expect(screen.queryByText("update_slots: all slots are idle")).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText("update_slots: all slots are idle"),
+      ).not.toBeInTheDocument(),
     );
     fireEvent.click(screen.getByTitle("Show idle lines"));
     await waitFor(() => {
-      expect(screen.getByText("update_slots: all slots are idle")).toBeInTheDocument();
+      expect(
+        screen.getByText("update_slots: all slots are idle"),
+      ).toBeInTheDocument();
     });
   });
 });
@@ -426,14 +483,20 @@ describe("LogConsole search and filter mode", () => {
       makeLine("generation started for slot 0"),
     ]);
     await waitFor(() =>
-      expect(screen.getByText("generation started for slot 0")).toBeInTheDocument(),
+      expect(
+        screen.getByText("generation started for slot 0"),
+      ).toBeInTheDocument(),
     );
     fireEvent.change(screen.getByRole("searchbox", { name: "Search logs" }), {
       target: { value: "kv cache" },
     });
     await waitFor(() => {
-      expect(screen.getByText("kv cache hit on 512 tokens")).toBeInTheDocument();
-      expect(screen.queryByText("generation started for slot 0")).not.toBeInTheDocument();
+      expect(
+        screen.getByText("kv cache hit on 512 tokens"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("generation started for slot 0"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -444,7 +507,9 @@ describe("LogConsole search and filter mode", () => {
     const ws = wsInstances[wsInstances.length - 1];
     ws.openWs();
     ws.sendHistory([makeLine("hello world")]);
-    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("hello world")).toBeInTheDocument(),
+    );
     fireEvent.change(screen.getByRole("searchbox", { name: "Search logs" }), {
       target: { value: "xyznotfound" },
     });
@@ -465,7 +530,9 @@ describe("LogConsole search and filter mode", () => {
       makeLine("info level message", "info"),
       makeLine("error level message", "error"),
     ]);
-    await waitFor(() => expect(screen.getByText("info level message")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("info level message")).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "INFO" }));
     await waitFor(() => {
       expect(screen.queryByText("info level message")).not.toBeInTheDocument();
@@ -496,7 +563,9 @@ describe("LogConsole preset chip filtering", () => {
       makeLine("kv cache miss on prefix"),
       makeLine("generation started"),
     ]);
-    await waitFor(() => expect(screen.getByText("generation started")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("generation started")).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Cache" }));
     await waitFor(() => {
       expect(screen.getByText("kv cache miss on prefix")).toBeInTheDocument();

@@ -1,7 +1,12 @@
-import { useMemo, useState, useEffect, useRef, useId } from 'react';
-import { MetricHistoryPoint } from '../types/metrics';
-import ChartTooltip from '../components/common/ChartTooltip';
-import { resolveAccentColors, resolveAccentColor, useAccentSync, SECONDARY_LINE_DASH } from '../utils/accentColors';
+import { useMemo, useState, useEffect, useRef, useId } from "react";
+import { MetricHistoryPoint } from "../types/metrics";
+import ChartTooltip from "../components/common/ChartTooltip";
+import {
+  resolveAccentColors,
+  resolveAccentColor,
+  useAccentSync,
+  SECONDARY_LINE_DASH,
+} from "../utils/accentColors";
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -15,7 +20,7 @@ interface ChartProps {
   yAxisTickValues?: number[];
   unit?: string;
   style?: React.CSSProperties;
-  chartType?: 'area' | 'bar';
+  chartType?: "area" | "bar";
   // Dual-axis support
   dualData?: MetricHistoryPoint[];
   dualYDomain?: [number, number];
@@ -25,13 +30,18 @@ interface ChartProps {
   secondaryLabel?: string;
 }
 
-function getChartColors(): { grid: string; axis: string; crosshair: string; dotStroke: string } {
+function getChartColors(): {
+  grid: string;
+  axis: string;
+  crosshair: string;
+  dotStroke: string;
+} {
   const cs = getComputedStyle(document.documentElement);
   return {
-    grid: cs.getPropertyValue('--chart-grid').trim() || '#1e2535',
-    axis: cs.getPropertyValue('--chart-axis').trim() || '#2a3143',
-    crosshair: cs.getPropertyValue('--chart-crosshair').trim() || '#5a6578',
-    dotStroke: cs.getPropertyValue('--chart-dot-stroke').trim() || '#fff',
+    grid: cs.getPropertyValue("--chart-grid").trim() || "#1e2535",
+    axis: cs.getPropertyValue("--chart-axis").trim() || "#2a3143",
+    crosshair: cs.getPropertyValue("--chart-crosshair").trim() || "#5a6578",
+    dotStroke: cs.getPropertyValue("--chart-dot-stroke").trim() || "#fff",
   };
 }
 
@@ -40,27 +50,58 @@ function getSeriesColors(): string[] {
 }
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
   if (!p) return 0;
-  if (typeof p.timestamp === 'number') return p.timestamp;
+  if (typeof p.timestamp === "number") return p.timestamp;
   if (p.timestamp instanceof Date) return p.timestamp.getTime();
   return new Date(String(p.timestamp)).getTime();
 }
 
-export default function MetricChart({ title, data, color: _color, timeFrame, dataKeys, chartHeight, yDomain, yAxisTickValues, unit, style, chartType = 'area', dualData, dualYDomain, dualYAxisTickValues, dualUnit, primaryLabel, secondaryLabel }: ChartProps) {
-  const gradientId = `mc-fill-${useId().replace(/:/g, '')}`;
-  const [chartComponents, setChartComponents] = useState<Record<string, unknown> | null>(null);
+export default function MetricChart({
+  title,
+  data,
+  color: _color,
+  timeFrame,
+  dataKeys,
+  chartHeight,
+  yDomain,
+  yAxisTickValues,
+  unit,
+  style,
+  chartType = "area",
+  dualData,
+  dualYDomain,
+  dualYAxisTickValues,
+  dualUnit,
+  primaryLabel,
+  secondaryLabel,
+}: ChartProps) {
+  const gradientId = `mc-fill-${useId().replace(/:/g, "")}`;
+  const [chartComponents, setChartComponents] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
-  const [strokeColor, setStrokeColor] = useState(() => _color || resolveAccentColor());
+  const [strokeColor, setStrokeColor] = useState(
+    () => _color || resolveAccentColor(),
+  );
   const chartRef = useRef<HTMLDivElement>(null);
-  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  const [chartSize, setChartSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
-    import('recharts').then((recharts) => setChartComponents(recharts));
+    import("recharts").then((recharts) => setChartComponents(recharts));
   }, []);
 
   useEffect(() => {
@@ -69,7 +110,10 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
     const updateSize = () => {
       const r = el.getBoundingClientRect();
       if (r.width > 1 && r.height > 1) {
-        setChartSize({ width: Math.floor(r.width), height: Math.floor(r.height) });
+        setChartSize({
+          width: Math.floor(r.width),
+          height: Math.floor(r.height),
+        });
       }
     };
     const ro = new ResizeObserver(updateSize);
@@ -92,19 +136,33 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
     if (dataKeys && dataKeys.length > 1) {
       const result = data.map((p: any, idx: number) => ({
         x: idx,
-        timestampMs: p.timestamp instanceof Date ? p.timestamp.getTime() : new Date(p.timestamp).getTime(),
-        timeLabel: formatTime(p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp)),
+        timestampMs:
+          p.timestamp instanceof Date
+            ? p.timestamp.getTime()
+            : new Date(p.timestamp).getTime(),
+        timeLabel: formatTime(
+          p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp),
+        ),
         ...p,
       }));
       return result;
     }
 
-    if (dataKeys && data.length > 0 && 'read' in (data[0] as Record<string, unknown>)) {
+    if (
+      dataKeys &&
+      data.length > 0 &&
+      "read" in (data[0] as Record<string, unknown>)
+    ) {
       const typed = data as any[];
       const result = typed.map((p, idx) => ({
         x: idx,
-        timestampMs: p.timestamp instanceof Date ? p.timestamp.getTime() : new Date(p.timestamp).getTime(),
-        timeLabel: formatTime(p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp)),
+        timestampMs:
+          p.timestamp instanceof Date
+            ? p.timestamp.getTime()
+            : new Date(p.timestamp).getTime(),
+        timeLabel: formatTime(
+          p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp),
+        ),
         read: p.read != null ? Math.round(p.read * 10) / 10 : null,
         write: p.write != null ? Math.round(p.write * 10) / 10 : null,
       }));
@@ -120,9 +178,11 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
         return {
           x: idx,
           timestampMs: resolveTimestampMs(p),
-          timeLabel: p ? formatTime((p as MetricHistoryPoint).timestamp) : '',
-          value: p?.value != null ? Math.round((p.value as number) * 10) / 10 : null,
-          dualValue: d?.value != null ? Math.round((d.value as number) * 10) / 10 : null,
+          timeLabel: p ? formatTime((p as MetricHistoryPoint).timestamp) : "",
+          value:
+            p?.value != null ? Math.round((p.value as number) * 10) / 10 : null,
+          dualValue:
+            d?.value != null ? Math.round((d.value as number) * 10) / 10 : null,
         };
       });
       return result;
@@ -140,20 +200,48 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
   const fillColor = `${strokeColor}20`;
 
   const seriesLabels: Record<string, string> = {
-    memory: 'Memory Utilization (%)',
-    swap: 'Swap Utilization (%)',
+    memory: "Memory Utilization (%)",
+    swap: "Swap Utilization (%)",
   };
 
   if (!chartComponents) {
     return (
-      <div className="chart-container" style={{ flex: 1, minHeight: 0, ...style }}>
-        <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+      <div
+        className="chart-container"
+        style={{ flex: 1, minHeight: 0, ...style }}
+      >
+        <div
+          className="chart-title"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+          }}
+        >
           <span>{title}</span>
           {timeFrame && (
-         <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px' }}>{timeFrame}</span>
+            <span
+              style={{
+                color: "var(--text-muted)",
+                fontWeight: 400,
+                fontSize: "11px",
+              }}
+            >
+              {timeFrame}
+            </span>
           )}
         </div>
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text-muted)",
+            fontSize: "12px",
+          }}
+        >
           Loading chart...
         </div>
       </div>
@@ -184,7 +272,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
             fillOpacity={0.3}
             isAnimationActive={false}
             animationDuration={0}
-            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+            activeDot={{
+              r: 5,
+              stroke: chartColors.dotStroke,
+              strokeWidth: 2,
+              fill: strokeColor,
+            }}
           />
           <A
             yAxisId="right"
@@ -196,7 +289,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
             fillOpacity={0.2}
             isAnimationActive={false}
             animationDuration={0}
-            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: seriesColors[1] }}
+            activeDot={{
+              r: 5,
+              stroke: chartColors.dotStroke,
+              strokeWidth: 2,
+              fill: seriesColors[1],
+            }}
           />
         </>
       );
@@ -215,7 +313,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
             fillOpacity={i === 1 ? 0.2 : 0.3}
             isAnimationActive={false}
             animationDuration={0}
-            activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: keyColor }}
+            activeDot={{
+              r: 5,
+              stroke: chartColors.dotStroke,
+              strokeWidth: 2,
+              fill: keyColor,
+            }}
           />
         );
       });
@@ -229,7 +332,12 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
         fillOpacity={0.35}
         isAnimationActive={false}
         animationDuration={0}
-        activeDot={{ r: 5, stroke: chartColors.dotStroke, strokeWidth: 2, fill: strokeColor }}
+        activeDot={{
+          r: 5,
+          stroke: chartColors.dotStroke,
+          strokeWidth: 2,
+          fill: strokeColor,
+        }}
       />
     );
   };
@@ -237,72 +345,162 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
   const fillGradientDefs = (
     <defs>
       <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" style={{ stopColor: 'var(--accent-fill-stop-1)', stopOpacity: 0.5 }} />
-        <stop offset="100%" style={{ stopColor: 'var(--accent-fill-stop-2)', stopOpacity: 0.05 }} />
+        <stop
+          offset="0%"
+          style={{ stopColor: "var(--accent-fill-stop-1)", stopOpacity: 0.5 }}
+        />
+        <stop
+          offset="100%"
+          style={{ stopColor: "var(--accent-fill-stop-2)", stopOpacity: 0.05 }}
+        />
       </linearGradient>
       {/* Full-opacity twin used for the line stroke itself, so Gradient/Rainbow/Spectrum
           modes visibly tint the line, not just the area fill beneath it. Under Solid mode
           --accent-fill-stop-1/2 are identical, so this renders as a flat line — no change. */}
       <linearGradient id={`${gradientId}-stroke`} x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" style={{ stopColor: 'var(--accent-fill-stop-1)', stopOpacity: 1 }} />
-        <stop offset="100%" style={{ stopColor: 'var(--accent-fill-stop-2)', stopOpacity: 1 }} />
+        <stop
+          offset="0%"
+          style={{ stopColor: "var(--accent-fill-stop-1)", stopOpacity: 1 }}
+        />
+        <stop
+          offset="100%"
+          style={{ stopColor: "var(--accent-fill-stop-2)", stopOpacity: 1 }}
+        />
       </linearGradient>
     </defs>
   );
 
   const tooltipContent = (props: any) => {
-    if (!props || !props.payload || !props.payload[0] || !props.active) return null;
+    if (!props || !props.payload || !props.payload[0] || !props.active)
+      return null;
     const payloadArr = props.payload;
     const firstDatum = payloadArr[0]?.payload ?? {};
 
     const ts = firstDatum?.timestampMs ?? 0;
-    const timestamp = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    const timestamp = ts
+      ? new Date(ts).toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "";
 
     // Dual-axis mode tooltip
     if (dualData && dualData.length > 0) {
       const primaryVal = firstDatum?.value;
       const secondaryVal = firstDatum?.dualValue;
-      return <ChartTooltip timestamp={timestamp} series={[
-        { name: primaryLabel || title, value: primaryVal != null ? `${primaryVal}${unit || '%'}` : 'N/A', color: strokeColor },
-        { name: secondaryLabel || 'Secondary', value: secondaryVal != null ? `${secondaryVal}${dualUnit || ''}` : 'N/A', color: seriesColors[1] },
-      ]} />;
+      return (
+        <ChartTooltip
+          timestamp={timestamp}
+          series={[
+            {
+              name: primaryLabel || title,
+              value: primaryVal != null ? `${primaryVal}${unit || "%"}` : "N/A",
+              color: strokeColor,
+            },
+            {
+              name: secondaryLabel || "Secondary",
+              value:
+                secondaryVal != null
+                  ? `${secondaryVal}${dualUnit || ""}`
+                  : "N/A",
+              color: seriesColors[1],
+            },
+          ]}
+        />
+      );
     }
 
     if (dataKeys) {
       const series = payloadArr.map((entry: any, i: number) => ({
         name: seriesLabels[entry.name] || entry.name,
-        value: entry.value != null ? `${entry.value}%` : 'N/A',
+        value: entry.value != null ? `${entry.value}%` : "N/A",
         color: seriesColors[i % seriesColors.length],
       }));
       return <ChartTooltip timestamp={timestamp} series={series} />;
     }
 
     const val = payloadArr[0]?.value;
-    return <ChartTooltip timestamp={timestamp} series={[{
-      name: title,
-      value: val != null ? `${val}${unit || '%'}` : 'N/A',
-      color: strokeColor,
-    }]} />;
+    return (
+      <ChartTooltip
+        timestamp={timestamp}
+        series={[
+          {
+            name: title,
+            value: val != null ? `${val}${unit || "%"}` : "N/A",
+            color: strokeColor,
+          },
+        ]}
+      />
+    );
   };
 
   return (
-    <div className="chart-container" style={{ flex: 1, minHeight: 0, ...style }}>
-      <div className="chart-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+    <div
+      className="chart-container"
+      style={{ flex: 1, minHeight: 0, ...style }}
+    >
+      <div
+        className="chart-title"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+        }}
+      >
         <span>{title}</span>
         {timeFrame && (
-          <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '12px' }}>{timeFrame}</span>
+          <span
+            style={{
+              color: "var(--text-muted)",
+              fontWeight: 400,
+              fontSize: "12px",
+            }}
+          >
+            {timeFrame}
+          </span>
         )}
       </div>
       {dataKeys && dataKeys.length > 0 && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
-            {dataKeys.map((key, i) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                {i === 1 ? (
-                  <div style={{ width: 10, height: 0, borderBottom: `2px dashed ${seriesColors[i % seriesColors.length]}` }} />
-                ) : (
-                  <div style={{ width: 10, height: 3, borderRadius: 2, background: seriesColors[i % seriesColors.length] }} />
-                )}
-              <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          {dataKeys.map((key, i) => (
+            <div
+              key={key}
+              style={{ display: "flex", alignItems: "center", gap: 3 }}
+            >
+              {i === 1 ? (
+                <div
+                  style={{
+                    width: 10,
+                    height: 0,
+                    borderBottom: `2px dashed ${seriesColors[i % seriesColors.length]}`,
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 10,
+                    height: 3,
+                    borderRadius: 2,
+                    background: seriesColors[i % seriesColors.length],
+                  }}
+                />
+              )}
+              <span
+                style={{
+                  fontSize: 9,
+                  color: "var(--text-primary)",
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                }}
+              >
                 {seriesLabels[key] || key}
               </span>
             </div>
@@ -310,37 +508,80 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
         </div>
       )}
       {dualData && dualData.length > 0 && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <div style={{ width: 10, height: 3, borderRadius: 2, background: strokeColor }} />
-            <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+            <div
+              style={{
+                width: 10,
+                height: 3,
+                borderRadius: 2,
+                background: strokeColor,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 9,
+                color: "var(--text-primary)",
+                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              }}
+            >
               {primaryLabel || title}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <div style={{ width: 10, height: 3, borderRadius: 2, background: seriesColors[1] }} />
-            <span style={{ fontSize: 9, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
-              {secondaryLabel || 'Secondary'}
+          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+            <div
+              style={{
+                width: 10,
+                height: 3,
+                borderRadius: 2,
+                background: seriesColors[1],
+              }}
+            />
+            <span
+              style={{
+                fontSize: 9,
+                color: "var(--text-primary)",
+                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              }}
+            >
+              {secondaryLabel || "Secondary"}
             </span>
           </div>
         </div>
       )}
-      <div ref={chartRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div ref={chartRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         {chartSize && (
           <div style={{ width: chartSize.width, height: chartSize.height }}>
-            {chartType === 'bar' ? (
-              <BarChart data={chartData} width={chartSize.width} height={chartSize.height} barGap={2} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+            {chartType === "bar" ? (
+              <BarChart
+                data={chartData}
+                width={chartSize.width}
+                height={chartSize.height}
+                barGap={2}
+                margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                padding={{ top: 0, right: 0, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid
+                  stroke={chartColors.grid}
+                  strokeDasharray="4 4"
+                />
                 <XAxis
                   dataKey="x"
                   type="number"
                   domain={[0, dataMaxX]}
                   ticks={chartData.map((_, i) => i)}
-                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                   axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={(tickVal: number) => {
                     const pt = chartData[Math.round(tickVal)];
-                    return pt ? pt.timeLabel : '';
+                    return pt ? pt.timeLabel : "";
                   }}
                   interval="equidistantPreserveStart"
                 />
@@ -349,14 +590,19 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                   type="number"
                   domain={yDomain || [0, 100]}
                   tickValues={yAxisTickValues}
-                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                   axisLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
                   isAnimationActive={false}
                   animationDuration={0}
                   content={tooltipContent}
-                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                  cursor={{
+                    stroke: chartColors.crosshair,
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                    opacity: 0.5,
+                  }}
                   offset={8}
                 />
                 <Bar
@@ -368,19 +614,28 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                 />
               </BarChart>
             ) : (
-              <AreaChart data={chartData} width={chartSize.width} height={chartSize.height} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} padding={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <AreaChart
+                data={chartData}
+                width={chartSize.width}
+                height={chartSize.height}
+                margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                padding={{ top: 0, right: 0, left: 0, bottom: 0 }}
+              >
                 {fillGradientDefs}
-                <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+                <CartesianGrid
+                  stroke={chartColors.grid}
+                  strokeDasharray="4 4"
+                />
                 <XAxis
                   dataKey="x"
                   type="number"
                   domain={[0, dataMaxX]}
                   ticks={chartData.map((_, i) => i)}
-                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                   axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={(tickVal: number) => {
                     const pt = chartData[Math.round(tickVal)];
-                    return pt ? pt.timeLabel : '';
+                    return pt ? pt.timeLabel : "";
                   }}
                   interval="equidistantPreserveStart"
                 />
@@ -392,7 +647,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                       type="number"
                       domain={yDomain || [0, 100]}
                       tickValues={yAxisTickValues}
-                      tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                      tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                     <YAxis
@@ -402,7 +657,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                       orientation="right"
                       domain={dualYDomain || [0, 100]}
                       tickValues={dualYAxisTickValues}
-                      tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                      tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                   </>
@@ -412,7 +667,7 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                     type="number"
                     domain={yDomain || [0, 100]}
                     tickValues={yAxisTickValues}
-                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                    tick={{ fontSize: 10, fill: "var(--text-muted)" }}
                     axisLine={{ stroke: chartColors.axis }}
                   />
                 )}
@@ -420,8 +675,13 @@ export default function MetricChart({ title, data, color: _color, timeFrame, dat
                   isAnimationActive={false}
                   animationDuration={0}
                   content={tooltipContent}
-                  cursor={{ stroke: chartColors.crosshair, strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
-                 offset={8}
+                  cursor={{
+                    stroke: chartColors.crosshair,
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                    opacity: 0.5,
+                  }}
+                  offset={8}
                 />
                 {renderAreaElements(Area)}
               </AreaChart>

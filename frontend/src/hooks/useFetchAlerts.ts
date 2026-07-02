@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AlertSeverity, type Alert } from '../types/metrics';
-import { useAlertsContext } from '../context/AlertsContext';
+import { useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { AlertSeverity, type Alert } from "../types/metrics";
+import { useAlertsContext } from "../context/AlertsContext";
 
 interface BackendAlert {
   id: number;
@@ -29,10 +29,10 @@ export function useFetchAlerts() {
   const prevDataRef = useRef<Alert[] | undefined>(undefined);
 
   const { data, refetch } = useQuery({
-    queryKey: ['alerts'],
+    queryKey: ["alerts"],
     queryFn: async () => {
-      const res = await fetch('/api/alerts');
-      if (!res.ok) throw new Error('Failed to fetch alerts');
+      const res = await fetch("/api/alerts");
+      if (!res.ok) throw new Error("Failed to fetch alerts");
       const json: BackendAlertResponse = await res.json();
       return json.alerts.map(convertBackendAlert);
     },

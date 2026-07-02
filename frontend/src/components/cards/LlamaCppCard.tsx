@@ -31,6 +31,24 @@ import {
   FileText,
 } from "lucide-react";
 
+function getCtxColor(contextPct: number | null): string {
+  if (contextPct != null && contextPct > 90) return "var(--danger)";
+  if (contextPct != null && contextPct > 70) return "var(--warning)";
+  return "var(--accent-primary)";
+}
+
+function getUpdateColor(state: string): string {
+  if (state === "error") return "var(--danger)";
+  if (state === "done") return "var(--success)";
+  return "var(--accent-primary)";
+}
+
+function getUpdateLabel(state: string): string {
+  if (state === "running") return "Updating\u2026";
+  if (state === "done") return "Update complete";
+  return "Update failed";
+}
+
 const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
 const DEFAULT_BUILD_NOTES_URL =
@@ -176,11 +194,10 @@ function MetadataLine({
   );
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export default function LlamaCppCard() {
   const { aiCurrentMetrics } = useMetricsContext();
-  const [dirPath] = useState(
-    () => localStorage.getItem("llama_cpp_dir") ?? "",
-  );
+  const [dirPath] = useState(() => localStorage.getItem("llama_cpp_dir") ?? "");
   const [ptsName, setPtsName] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     msg: string;
@@ -199,13 +216,15 @@ export default function LlamaCppCard() {
   const [updateOutput, setUpdateOutput] = useState("");
   const updatePtsRef = useRef<string | null>(null);
   const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const updateOutputRef = useRef<string>("");
   const [largestContextPeak, setLargestContextPeak] = useState<number>(0);
   const [readmeUrl] = useState(
     () => localStorage.getItem("llama_cpp_readme_url") ?? "",
   );
   const [buildNotesUrl] = useState(
     () =>
-      localStorage.getItem("llama_cpp_build_notes_url") ?? DEFAULT_BUILD_NOTES_URL,
+      localStorage.getItem("llama_cpp_build_notes_url") ??
+      DEFAULT_BUILD_NOTES_URL,
   );
 
   const showToast = useCallback((msg: string, type: "error" | "info") => {
@@ -256,12 +275,7 @@ export default function LlamaCppCard() {
     return isNaN(n) ? String(v) : n.toLocaleString();
   };
 
-  const ctxColor =
-    contextPct != null && contextPct > 90
-      ? "var(--danger)"
-      : contextPct != null && contextPct > 70
-        ? "var(--warning)"
-        : "var(--accent-primary)";
+  const ctxColor = getCtxColor(contextPct);
 
   const openTerminal = useCallback(async () => {
     if (!dirPath) return;
@@ -274,7 +288,10 @@ export default function LlamaCppCard() {
       return;
     }
     if (ptsName) {
-      window.open(`/llama-cpp/terminal?pts=${encodeURIComponent(ptsName)}`, "_blank");
+      window.open(
+        `/llama-cpp/terminal?pts=${encodeURIComponent(ptsName)}`,
+        "_blank",
+      );
       return;
     }
     try {
@@ -285,6 +302,7 @@ export default function LlamaCppCard() {
         "_blank",
       );
     } catch (e: any) {
+      // eslint-disable-next-line no-console
       console.error("[LlamaCpp] Terminal spawn error:", e);
       showToast(e?.message || "Failed to open terminal", "error");
     }
@@ -307,6 +325,7 @@ export default function LlamaCppCard() {
     setUpdateState("running");
     setUpdateProgress(0);
     setUpdateOutput("");
+    updateOutputRef.current = "";
     try {
       const resp = await ptySpawnTerminal(dirPath);
       updatePtsRef.current = resp.pts_name;
@@ -323,25 +342,25 @@ export default function LlamaCppCard() {
         try {
           const chunk = await ptyReadOutput(pts);
           if (chunk) {
-            setUpdateOutput((prev) => {
-              const next = prev + chunk;
-              const pct = extractLatestPercent(next);
-              if (pct != null) setUpdateProgress(pct);
-              const donePattern = new RegExp(
-                `(^|\\n)${DONE_MARKER}(\\r|\\n|$)`,
-              );
-              if (donePattern.test(next)) {
-                setUpdateProgress(100);
-                setUpdateState("done");
-                stopPolling();
-                ptyKillTerminal(pts);
-                updatePtsRef.current = null;
-                setTimeout(() => setUpdateState("idle"), 2000);
-              }
-              return next;
-            });
+            const next = updateOutputRef.current + chunk;
+            updateOutputRef.current = next;
+            const pct = extractLatestPercent(next);
+            if (pct != null) setUpdateProgress(pct);
+            const donePattern = new RegExp(
+              `(^|\\n)${DONE_MARKER}(\\r|\\n|$)`,
+            );
+            if (donePattern.test(next)) {
+              setUpdateProgress(100);
+              setUpdateState("done");
+              stopPolling();
+              ptyKillTerminal(pts);
+              updatePtsRef.current = null;
+              setTimeout(() => setUpdateState("idle"), 2000);
+            }
+            setUpdateOutput(next);
           }
         } catch (err) {
+          // eslint-disable-next-line no-console
           console.error("[LlamaCpp] Update poll error:", err);
           stopPolling();
           if (updatePtsRef.current) {
@@ -352,6 +371,7 @@ export default function LlamaCppCard() {
         }
       }, 400);
     } catch (err: any) {
+      // eslint-disable-next-line no-console
       console.error("[LlamaCpp] Update spawn error:", err);
       showToast(err?.message || "Failed to start update", "error");
       if (updatePtsRef.current) {
@@ -489,7 +509,11 @@ export default function LlamaCppCard() {
                 unit=" token"
                 color={ctxColor}
               />
-              <MetricTile label="Max" value={fmtNum(maxContext)} unit=" token" />
+              <MetricTile
+                label="Max"
+                value={fmtNum(maxContext)}
+                unit=" token"
+              />
               <MetricTile
                 label="Largest Seen"
                 value={fmtNum(largestContext)}
@@ -670,21 +694,12 @@ export default function LlamaCppCard() {
                   style={{
                     fontSize: 8.5,
                     fontWeight: 600,
-                    color:
-                      updateState === "error"
-                        ? "var(--danger)"
-                        : updateState === "done"
-                          ? "var(--success)"
-                          : "var(--accent-primary)",
+                    color: getUpdateColor(updateState),
                     flexShrink: 0,
                     textShadow: "var(--text-shadow-sm)",
                   }}
                 >
-                  {updateState === "running"
-                    ? "Updating…"
-                    : updateState === "done"
-                      ? "Update complete"
-                      : "Update failed"}
+                  {getUpdateLabel(updateState)}
                 </span>
                 <div
                   style={{

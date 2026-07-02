@@ -1,4 +1,4 @@
-import { getAccentMode } from '../utils/accentColors';
+import { getAccentMode } from "../utils/accentColors";
 
 export const WARNING_THRESHOLD = 70;
 export const CRITICAL_THRESHOLD = 90;
@@ -12,9 +12,13 @@ export const TEMP_CRITICAL_THRESHOLD = 90;
 export const STORAGE_TEMP_WARNING_THRESHOLD = 50;
 export const STORAGE_TEMP_CRITICAL_THRESHOLD = 65;
 
-export type ProgressState = 'normal' | 'warning' | 'critical';
+export type ProgressState = "normal" | "warning" | "critical";
 
-const STATE_RANK: Record<ProgressState, number> = { normal: 0, warning: 1, critical: 2 };
+const STATE_RANK: Record<ProgressState, number> = {
+  normal: 0,
+  warning: 1,
+  critical: 2,
+};
 
 export function worseState(a: ProgressState, b: ProgressState): ProgressState {
   return STATE_RANK[a] >= STATE_RANK[b] ? a : b;
@@ -22,30 +26,30 @@ export function worseState(a: ProgressState, b: ProgressState): ProgressState {
 
 export function getStateColor(state: ProgressState): string {
   switch (state) {
-    case 'critical':
-      return 'var(--danger)';
-    case 'warning':
-      return 'var(--warning)';
+    case "critical":
+      return "var(--danger)";
+    case "warning":
+      return "var(--warning)";
     default:
-      return 'var(--success)';
+      return "var(--success)";
   }
 }
 
 export function getStateLabel(state: ProgressState): string {
   switch (state) {
-    case 'critical':
-      return 'Critical';
-    case 'warning':
-      return 'Warning';
+    case "critical":
+      return "Critical";
+    case "warning":
+      return "Warning";
     default:
-      return 'Normal';
+      return "Normal";
   }
 }
 
 export function getProgressState(percent: number): ProgressState {
-  if (percent >= CRITICAL_THRESHOLD) return 'critical';
-  if (percent >= WARNING_THRESHOLD) return 'warning';
-  return 'normal';
+  if (percent >= CRITICAL_THRESHOLD) return "critical";
+  if (percent >= WARNING_THRESHOLD) return "warning";
+  return "normal";
 }
 
 export function getProgressColor(percent: number): string {
@@ -53,9 +57,9 @@ export function getProgressColor(percent: number): string {
 }
 
 export function getTempState(temp: number): ProgressState {
-  if (temp >= TEMP_CRITICAL_THRESHOLD) return 'critical';
-  if (temp >= TEMP_WARNING_THRESHOLD) return 'warning';
-  return 'normal';
+  if (temp >= TEMP_CRITICAL_THRESHOLD) return "critical";
+  if (temp >= TEMP_WARNING_THRESHOLD) return "warning";
+  return "normal";
 }
 
 export function getTempColor(temp: number): string {
@@ -63,9 +67,9 @@ export function getTempColor(temp: number): string {
 }
 
 export function getStorageTempState(temp: number): ProgressState {
-  if (temp >= STORAGE_TEMP_CRITICAL_THRESHOLD) return 'critical';
-  if (temp >= STORAGE_TEMP_WARNING_THRESHOLD) return 'warning';
-  return 'normal';
+  if (temp >= STORAGE_TEMP_CRITICAL_THRESHOLD) return "critical";
+  if (temp >= STORAGE_TEMP_WARNING_THRESHOLD) return "warning";
+  return "normal";
 }
 
 export function getStorageTempColor(temp: number): string {
@@ -75,10 +79,10 @@ export function getStorageTempColor(temp: number): string {
 export function getProgressGradient(percent: number): string {
   const state = getProgressState(percent);
   const mode = getAccentMode();
-  const isAnimated = mode === 'animated-gradient' || mode === 'rainbow-wave';
-  let colorVar = 'var(--accent-primary)';
-  if (state === 'critical') colorVar = 'var(--danger)';
-  else if (state === 'warning') colorVar = 'var(--warning)';
+  const isAnimated = mode === "animated-gradient" || mode === "rainbow-wave";
+  let colorVar = "var(--accent-primary)";
+  if (state === "critical") colorVar = "var(--danger)";
+  else if (state === "warning") colorVar = "var(--warning)";
 
   if (isAnimated) {
     return `linear-gradient(90deg, ${colorVar}, color-mix(in srgb, ${colorVar} 70%, white))`;

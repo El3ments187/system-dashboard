@@ -25,7 +25,7 @@ export default tseslint.config(
       "unused-imports/no-unused-imports": "error",
       "unused-imports/no-unused-vars": [
         "warn",
-        { vars: "all", ignoreRestSiblings: true, varsIgnorePattern: "^_" },
+        { vars: "all", ignoreRestSiblings: true, varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
       ],
     },
   },

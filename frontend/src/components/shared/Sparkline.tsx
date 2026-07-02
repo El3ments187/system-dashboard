@@ -1,4 +1,4 @@
-import { MetricHistoryPoint } from '../../types/metrics';
+import { MetricHistoryPoint } from "../../types/metrics";
 
 interface SparklineProps {
   data: MetricHistoryPoint[] | null;
@@ -7,8 +7,15 @@ interface SparklineProps {
   height?: number;
 }
 
-export default function Sparkline({ data, color = 'var(--accent-primary)', width = 60, height = 18 }: SparklineProps) {
-  const values = (data ?? []).map(p => p.value).filter((v): v is number => v != null);
+export default function Sparkline({
+  data,
+  color = "var(--accent-primary)",
+  width = 60,
+  height = 18,
+}: SparklineProps) {
+  const values = (data ?? [])
+    .map((p) => p.value)
+    .filter((v): v is number => v != null);
   if (values.length < 2) {
     return <svg width={width} height={height} />;
   }
@@ -22,13 +29,25 @@ export default function Sparkline({ data, color = 'var(--accent-primary)', width
     const y = height - ((v - min) / range) * height;
     return [x, y];
   });
-  const points = coords.map(([x, y]) => `${x},${y}`).join(' ');
+  const points = coords.map(([x, y]) => `${x},${y}`).join(" ");
   const areaPoints = `0,${height} ${points} ${width},${height}`;
 
   return (
-    <svg width={width} height={height} style={{ display: 'block' }}>
-      <polygon points={areaPoints} fill={color} fillOpacity={0.15} stroke="none" />
-      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <polygon
+        points={areaPoints}
+        fill={color}
+        fillOpacity={0.15}
+        stroke="none"
+      />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

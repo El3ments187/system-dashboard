@@ -1,7 +1,7 @@
-import { render as rtlRender } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TooltipProvider } from '../../components/common/TooltipProvider';
-import type { ReactNode } from 'react';
+import { render as rtlRender } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "../../components/common/TooltipProvider";
+import type { ReactNode } from "react";
 
 class MockResizeObserver implements ResizeObserver {
   observe() {}
@@ -21,18 +21,16 @@ export interface RenderWithThemeOptions {
 
 export function renderWithTheme(
   ui: ReactNode,
-  { accentMode = 'solid', accent = 'turquoise' }: RenderWithThemeOptions = {},
+  { accentMode = "solid", accent = "turquoise" }: RenderWithThemeOptions = {},
 ) {
   const wrapper: React.FC<{ children: ReactNode }> = ({ children }) => (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        {children}
-      </TooltipProvider>
+      <TooltipProvider>{children}</TooltipProvider>
     </QueryClientProvider>
   );
 
-  document.documentElement.setAttribute('data-accent-mode', accentMode);
-  document.documentElement.setAttribute('data-accent', accent);
+  document.documentElement.setAttribute("data-accent-mode", accentMode);
+  document.documentElement.setAttribute("data-accent", accent);
 
   const result = rtlRender(ui, { wrapper });
 
@@ -40,6 +38,6 @@ export function renderWithTheme(
 }
 
 export function resetThemeAttributes() {
-  document.documentElement.removeAttribute('data-accent-mode');
-  document.documentElement.removeAttribute('data-accent');
+  document.documentElement.removeAttribute("data-accent-mode");
+  document.documentElement.removeAttribute("data-accent");
 }

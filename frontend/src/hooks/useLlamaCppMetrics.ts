@@ -163,6 +163,7 @@ export function useLlamaCppMetrics(isPaused?: boolean): {
 
     document.addEventListener("visibilitychange", handleVisibility);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData().then(() => {
       if (!cancelled) schedule();
     });

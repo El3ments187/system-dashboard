@@ -1,10 +1,17 @@
-import { expect } from 'vitest';
+import { expect } from "vitest";
 
 /** Parses any CSS color (computed) into an [r,g,b,a] tuple, or null if unparseable. */
 function parseRgba(value: string): [number, number, number, number] | null {
-  const m = value.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/);
+  const m = value.match(/rgba?\(([^)]+)\)/);
   if (!m) return null;
-  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] !== undefined ? Number(m[4]) : 1];
+  const parts = m[1].split(",").map((p) => p.trim());
+  if (parts.length < 3) return null;
+  return [
+    Number(parts[0]),
+    Number(parts[1]),
+    Number(parts[2]),
+    parts[3] !== undefined ? Number(parts[3]) : 1,
+  ];
 }
 
 function isBlack([r, g, b, a]: [number, number, number, number]): boolean {
@@ -18,10 +25,10 @@ function isBlack([r, g, b, a]: [number, number, number, number]): boolean {
  * back to nothing, which browsers render as black).
  */
 export function expectNoBlackElements(root: ParentNode = document.body) {
-  const elements = root.querySelectorAll<HTMLElement>('*');
+  const elements = root.querySelectorAll<HTMLElement>("*");
   const offenders: string[] = [];
 
-  elements.forEach(el => {
+  elements.forEach((el) => {
     const style = getComputedStyle(el);
     const bg = parseRgba(style.backgroundColor);
     const color = parseRgba(style.color);
@@ -31,35 +38,41 @@ export function expectNoBlackElements(root: ParentNode = document.body) {
       offenders.push(`${el.tagName}.${el.className}: bg and text both black`);
     }
     if (hasText && color && isBlack(color) && bg && isBlack(bg)) {
-      offenders.push(`${el.tagName}.${el.className}: black text on black background`);
+      offenders.push(
+        `${el.tagName}.${el.className}: black text on black background`,
+      );
     }
   });
 
-  expect(offenders, offenders.join('\n')).toHaveLength(0);
+  expect(offenders, offenders.join("\n")).toHaveLength(0);
 }
 
 /** Fails if any inline style or computed value resolves to the literal strings CSS produces for a broken custom property. */
 export function expectNoInvalidCssValues(root: ParentNode = document.body) {
-  const elements = root.querySelectorAll<HTMLElement>('*');
+  const elements = root.querySelectorAll<HTMLElement>("*");
   const offenders: string[] = [];
 
-  elements.forEach(el => {
-    const inline = el.getAttribute('style') || '';
+  elements.forEach((el) => {
+    const inline = el.getAttribute("style") || "";
     if (/undefined|NaN|:\s*null\b/.test(inline)) {
       offenders.push(`${el.tagName}: invalid inline style "${inline}"`);
     }
   });
 
-  expect(offenders, offenders.join('\n')).toHaveLength(0);
+  expect(offenders, offenders.join("\n")).toHaveLength(0);
 }
 
 /** Returns the resolved text color of an element, as an [r,g,b,a] tuple. */
-export function getTextColor(el: Element): [number, number, number, number] | null {
+export function getTextColor(
+  el: Element,
+): [number, number, number, number] | null {
   return parseRgba(getComputedStyle(el).color);
 }
 
 /** Returns the resolved background color of an element. */
-export function getBackgroundColor(el: Element): [number, number, number, number] | null {
+export function getBackgroundColor(
+  el: Element,
+): [number, number, number, number] | null {
   return parseRgba(getComputedStyle(el).backgroundColor);
 }
 
@@ -70,7 +83,11 @@ export function colorsMatch(
   tolerance = 2,
 ): boolean {
   if (!a || !b) return false;
-  return Math.abs(a[0] - b[0]) <= tolerance && Math.abs(a[1] - b[1]) <= tolerance && Math.abs(a[2] - b[2]) <= tolerance;
+  return (
+    Math.abs(a[0] - b[0]) <= tolerance &&
+    Math.abs(a[1] - b[1]) <= tolerance &&
+    Math.abs(a[2] - b[2]) <= tolerance
+  );
 }
 
 /**
@@ -78,32 +95,42 @@ export function colorsMatch(
  * NodeList of per-core bar/legend elements, returning the unique count and the raw list.
  * Used to verify per-core palette behavior without depending on formatted percentage text.
  */
-export function collectPerCoreColors(elements: NodeListOf<Element> | Element[]): { unique: number; colors: string[] } {
-  const colors = Array.from(elements).map(el =>
-    (el.getAttribute('data-core-assigned-color') || el.getAttribute('data-core-color') || '').toLowerCase()
-  ).filter(Boolean);
+export function collectPerCoreColors(
+  elements: NodeListOf<Element> | Element[],
+): { unique: number; colors: string[] } {
+  const colors = Array.from(elements)
+    .map((el) =>
+      (
+        el.getAttribute("data-core-assigned-color") ||
+        el.getAttribute("data-core-color") ||
+        ""
+      ).toLowerCase(),
+    )
+    .filter(Boolean);
   return { unique: new Set(colors).size, colors };
 }
 
 export function expectThemeApplied(mode: string) {
-  expect(document.documentElement.getAttribute('data-accent-mode')).toBe(mode);
+  expect(document.documentElement.getAttribute("data-accent-mode")).toBe(mode);
 }
 
 export function expectDashboardInSolidMode() {
-  expect(document.documentElement.getAttribute('data-accent-mode')).toBe('solid');
+  expect(document.documentElement.getAttribute("data-accent-mode")).toBe(
+    "solid",
+  );
 }
 
 export function setAccentMode(mode: string) {
-  document.documentElement.setAttribute('data-accent-mode', mode);
+  document.documentElement.setAttribute("data-accent-mode", mode);
 }
 
 export function setAccent(accent: string) {
-  document.documentElement.setAttribute('data-accent', accent);
+  document.documentElement.setAttribute("data-accent", accent);
 }
 
 export function resetThemeAttributes() {
-  document.documentElement.removeAttribute('data-accent-mode');
-  document.documentElement.removeAttribute('data-accent');
-  document.documentElement.removeAttribute('data-bg');
-  document.documentElement.removeAttribute('style');
+  document.documentElement.removeAttribute("data-accent-mode");
+  document.documentElement.removeAttribute("data-accent");
+  document.documentElement.removeAttribute("data-bg");
+  document.documentElement.removeAttribute("style");
 }

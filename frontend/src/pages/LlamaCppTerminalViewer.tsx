@@ -172,6 +172,7 @@ export default function LlamaCppTerminalViewer() {
 
   // Reconnect when component mounts
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     connect();
   }, [connect]);
 

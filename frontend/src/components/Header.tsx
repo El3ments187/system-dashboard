@@ -23,22 +23,10 @@ interface HeaderProps {
   onToggleThemePanel: () => void;
   healthOk?: boolean;
   activePage?:
-    | "overview"
-    | "gpu"
-    | "cpu"
-    | "llama-cpp"
-    | "ai"
-    | "terminal"
-    | "settings";
+    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings";
   onPageChange?: (
     page:
-      | "overview"
-      | "gpu"
-      | "cpu"
-      | "llama-cpp"
-      | "ai"
-      | "terminal"
-      | "settings",
+      "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings",
   ) => void;
 }
 

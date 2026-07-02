@@ -457,7 +457,9 @@ describe("LlamaCppPage generation section", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getAllByText("Temperature").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Top-K Sampling").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Top-P (Nucleus) Sampling").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Top-P (Nucleus) Sampling").length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Repeat Penalty").length).toBeGreaterThan(0);
   });
 
@@ -755,7 +757,6 @@ describe("LlamaCppPage context and KV cache section", () => {
     expect(screen.getAllByText(/\b100\b/).length).toBeGreaterThan(0);
     expect(screen.queryByText("<1")).not.toBeInTheDocument();
   });
-
 });
 
 // ─── GGUF Size ────────────────────────────────────────────────────────
@@ -868,7 +869,9 @@ describe("LlamaCppPage slot idle vs live state", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent("Generating");
+    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent(
+      "Generating",
+    );
   });
 
   it("transitions from Idle to Generating when is_processing changes", async () => {
@@ -891,7 +894,9 @@ describe("LlamaCppPage slot idle vs live state", () => {
       }),
     );
     rerender(<LlamaCppPage />);
-    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent("Generating");
+    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent(
+      "Generating",
+    );
   });
 
   it("shows no slot state label when no slots are present", async () => {
@@ -1458,7 +1463,9 @@ describe("LlamaCppPage Context card offline banner", () => {
 
   it("does not show offline banner when server is online", async () => {
     mockedCtx.mockReturnValue(
-      baseCtx({ llama_server: { available: true } as AiMetrics["llama_server"] }),
+      baseCtx({
+        llama_server: { available: true } as AiMetrics["llama_server"],
+      }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -1474,7 +1481,9 @@ describe("LlamaCppPage Context tiles by testid", () => {
   it("ctx-current shows slot n_prompt_tokens", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 10000, n_prompt_tokens: 3000, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 10000, n_prompt_tokens: 3000, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1485,7 +1494,9 @@ describe("LlamaCppPage Context tiles by testid", () => {
   it("ctx-max shows slot n_ctx", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 32768, n_prompt_tokens: 100, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 32768, n_prompt_tokens: 100, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1496,7 +1507,9 @@ describe("LlamaCppPage Context tiles by testid", () => {
   it("ctx-remaining shows n_ctx minus n_prompt_tokens", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 10000, n_prompt_tokens: 3000, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 10000, n_prompt_tokens: 3000, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1507,7 +1520,9 @@ describe("LlamaCppPage Context tiles by testid", () => {
   it("ctx-cache-hits starts at 0 on initial render", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 8192, n_prompt_tokens: 100, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 8192, n_prompt_tokens: 100, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1519,7 +1534,9 @@ describe("LlamaCppPage Context tiles by testid", () => {
     mockedCtx.mockReturnValue(
       baseCtx({
         context_tokens: 65536,
-        slots: [{ id: 0, n_ctx: 131072, n_prompt_tokens: 100, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 131072, n_prompt_tokens: 100, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1542,7 +1559,9 @@ describe("LlamaCppPage gen-status-badge", () => {
   it("shows 'Idle' badge when slot is not processing", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 8192, n_prompt_tokens: 100, is_processing: false }],
+        slots: [
+          { id: 0, n_ctx: 8192, n_prompt_tokens: 100, is_processing: false },
+        ],
       }),
     );
     render(<LlamaCppPage />);
@@ -1553,12 +1572,16 @@ describe("LlamaCppPage gen-status-badge", () => {
   it("shows 'Generating' badge when slot is processing", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        slots: [{ id: 0, n_ctx: 8192, n_prompt_tokens: 512, is_processing: true }],
+        slots: [
+          { id: 0, n_ctx: 8192, n_prompt_tokens: 512, is_processing: true },
+        ],
       }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent("Generating");
+    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent(
+      "Generating",
+    );
   });
 });
 
@@ -1618,7 +1641,9 @@ describe("LlamaCppPage Runtime rows by testid", () => {
         memory_kb: 2 * 1024 * 1024,
         uptime_seconds: 3700,
       },
-      slots: [{ id: 0, n_ctx: 32768, n_prompt_tokens: 100, is_processing: false }],
+      slots: [
+        { id: 0, n_ctx: 32768, n_prompt_tokens: 100, is_processing: false },
+      ],
       speculative: true,
     });
   }
@@ -1640,7 +1665,9 @@ describe("LlamaCppPage Runtime rows by testid", () => {
               warning: null,
             },
           ],
-          states: { "/test.sh": { status: "running", llama_server_pid: 99999 } },
+          states: {
+            "/test.sh": { status: "running", llama_server_pid: 99999 },
+          },
           metadata: {},
         }),
     });
@@ -1739,7 +1766,9 @@ describe("LlamaCppPage Runtime rows by testid", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("runtime-tokens-cached")).toHaveTextContent("750");
+    expect(screen.getByTestId("runtime-tokens-cached")).toHaveTextContent(
+      "750",
+    );
   });
 
   it("runtime rows show em-dash when metrics are absent", async () => {
@@ -1770,7 +1799,9 @@ describe("LlamaCppPage Runtime GPU/CPU/Draft layer rows", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("runtime-gpu-layers")).toHaveTextContent("28 / 32");
+    expect(screen.getByTestId("runtime-gpu-layers")).toHaveTextContent(
+      "28 / 32",
+    );
   });
 
   it("runtime-cpu-layers shows remainder layers from gpu_offload", async () => {
@@ -1786,7 +1817,9 @@ describe("LlamaCppPage Runtime GPU/CPU/Draft layer rows", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("runtime-cpu-layers")).toHaveTextContent("4 / 32");
+    expect(screen.getByTestId("runtime-cpu-layers")).toHaveTextContent(
+      "4 / 32",
+    );
   });
 
   it("runtime-draft-layers shows em-dash when gpuOffload is null (hasDraft = false)", async () => {
@@ -1835,7 +1868,9 @@ describe("LlamaCppPage builds-behind-banner", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.queryByTestId("builds-behind-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("builds-behind-banner"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -1843,9 +1878,7 @@ describe("LlamaCppPage builds-behind-banner", () => {
 
 describe("LlamaCppPage Active Model hero display", () => {
   it("shows em-dash hero when no model is loaded", async () => {
-    mockedCtx.mockReturnValue(
-      baseCtx({ model_path: null, model_alias: null }),
-    );
+    mockedCtx.mockReturnValue(baseCtx({ model_path: null, model_alias: null }));
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     // The model hero span shows "—" when both model_path and model_alias are null
@@ -1860,7 +1893,9 @@ describe("LlamaCppPage toast overlay", () => {
   it("shows toast message when mgmt.toast is set", async () => {
     // mgmt.toast is { type: string; msg: string } | null, not a plain string
     mockedMgmt.mockReturnValue(
-      baseMgmt({ toast: { type: "success", msg: "Model stopped successfully" } }),
+      baseMgmt({
+        toast: { type: "success", msg: "Model stopped successfully" },
+      }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -1870,6 +1905,8 @@ describe("LlamaCppPage toast overlay", () => {
   it("does not show toast when mgmt.toast is null", async () => {
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.queryByText("Model stopped successfully")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Model stopped successfully"),
+    ).not.toBeInTheDocument();
   });
 });

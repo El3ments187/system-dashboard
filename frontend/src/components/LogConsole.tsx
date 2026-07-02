@@ -245,7 +245,9 @@ function ToolbarBtn({
         fontWeight: 600,
         padding: "2px 6px",
         background: active ? "var(--accent-primary)" : "var(--accent-tint-10)",
-        border: active ? "1px solid var(--accent-primary)" : "1px solid var(--accent-tint-40)",
+        border: active
+          ? "1px solid var(--accent-primary)"
+          : "1px solid var(--accent-tint-40)",
         borderRadius: 3,
         color: active ? "#fff" : "var(--accent-primary)",
         cursor: "pointer",
@@ -312,7 +314,9 @@ export function LogConsole({
   const [filters, setFilters] = useState<LogFilter>(() => {
     try {
       const stored = localStorage.getItem("log_console_filters");
-      return stored ? { ...DEFAULT_FILTERS, ...JSON.parse(stored) } : DEFAULT_FILTERS;
+      return stored
+        ? { ...DEFAULT_FILTERS, ...JSON.parse(stored) }
+        : DEFAULT_FILTERS;
     } catch {
       return DEFAULT_FILTERS;
     }

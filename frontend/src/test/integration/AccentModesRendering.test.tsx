@@ -1,14 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { renderWithTheme } from '../helpers/renderWithTheme';
+import { describe, it, expect, beforeEach } from "vitest";
+import { renderWithTheme } from "../helpers/renderWithTheme";
 import {
-  expectThemeApplied,
   expectNoBlackElements,
   expectNoInvalidCssValues,
   setAccentMode,
-} from '../helpers/themeAssertions';
-import GpuCard from '../../components/cards/GpuCard';
-import CpuCard from '../../components/cards/CpuCard';
-import * as MetricsContext from '../../context/MetricsContext';
+} from "../helpers/themeAssertions";
+import GpuCard from "../../components/cards/GpuCard";
+import CpuCard from "../../components/cards/CpuCard";
+import * as MetricsContext from "../../context/MetricsContext";
 
 const mockMetricsContext = () => ({
   gpuCurrentValues: [65, 72, 8.5, 12.0, 250, 300],
@@ -29,7 +28,7 @@ function renderWithProviders(ui: React.ReactElement) {
   );
 }
 
-const MODES = ['solid', 'animated-gradient', 'rainbow-wave', 'spectrum'];
+const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
 
 /**
  * One parametrized suite replaces what were four near-identical files (SolidMode,
@@ -37,31 +36,51 @@ const MODES = ['solid', 'animated-gradient', 'rainbow-wave', 'spectrum'];
  * invalid-CSS-value checks under a different `data-accent-mode`. Mode-specific behavior
  * (e.g. Solid-only per-core exemption) has its own dedicated test files elsewhere.
  */
-describe.each(MODES)('%s mode - card rendering', (mode) => {
+describe.each(MODES)("%s mode - card rendering", (mode) => {
   beforeEach(() => {
     setAccentMode(mode);
   });
 
-  it('sets the mode attribute on the document element', () => {
-    expectThemeApplied(mode);
+  it("sets the mode attribute on the document element", () => {
+    expect(document.documentElement.getAttribute("data-accent-mode")).toBe(mode);
   });
 
-  it('renders GPU + CPU cards with no black elements', () => {
+  it("renders GPU + CPU cards with no black elements", () => {
     const { container } = renderWithProviders(
       <div>
-        <GpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
-        <CpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
+        <GpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
+        <CpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
       </div>,
     );
     expect(container.firstChild).not.toBeNull();
     expectNoBlackElements(container);
   });
 
-  it('renders GPU + CPU cards with no invalid CSS values (undefined/NaN/null)', () => {
+  it("renders GPU + CPU cards with no invalid CSS values (undefined/NaN/null)", () => {
     const { container } = renderWithProviders(
       <div>
-        <GpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
-        <CpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
+        <GpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
+        <CpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
       </div>,
     );
     expect(container.firstChild).not.toBeNull();
@@ -69,22 +88,34 @@ describe.each(MODES)('%s mode - card rendering', (mode) => {
   });
 });
 
-describe('Solid mode - accent consistency', () => {
+describe("Solid mode - accent consistency", () => {
   beforeEach(() => {
-    setAccentMode('solid');
+    setAccentMode("solid");
   });
 
-  it('GPU and CPU cards reference the same --accent-primary variable, not divergent literals', () => {
+  it("GPU and CPU cards reference the same --accent-primary variable, not divergent literals", () => {
     const { container } = renderWithProviders(
       <div>
-        <GpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
-        <CpuCard accent={{ color: 'var(--accent-primary)', glow: 'var(--accent-glow)' }} />
+        <GpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
+        <CpuCard
+          accent={{
+            color: "var(--accent-primary)",
+            glow: "var(--accent-glow)",
+          }}
+        />
       </div>,
     );
-    const accentRefs = Array.from(container.querySelectorAll<HTMLElement>('[style*="--accent-primary"]'));
+    const accentRefs = Array.from(
+      container.querySelectorAll<HTMLElement>('[style*="--accent-primary"]'),
+    );
     expect(accentRefs.length).toBeGreaterThan(0);
-    accentRefs.forEach(el => {
-      expect(el.getAttribute('style')).toContain('var(--accent-primary)');
+    accentRefs.forEach((el) => {
+      expect(el.getAttribute("style")).toContain("var(--accent-primary)");
     });
   });
 });

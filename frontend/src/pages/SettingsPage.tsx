@@ -80,9 +80,11 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       localStorage.getItem("llama_cpp_build_notes_url") ??
       DEFAULT_BUILD_NOTES_URL,
     localVersionCmd:
-      localStorage.getItem("llama_cpp_local_version_cmd") ?? DEFAULT_LOCAL_VERSION_CMD,
+      localStorage.getItem("llama_cpp_local_version_cmd") ??
+      DEFAULT_LOCAL_VERSION_CMD,
     latestVersionCmd:
-      localStorage.getItem("llama_cpp_latest_version_cmd") ?? DEFAULT_LATEST_VERSION_CMD,
+      localStorage.getItem("llama_cpp_latest_version_cmd") ??
+      DEFAULT_LATEST_VERSION_CMD,
   }));
   const [docErrors, setDocErrors] = useState<{
     readmeUrl?: string;
@@ -92,11 +94,20 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
 
   useEffect(() => {
     if (!localStorage.getItem("llama_cpp_build_notes_url"))
-      localStorage.setItem("llama_cpp_build_notes_url", DEFAULT_BUILD_NOTES_URL);
+      localStorage.setItem(
+        "llama_cpp_build_notes_url",
+        DEFAULT_BUILD_NOTES_URL,
+      );
     if (!localStorage.getItem("llama_cpp_local_version_cmd"))
-      localStorage.setItem("llama_cpp_local_version_cmd", DEFAULT_LOCAL_VERSION_CMD);
+      localStorage.setItem(
+        "llama_cpp_local_version_cmd",
+        DEFAULT_LOCAL_VERSION_CMD,
+      );
     if (!localStorage.getItem("llama_cpp_latest_version_cmd"))
-      localStorage.setItem("llama_cpp_latest_version_cmd", DEFAULT_LATEST_VERSION_CMD);
+      localStorage.setItem(
+        "llama_cpp_latest_version_cmd",
+        DEFAULT_LATEST_VERSION_CMD,
+      );
   }, []);
 
   useEffect(() => {
@@ -105,7 +116,11 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       setRepoInfo(null);
       return;
     }
-    getRepoInfo(llamaDir, docSettings.localVersionCmd, docSettings.latestVersionCmd)
+    getRepoInfo(
+      llamaDir,
+      docSettings.localVersionCmd,
+      docSettings.latestVersionCmd,
+    )
       .then(setRepoInfo)
       .catch(() => setRepoInfo(null));
   }, [llamaDir, docSettings.localVersionCmd, docSettings.latestVersionCmd]);
@@ -146,7 +161,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
     }
 
     localStorage.setItem("llama_cpp_readme_url", docSettings.readmeUrl.trim());
-    localStorage.setItem("llama_cpp_build_notes_url", docSettings.buildNotesUrl.trim());
+    localStorage.setItem(
+      "llama_cpp_build_notes_url",
+      docSettings.buildNotesUrl.trim(),
+    );
     setDocSaveState("success");
     setTimeout(() => setDocSaveState("idle"), 2000);
   };
@@ -531,7 +549,14 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
 
         <div className="settings-card-body">
           {(repoInfo?.local_build_tag || repoInfo?.latest_build_tag) && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                marginBottom: 12,
+              }}
+            >
               {repoInfo?.local_build_tag && (
                 <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
                   Installed tag:{" "}

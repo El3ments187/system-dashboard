@@ -1,6 +1,6 @@
-import { render } from '@testing-library/react';
-import * as MetricsContextModule from '../../context/MetricsContext';
-import { TooltipProvider } from '../../components/common/TooltipProvider';
+import { render } from "@testing-library/react";
+import * as MetricsContextModule from "../../context/MetricsContext";
+import { TooltipProvider } from "../../components/common/TooltipProvider";
 
 class MockResizeObserver implements ResizeObserver {
   observe() {}
@@ -9,12 +9,14 @@ class MockResizeObserver implements ResizeObserver {
 }
 global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-export const accent = { color: '#00B4D8', glow: 'rgba(0, 180, 216, 0.3)' };
+export const accent = { color: "#00B4D8", glow: "rgba(0, 180, 216, 0.3)" };
 
-export const mockMetricsContext = (overrides: Partial<MetricsContextModule.MetricsContextValue> = {}) => ({
+export const mockMetricsContext = (
+  overrides: Partial<MetricsContextModule.MetricsContextValue> = {},
+) => ({
   gpuRawData: [
     {
-      name: 'NVIDIA GeForce RTX 4090',
+      name: "NVIDIA GeForce RTX 4090",
       utilization_percent: 65,
       temperature_celsius: 72,
       vram_used_gb: 8.5,
@@ -24,7 +26,7 @@ export const mockMetricsContext = (overrides: Partial<MetricsContextModule.Metri
       fan_speed_rpm: 1200,
       clock_speed_mhz: 2500,
       memory_clock_mhz: 1000,
-      driver_version: '550.0',
+      driver_version: "550.0",
     },
   ],
   gpuHistory: [
@@ -46,12 +48,17 @@ export const mockMetricsContext = (overrides: Partial<MetricsContextModule.Metri
   ...overrides,
 });
 
-export function renderGpuPage(ui: React.ReactElement, contextOverrides: Partial<MetricsContextModule.MetricsContextValue> = {}) {
+export function renderGpuPage(
+  ui: React.ReactElement,
+  contextOverrides: Partial<MetricsContextModule.MetricsContextValue> = {},
+) {
   return render(
     <TooltipProvider>
-      <MetricsContextModule.MetricsContext.Provider value={mockMetricsContext(contextOverrides)}>
+      <MetricsContextModule.MetricsContext.Provider
+        value={mockMetricsContext(contextOverrides)}
+      >
         {ui}
       </MetricsContextModule.MetricsContext.Provider>
-    </TooltipProvider>
+    </TooltipProvider>,
   );
 }

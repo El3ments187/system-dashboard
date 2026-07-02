@@ -1,8 +1,52 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DeviceStorageInfo, StorageHistoryPoint } from '../types/metrics';
+import { useState, useEffect, useCallback } from "react";
+import { DeviceStorageInfo, StorageHistoryPoint } from "../types/metrics";
 
 // Fixed rolling buffer size for 60s window at 500ms polling
 const STORAGE_BUFFER_SIZE = 120;
+
+function groupHistoryByDevice(
+  history: StorageHistoryPoint[],
+): Map<string, StorageHistoryPoint[]> {
+  const grouped = new Map<string, StorageHistoryPoint[]>();
+  for (const point of history) {
+    const existing = grouped.get(point.device) ?? [];
+    existing.push(point);
+    grouped.set(point.device, existing);
+  }
+  for (const [device, points] of grouped.entries()) {
+    points.sort((a, b) => a.slot - b.slot);
+    grouped.set(device, points);
+  }
+  return grouped;
+}
+
+function buildDeviceBuffer(
+  device: string,
+  points: StorageHistoryPoint[],
+  bufferSize: number,
+): StorageHistoryPoint[] {
+  const buffer: (StorageHistoryPoint | null)[] = new Array(bufferSize).fill(null);
+  const offset = bufferSize - points.length;
+  for (let i = 0; i < points.length; i++) {
+    const slotIdx = offset + i;
+    if (slotIdx >= 0 && slotIdx < bufferSize) {
+      buffer[slotIdx] = { ...points[i], slot: slotIdx };
+    }
+  }
+  for (let i = 0; i < bufferSize; i++) {
+    if (!buffer[i]) {
+      buffer[i] = {
+        device,
+        slot: i,
+        timestamp: new Date().toISOString(),
+        read_bytes_per_sec: null as any,
+        write_bytes_per_sec: null as any,
+        utilization: null as any,
+      };
+    }
+  }
+  return buffer as StorageHistoryPoint[];
+}
 
 export function useStorageMetrics(isPaused?: boolean): {
   storageDevices: DeviceStorageInfo[];
@@ -12,15 +56,17 @@ export function useStorageMetrics(isPaused?: boolean): {
   retry: () => void;
 } {
   const [storageDevices, setStorageDevices] = useState<DeviceStorageInfo[]>([]);
-  const [storageHistories, setStorageHistories] = useState<Map<string, StorageHistoryPoint[]>>(new Map());
+  const [storageHistories, setStorageHistories] = useState<
+    Map<string, StorageHistoryPoint[]>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchStorage = useCallback(async () => {
     try {
       const [devicesRes, historyRes] = await Promise.all([
-        fetch('/api/metrics/storage/devices'),
-        fetch('/api/metrics/storage/history'),
+        fetch("/api/metrics/storage/devices"),
+        fetch("/api/metrics/storage/history"),
       ]);
 
       if (!devicesRes.ok) {
@@ -41,64 +87,21 @@ export function useStorageMetrics(isPaused?: boolean): {
       setStorageDevices(devices);
       setError(null);
 
-      // Group history points by device
-      const grouped = new Map<string, StorageHistoryPoint[]>();
-      for (const point of history) {
-        const existing = grouped.get(point.device) ?? [];
-        existing.push(point);
-        grouped.set(point.device, existing);
-      }
-
-      // Sort each device's history by slot ascending (oldest first)
-      for (const [device, points] of grouped.entries()) {
-        points.sort((a, b) => a.slot - b.slot);
-        grouped.set(device, points);
-      }
-
-      // Build fixed-size rolling buffer per device with null placeholders
+      const grouped = groupHistoryByDevice(history);
       const buffered = new Map<string, StorageHistoryPoint[]>();
       for (const [device, points] of grouped.entries()) {
-        // Create a fixed-size array indexed by slot position
-        const buffer: (StorageHistoryPoint | null)[] = new Array(STORAGE_BUFFER_SIZE).fill(null);
-
-        // Place real data at the correct slot positions
-        // Backend sends slots 0..N-1 where N is the number of collected samples.
-        // Map them to the rightmost positions so the chart fills left-to-right.
-        const offset = STORAGE_BUFFER_SIZE - points.length;
-        for (let i = 0; i < points.length; i++) {
-          const slotIdx = offset + i;
-          if (slotIdx >= 0 && slotIdx < STORAGE_BUFFER_SIZE) {
-            const pt = { ...points[i], slot: slotIdx };
-            buffer[slotIdx] = pt;
-          }
-        }
-
-        // Fill null slots with placeholder entries to maintain fixed chart width
-        for (let i = 0; i < STORAGE_BUFFER_SIZE; i++) {
-          if (!buffer[i]) {
-            buffer[i] = {
-              device,
-              slot: i,
-              timestamp: new Date().toISOString(),
-              read_bytes_per_sec: null as any,
-              write_bytes_per_sec: null as any,
-              utilization: null as any,
-            };
-          }
-        }
-
-        buffered.set(device, buffer as StorageHistoryPoint[]);
+        buffered.set(device, buildDeviceBuffer(device, points, STORAGE_BUFFER_SIZE));
       }
-
       setStorageHistories(buffered);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStorage();
     if (!isPaused) {
       const interval = setInterval(fetchStorage, 500);

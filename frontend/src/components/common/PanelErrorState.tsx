@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { useState } from "react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
 
 interface PanelErrorStateProps {
   panelName: string;
@@ -12,10 +17,15 @@ interface PanelErrorStateProps {
  * User-friendly error display for dashboard panels.
  * Shows a collapsible error state that maintains panel dimensions.
  */
-export default function PanelErrorState({ panelName, error, errorInfo, onRetry }: PanelErrorStateProps) {
+export default function PanelErrorState({
+  panelName,
+  error,
+  errorInfo,
+  onRetry,
+}: PanelErrorStateProps) {
   const [showDetails, setShowDetails] = useState(false);
 
-  const panelLabel = panelName || 'Panel';
+  const panelLabel = panelName || "Panel";
 
   // Generate a user-friendly message based on error content
   const getFriendlyMessage = (): string => {
@@ -23,19 +33,23 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
 
     const msg = error.message.toLowerCase();
 
-    if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed')) {
+    if (
+      msg.includes("network") ||
+      msg.includes("fetch") ||
+      msg.includes("failed")
+    ) {
       return `Unable to load ${panelLabel} data. Check your connection to the metrics backend.`;
     }
-    if (msg.includes('timeout')) {
+    if (msg.includes("timeout")) {
       return `${panelLabel} request timed out. The backend may be slow or unresponsive.`;
     }
-    if (msg.includes('json') || msg.includes('parse')) {
+    if (msg.includes("json") || msg.includes("parse")) {
       return `${panelLabel} data format is invalid. The backend may have changed.`;
     }
-    if (msg.includes('http 4')) {
+    if (msg.includes("http 4")) {
       return `${panelLabel} endpoint returned an error. Please try again.`;
     }
-    if (msg.includes('http 5')) {
+    if (msg.includes("http 5")) {
       return `${panelLabel} backend server error. Please try again.`;
     }
 
@@ -44,16 +58,16 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
 
   // Generate a short error summary
   const getErrorSummary = (): string => {
-    if (!error) return 'Unknown error';
-    return error.message.split('\n')[0].substring(0, 80);
+    if (!error) return "Unknown error";
+    return error.message.split("\n")[0].substring(0, 80);
   };
 
   return (
     <div
       style={{
         padding: 20,
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         gap: 12,
         flex: 1,
         minHeight: 0,
@@ -61,37 +75,43 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
     >
       {/* Header */}
       <div className="card-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <AlertTriangle size={20} style={{ color: 'var(--danger)' }} />
-          <span className="card-title" style={{ color: 'var(--danger)' }}>{panelLabel} Error</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertTriangle size={20} style={{ color: "var(--danger)" }} />
+          <span className="card-title" style={{ color: "var(--danger)" }}>
+            {panelLabel} Error
+          </span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => setShowDetails(!showDetails)}
             style={{
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border-color)",
               borderRadius: 4,
-              padding: '4px 8px',
-              cursor: 'pointer',
-              color: 'var(--text-secondary)',
+              padding: "4px 8px",
+              cursor: "pointer",
+              color: "var(--text-secondary)",
               fontSize: 11,
-              display: 'flex',
-              alignItems: 'center',
+              display: "flex",
+              alignItems: "center",
               gap: 4,
-              transition: 'var(--transition-fast)',
+              transition: "var(--transition-fast)",
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'var(--bg-card-hover)';
-              e.currentTarget.style.borderColor = 'var(--accent-primary)';
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg-card-hover)";
+              e.currentTarget.style.borderColor = "var(--accent-primary)";
             }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'var(--bg-secondary)';
-              e.currentTarget.style.borderColor = 'var(--border-color)';
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "var(--bg-secondary)";
+              e.currentTarget.style.borderColor = "var(--border-color)";
             }}
           >
-            {showDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            {showDetails ? 'Hide Details' : 'Show Details'}
+            {showDetails ? (
+              <ChevronDown size={12} />
+            ) : (
+              <ChevronRight size={12} />
+            )}
+            {showDetails ? "Hide Details" : "Show Details"}
           </button>
         </div>
       </div>
@@ -99,12 +119,13 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
       {/* Friendly message */}
       <div
         style={{
-          padding: '10px 12px',
-          background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
-          border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+          padding: "10px 12px",
+          background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+          border:
+            "1px solid color-mix(in srgb, var(--danger) 20%, transparent)",
           borderRadius: 6,
           fontSize: 12,
-          color: 'var(--text-secondary)',
+          color: "var(--text-secondary)",
           lineHeight: 1.5,
         }}
       >
@@ -114,20 +135,26 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
       {/* Error summary */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 6,
           fontSize: 10,
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-          color: 'var(--text-muted)',
-          padding: '6px 10px',
-          background: 'var(--bg-secondary)',
+          color: "var(--text-muted)",
+          padding: "6px 10px",
+          background: "var(--bg-secondary)",
           borderRadius: 4,
-          overflow: 'hidden',
+          overflow: "hidden",
         }}
       >
-        <span style={{ color: 'var(--danger)', flexShrink: 0 }}>ERR</span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ color: "var(--danger)", flexShrink: 0 }}>ERR</span>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {getErrorSummary()}
         </span>
       </div>
@@ -137,45 +164,53 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
         <div
           style={{
             padding: 12,
-            background: 'var(--bg-secondary)',
+            background: "var(--bg-secondary)",
             borderRadius: 6,
             fontSize: 11,
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            color: 'var(--text-secondary)',
-            overflow: 'auto',
+            color: "var(--text-secondary)",
+            overflow: "auto",
             maxHeight: 200,
-            border: '1px solid var(--border-color)',
+            border: "1px solid var(--border-color)",
           }}
         >
           {/* Error name */}
           <div style={{ marginBottom: 8 }}>
-            <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Error:</span>
-            <span style={{ color: 'var(--danger)' }}>{error?.name || 'Error'}</span>
+            <span style={{ color: "var(--text-muted)", marginRight: 6 }}>
+              Error:
+            </span>
+            <span style={{ color: "var(--danger)" }}>
+              {error?.name || "Error"}
+            </span>
           </div>
 
           {/* Error message */}
           <div style={{ marginBottom: 8 }}>
-            <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Message:</span>
+            <span style={{ color: "var(--text-muted)", marginRight: 6 }}>
+              Message:
+            </span>
             <span>{getErrorSummary()}</span>
           </div>
 
           {/* Stack trace */}
           {error?.stack && (
             <div style={{ marginBottom: 8 }}>
-              <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Stack:</span>
+              <span style={{ color: "var(--text-muted)", marginRight: 6 }}>
+                Stack:
+              </span>
               <div
                 style={{
                   marginTop: 4,
                   paddingLeft: 12,
-                  borderLeft: '2px solid var(--border-color)',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
+                  borderLeft: "2px solid var(--border-color)",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
                   lineHeight: 1.4,
                   maxHeight: 80,
-                  overflow: 'auto',
+                  overflow: "auto",
                 }}
               >
-                {error.stack.split('\n').slice(0, 8).join('\n')}
+                {error.stack.split("\n").slice(0, 8).join("\n")}
               </div>
             </div>
           )}
@@ -183,9 +218,17 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
           {/* Error info (from error boundary) */}
           {errorInfo && (
             <div style={{ marginBottom: 8 }}>
-              <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Info:</span>
-              <div style={{ marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {typeof errorInfo === 'object'
+              <span style={{ color: "var(--text-muted)", marginRight: 6 }}>
+                Info:
+              </span>
+              <div
+                style={{
+                  marginTop: 4,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {typeof errorInfo === "object"
                   ? JSON.stringify(errorInfo, null, 2).substring(0, 500)
                   : String(errorInfo)}
               </div>
@@ -194,37 +237,39 @@ export default function PanelErrorState({ panelName, error, errorInfo, onRetry }
 
           {/* Timestamp */}
           <div>
-            <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Time:</span>
+            <span style={{ color: "var(--text-muted)", marginRight: 6 }}>
+              Time:
+            </span>
             <span>{new Date().toLocaleTimeString()}</span>
           </div>
         </div>
       )}
 
       {/* Retry button */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 4 }}>
         <button
           onClick={onRetry}
           style={{
             background: `linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))`,
-            color: 'white',
-            border: 'none',
+            color: "white",
+            border: "none",
             borderRadius: 6,
-            padding: '8px 20px',
-            cursor: 'pointer',
+            padding: "8px 20px",
+            cursor: "pointer",
             fontSize: 12,
             fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
+            display: "flex",
+            alignItems: "center",
             gap: 6,
-            transition: 'var(--transition-fast)',
+            transition: "var(--transition-fast)",
             boxShadow: `0 0 12px var(--accent-glow)`,
           }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'scale(1.05)';
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
             e.currentTarget.style.boxShadow = `0 0 20px var(--accent-glow)`;
           }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = 'scale(1)';
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
             e.currentTarget.style.boxShadow = `0 0 12px var(--accent-glow)`;
           }}
         >

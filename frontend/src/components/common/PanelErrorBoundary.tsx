@@ -1,10 +1,14 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import PanelErrorState from './PanelErrorState';
+import { Component, ErrorInfo, ReactNode } from "react";
+import PanelErrorState from "./PanelErrorState";
 
 interface PanelErrorBoundaryProps {
   children: ReactNode;
   panelName: string;
-  onPanelError?: (panelName: string, error: Error, errorInfo: ErrorInfo) => void;
+  onPanelError?: (
+    panelName: string,
+    error: Error,
+    errorInfo: ErrorInfo,
+  ) => void;
 }
 
 interface PanelErrorBoundaryState {
@@ -19,7 +23,10 @@ interface PanelErrorBoundaryState {
  * Catches render errors and displays a friendly error state
  * without crashing the dashboard or affecting adjacent panels.
  */
-export default class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, PanelErrorBoundaryState> {
+export default class PanelErrorBoundary extends Component<
+  PanelErrorBoundaryProps,
+  PanelErrorBoundaryState
+> {
   constructor(props: PanelErrorBoundaryProps) {
     super(props);
     this.state = {
@@ -30,19 +37,35 @@ export default class PanelErrorBoundary extends Component<PanelErrorBoundaryProp
     };
   }
 
-  static getDerivedStateFromProps(nextProps: PanelErrorBoundaryProps, prevState: PanelErrorBoundaryState) {
+  static getDerivedStateFromProps(
+    nextProps: PanelErrorBoundaryProps,
+    prevState: PanelErrorBoundaryState,
+  ) {
     // Reset error state only when panel name changes (retry scenario)
     if (prevState.panelName !== nextProps.panelName) {
-      return { hasError: false, error: null, errorInfo: null, panelName: nextProps.panelName };
+      return {
+        hasError: false,
+        error: null,
+        errorInfo: null,
+        panelName: nextProps.panelName,
+      };
     }
     return null;
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log to console immediately (before React renders)
-    console.error(`[Dashboard Error] ${this.props.panelName} panel failed:`, error);
+    // eslint-disable-next-line no-console
+    console.error(
+      `[Dashboard Error] ${this.props.panelName} panel failed:`,
+      error,
+    );
     if (error.stack) {
-      console.error(`[Dashboard Error] ${this.props.panelName} stack trace:`, error.stack);
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Dashboard Error] ${this.props.panelName} stack trace:`,
+        error.stack,
+      );
     }
 
     // Notify parent handler if provided

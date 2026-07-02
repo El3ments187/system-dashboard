@@ -14,7 +14,9 @@ type MatcherUtils = {
     toBeNull: () => void;
   };
 };
-declare const expect: <T = any>(value: T) => {
+declare const expect: <T = any>(
+  value: T,
+) => {
   toBeInTheDocument: () => void;
   toBe: (expected: unknown) => void;
   toHaveBeenCalled: () => void;
@@ -22,6 +24,11 @@ declare const expect: <T = any>(value: T) => {
   toBeNull: () => void;
 } & MatcherUtils;
 declare const vi: {
-  mock: (name: string, impl?: Record<string, unknown> | (() => Record<string, unknown>)) => void;
-  fn: <TArgs extends unknown[] = unknown[], TReturn = unknown>(impl?: (...args: TArgs) => TReturn) => MockFn<TArgs, TReturn>;
+  mock: (
+    name: string,
+    impl?: Record<string, unknown> | (() => Record<string, unknown>),
+  ) => void;
+  fn: <TArgs extends unknown[] = unknown[], TReturn = unknown>(
+    impl?: (...args: TArgs) => TReturn,
+  ) => MockFn<TArgs, TReturn>;
 };

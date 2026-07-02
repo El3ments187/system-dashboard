@@ -386,12 +386,7 @@ export interface ProfileResponse {
 
 export type LogStream = "stdout" | "stderr";
 export type LogLevel =
-  | "info"
-  | "warn"
-  | "error"
-  | "debug"
-  | "stats"
-  | "unknown";
+  "info" | "warn" | "error" | "debug" | "stats" | "unknown";
 
 export interface LogLine {
   timestamp: string;

@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { MetricHistoryPoint } from '../types/metrics';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { MetricHistoryPoint } from "../types/metrics";
+
+function reindexSlots(points: MetricHistoryPoint[]): MetricHistoryPoint[] {
+  return points.map((p, idx) => ({ ...p, slot: idx }));
+}
 
 /**
  * Hook for polling metrics from the backend API.
@@ -51,22 +55,26 @@ export function useMetrics<T>(
       const timestamp = new Date();
 
       setCurrentValue(value);
-      setHistory(prev => {
-        const next = [...prev.slice(1), { slot: bufferSize - 1, timestamp, value }]
-          .map((p, idx) => ({ ...p, slot: idx }));
+      setHistory((prev) => {
+        const next = [
+          ...prev.slice(1),
+          { slot: bufferSize - 1, timestamp, value },
+        ].map((p, idx) => ({ ...p, slot: idx }));
         return next;
       });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      setHistory(prev => {
-        return [...prev.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: null }]
-          .map((p, idx) => ({ ...p, slot: idx }));
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setHistory((prev) => {
+        return [
+          ...prev.slice(1),
+          { slot: bufferSize - 1, timestamp: new Date(), value: null },
+        ].map((p, idx) => ({ ...p, slot: idx }));
       });
     } finally {
       setLoading(false);
     }
-  }, [intervalMs, bufferSize]);
+  }, [bufferSize]);
 
   useEffect(() => {
     fetchData();
@@ -102,8 +110,12 @@ export function useMultiMetrics<T>(
   retry: () => void;
 } {
   const bufferSize = Math.ceil(bufferDurationMs / intervalMs);
-  const [currentValues, setCurrentValues] = useState<Array<number | null>>(() => Array(extractors.length).fill(null));
-  const [histories, setHistories] = useState<Array<MetricHistoryPoint[] | null>>(() =>
+  const [currentValues, setCurrentValues] = useState<Array<number | null>>(() =>
+    Array(extractors.length).fill(null),
+  );
+  const [histories, setHistories] = useState<
+    Array<MetricHistoryPoint[] | null>
+  >(() =>
     extractors.map((_, i) => {
       if (!trackHistory?.[i]) return null;
       const now = new Date();
@@ -112,7 +124,7 @@ export function useMultiMetrics<T>(
         timestamp: new Date(now.getTime() - (bufferSize - j) * intervalMs),
         value: 0,
       }));
-    })
+    }),
   );
   const [rawData, setRawData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,15 +139,17 @@ export function useMultiMetrics<T>(
       setCurrentValues(Array(len).fill(null));
       setHistories(
         extractors.map((_, i) =>
-          trackHistory?.[i] ? Array.from({ length: bufferSize }, (_, j) => ({
-            slot: j,
-            timestamp: new Date(Date.now() - (bufferSize - j) * intervalMs),
-            value: 0,
-          })) : null
-        )
+          trackHistory?.[i]
+            ? Array.from({ length: bufferSize }, (_, j) => ({
+                slot: j,
+                timestamp: new Date(Date.now() - (bufferSize - j) * intervalMs),
+                value: 0,
+              }))
+            : null,
+        ),
       );
     }
-  }, [extractors, trackHistory]);
+  }, [extractors, trackHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const extractorsRef = useRef(extractors);
   useEffect(() => {
@@ -161,33 +175,40 @@ export function useMultiMetrics<T>(
       const json = await response.json();
       const data = json.data;
 
-      const values = extractorsRef.current.map(ex => ex(data));
+      const values = extractorsRef.current.map((ex) => ex(data));
       setCurrentValues(values);
       setRawData(data);
 
       // Update history buffers for tracked indices
-      setHistories(prev => prev.map((h, i) => {
-        if (!h || !trackHistoryRef.current?.[i]) return h;
-        const newValue = values[i];
+      setHistories((prev) =>
+        prev.map((h, i) => {
+          if (!h || !trackHistoryRef.current?.[i]) return h;
+          const newValue = values[i];
 
-        // Shift buffer: drop oldest, append new value with correct slot indices
-        const next = [...h.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: newValue }]
-          .map((p, idx) => ({ ...p, slot: idx }));
-        return next;
-      }));
+          // Shift buffer: drop oldest, append new value with correct slot indices
+          return reindexSlots([
+            ...h.slice(1),
+            { slot: bufferSize - 1, timestamp: new Date(), value: newValue },
+          ]);
+        }),
+      );
 
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      setHistories(prev => prev.map((h, i) => {
-        if (!h || !trackHistoryRef.current?.[i]) return h;
-        return [...h.slice(1), { slot: bufferSize - 1, timestamp: new Date(), value: null }]
-          .map((p, idx) => ({ ...p, slot: idx }));
-      }));
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setHistories((prev) =>
+        prev.map((h, i) => {
+          if (!h || !trackHistoryRef.current?.[i]) return h;
+          return reindexSlots([
+            ...h.slice(1),
+            { slot: bufferSize - 1, timestamp: new Date(), value: null },
+          ]);
+        }),
+      );
     } finally {
       setLoading(false);
     }
-  }, [intervalMs, bufferSize]);
+  }, [bufferSize]);
 
   const retry = useCallback(() => {
     fetchData();

@@ -25,6 +25,67 @@ import AiPage from "./pages/AiPage";
 import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
 
+type ActivePage =
+  | "overview"
+  | "gpu"
+  | "cpu"
+  | "llama-cpp"
+  | "ai"
+  | "terminal"
+  | "settings";
+
+function getPageFromPathname(pathname: string): ActivePage {
+  if (pathname === "/gpu") return "gpu";
+  if (pathname === "/cpu") return "cpu";
+  if (pathname === "/llama-cpp") return "llama-cpp";
+  if (pathname === "/llama-cpp/terminal") return "terminal";
+  if (pathname === "/ai") return "ai";
+  if (pathname === "/settings") return "settings";
+  return "overview";
+}
+
+function getPathForPage(page: ActivePage): string {
+  if (page === "overview") return "/";
+  if (page === "terminal") return "/llama-cpp/terminal";
+  if (page === "llama-cpp") return "/llama-cpp";
+  return `/${page}`;
+}
+
+function PageContent({
+  activePage,
+  accent,
+}: {
+  activePage: ActivePage;
+  accent: { color: string; glow: string };
+}) {
+  if (activePage === "terminal") return <LlamaCppTerminalViewer />;
+  if (activePage === "gpu") return <GpuPage accent={accent} />;
+  if (activePage === "cpu") return <CpuPage accent={accent} />;
+  if (activePage === "llama-cpp") return <LlamaCppPage />;
+  if (activePage === "settings") return <SettingsPage accent={accent} />;
+  if (activePage === "ai") return <AiPage />;
+  return (
+    <main className="dashboard-grid">
+      <div className="dashboard-row overview-gpu-row">
+        <GpuCard accent={accent} />
+        <GpuChart accent={accent} />
+      </div>
+      <div className="dashboard-row overview-cpu-row">
+        <CpuCard accent={accent} />
+        <CpuChart accent={accent} />
+      </div>
+      <div className="dashboard-row overview-memory-row">
+        <MemoryCard accent={accent} />
+        <MemoryChart accent={accent} />
+      </div>
+      <div className="dashboard-row storage-row">
+        <StorageCard accent={accent} />
+        <StoragePerformanceCard />
+      </div>
+    </main>
+  );
+}
+
 export default function App() {
   const {
     accent,
@@ -41,17 +102,9 @@ export default function App() {
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
   const isInitialMount = useRef(true);
-  const [activePage, setActivePage] = useState<
-    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings"
-  >(() => {
-    if (window.location.pathname === "/gpu") return "gpu";
-    if (window.location.pathname === "/cpu") return "cpu";
-    if (window.location.pathname === "/llama-cpp") return "llama-cpp";
-    if (window.location.pathname === "/llama-cpp/terminal") return "terminal";
-    if (window.location.pathname === "/ai") return "ai";
-    if (window.location.pathname === "/settings") return "settings";
-    return "overview";
-  });
+  const [activePage, setActivePage] = useState<ActivePage>(() =>
+    getPageFromPathname(window.location.pathname),
+  );
 
   const { data: healthOk } = useQuery<boolean>({
     queryKey: ["health"],
@@ -68,14 +121,7 @@ export default function App() {
 
   // Sync URL with active page (preserve query params for terminal to keep pts param)
   useEffect(() => {
-    const path =
-      activePage === "overview"
-        ? "/"
-        : activePage === "terminal"
-          ? "/llama-cpp/terminal"
-          : activePage === "llama-cpp"
-            ? "/llama-cpp"
-            : `/${activePage}`;
+    const path = getPathForPage(activePage);
     const search = activePage === "terminal" ? window.location.search : "";
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -87,23 +133,8 @@ export default function App() {
 
   // Handle browser back/forward
   useEffect(() => {
-    const handler = () => {
-      if (window.location.pathname === "/gpu") {
-        setActivePage("gpu");
-      } else if (window.location.pathname === "/cpu") {
-        setActivePage("cpu");
-      } else if (window.location.pathname === "/llama-cpp") {
-        setActivePage("llama-cpp");
-      } else if (window.location.pathname === "/llama-cpp/terminal") {
-        setActivePage("terminal");
-      } else if (window.location.pathname === "/ai") {
-        setActivePage("ai");
-      } else if (window.location.pathname === "/settings") {
-        setActivePage("settings");
-      } else {
-        setActivePage("overview");
-      }
-    };
+    const handler = () =>
+      setActivePage(getPageFromPathname(window.location.pathname));
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);
@@ -156,38 +187,7 @@ export default function App() {
                 glow={glow}
                 onGlowChange={setGlow}
               />
-              {activePage === "terminal" ? (
-                <LlamaCppTerminalViewer />
-              ) : activePage === "overview" ? (
-                <main className="dashboard-grid">
-                  <div className="dashboard-row overview-gpu-row">
-                    <GpuCard accent={current} />
-                    <GpuChart accent={current} />
-                  </div>
-                  <div className="dashboard-row overview-cpu-row">
-                    <CpuCard accent={current} />
-                    <CpuChart accent={current} />
-                  </div>
-                  <div className="dashboard-row overview-memory-row">
-                    <MemoryCard accent={current} />
-                    <MemoryChart accent={current} />
-                  </div>
-                  <div className="dashboard-row storage-row">
-                    <StorageCard accent={current} />
-                    <StoragePerformanceCard />
-                  </div>
-                </main>
-              ) : activePage === "gpu" ? (
-                <GpuPage accent={current} />
-              ) : activePage === "cpu" ? (
-                <CpuPage accent={current} />
-              ) : activePage === "llama-cpp" ? (
-                <LlamaCppPage />
-              ) : activePage === "settings" ? (
-                <SettingsPage accent={current} />
-              ) : activePage === "ai" ? (
-                <AiPage />
-              ) : null}
+              <PageContent activePage={activePage} accent={current} />
             </div>
           </MetricsProvider>
         </AlertsProvider>
