@@ -541,6 +541,12 @@ function cycleSortDirection(
   return "none";
 }
 
+const accentTileBase = {
+  background: "var(--accent-tint-10)",
+  border: "1px solid var(--accent-tint-40)",
+} as const;
+const accentLabelColor = "var(--accent-primary)";
+
 export function RunModelsSection() {
   const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
   const [states, setStates] = useState<Record<string, ProfileState>>({});
@@ -773,11 +779,10 @@ export function RunModelsSection() {
             padding: "3px 8px",
             fontSize: 10,
             fontWeight: 600,
-            background: "var(--bg-secondary)",
-            border: "1px solid var(--border-color)",
+            ...accentTileBase,
             borderRadius: 6,
             cursor: loading ? "not-allowed" : "pointer",
-            color: "var(--text-primary)",
+            color: accentLabelColor,
             opacity: loading ? 0.5 : 1,
           }}
         >
@@ -967,7 +972,7 @@ export function RunModelsSection() {
                   gridTemplateColumns: COL_GRID,
                   gap: 0,
                   padding: "4px 12px",
-                  borderBottom: "1px solid var(--border-color)",
+                  borderBottom: "1px solid var(--accent-tint-40)",
                   borderLeft: running
                     ? "2px solid var(--accent-primary)"
                     : "2px solid transparent",
@@ -1301,7 +1306,7 @@ export default function LlamaCppPage() {
   } | null>(null);
   const [cacheHits, setCacheHits] = useState(0);
   const prevTokCachedRef = useRef<number | null>(null);
-  const lastGenProgressRef = useRef<number>(0);
+  const [lastGenProgress, setLastGenProgress] = useState<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1364,6 +1369,17 @@ export default function LlamaCppPage() {
       ? slot0.n_prompt_tokens_cache
       : (m?.tokens_cached ?? null);
 
+  const genProgressPct: number | null = (() => {
+    const nd = slot0?.n_decoded;
+    const np = slot0?.n_predict;
+    return nd != null && np != null && np > 0
+      ? Math.round((nd / np) * 100)
+      : null;
+  })();
+  if (genProgressPct !== null && genProgressPct !== lastGenProgress) {
+    setLastGenProgress(genProgressPct);
+  }
+
   useEffect(() => {
     const prev = prevTokCachedRef.current;
     prevTokCachedRef.current = tokCached;
@@ -1417,54 +1433,48 @@ export default function LlamaCppPage() {
     value: string,
     valueColor?: string,
     testId?: string,
+    wide?: boolean,
   ) => (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "4px 0",
-        borderBottom: "1px dashed var(--border-light, var(--border-color))",
-        fontSize: 12,
-        gap: 8,
+        ...accentTileBase,
+        borderRadius: 8,
+        padding: "5px 8px",
         minWidth: 0,
+        gridColumn: wide ? "1 / -1" : undefined,
       }}
     >
-      <span
+      <div
         style={{
-          color: "var(--text-muted)",
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.4px",
+          color: accentLabelColor,
           display: "flex",
           alignItems: "center",
-          gap: 6,
-          flexShrink: 0,
-          fontSize: 11.5,
+          gap: 3,
+          marginBottom: 2,
         }}
       >
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            opacity: 0.7,
-          }}
-        >
+        <span style={{ display: "flex", alignItems: "center", opacity: 0.7 }}>
           {icon}
         </span>
         {label}
-      </span>
-      <span
+      </div>
+      <div
         data-testid={testId}
         style={{
-          color: valueColor ?? "var(--text-primary)",
+          fontSize: 13,
+          fontWeight: 700,
           fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-          fontWeight: 500,
+          color: valueColor ?? "var(--text-primary)",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
-          minWidth: 0,
         }}
       >
         {value}
-      </span>
+      </div>
     </div>
   );
 
@@ -1586,7 +1596,7 @@ export default function LlamaCppPage() {
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 color: "var(--text-primary)",
-                marginBottom: 10,
+                paddingTop: 12,
               }}
               title={cleanModelName || "\u2014"}
             >
@@ -1606,157 +1616,174 @@ export default function LlamaCppPage() {
                 "\u2014"
               )}
             </div>
-            {/* Meta row: size + tags + running status */}
+            {/* Middle flex – grows and distributes meta + pills evenly */}
             <div
               style={{
+                flex: 1,
                 display: "flex",
-                alignItems: "center",
-                gap: 9,
-                flexWrap: "wrap",
-                marginBottom: 10,
+                flexDirection: "column",
+                justifyContent: "space-evenly",
               }}
             >
-              {m?.gguf_size_gib != null && (
-                <span
-                  className="accent-text"
-                  style={{
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    fontSize: 21,
-                    fontWeight: 700,
-                    letterSpacing: "-0.5px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {(m.gguf_size_gib as number).toFixed(2)}{" "}
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      fontWeight: 400,
-                    }}
-                  >
-                    GB
-                  </span>
-                </span>
-              )}
+              {/* Meta row: size + tags + running status */}
               <div
-                style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  flexWrap: "wrap",
+                }}
               >
-                {runningMeta?.params && (
+                {m?.gguf_size_gib != null && (
                   <span
+                    className="accent-text"
                     style={{
                       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 10,
-                      color: "var(--text-muted)",
-                      background: "var(--bg-secondary)",
-                      border:
-                        "1px solid var(--border-light, var(--border-color))",
-                      borderRadius: 7,
-                      padding: "3px 8px",
+                      fontSize: 21,
+                      fontWeight: 700,
+                      letterSpacing: "-0.5px",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    <b
-                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                    {(m.gguf_size_gib as number).toFixed(2)}{" "}
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        fontWeight: 400,
+                      }}
                     >
-                      {runningMeta.params}
-                    </b>
+                      GB
+                    </span>
                   </span>
                 )}
-                {slotCtx != null && (
-                  <span
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 10,
-                      color: "var(--text-muted)",
-                      background: "var(--bg-secondary)",
-                      border:
-                        "1px solid var(--border-light, var(--border-color))",
-                      borderRadius: 7,
-                      padding: "3px 8px",
-                    }}
-                  >
-                    <b
-                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                <div
+                  style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}
+                >
+                  {runningMeta?.params && (
+                    <span
+                      style={{
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        background: "var(--bg-secondary)",
+                        border:
+                          "1px solid var(--border-light, var(--border-color))",
+                        borderRadius: 7,
+                        padding: "3px 8px",
+                      }}
                     >
-                      {formatCtx(slotCtx)}
-                    </b>{" "}
-                    ctx
-                  </span>
-                )}
-                {modelQuant && (
-                  <span
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 10,
-                      color: "var(--text-muted)",
-                      background: "var(--bg-secondary)",
-                      border:
-                        "1px solid var(--border-light, var(--border-color))",
-                      borderRadius: 7,
-                      padding: "3px 8px",
-                    }}
-                  >
-                    <b
-                      style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                      <b
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {runningMeta.params}
+                      </b>
+                    </span>
+                  )}
+                  {slotCtx != null && (
+                    <span
+                      style={{
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        background: "var(--bg-secondary)",
+                        border:
+                          "1px solid var(--border-light, var(--border-color))",
+                        borderRadius: 7,
+                        padding: "3px 8px",
+                      }}
                     >
-                      {modelQuant}
-                    </b>
-                  </span>
-                )}
-                {pageModelAlias && (
-                  <span
-                    style={{
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 10,
-                      color: "var(--accent-primary)",
-                      background:
-                        "color-mix(in srgb, var(--accent-primary) 12%, transparent)",
-                      border:
-                        "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
-                      borderRadius: 7,
-                      padding: "3px 8px",
-                    }}
-                  >
-                    alias <b style={{ fontWeight: 600 }}>{pageModelAlias}</b>
-                  </span>
-                )}
+                      <b
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {formatCtx(slotCtx)}
+                      </b>{" "}
+                      ctx
+                    </span>
+                  )}
+                  {modelQuant && (
+                    <span
+                      style={{
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        background: "var(--bg-secondary)",
+                        border:
+                          "1px solid var(--border-light, var(--border-color))",
+                        borderRadius: 7,
+                        padding: "3px 8px",
+                      }}
+                    >
+                      <b
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {modelQuant}
+                      </b>
+                    </span>
+                  )}
+                  {pageModelAlias && (
+                    <span
+                      style={{
+                        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                        fontSize: 10,
+                        color: "var(--accent-primary)",
+                        background:
+                          "color-mix(in srgb, var(--accent-primary) 12%, transparent)",
+                        border:
+                          "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                        borderRadius: 7,
+                        padding: "3px 8px",
+                      }}
+                    >
+                      alias <b style={{ fontWeight: 600 }}>{pageModelAlias}</b>
+                    </span>
+                  )}
+                </div>
+                <StatusIndicator status={llamaOnline ? "running" : "stopped"} />
               </div>
-              <StatusIndicator status={llamaOnline ? "running" : "stopped"} />
-            </div>
-            {/* Capability pills */}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                marginBottom: 10,
-              }}
-            >
-              <CapPill
-                icon={<Activity size={12} />}
-                label="Metrics"
-                enabled={m?.endpoint_metrics}
-              />
-              <CapPill
-                icon={<Globe size={12} />}
-                label="WebUI"
-                enabled={m?.webui}
-              />
-              <CapPill
-                icon={<Eye size={12} />}
-                label="Vision"
-                enabled={m?.vision}
-              />
-              <CapPill
-                icon={<AudioLines size={12} />}
-                label="Audio"
-                enabled={m?.audio}
-              />
-              <CapPill
-                icon={<VideoIcon size={12} />}
-                label="Video"
-                enabled={m?.video}
-              />
+              {/* Capability pills */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
+                <CapPill
+                  icon={<Activity size={12} />}
+                  label="Metrics"
+                  enabled={m?.endpoint_metrics}
+                />
+                <CapPill
+                  icon={<Globe size={12} />}
+                  label="WebUI"
+                  enabled={m?.webui}
+                />
+                <CapPill
+                  icon={<Eye size={12} />}
+                  label="Vision"
+                  enabled={m?.vision}
+                />
+                <CapPill
+                  icon={<AudioLines size={12} />}
+                  label="Audio"
+                  enabled={m?.audio}
+                />
+                <CapPill
+                  icon={<VideoIcon size={12} />}
+                  label="Video"
+                  enabled={m?.video}
+                />
+              </div>
             </div>
             {/* Sampling tiles */}
             <div
@@ -1779,7 +1806,11 @@ export default function LlamaCppPage() {
                         : "\u2014",
                     testId: "sampling-temperature",
                   },
-                  { label: "Top-K Sampling", value: fmtNum(m?.top_k) || "\u2014", testId: "sampling-top-k" },
+                  {
+                    label: "Top-K Sampling",
+                    value: fmtNum(m?.top_k) || "\u2014",
+                    testId: "sampling-top-k",
+                  },
                   {
                     label: "Top-P (Nucleus) Sampling",
                     value: m?.top_p != null ? m.top_p.toFixed(2) : "\u2014",
@@ -1799,8 +1830,7 @@ export default function LlamaCppPage() {
                   key={label}
                   data-testid={testId}
                   style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
+                    ...accentTileBase,
                     borderRadius: 10,
                     padding: "8px 5px",
                     textAlign: "center",
@@ -1810,7 +1840,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 8,
                       textTransform: "uppercase",
-                      color: "var(--text-muted)",
+                      color: accentLabelColor,
                       letterSpacing: "0.5px",
                       marginBottom: 1,
                     }}
@@ -1863,8 +1893,7 @@ export default function LlamaCppPage() {
               <div
                 data-testid="thrpt-gen-tps"
                 style={{
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--border-light, var(--border-color))",
+                  ...accentTileBase,
                   borderRadius: 11,
                   padding: "8px 13px",
                   flex: 1,
@@ -1877,7 +1906,7 @@ export default function LlamaCppPage() {
                     fontSize: 9.5,
                     textTransform: "uppercase",
                     letterSpacing: "0.6px",
-                    color: "var(--text-muted)",
+                    color: accentLabelColor,
                     marginBottom: 2,
                   }}
                 >
@@ -1904,10 +1933,18 @@ export default function LlamaCppPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 6, flex: 1, minHeight: 28, display: "flex", alignItems: "flex-end" }}>
+                <div
+                  style={{
+                    marginTop: 6,
+                    flex: 1,
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "flex-end",
+                  }}
+                >
                   <Sparkline
                     data={aiGenTpsHistory ?? []}
-                    color="var(--text-secondary)"
+                    color="var(--accent-primary)"
                     width={200}
                     height={28}
                   />
@@ -1918,8 +1955,7 @@ export default function LlamaCppPage() {
               <div
                 data-testid="thrpt-prompt-tps"
                 style={{
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--border-light, var(--border-color))",
+                  ...accentTileBase,
                   borderRadius: 11,
                   padding: "8px 13px",
                   flex: 1,
@@ -1932,7 +1968,7 @@ export default function LlamaCppPage() {
                     fontSize: 9.5,
                     textTransform: "uppercase",
                     letterSpacing: "0.6px",
-                    color: "var(--text-muted)",
+                    color: accentLabelColor,
                     marginBottom: 2,
                   }}
                 >
@@ -1959,10 +1995,18 @@ export default function LlamaCppPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 6, flex: 1, minHeight: 28, display: "flex", alignItems: "flex-end" }}>
+                <div
+                  style={{
+                    marginTop: 6,
+                    flex: 1,
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "flex-end",
+                  }}
+                >
                   <Sparkline
                     data={aiPromptTpsHistory ?? []}
-                    color="var(--text-secondary)"
+                    color="var(--accent-primary)"
                     width={200}
                     height={28}
                   />
@@ -1980,8 +2024,7 @@ export default function LlamaCppPage() {
                 <div
                   data-testid="thrpt-prompt-tokens"
                   style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
+                    ...accentTileBase,
                     borderRadius: 9,
                     padding: "6px 10px",
                   }}
@@ -1990,7 +2033,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 9,
                       textTransform: "uppercase",
-                      color: "var(--text-muted)",
+                      color: accentLabelColor,
                       letterSpacing: "0.5px",
                     }}
                   >
@@ -2010,8 +2053,7 @@ export default function LlamaCppPage() {
                 <div
                   data-testid="thrpt-generated"
                   style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
+                    ...accentTileBase,
                     borderRadius: 9,
                     padding: "6px 10px",
                   }}
@@ -2020,7 +2062,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 9,
                       textTransform: "uppercase",
-                      color: "var(--text-muted)",
+                      color: accentLabelColor,
                       letterSpacing: "0.5px",
                     }}
                   >
@@ -2050,8 +2092,7 @@ export default function LlamaCppPage() {
                 <div
                   data-testid="thrpt-total-sent"
                   style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
+                    ...accentTileBase,
                     borderRadius: 9,
                     padding: "6px 10px",
                   }}
@@ -2060,7 +2101,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 9,
                       textTransform: "uppercase",
-                      color: "var(--text-muted)",
+                      color: accentLabelColor,
                       letterSpacing: "0.5px",
                     }}
                   >
@@ -2080,8 +2121,7 @@ export default function LlamaCppPage() {
                 <div
                   data-testid="thrpt-active-req"
                   style={{
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border-color)",
+                    ...accentTileBase,
                     borderRadius: 9,
                     padding: "6px 10px",
                   }}
@@ -2090,7 +2130,7 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 9,
                       textTransform: "uppercase",
-                      color: "var(--text-muted)",
+                      color: accentLabelColor,
                       letterSpacing: "0.5px",
                     }}
                   >
@@ -2155,7 +2195,12 @@ export default function LlamaCppPage() {
               )}
               {/* Gauge + tiles row */}
               <div
-                style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1 }}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  flex: 1,
+                }}
               >
                 <RadialGauge pct={contextPct} color={ctxColor} size={120}>
                   <span
@@ -2254,8 +2299,7 @@ export default function LlamaCppPage() {
                       key={label}
                       data-testid={testId}
                       style={{
-                        background: "var(--bg-secondary)",
-                        border: "1px solid var(--border-color)",
+                        ...accentTileBase,
                         borderRadius: 8,
                         padding: "6px 10px",
                         gridColumn: span ? "1 / -1" : undefined,
@@ -2266,7 +2310,7 @@ export default function LlamaCppPage() {
                           fontSize: 8.5,
                           textTransform: "uppercase",
                           letterSpacing: "0.4px",
-                          color: "var(--text-muted)",
+                          color: accentLabelColor,
                         }}
                       >
                         {label}
@@ -2351,23 +2395,11 @@ export default function LlamaCppPage() {
                     </span>
                   </div>
                   <div className="card-progress" style={{ height: 8 }}>
-                    {(() => {
-                      const nd = slot0.n_decoded;
-                      const np = slot0.n_predict;
-                      const livePct =
-                        nd != null && np != null && np > 0
-                          ? Math.round((nd / np) * 100)
-                          : null;
-                      if (livePct != null) lastGenProgressRef.current = livePct;
-                      const pct = livePct ?? lastGenProgressRef.current;
-                      return (
-                        <div
-                          data-testid="gen-progress-bar"
-                          className={`card-progress-bar ${thresholdClass(pct > 0 ? pct : null)}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      );
-                    })()}
+                    <div
+                      data-testid="gen-progress-bar"
+                      className={`card-progress-bar ${thresholdClass((genProgressPct ?? lastGenProgress) > 0 ? (genProgressPct ?? lastGenProgress) : null)}`}
+                      style={{ width: `${genProgressPct ?? lastGenProgress}%` }}
+                    />
                   </div>
                   <div
                     style={{
@@ -2406,7 +2438,6 @@ export default function LlamaCppPage() {
               )}
             </div>
           </PanelCard>
-
         </div>
 
         {/* ══════════════════════════════════════════════════
@@ -2454,6 +2485,10 @@ export default function LlamaCppPage() {
                   flex: 1,
                   overflowY: "auto",
                   padding: "6px 13px 8px",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 6,
+                  alignContent: "start",
                 }}
               >
                 {kvRow(
@@ -2561,6 +2596,7 @@ export default function LlamaCppPage() {
                   fmtNum(slot0?.n_prompt_tokens_cache ?? m?.tokens_cached),
                   undefined,
                   "runtime-tokens-cached",
+                  true,
                 )}
               </div>
             </PanelCard>
@@ -2595,8 +2631,7 @@ export default function LlamaCppPage() {
                   <div
                     style={{
                       flex: 1,
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
+                      ...accentTileBase,
                       borderRadius: 10,
                       padding: "7px 10px",
                     }}
@@ -2605,7 +2640,7 @@ export default function LlamaCppPage() {
                       style={{
                         fontSize: 8,
                         textTransform: "uppercase",
-                        color: "var(--text-muted)",
+                        color: accentLabelColor,
                       }}
                     >
                       Current
@@ -2624,9 +2659,7 @@ export default function LlamaCppPage() {
                   <div
                     style={{
                       flex: 1,
-                      background: "var(--bg-secondary)",
-                      border:
-                        "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                      ...accentTileBase,
                       borderRadius: 10,
                       padding: "7px 10px",
                     }}
@@ -2635,7 +2668,7 @@ export default function LlamaCppPage() {
                       style={{
                         fontSize: 8,
                         textTransform: "uppercase",
-                        color: "var(--text-muted)",
+                        color: accentLabelColor,
                       }}
                     >
                       Latest
@@ -2794,11 +2827,10 @@ export default function LlamaCppPage() {
                         padding: "2px 5px",
                         fontSize: 9,
                         fontWeight: 600,
-                        background: "var(--bg-secondary)",
-                        border: "1px solid var(--border-color)",
+                        ...accentTileBase,
                         borderRadius: 5,
                         cursor: "pointer",
-                        color: "var(--text-primary)",
+                        color: accentLabelColor,
                         flexShrink: 0,
                       }}
                     >
@@ -2825,23 +2857,17 @@ export default function LlamaCppPage() {
                       alignItems: "center",
                       gap: 4,
                       padding: "8px 4px",
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
+                      ...accentTileBase,
                       borderRadius: 10,
                       fontSize: 9,
-                      color: !hasDir
-                        ? "var(--text-muted)"
-                        : "var(--text-secondary)",
+                      color: !hasDir ? "var(--text-muted)" : accentLabelColor,
                       cursor: !hasDir ? "not-allowed" : "pointer",
                       opacity: !hasDir ? 0.4 : 1,
                       fontWeight: 500,
                       fontFamily: "inherit",
                     }}
                   >
-                    <TermIcon
-                      size={12}
-                      style={{ color: "var(--text-muted)" }}
-                    />
+                    <TermIcon size={12} style={{ color: "inherit" }} />
                     Terminal
                   </button>
                   <button
@@ -2860,23 +2886,19 @@ export default function LlamaCppPage() {
                       alignItems: "center",
                       gap: 4,
                       padding: "8px 4px",
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
+                      ...accentTileBase,
                       borderRadius: 10,
                       fontSize: 9,
                       color: !mgmt.readmeUrl
                         ? "var(--text-muted)"
-                        : "var(--text-secondary)",
+                        : accentLabelColor,
                       cursor: !mgmt.readmeUrl ? "not-allowed" : "pointer",
                       opacity: !mgmt.readmeUrl ? 0.4 : 1,
                       fontWeight: 500,
                       fontFamily: "inherit",
                     }}
                   >
-                    <BookOpen
-                      size={12}
-                      style={{ color: "var(--text-muted)" }}
-                    />
+                    <BookOpen size={12} style={{ color: "inherit" }} />
                     Readme
                   </button>
                   <a
@@ -2889,27 +2911,22 @@ export default function LlamaCppPage() {
                       alignItems: "center",
                       gap: 4,
                       padding: "8px 4px",
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border-color)",
+                      ...accentTileBase,
                       borderRadius: 10,
                       fontSize: 9,
-                      color: "var(--text-secondary)",
+                      color: accentLabelColor,
                       cursor: "pointer",
                       fontWeight: 500,
                       textDecoration: "none",
                       fontFamily: "inherit",
                     }}
                   >
-                    <ArrowDown
-                      size={12}
-                      style={{ color: "var(--text-muted)" }}
-                    />
+                    <ArrowDown size={12} style={{ color: "inherit" }} />
                     Release
                   </a>
                 </div>
               </div>
             </PanelCard>
-
           </div>
 
           {/* ── Work area: Run Models + Console ── */}
