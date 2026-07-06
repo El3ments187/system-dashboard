@@ -78,7 +78,10 @@
   --border-subtle: rgba(255, 255, 255, 0.06);
   --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.18);
   --card-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --card-halo: 0 0 0 rgba(0, 0, 0, 0);
+  --accent-inner-glow: 0 0 0 rgba(0, 0, 0, 0);
   --glow-intensity: 1.4;
+  --pulse-speed: 4s;
   /* Per-metric color tokens — footer bars, inline sparklines; no stray hex allowed */
   --metric-cpu: var(--success);
   --metric-ram: var(--warning);
@@ -101,8 +104,9 @@
   --border-color: var(--accent-tint-40, var(--border-color));
 }
 
-[data-glow="neon"] .accent-glow-target {
-  box-shadow: var(--card-glow);
+[data-glow="neon"] .accent-glow-target,
+[data-inner-glow="on"] .accent-glow-target {
+  box-shadow: var(--card-glow), var(--accent-inner-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1049,6 +1053,147 @@
   [data-accent-mode="flow"] .theme-live-preview-bar,
   [data-accent-mode="flow"] .mode-row.active .mode-radio::after,
   [data-accent-mode="flow"] [data-accent-el] {
+    animation: none;
+  }
+}
+
+/* ========================================
+   Inner Glow Effect
+   Inset box-shadow on glow targets (spines/bars).
+   Stacks with Neon Glow's outer card-glow.
+   ======================================== */
+[data-inner-glow="on"] {
+  --accent-inner-glow:
+    inset 0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow);
+}
+
+/* ========================================
+   Card Glow Effect
+   Extends halo to the full card container via --card-halo.
+   Requires Neon Glow or Inner Glow to be active.
+   ======================================== */
+[data-glow="neon"][data-card-glow="on"],
+[data-inner-glow="on"][data-card-glow="on"] {
+  --card-halo:
+    0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px * var(--glow-intensity, 1.4))
+      rgba(var(--accent-primary-rgb), 0.12);
+}
+
+/* Apply card-halo to card containers (not spines/bars) that carry data-accent-el. */
+[data-glow="neon"][data-card-glow="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  ),
+[data-inner-glow="on"][data-card-glow="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  ) {
+  box-shadow: var(--shadow-card), var(--card-halo);
+}
+
+/* ========================================
+   Pulse Effect
+   Compositor-accelerated opacity animation on glow targets.
+   Combines with sheen/flow fill animation when both are active.
+   ======================================== */
+@keyframes pulse-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-pulse="on"] .accent-glow-target {
+    animation: pulse-breathe var(--pulse-speed, 4s) ease-in-out infinite;
+  }
+
+  /* When pulse combines with sheen/flow, preserve both animations. */
+  [data-pulse="on"][data-accent-mode="sheen"] .accent-glow-target,
+  [data-pulse="on"][data-accent-mode="flow"] .accent-glow-target {
+    animation:
+      fx-pan var(--fx-speed) linear infinite,
+      pulse-breathe var(--pulse-speed, 4s) ease-in-out infinite;
+    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24), 0s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-pulse="on"] .accent-glow-target {
+    animation: none;
+  }
+}
+
+/* ========================================
+   Gradient Border Effect
+   CSS mask trick: ::before pseudo with padding + mask-composite:exclude
+   creates a gradient ring that respects border-radius without overflow issues.
+   Targets card containers only (not spine/bar elements).
+   ======================================== */
+@keyframes gradient-border-pan {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+[data-gradient-border="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-gradient-border="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  )::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--accent-fill-stop-1),
+    var(--accent-fill-stop-2),
+    var(--accent-fill-stop-1)
+  );
+  background-size: 200% 100%;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-gradient-border="on"]
+    [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+      .accent-glow-target
+    )::before {
+    animation: gradient-border-pan 3s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gradient-border="on"]
+    [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+      .accent-glow-target
+    )::before {
     animation: none;
   }
 }

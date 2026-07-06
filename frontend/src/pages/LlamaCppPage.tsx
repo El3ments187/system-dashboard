@@ -189,7 +189,7 @@ function PanelCard({
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        boxShadow: "var(--shadow-card), var(--card-glow)",
+        boxShadow: "var(--shadow-card), var(--card-glow), var(--card-halo)",
         ...style,
       }}
     >
@@ -2952,7 +2952,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card), var(--card-glow)",
+                boxShadow: "var(--shadow-card), var(--card-glow), var(--card-halo)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
@@ -2972,7 +2972,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card), var(--card-glow)",
+                boxShadow: "var(--shadow-card), var(--card-glow), var(--card-halo)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >

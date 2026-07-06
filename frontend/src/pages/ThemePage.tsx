@@ -132,7 +132,10 @@ function ThemePreview() {
             key={card.title}
             data-accent-el=""
             className="preview-card"
-            style={{ boxShadow: "var(--shadow-card), var(--card-glow)" }}
+            style={{
+              boxShadow:
+                "var(--shadow-card), var(--card-glow), var(--card-halo)",
+            }}
           >
             <div className="accent-spine accent-fill" style={SPINE_STYLE} />
             <div className="preview-card-body">
@@ -240,6 +243,16 @@ export interface ThemePageProps {
   onFxDepthChange?: (v: number) => void;
   glowIntensity?: number;
   onGlowIntensityChange?: (v: number) => void;
+  pulse?: boolean;
+  onPulseChange?: (v: boolean) => void;
+  pulseSpeed?: number;
+  onPulseSpeedChange?: (v: number) => void;
+  innerGlow?: boolean;
+  onInnerGlowChange?: (v: boolean) => void;
+  gradientBorder?: boolean;
+  onGradientBorderChange?: (v: boolean) => void;
+  cardGlow?: boolean;
+  onCardGlowChange?: (v: boolean) => void;
 }
 
 export default function ThemePage({
@@ -260,6 +273,16 @@ export default function ThemePage({
   onFxDepthChange,
   glowIntensity = 1.4,
   onGlowIntensityChange,
+  pulse,
+  onPulseChange,
+  pulseSpeed = 4,
+  onPulseSpeedChange,
+  innerGlow,
+  onInnerGlowChange,
+  gradientBorder,
+  onGradientBorderChange,
+  cardGlow,
+  onCardGlowChange,
 }: ThemePageProps) {
   const prefersReducedMotion =
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -468,6 +491,114 @@ export default function ThemePage({
                       />
                     </div>
                   )}
+                </div>
+              )}
+
+              {onPulseChange && (
+                <div className="effect-row-group">
+                  <div
+                    className={`mode-row${pulse ? " active" : ""}`}
+                    onClick={() => onPulseChange(!pulse)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="mode-radio" />
+                    <div className="mode-text">
+                      <span className="mode-name">Pulse</span>
+                      <span className="mode-desc">
+                        Breathing glow on accent elements
+                      </span>
+                    </div>
+                    <ToggleSwitch on={!!pulse} />
+                  </div>
+                  {pulse && onPulseSpeedChange && (
+                    <div style={{ paddingLeft: 20, paddingTop: 6 }}>
+                      <SliderRow
+                        id="tp-pulse-speed"
+                        label={
+                          prefersReducedMotion
+                            ? "Pulse Speed (reduced-motion active)"
+                            : "Pulse Speed"
+                        }
+                        min={1}
+                        max={10}
+                        step={0.5}
+                        value={pulseSpeed}
+                        display={`${pulseSpeed}s`}
+                        disabled={prefersReducedMotion}
+                        onChange={(v) => {
+                          document.documentElement.style.setProperty(
+                            "--pulse-speed",
+                            `${v}s`,
+                          );
+                          onPulseSpeedChange(v);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {onInnerGlowChange && (
+                <div className="effect-row-group">
+                  <div
+                    className={`mode-row${innerGlow ? " active" : ""}`}
+                    onClick={() => onInnerGlowChange(!innerGlow)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="mode-radio" />
+                    <div className="mode-text">
+                      <span className="mode-name">Inner Glow</span>
+                      <span className="mode-desc">
+                        Inset glow inside accent fills
+                      </span>
+                    </div>
+                    <ToggleSwitch on={!!innerGlow} />
+                  </div>
+                </div>
+              )}
+
+              {onGradientBorderChange && (
+                <div className="effect-row-group">
+                  <div
+                    className={`mode-row${gradientBorder ? " active" : ""}`}
+                    onClick={() => onGradientBorderChange(!gradientBorder)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="mode-radio" />
+                    <div className="mode-text">
+                      <span className="mode-name">Gradient Border</span>
+                      <span className="mode-desc">
+                        Animated gradient ring around cards
+                      </span>
+                    </div>
+                    <ToggleSwitch on={!!gradientBorder} />
+                  </div>
+                </div>
+              )}
+
+              {onCardGlowChange && (
+                <div className="effect-row-group">
+                  <div
+                    className={`mode-row${cardGlow && (glow || innerGlow) ? " active" : ""}`}
+                    onClick={() =>
+                      (glow || innerGlow) && onCardGlowChange(!cardGlow)
+                    }
+                    style={{
+                      cursor: glow || innerGlow ? "pointer" : "not-allowed",
+                      opacity: !glow && !innerGlow ? 0.5 : 1,
+                    }}
+                  >
+                    <span className="mode-radio" />
+                    <div className="mode-text">
+                      <span className="mode-name">Card Glow</span>
+                      <span className="mode-desc">
+                        {!glow && !innerGlow
+                          ? "Requires Neon Glow or Inner Glow"
+                          : "Extend halo to full card border"}
+                      </span>
+                    </div>
+                    <ToggleSwitch on={!!cardGlow && (!!glow || !!innerGlow)} />
+                  </div>
                 </div>
               )}
             </div>

@@ -240,6 +240,26 @@ export function useTheme() {
     );
   });
 
+  const [pulse, setPulse] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-pulse") === "on";
+  });
+
+  const [pulseSpeed, setPulseSpeed] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-pulse-speed") || "4");
+  });
+
+  const [innerGlow, setInnerGlow] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-inner-glow") === "on";
+  });
+
+  const [gradientBorder, setGradientBorder] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-gradient-border") === "on";
+  });
+
+  const [cardGlow, setCardGlow] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-card-glow") === "on";
+  });
+
   const resetTheme = useCallback(() => {
     setAccent(DEFAULT_ACCENT);
     setBg(DEFAULT_BG);
@@ -249,6 +269,11 @@ export function useTheme() {
     setFxSpread(34);
     setFxDepth(30);
     setGlowIntensity(1.4);
+    setPulse(false);
+    setPulseSpeed(4);
+    setInnerGlow(false);
+    setGradientBorder(false);
+    setCardGlow(false);
   }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -311,6 +336,53 @@ export function useTheme() {
     localStorage.setItem("dashboard-glow-intensity", String(glowIntensity));
   }, [glowIntensity]);
 
+  useEffect(() => {
+    if (pulse) {
+      document.documentElement.setAttribute("data-pulse", "on");
+    } else {
+      document.documentElement.removeAttribute("data-pulse");
+    }
+    localStorage.setItem("dashboard-pulse", pulse ? "on" : "");
+  }, [pulse]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--pulse-speed",
+      `${pulseSpeed}s`,
+    );
+    localStorage.setItem("dashboard-pulse-speed", String(pulseSpeed));
+  }, [pulseSpeed]);
+
+  useEffect(() => {
+    if (innerGlow) {
+      document.documentElement.setAttribute("data-inner-glow", "on");
+    } else {
+      document.documentElement.removeAttribute("data-inner-glow");
+    }
+    localStorage.setItem("dashboard-inner-glow", innerGlow ? "on" : "");
+  }, [innerGlow]);
+
+  useEffect(() => {
+    if (gradientBorder) {
+      document.documentElement.setAttribute("data-gradient-border", "on");
+    } else {
+      document.documentElement.removeAttribute("data-gradient-border");
+    }
+    localStorage.setItem(
+      "dashboard-gradient-border",
+      gradientBorder ? "on" : "",
+    );
+  }, [gradientBorder]);
+
+  useEffect(() => {
+    if (cardGlow) {
+      document.documentElement.setAttribute("data-card-glow", "on");
+    } else {
+      document.documentElement.removeAttribute("data-card-glow");
+    }
+    localStorage.setItem("dashboard-card-glow", cardGlow ? "on" : "");
+  }, [cardGlow]);
+
   return {
     accent,
     setAccent,
@@ -328,6 +400,16 @@ export function useTheme() {
     setFxDepth,
     glowIntensity,
     setGlowIntensity,
+    pulse,
+    setPulse,
+    pulseSpeed,
+    setPulseSpeed,
+    innerGlow,
+    setInnerGlow,
+    gradientBorder,
+    setGradientBorder,
+    cardGlow,
+    setCardGlow,
     resetTheme,
     current,
     presets: PRESETS,

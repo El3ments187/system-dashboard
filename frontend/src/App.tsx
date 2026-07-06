@@ -81,6 +81,16 @@ export default function App() {
     setFxDepth,
     glowIntensity,
     setGlowIntensity,
+    pulse,
+    setPulse,
+    pulseSpeed,
+    setPulseSpeed,
+    innerGlow,
+    setInnerGlow,
+    gradientBorder,
+    setGradientBorder,
+    cardGlow,
+    setCardGlow,
     resetTheme,
     current,
   } = useTheme();
@@ -181,6 +191,16 @@ export default function App() {
                   onFxDepthChange={setFxDepth}
                   glowIntensity={glowIntensity}
                   onGlowIntensityChange={setGlowIntensity}
+                  pulse={pulse}
+                  onPulseChange={setPulse}
+                  pulseSpeed={pulseSpeed}
+                  onPulseSpeedChange={setPulseSpeed}
+                  innerGlow={innerGlow}
+                  onInnerGlowChange={setInnerGlow}
+                  gradientBorder={gradientBorder}
+                  onGradientBorderChange={setGradientBorder}
+                  cardGlow={cardGlow}
+                  onCardGlowChange={setCardGlow}
                 />
               ) : (
                 <PageContent activePage={activePage} accent={current} />
