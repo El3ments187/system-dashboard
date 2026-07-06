@@ -7,6 +7,7 @@ import { LiveDataControlsProvider } from "./context/LiveDataControlsContext";
 import { AlertsProvider } from "./context/AlertsContext";
 import { TooltipProvider } from "./components/common/TooltipProvider";
 import { useTheme } from "./hooks/useTheme";
+import { useAccentIndexer } from "./utils/accentColors";
 import "./styles/theme.css";
 import { checkHealth } from "./services/api";
 import GpuPage from "./pages/GpuPage";
@@ -54,6 +55,7 @@ function PageContent({
 }
 
 export default function App() {
+  useAccentIndexer();
   const {
     accent,
     setAccent,
@@ -63,6 +65,14 @@ export default function App() {
     setAccentMode,
     glow,
     setGlow,
+    fxSpeed,
+    setFxSpeed,
+    fxSpread,
+    setFxSpread,
+    fxDepth,
+    setFxDepth,
+    glowIntensity,
+    setGlowIntensity,
     resetTheme,
     current,
   } = useTheme();
@@ -160,6 +170,14 @@ export default function App() {
                 onReset={resetTheme}
                 glow={glow}
                 onGlowChange={setGlow}
+                fxSpeed={fxSpeed}
+                onFxSpeedChange={setFxSpeed}
+                fxSpread={fxSpread}
+                onFxSpreadChange={setFxSpread}
+                fxDepth={fxDepth}
+                onFxDepthChange={setFxDepth}
+                glowIntensity={glowIntensity}
+                onGlowIntensityChange={setGlowIntensity}
               />
               <PageContent activePage={activePage} accent={current} />
             </div>

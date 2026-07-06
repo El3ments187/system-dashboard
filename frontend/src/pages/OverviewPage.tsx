@@ -181,6 +181,7 @@ function OvKV({ label, value }: { label: string; value: string }) {
         {label}
       </span>
       <span
+        className="card-detail-value"
         style={{
           color: "var(--text-primary)",
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -195,10 +196,19 @@ function OvKV({ label, value }: { label: string; value: string }) {
   );
 }
 
-function OvCard({ children }: { children: React.ReactNode }) {
+function OvCard({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="ov-card">
-      <div className="ov-spine" />
+    <div
+      className={className ? `ov-card ${className}` : "ov-card"}
+      data-accent-el=""
+    >
+      <div className="ov-spine accent-glow-target" />
       <div className="ov-card-inner">{children}</div>
     </div>
   );
@@ -280,8 +290,8 @@ function OvChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="ov-card">
-      <div className="ov-spine" />
+    <div className="ov-card" data-accent-el="">
+      <div className="ov-spine accent-glow-target" />
       <div className="ov-card-inner">
         <div className="ov-chart-head">
           <div
@@ -366,16 +376,10 @@ export default function OverviewPage({ accent }: Props) {
     return result.sort((a, b) => a.slot - b.slot);
   }, [memoryHistory, swapHistory]);
 
-  // Resolve secondary color for legends (accent-secondary from CSS)
-  const accentSecondary =
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent-secondary")
-      .trim() || accent.color;
-
   return (
-    <main className="ov-grid">
+    <main className="ov-grid dashboard-grid">
       {/* ── GPU ── */}
-      <OvCard>
+      <OvCard className="overview-gpu-row">
         <OvCardHead
           icon={<GpuIcon />}
           title="GPU"
@@ -428,7 +432,7 @@ export default function OverviewPage({ accent }: Props) {
       </OvChartCard>
 
       {/* ── CPU ── */}
-      <OvCard>
+      <OvCard className="overview-cpu-row">
         <OvCardHead
           icon={<CpuIcon />}
           title="CPU"
@@ -480,7 +484,7 @@ export default function OverviewPage({ accent }: Props) {
       </OvChartCard>
 
       {/* ── Memory ── */}
-      <OvCard>
+      <OvCard className="overview-memory-row">
         <OvCardHead
           icon={<MemIcon />}
           title="Memory"
@@ -514,8 +518,12 @@ export default function OverviewPage({ accent }: Props) {
         note="last 60s"
         legend={
           <>
-            <OvLegendSwatch color={accent.color} label="Memory" />
-            <OvLegendSwatch color={accentSecondary} dashed label="Swap" />
+            <OvLegendSwatch color="var(--accent-fill-stop-1)" label="Mem" />
+            <OvLegendSwatch
+              color="var(--accent-fill-stop-2)"
+              dashed
+              label="Swap"
+            />
           </>
         }
       >
@@ -537,38 +545,42 @@ export default function OverviewPage({ accent }: Props) {
       </OvChartCard>
 
       {/* ── Storage (one row per drive) ── */}
-      {storageDevices.map((drive, i) => {
-        const usagePct = driveUsagePct(drive);
-        const isActive = (drive.io_stats?.utilization_percent ?? 0) > 0;
-        const rdBps = drive.io_stats?.read_bytes_per_sec ?? 0;
-        const wrBps = drive.io_stats?.write_bytes_per_sec ?? 0;
-        const rdIops = drive.io_stats?.read_iops ?? 0;
-        const wrIops = drive.io_stats?.write_iops ?? 0;
-        const temp = drive.temperature_celsius;
-        const histKey = drive.device.replace(/^\/dev\//, "");
-        const history =
-          storageHistories.get(histKey) ??
-          storageHistories.get(drive.device) ??
-          [];
+      {storageDevices.length === 0 ? (
+        <OvCard className="storage-row">
+          <OvCardHead icon={<StorIcon />} title="Storage" badge={null} />
+        </OvCard>
+      ) : (
+        storageDevices.map((drive, i) => {
+          const usagePct = driveUsagePct(drive);
+          const isActive = (drive.io_stats?.utilization_percent ?? 0) > 0;
+          const rdBps = drive.io_stats?.read_bytes_per_sec ?? 0;
+          const wrBps = drive.io_stats?.write_bytes_per_sec ?? 0;
+          const rdIops = drive.io_stats?.read_iops ?? 0;
+          const wrIops = drive.io_stats?.write_iops ?? 0;
+          const temp = drive.temperature_celsius;
+          const histKey = drive.device.replace(/^\/dev\//, "");
+          const history =
+            storageHistories.get(histKey) ??
+            storageHistories.get(drive.device) ??
+            [];
 
-        return (
-          <StorageRowPair
-            key={drive.device}
-            drive={drive}
-            driveIndex={i}
-            usagePct={usagePct}
-            isActive={isActive}
-            rdBps={rdBps}
-            wrBps={wrBps}
-            rdIops={rdIops}
-            wrIops={wrIops}
-            temp={temp}
-            history={history}
-            accent={accent}
-            accentSecondary={accentSecondary}
-          />
-        );
-      })}
+          return (
+            <StorageRowPair
+              key={drive.device}
+              drive={drive}
+              driveIndex={i}
+              usagePct={usagePct}
+              isActive={isActive}
+              rdBps={rdBps}
+              wrBps={wrBps}
+              rdIops={rdIops}
+              wrIops={wrIops}
+              temp={temp}
+              history={history}
+            />
+          );
+        })
+      )}
     </main>
   );
 }
@@ -586,8 +598,6 @@ function StorageRowPair({
   wrIops,
   temp,
   history,
-  accent,
-  accentSecondary,
 }: {
   drive: any;
   driveIndex: number;
@@ -599,16 +609,14 @@ function StorageRowPair({
   wrIops: number;
   temp: number | null | undefined;
   history: any[];
-  accent: { color: string; glow: string };
-  accentSecondary: string;
 }) {
   return (
     <>
       {/* Stat card */}
-      <OvCard>
+      <OvCard className="storage-row">
         <OvCardHead
           icon={<StorIcon />}
-          title={`Storage ${driveIndex + 1}`}
+          title="Storage"
           badge={<OvBadge pct={usagePct} />}
         />
         <div className="ov-statrow">
@@ -620,7 +628,10 @@ function StorageRowPair({
               value={temp != null ? `${temp.toFixed(0)}\u00B0C` : "\u2014"}
             />
             <OvKV label="Status" value={isActive ? "Active" : "Idle"} />
-            <OvKV label="Mounts" value={String(drive.mounts?.length ?? 0)} />
+            <OvKV
+              label="Mounts"
+              value={`${drive.mounts?.length ?? 0} mount${(drive.mounts?.length ?? 0) !== 1 ? "s" : ""}`}
+            />
           </div>
         </div>
         {/* I/O line */}
@@ -691,8 +702,12 @@ function StorageRowPair({
         note="last 60s"
         legend={
           <>
-            <OvLegendSwatch color={accent.color} label="Read" />
-            <OvLegendSwatch color={accentSecondary} dashed label="Write" />
+            <OvLegendSwatch color="var(--accent-fill-stop-1)" label="Read" />
+            <OvLegendSwatch
+              color="var(--accent-fill-stop-2)"
+              dashed
+              label="Write"
+            />
           </>
         }
       >

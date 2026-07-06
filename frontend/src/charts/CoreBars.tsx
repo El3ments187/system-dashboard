@@ -37,18 +37,20 @@ const CoreRow = ({
   warning: string;
 }) => {
   const state = getProgressState(util);
+  const isAccent = state === "normal";
   let barColor: string;
-  if (state === "normal") {
-    barColor = color;
-  } else if (state === "critical") {
+  if (state === "critical") {
     barColor = danger;
-  } else {
+  } else if (state === "warning") {
     barColor = warning;
+  } else {
+    barColor = color;
   }
 
   return (
     <div
       className="core-row"
+      data-accent-el=""
       style={{
         display: "grid",
         gridTemplateColumns: "24px minmax(0, 1fr) 32px",
@@ -84,6 +86,7 @@ const CoreRow = ({
           data-testid="per-core-bar"
           data-core-color={barColor}
           data-core-assigned-color={color}
+          className={isAccent ? "core-bar" : undefined}
           style={{
             position: "absolute",
             left: 0,
@@ -91,7 +94,10 @@ const CoreRow = ({
             bottom: 0,
             width: `${Math.min(util, 100)}%`,
             minWidth: util > 0 ? 4 : 0,
-            background: `linear-gradient(90deg, ${barColor}, ${barColor}cc)`,
+            background: isAccent ? "var(--accent-fill)" : barColor,
+            backgroundSize: isAccent
+              ? "var(--accent-fill-size, 100% 100%)"
+              : undefined,
             borderRadius: "inherit",
             transition: "width 0.3s ease, background 0.3s ease",
           }}

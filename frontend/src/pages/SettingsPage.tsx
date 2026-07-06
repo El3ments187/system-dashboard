@@ -361,7 +361,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
 
   return (
     <main className="settings-grid">
-      <div className="settings-card">
+      <div className="settings-card" data-accent-el="">
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <SettingsIcon size={16} style={{ color: accent.color }} />
@@ -418,7 +418,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
         </div>
       </div>
 
-      <div className="settings-card">
+      <div className="settings-card" data-accent-el="">
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <GitBranch size={16} style={{ color: accent.color }} />
@@ -534,7 +534,7 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
         </div>
       </div>
 
-      <div className="settings-card">
+      <div className="settings-card" data-accent-el="">
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <BookOpen size={16} style={{ color: accent.color }} />

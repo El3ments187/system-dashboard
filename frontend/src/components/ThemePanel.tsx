@@ -13,6 +13,14 @@ interface ThemePanelProps {
   onReset: () => void;
   glow?: boolean;
   onGlowChange?: (v: boolean) => void;
+  fxSpeed?: number;
+  onFxSpeedChange?: (v: number) => void;
+  fxSpread?: number;
+  onFxSpreadChange?: (v: number) => void;
+  fxDepth?: number;
+  onFxDepthChange?: (v: number) => void;
+  glowIntensity?: number;
+  onGlowIntensityChange?: (v: number) => void;
 }
 
 export default function ThemePanel({
@@ -28,8 +36,30 @@ export default function ThemePanel({
   onReset,
   glow,
   onGlowChange,
+  fxSpeed = 12,
+  onFxSpeedChange,
+  fxSpread = 34,
+  onFxSpreadChange,
+  fxDepth = 30,
+  onFxDepthChange,
+  glowIntensity = 1.4,
+  onGlowIntensityChange,
 }: ThemePanelProps) {
   const { presets, bgPresets } = useTheme();
+
+  const prefersReducedMotion =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
+
+  const showSpeed = ["sheen", "flow", "rainbow-wave"].includes(accentMode);
+  const showSpread = ["sheen", "flow", "rainbow-wave", "spectrum"].includes(
+    accentMode,
+  );
+  const showDepth = ["sheen", "flow", "rainbow-wave", "spectrum"].includes(
+    accentMode,
+  );
+  const showSliders = showSpeed || showSpread || showDepth;
 
   if (!open) return null;
 
@@ -142,6 +172,193 @@ export default function ThemePanel({
             </div>
           ))}
         </div>
+        {showSliders && (
+          <>
+            <div className="theme-section-header">Effect Controls</div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                padding: "4px 0 8px",
+              }}
+            >
+              {showSpeed && (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <label
+                      htmlFor="fx-speed-slider"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-secondary)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Speed
+                      {prefersReducedMotion && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            color: "var(--text-muted)",
+                            fontStyle: "italic",
+                          }}
+                        >
+                          (reduced-motion active)
+                        </span>
+                      )}
+                    </label>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {fxSpeed}s
+                    </span>
+                  </div>
+                  <input
+                    id="fx-speed-slider"
+                    type="range"
+                    min={4}
+                    max={30}
+                    step={1}
+                    value={fxSpeed}
+                    aria-label="Animation speed"
+                    aria-valuetext={`${fxSpeed} seconds`}
+                    disabled={prefersReducedMotion}
+                    style={{
+                      width: "100%",
+                      accentColor: "var(--accent-primary)",
+                      opacity: prefersReducedMotion ? 0.4 : 1,
+                    }}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      document.documentElement.style.setProperty(
+                        "--fx-speed",
+                        `${v}s`,
+                      );
+                      onFxSpeedChange?.(v);
+                    }}
+                  />
+                </div>
+              )}
+              {showSpread && (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <label
+                      htmlFor="fx-spread-slider"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-secondary)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Spread
+                    </label>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {fxSpread}
+                    </span>
+                  </div>
+                  <input
+                    id="fx-spread-slider"
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={fxSpread}
+                    aria-label="Color spread"
+                    aria-valuetext={`${fxSpread} degrees`}
+                    style={{
+                      width: "100%",
+                      accentColor: "var(--accent-primary)",
+                    }}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      document.documentElement.style.setProperty(
+                        "--fx-spread",
+                        `${v}`,
+                      );
+                      onFxSpreadChange?.(v);
+                    }}
+                  />
+                </div>
+              )}
+              {showDepth && (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <label
+                      htmlFor="fx-depth-slider"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-secondary)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Depth
+                    </label>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {fxDepth}°
+                    </span>
+                  </div>
+                  <input
+                    id="fx-depth-slider"
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={fxDepth}
+                    aria-label="Color depth (2nd hue offset)"
+                    aria-valuetext={`${fxDepth} degrees`}
+                    style={{
+                      width: "100%",
+                      accentColor: "var(--accent-primary)",
+                    }}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      document.documentElement.style.setProperty(
+                        "--fx-depth",
+                        `${v}`,
+                      );
+                      onFxDepthChange?.(v);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
         <div className="theme-section-header">Effects</div>
         {onGlowChange && (
           <div
@@ -184,6 +401,59 @@ export default function ThemePanel({
                 }}
               />
             </div>
+          </div>
+        )}
+        {glow && onGlowIntensityChange && (
+          <div style={{ padding: "4px 0 8px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
+              <label
+                htmlFor="glow-intensity-slider"
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-secondary)",
+                  fontWeight: 500,
+                }}
+              >
+                Glow Intensity
+              </label>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  fontFamily: "monospace",
+                }}
+              >
+                {glowIntensity.toFixed(2)}
+              </span>
+            </div>
+            <input
+              id="glow-intensity-slider"
+              type="range"
+              min={0.25}
+              max={3}
+              step={0.05}
+              value={glowIntensity}
+              aria-label="Glow intensity"
+              aria-valuetext={`${glowIntensity.toFixed(2)}`}
+              style={{
+                width: "100%",
+                accentColor: "var(--accent-primary)",
+              }}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                document.documentElement.style.setProperty(
+                  "--glow-intensity",
+                  String(v),
+                );
+                onGlowIntensityChange(v);
+              }}
+            />
           </div>
         )}
         <div className="theme-section-header">Background Colors</div>

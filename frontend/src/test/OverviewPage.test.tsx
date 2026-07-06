@@ -283,7 +283,7 @@ describe("Overview Page - Solid Mode", () => {
       const { container } = renderWithProviders(<App />);
       await waitFor(
         () => {
-          const metricCards = container.querySelectorAll(".metric-card");
+          const metricCards = container.querySelectorAll(".ov-card");
           expect(metricCards.length).toBeGreaterThan(2);
         },
         { timeout: 4000 },

@@ -1,11 +1,6 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { StorageHistoryPoint } from "../../types/metrics";
-import {
-  resolveAccentColor,
-  getSecondarySeriesColor,
-  useAccentSync,
-  SECONDARY_LINE_DASH,
-} from "../../utils/accentColors";
+import { ACCENT_OBSERVER_ATTRS } from "../../utils/accentColors";
 
 interface Props {
   data: StorageHistoryPoint[];
@@ -37,9 +32,9 @@ export default function OverviewStorageChart({ data }: Props) {
   const [recharts, setRecharts] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [strokeColor, setStrokeColor] = useState(() => resolveAccentColor());
   const [chartColors, setChartColors] = useState(() => getChartColors());
   const chartRef = useRef<HTMLDivElement>(null);
+  const gradientId = `osc-${useId().replace(/:/g, "")}`;
   const [chartSize, setChartSize] = useState<{
     width: number;
     height: number;
@@ -66,10 +61,15 @@ export default function OverviewStorageChart({ data }: Props) {
     return () => ro.disconnect();
   }, [recharts]);
 
-  useAccentSync(() => {
-    setStrokeColor(resolveAccentColor());
-    setChartColors(getChartColors());
-  });
+  useEffect(() => {
+    const update = () => setChartColors(getChartColors());
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ACCENT_OBSERVER_ATTRS,
+    });
+    return () => observer.disconnect();
+  }, []);
 
   const chartData = useMemo(() => {
     const slotMap = new Map<number, any>();
@@ -100,8 +100,6 @@ export default function OverviewStorageChart({ data }: Props) {
     }
     return Array.from(slotMap.values()).sort((a, b) => a.x - b.x);
   }, [data]);
-
-  const writeColor = getSecondarySeriesColor(strokeColor);
 
   if (!recharts) {
     return (
@@ -194,10 +192,10 @@ export default function OverviewStorageChart({ data }: Props) {
                       {ts}
                     </div>
                   )}
-                  <div style={{ color: strokeColor }}>
+                  <div style={{ color: "var(--accent-fill-stop-1)" }}>
                     Read: {fmtBps(d.read ?? 0)}
                   </div>
-                  <div style={{ color: writeColor }}>
+                  <div style={{ color: "var(--accent-fill-stop-2)" }}>
                     Write: {fmtBps(d.write ?? 0)}
                   </div>
                 </div>
@@ -211,35 +209,109 @@ export default function OverviewStorageChart({ data }: Props) {
             }}
             offset={8}
           />
+          <defs>
+            {/* gradientUnits="userSpaceOnUse" avoids Chrome's degenerate-bbox bug
+                where a perfectly flat line (all y=same) has zero bounding-box height,
+                causing objectBoundingBox gradients to vanish */}
+            <linearGradient
+              id={`${gradientId}-read-stroke`}
+              x1="0"
+              y1="0"
+              x2={chartSize.width}
+              y2="0"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop
+                offset="0%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-1)",
+                  stopOpacity: 1,
+                }}
+              />
+              <stop
+                offset="100%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-2)",
+                  stopOpacity: 1,
+                }}
+              />
+            </linearGradient>
+            <linearGradient
+              id={`${gradientId}-read-fill`}
+              x1="0"
+              y1="0"
+              x2="0"
+              y2={chartSize.height}
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop
+                offset="0%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-1)",
+                  stopOpacity: 0.25,
+                }}
+              />
+              <stop
+                offset="100%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-1)",
+                  stopOpacity: 0,
+                }}
+              />
+            </linearGradient>
+            <linearGradient
+              id={`${gradientId}-write-stroke`}
+              x1="0"
+              y1="0"
+              x2={chartSize.width}
+              y2="0"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop
+                offset="0%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-2)",
+                  stopOpacity: 1,
+                }}
+              />
+              <stop
+                offset="100%"
+                style={{
+                  stopColor: "var(--accent-fill-stop-2)",
+                  stopOpacity: 1,
+                }}
+              />
+            </linearGradient>
+          </defs>
           <Area
             dataKey="read"
-            stroke={strokeColor}
-            fill={`${strokeColor}20`}
+            stroke={`url(#${gradientId}-read-stroke)`}
+            fill={`url(#${gradientId}-read-fill)`}
             strokeWidth={2}
-            fillOpacity={0.3}
+            fillOpacity={1}
             isAnimationActive={false}
             animationDuration={0}
             activeDot={{
               r: 5,
               stroke: chartColors.dotStroke,
               strokeWidth: 2,
-              fill: strokeColor,
+              fill: "var(--accent-fill-stop-1)",
             }}
           />
           <Area
             dataKey="write"
-            stroke={writeColor}
-            fill={`${writeColor}10`}
+            stroke={`url(#${gradientId}-write-stroke)`}
+            fill="none"
             strokeWidth={2}
-            strokeDasharray={SECONDARY_LINE_DASH}
-            fillOpacity={0.2}
+            strokeDasharray="6 4"
+            fillOpacity={0}
             isAnimationActive={false}
             animationDuration={0}
             activeDot={{
               r: 5,
               stroke: chartColors.dotStroke,
               strokeWidth: 2,
-              fill: writeColor,
+              fill: "var(--accent-fill-stop-2)",
             }}
           />
         </AreaChart>

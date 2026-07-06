@@ -172,9 +172,14 @@ interface AccentMode {
 const ACCENT_MODES: AccentMode[] = [
   { id: "solid", name: "Solid", description: "Single accent color." },
   {
-    id: "animated-gradient",
-    name: "Animated Gradient",
-    description: "Animated accent gradient.",
+    id: "sheen",
+    name: "Sheen",
+    description: "A highlight that sweeps across the UI.",
+  },
+  {
+    id: "flow",
+    name: "Flow",
+    description: "A gentle multi-shade flow of your accent.",
   },
   {
     id: "rainbow-wave",
@@ -184,7 +189,7 @@ const ACCENT_MODES: AccentMode[] = [
   {
     id: "spectrum",
     name: "Spectrum Per-Element",
-    description: "Distributes the 32-color palette throughout the UI.",
+    description: "Distributes hues across the UI.",
   },
 ];
 
@@ -192,9 +197,9 @@ const DEFAULT_ACCENT = "blue";
 const DEFAULT_BG = "dark";
 const DEFAULT_ACCENT_MODE = "solid";
 
-// Gradient mode was removed; migrate any persisted choice to its closest replacement.
+// Migrate persisted mode choices from removed modes to their closest replacement.
 function migrateAccentMode(mode: string | null): string {
-  if (mode === "gradient") return "animated-gradient";
+  if (mode === "gradient" || mode === "animated-gradient") return "sheen";
   return mode || DEFAULT_ACCENT_MODE;
 }
 
@@ -217,11 +222,33 @@ export function useTheme() {
     return localStorage.getItem("dashboard-glow") === "neon";
   });
 
+  const [fxSpeed, setFxSpeed] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-fx-speed") || "12");
+  });
+
+  const [fxSpread, setFxSpread] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-fx-spread") || "34");
+  });
+
+  const [fxDepth, setFxDepth] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-fx-depth") || "30");
+  });
+
+  const [glowIntensity, setGlowIntensity] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-glow-intensity") || "1.4",
+    );
+  });
+
   const resetTheme = useCallback(() => {
     setAccent(DEFAULT_ACCENT);
     setBg(DEFAULT_BG);
     setAccentMode(DEFAULT_ACCENT_MODE);
     setGlow(false);
+    setFxSpeed(12);
+    setFxSpread(34);
+    setFxDepth(30);
+    setGlowIntensity(1.4);
   }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -261,6 +288,29 @@ export function useTheme() {
     localStorage.setItem("dashboard-glow", glow ? "neon" : "");
   }, [glow]);
 
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fx-speed", `${fxSpeed}s`);
+    localStorage.setItem("dashboard-fx-speed", String(fxSpeed));
+  }, [fxSpeed]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fx-spread", String(fxSpread));
+    localStorage.setItem("dashboard-fx-spread", String(fxSpread));
+  }, [fxSpread]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fx-depth", String(fxDepth));
+    localStorage.setItem("dashboard-fx-depth", String(fxDepth));
+  }, [fxDepth]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--glow-intensity",
+      String(glowIntensity),
+    );
+    localStorage.setItem("dashboard-glow-intensity", String(glowIntensity));
+  }, [glowIntensity]);
+
   return {
     accent,
     setAccent,
@@ -270,6 +320,14 @@ export function useTheme() {
     setAccentMode,
     glow,
     setGlow,
+    fxSpeed,
+    setFxSpeed,
+    fxSpread,
+    setFxSpread,
+    fxDepth,
+    setFxDepth,
+    glowIntensity,
+    setGlowIntensity,
     resetTheme,
     current,
     presets: PRESETS,

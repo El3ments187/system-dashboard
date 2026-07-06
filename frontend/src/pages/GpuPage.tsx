@@ -121,6 +121,7 @@ function VerticalProgress({
 
   return (
     <div
+      data-accent-el=""
       style={{
         display: "flex",
         flexDirection: "column",
@@ -155,15 +156,24 @@ function VerticalProgress({
         }}
       >
         <div
+          className={
+            color === accent ? "accent-fill accent-glow-target" : undefined
+          }
           style={{
             position: "absolute",
             bottom: 0,
             left: 0,
             right: 0,
             height: `${pct}%`,
-            background: `linear-gradient(to top, ${color}, ${color}dd)`,
+            minHeight: value > 0 ? 2 : 0,
+            ...(color === accent
+              ? {
+                  background: "var(--accent-fill)",
+                  backgroundSize: "var(--accent-fill-size, 100% 100%)",
+                }
+              : { background: color }),
             borderRadius: 5,
-            transition: "height 0.6s ease, background 0.4s ease",
+            transition: "height 0.6s ease",
           }}
         />
         <div
@@ -470,7 +480,7 @@ function GpuRow({
   gpuTemperatureHistory: MetricHistoryPoint[] | null;
 }) {
   return (
-    <div className="gpu-row">
+    <div className="gpu-row" data-accent-el="">
       {/* Left column - combined GPU card */}
       <div className="gpu-col-left">
         <GpuSummaryCard gpu={gpu} accent={accent} index={index} />

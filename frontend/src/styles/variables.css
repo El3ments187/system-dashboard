@@ -12,6 +12,24 @@
   initial-value: 0;
 }
 
+@property --el-index {
+  syntax: "<integer>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --fx-spread {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 34;
+}
+
+@property --fx-depth {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 30;
+}
+
 :root {
   /* --accent-base/--accent-base-rgb hold the literal chosen accent color, set by the
      [data-accent="x"] presets below. --accent-primary/--accent-secondary/--accent-glow are
@@ -36,7 +54,7 @@
   --bg-card-hover: #1c2740;
   --text-primary: #e2e8f0;
   --text-secondary: #8b95a8;
-  --text-muted: #5a6578;
+  --text-muted: #7a8899;
   --border-color: #2a3143;
   --border-light: #1e2535;
   --success: #22c55e;
@@ -59,7 +77,8 @@
   --transition-slow: 400ms ease;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.18);
-  --card-glow: none;
+  --card-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --glow-intensity: 1.4;
   /* Per-metric color tokens — footer bars, inline sparklines; no stray hex allowed */
   --metric-cpu: var(--success);
   --metric-ram: var(--warning);
@@ -76,13 +95,19 @@
    Disabled when user prefers reduced motion.
    ======================================== */
 [data-glow="neon"] {
-  --card-glow: 0 0 16px var(--accent-glow);
+  --card-glow:
+    0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(20px * var(--glow-intensity, 1.4)) var(--accent-glow);
   --border-color: var(--accent-tint-40, var(--border-color));
+}
+
+[data-glow="neon"] .accent-glow-target {
+  box-shadow: var(--card-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-glow="neon"] {
-    --card-glow: none;
+    --card-glow: 0 0 0 rgba(0, 0, 0, 0);
   }
 }
 
@@ -648,7 +673,7 @@
   --bg-card-hover: #f8f9fa;
   --text-primary: #1e293b;
   --text-secondary: #64748b;
-  --text-muted: #94a3b8;
+  --text-muted: #6b7280;
   --border-color: #e2e8f0;
   --border-light: #f1f5f9;
   --chart-grid: #e2e8f0;
@@ -671,7 +696,7 @@
   --bg-card-hover: #fdfbf7;
   --text-primary: #1a1a1a;
   --text-secondary: #5c5c5c;
-  --text-muted: #999999;
+  --text-muted: #6b7280;
   --border-color: #e8e3dc;
   --border-light: #f7f3ee;
   --chart-grid: #f7f3ee;
@@ -694,7 +719,7 @@
   --bg-card-hover: #f1f5f9;
   --text-primary: #2e3440;
   --text-secondary: #4c566a;
-  --text-muted: #81a1c1;
+  --text-muted: #5e6878;
   --border-color: #d8dee9;
   --border-light: #e5e9f0;
   --chart-grid: #e5e9f0;
@@ -717,7 +742,7 @@
   --bg-card-hover: #fffef5;
   --text-primary: #1a1a1a;
   --text-secondary: #5c5c5c;
-  --text-muted: #999999;
+  --text-muted: #6b7280;
   --border-color: #f0e8c8;
   --border-light: #fff9e6;
   --chart-grid: #fff9e6;
@@ -745,6 +770,7 @@
 
 :root {
   --accent-fill: var(--accent-primary);
+  --accent-fill-size: auto;
   --accent-fill-stop-1: var(--accent-primary);
   --accent-fill-stop-2: var(--accent-secondary);
 }
@@ -753,52 +779,105 @@
 [data-accent-mode="solid"] {
   --accent-fill: var(--accent-primary);
   --accent-fill-stop-1: var(--accent-primary);
-  --accent-fill-stop-2: var(--accent-primary);
+  --accent-fill-stop-2: var(--accent-secondary);
 }
 
-/* ---- Animated Gradient (same stripes, panning + a slow lightness pulse so
-   icons/text/borders are also visibly "alive", not just filled surfaces) ---- */
-[data-accent-mode="animated-gradient"] {
-  --accent-primary: color-mix(
-    in srgb,
-    var(--accent-base) calc(85% - var(--accent-pulse) * 1%),
-    white
-  );
-  --accent-secondary: color-mix(
-    in srgb,
-    var(--accent-base) calc(55% + var(--accent-pulse) * 1%),
-    black
-  );
-  --accent-fill: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--accent-base) 55%, black) 0px 14px,
-    var(--accent-base) 14px 28px,
-    color-mix(in srgb, var(--accent-base) 60%, white) 28px 42px,
-    var(--accent-base) 42px 56px
-  );
+/* ---- Sheen — a moving highlight band that sweeps across the UI ---- */
+/* ---- Flow  — a gentle multi-shade drift of the accent color     ---- */
+
+/* Derived shades using relative-color syntax — hue-agnostic, works for all 32 accents.
+   Solid fallback: both modes default --accent-fill to var(--accent-base) for browsers
+   without relative-color-syntax (Chrome 119+). */
+[data-accent-mode="sheen"],
+[data-accent-mode="flow"] {
+  --c-lite: oklch(from var(--accent-base) calc(l + 0.12) c h);
+  --c-dark: oklch(from var(--accent-base) calc(l - 0.08) c h);
+  --c-depth: oklch(from var(--accent-base) l c calc(h + var(--fx-depth)));
 }
 
-@keyframes accent-pulse-cycle {
-  0%,
-  100% {
-    --accent-pulse: 0;
-  }
-  50% {
-    --accent-pulse: 30;
-  }
+[data-accent-mode="sheen"] {
+  /* Highlight brightness and hue-tint grow with Depth; band half-width grows with Spread */
+  --c-hi: oklch(
+    from var(--accent-base) calc(l + 0.06 + var(--fx-depth, 30) * 0.004) c
+      calc(h + var(--fx-depth, 30) * 0.5)
+  );
+  --sheen-band: calc(3% + var(--fx-spread, 34) * 0.25%);
+
+  --accent-primary: var(--c-hi);
+  --accent-secondary: oklch(
+    from var(--accent-base) l c calc(h + var(--fx-depth, 30))
+  );
+
+  /* Fallback then gradient: base at both ends keeps the loop seamless at 400% size */
+  --accent-fill: var(--accent-base);
+  --accent-fill: linear-gradient(
+    115deg,
+    var(--accent-base) calc(50% - var(--sheen-band) - 10%),
+    var(--c-hi) 50%,
+    var(--accent-base) calc(50% + var(--sheen-band) + 10%)
+  );
+  --accent-fill-size: 400% 100%;
+  --accent-fill-stop-1: var(--accent-base);
+  --accent-fill-stop-2: var(--c-hi);
 }
 
-/* ---- Rainbow Wave (classic RGB lighting effect) ---- */
+[data-accent-mode="flow"] {
+  --accent-primary: var(--c-lite);
+  --accent-secondary: var(--c-depth);
+  /* Symmetric gradient: identical at 0% and 100% (c-dark) so adjacent animation tiles
+     join at the same shade — the drift feels continuous. */
+  --accent-fill: var(--accent-base);
+  --accent-fill: linear-gradient(
+    120deg,
+    var(--c-dark) 0%,
+    var(--accent-base) 25%,
+    var(--c-lite) 50%,
+    var(--accent-base) 75%,
+    var(--c-dark) 100%
+  );
+  --accent-fill-size: 300% 100%;
+  --accent-fill-stop-1: var(--c-lite);
+  --accent-fill-stop-2: var(--c-depth);
+}
+
+/* ---- Rainbow Wave (OKLCH spatial spread — each element steps further around the hue wheel) ---- */
+:root {
+  --rainbow-spread: 34; /* degrees of hue per element step */
+  --fx-speed: 12s; /* animation duration (Speed slider) */
+  --fx-spread: 34; /* per-element / sweep spread (Spread slider) */
+  --fx-depth: 30; /* 2nd-hue offset in degrees (Depth slider) */
+}
+
 [data-accent-mode="rainbow-wave"] {
-  --accent-primary: hsl(var(--accent-spin), 85%, 60%);
-  --accent-secondary: hsl(calc(var(--accent-spin) + 40), 85%, 65%);
-  --accent-glow: hsla(var(--accent-spin), 85%, 60%, 0.35);
-  --accent-fill: repeating-linear-gradient(
-    45deg,
-    hsl(calc(var(--accent-spin) + 0), 90%, 58%) 0px 14px,
-    hsl(calc(var(--accent-spin) + 45), 90%, 58%) 14px 28px,
-    hsl(calc(var(--accent-spin) + 90), 90%, 58%) 28px 42px,
-    hsl(calc(var(--accent-spin) + 135), 90%, 58%) 42px 56px
+  --el-off: calc(
+    var(--accent-spin, 0) + var(--el-index, 0) * var(--fx-spread, 34)
+  );
+
+  --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
+  --accent-secondary: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
+  );
+  --accent-glow: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off)) / 0.45
+  );
+
+  --accent-fill: var(--accent-base);
+  --accent-fill: linear-gradient(
+    180deg,
+    oklch(from var(--accent-base) l c calc(h + var(--el-off))) 0%,
+    oklch(
+        from var(--accent-base) l c
+          calc(h + var(--el-off) + var(--fx-depth, 30))
+      )
+      100%
+  );
+  --accent-fill-size: 100% 100%;
+
+  --accent-fill-stop-1: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off))
+  );
+  --accent-fill-stop-2: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
   );
 }
 
@@ -811,55 +890,165 @@
   }
 }
 
-/* ---- Spectrum Per-Element (32-color palette distributed across the UI) ---- */
+/* ---- Spectrum Per-Element (same engine as Wave, no animation — spread only) ---- */
 [data-accent-mode="spectrum"] {
-  --accent-fill: repeating-linear-gradient(
-    45deg,
-    #d4af37 0px 14px,
-    #14b8a6 14px 28px,
-    #8b5cf6 28px 42px,
-    #ef4444 42px 56px
+  --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
+
+  --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
+  --accent-secondary: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
   );
-  --accent-fill-stop-1: #14b8a6;
-  --accent-fill-stop-2: #8b5cf6;
+  --accent-glow: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off)) / 0.45
+  );
+
+  --accent-fill: var(--accent-base);
+  --accent-fill: linear-gradient(
+    180deg,
+    oklch(from var(--accent-base) l c calc(h + var(--el-off))) 0%,
+    oklch(
+        from var(--accent-base) l c
+          calc(h + var(--el-off) + var(--fx-depth, 30))
+      )
+      100%
+  );
+  --accent-fill-size: 100% 100%;
+
+  --accent-fill-stop-1: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off))
+  );
+  --accent-fill-stop-2: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
+  );
 }
 
-@keyframes accent-stripe-pan {
+/* Per-element hue overrides for Spectrum and Rainbow Wave.
+   Chrome evaluates custom-property var() chains at the declaring element and inherits
+   post-substitution values, so --el-off on [data-accent-mode] always resolves with
+   --el-index=0 (the html initial-value). Re-declaring these tokens on elements that
+   carry an inline --el-index forces Chrome to re-evaluate var(--el-index) at each
+   element's own scope, giving each card/chart its correct per-element hue.
+   var(--accent-spin, 0) is 0 in Spectrum (no animation), non-zero in Rainbow Wave. */
+[data-accent-mode="spectrum"] [style*="--el-index"],
+[data-accent-mode="rainbow-wave"] [style*="--el-index"] {
+  --el-off: calc(
+    var(--accent-spin, 0) + var(--el-index, 0) * var(--fx-spread, 34)
+  );
+  --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
+  --accent-secondary: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
+  );
+  --accent-glow: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off)) / 0.45
+  );
+  --accent-fill: linear-gradient(
+    180deg,
+    oklch(from var(--accent-base) l c calc(h + var(--el-off))) 0%,
+    oklch(
+        from var(--accent-base) l c
+          calc(h + var(--el-off) + var(--fx-depth, 30))
+      )
+      100%
+  );
+  --accent-fill-size: 100% 100%;
+  --accent-fill-stop-1: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off))
+  );
+  --accent-fill-stop-2: oklch(
+    from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
+  );
+}
+
+@keyframes accent-fill-pan {
   from {
-    background-position: 0 0;
+    background-position: 0% center;
   }
   to {
-    background-position: 56px 56px;
+    background-position: 100% center;
+  }
+}
+
+/* Right-to-left sweep: position goes from 100% to 0% so the highlight band enters
+   from the right and exits left. Both endpoints show the gradient's base-color ends,
+   making the loop seamless at any animation speed. */
+@keyframes fx-pan {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  [data-accent-mode="animated-gradient"] {
-    animation: accent-pulse-cycle 20s ease-in-out infinite;
-  }
   [data-accent-mode="rainbow-wave"] {
-    animation: accent-spin-rotate 20s linear infinite;
+    animation: accent-spin-rotate var(--fx-speed) linear infinite;
   }
 
-  [data-accent-mode="animated-gradient"] .accent-fill,
-  [data-accent-mode="rainbow-wave"] .accent-fill,
-  [data-accent-mode="animated-gradient"] .accent-bg,
-  [data-accent-mode="rainbow-wave"] .accent-bg,
-  [data-accent-mode="animated-gradient"] .btn-accent,
-  [data-accent-mode="rainbow-wave"] .btn-accent,
-  [data-accent-mode="animated-gradient"] .progress-accent,
-  [data-accent-mode="rainbow-wave"] .progress-accent,
-  [data-accent-mode="animated-gradient"] .card-progress-bar,
-  [data-accent-mode="rainbow-wave"] .card-progress-bar,
-  [data-accent-mode="animated-gradient"]
-    .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="rainbow-wave"] .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="animated-gradient"] .theme-preview-swatch.gradient,
-  [data-accent-mode="rainbow-wave"] .theme-preview-swatch.gradient,
-  [data-accent-mode="animated-gradient"] .theme-live-preview-bar,
-  [data-accent-mode="rainbow-wave"] .theme-live-preview-bar,
-  [data-accent-mode="animated-gradient"] .mode-row.active .mode-radio::after,
-  [data-accent-mode="rainbow-wave"] .mode-row.active .mode-radio::after {
-    animation: accent-stripe-pan 20s linear infinite;
+  /* Staggered per-element delay ripples the highlight across the page:
+     negative delay starts elements mid-animation so there's no startup gap. */
+  [data-accent-mode="sheen"] .accent-fill,
+  [data-accent-mode="sheen"] .accent-bg,
+  [data-accent-mode="sheen"] .accent-spine,
+  [data-accent-mode="sheen"] .btn-accent,
+  [data-accent-mode="sheen"] .progress-accent,
+  [data-accent-mode="sheen"] .card-progress-bar,
+  [data-accent-mode="sheen"] .core-bar,
+  [data-accent-mode="sheen"] .ov-spine,
+  [data-accent-mode="sheen"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="sheen"] .theme-preview-swatch.gradient,
+  [data-accent-mode="sheen"] .theme-live-preview-bar,
+  [data-accent-mode="sheen"] .mode-row.active .mode-radio::after,
+  [data-accent-mode="sheen"] [data-accent-el],
+  [data-accent-mode="flow"] .accent-fill,
+  [data-accent-mode="flow"] .accent-bg,
+  [data-accent-mode="flow"] .accent-spine,
+  [data-accent-mode="flow"] .btn-accent,
+  [data-accent-mode="flow"] .progress-accent,
+  [data-accent-mode="flow"] .card-progress-bar,
+  [data-accent-mode="flow"] .core-bar,
+  [data-accent-mode="flow"] .ov-spine,
+  [data-accent-mode="flow"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="flow"] .theme-preview-swatch.gradient,
+  [data-accent-mode="flow"] .theme-live-preview-bar,
+  [data-accent-mode="flow"] .mode-row.active .mode-radio::after,
+  [data-accent-mode="flow"] [data-accent-el] {
+    animation: fx-pan var(--fx-speed) linear infinite;
+    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-accent-mode="rainbow-wave"] {
+    animation: none;
+  }
+
+  [data-accent-mode="sheen"] .accent-fill,
+  [data-accent-mode="sheen"] .accent-bg,
+  [data-accent-mode="sheen"] .accent-spine,
+  [data-accent-mode="sheen"] .btn-accent,
+  [data-accent-mode="sheen"] .progress-accent,
+  [data-accent-mode="sheen"] .card-progress-bar,
+  [data-accent-mode="sheen"] .core-bar,
+  [data-accent-mode="sheen"] .ov-spine,
+  [data-accent-mode="sheen"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="sheen"] .theme-preview-swatch.gradient,
+  [data-accent-mode="sheen"] .theme-live-preview-bar,
+  [data-accent-mode="sheen"] .mode-row.active .mode-radio::after,
+  [data-accent-mode="sheen"] [data-accent-el],
+  [data-accent-mode="flow"] .accent-fill,
+  [data-accent-mode="flow"] .accent-bg,
+  [data-accent-mode="flow"] .accent-spine,
+  [data-accent-mode="flow"] .btn-accent,
+  [data-accent-mode="flow"] .progress-accent,
+  [data-accent-mode="flow"] .card-progress-bar,
+  [data-accent-mode="flow"] .core-bar,
+  [data-accent-mode="flow"] .ov-spine,
+  [data-accent-mode="flow"] .settings-btn-accent:hover:not(:disabled),
+  [data-accent-mode="flow"] .theme-preview-swatch.gradient,
+  [data-accent-mode="flow"] .theme-live-preview-bar,
+  [data-accent-mode="flow"] .mode-row.active .mode-radio::after,
+  [data-accent-mode="flow"] [data-accent-el] {
+    animation: none;
   }
 }

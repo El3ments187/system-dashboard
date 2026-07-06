@@ -44,8 +44,8 @@ function getChartColors(): {
   };
 }
 
-function getSeriesColors(): string[] {
-  return resolveAccentColors(2);
+function getSeriesColors(contextEl?: Element | null): string[] {
+  return resolveAccentColors(2, false, contextEl);
 }
 
 function formatTime(date: Date): string {
@@ -120,11 +120,11 @@ export default function MetricChart({
 
   useAccentSync(() => {
     setChartColors(getChartColors());
-    setSeriesColors(getSeriesColors());
+    setSeriesColors(getSeriesColors(chartRef.current));
     if (!_color) {
-      setStrokeColor(resolveAccentColor());
+      setStrokeColor(resolveAccentColor(chartRef.current));
     }
-  }, [_color]);
+  }, [_color, !!chartComponents]);
 
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -435,6 +435,7 @@ export default function MetricChart({
   return (
     <div
       className="chart-container"
+      data-accent-el=""
       style={{ flex: 1, minHeight: 0, ...style }}
     >
       <div

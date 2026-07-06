@@ -38,9 +38,9 @@ describe("getAccentMode", () => {
     expect(getAccentMode()).toBe("rainbow-wave");
   });
 
-  it("returns animated-gradient when set", () => {
-    setAccentMode("animated-gradient");
-    expect(getAccentMode()).toBe("animated-gradient");
+  it("returns sheen when set", () => {
+    setAccentMode("sheen");
+    expect(getAccentMode()).toBe("sheen");
   });
 });
 
@@ -169,8 +169,8 @@ describe("resolveAccentColors", () => {
     });
   });
 
-  describe("animated-gradient mode", () => {
-    beforeEach(() => setAccentMode("animated-gradient"));
+  describe("sheen mode", () => {
+    beforeEach(() => setAccentMode("sheen"));
 
     it("behaves like solid mode for color resolution", () => {
       const colors = resolveAccentColors(1);

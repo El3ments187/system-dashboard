@@ -75,9 +75,7 @@ describe("GpuPage - accent application", () => {
 
   it("renders vertical progress bars with accent color", () => {
     const { container } = renderGpuPage(<GpuPage accent={accent} />);
-    const progressBars = container.querySelectorAll(
-      '[style*="linear-gradient"]',
-    );
+    const progressBars = container.querySelectorAll('[style*="accent-fill"]');
     expect(progressBars.length).toBeGreaterThan(0);
   });
 

@@ -15,7 +15,7 @@ describe("useTheme - exports", () => {
   it("exports ACCENT_MODES with expected modes", () => {
     const modeIds = ACCENT_MODES.map((m) => m.id);
     expect(modeIds).toContain("solid");
-    expect(modeIds).toContain("animated-gradient");
+    expect(modeIds).toContain("sheen");
     expect(modeIds).toContain("rainbow-wave");
     expect(modeIds).toContain("spectrum");
   });
@@ -61,7 +61,7 @@ describe("useTheme - defaults", () => {
 });
 
 describe("useTheme - accent mode migration", () => {
-  it('migrates legacy "gradient" to "animated-gradient"', () => {
+  it('migrates legacy "gradient" to "sheen"', () => {
     localStorage.setItem("dashboard-accent-mode", "gradient");
     const root = document.createElement("div");
     document.body.appendChild(root);
@@ -69,7 +69,7 @@ describe("useTheme - accent mode migration", () => {
     const { result, unmount } = require("@testing-library/react").renderHook(
       () => useTheme(),
     );
-    expect(result.current.accentMode).toBe("animated-gradient");
+    expect(result.current.accentMode).toBe("sheen");
     unmount();
     document.body.removeChild(root);
   });

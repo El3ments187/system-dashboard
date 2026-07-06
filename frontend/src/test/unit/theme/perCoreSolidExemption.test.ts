@@ -57,24 +57,18 @@ describe("resolveAccentColors - Solid mode per-core exemption", () => {
     expect(new Set(colors).size).toBe(32);
   });
 
-  it("produces a different sequence in Animated Gradient mode (theme participation)", () => {
+  it("produces a different sequence in Sheen mode (theme participation)", () => {
     document.documentElement.style.setProperty("--accent-primary", "#22C55E");
     const solidColors = resolveAccentColors(8, true);
 
-    document.documentElement.setAttribute(
-      "data-accent-mode",
-      "animated-gradient",
-    );
-    const gradientColors = resolveAccentColors(8, true);
+    document.documentElement.setAttribute("data-accent-mode", "sheen");
+    const sheenColors = resolveAccentColors(8, true);
 
-    expect(gradientColors).not.toEqual(solidColors);
+    expect(sheenColors).not.toEqual(solidColors);
   });
 
-  it("Animated Gradient per-core colors do shift when the accent changes", () => {
-    document.documentElement.setAttribute(
-      "data-accent-mode",
-      "animated-gradient",
-    );
+  it("Sheen per-core colors do shift when the accent changes", () => {
+    document.documentElement.setAttribute("data-accent-mode", "sheen");
 
     document.documentElement.style.setProperty("--accent-primary", "#3B82F6");
     const blueColors = resolveAccentColors(8, true);

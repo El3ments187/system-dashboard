@@ -181,6 +181,7 @@ function PanelCard({
   return (
     <div
       className="card-accent-spine"
+      data-accent-el=""
       style={{
         background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
         border: "1px solid var(--border-light, var(--border-color))",
@@ -188,7 +189,7 @@ function PanelCard({
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        boxShadow: "var(--shadow-card)",
+        boxShadow: "var(--shadow-card), var(--card-glow)",
         ...style,
       }}
     >
@@ -332,6 +333,7 @@ function FooterStat({
 }) {
   return (
     <div
+      data-accent-el=""
       style={{
         display: "flex",
         alignItems: "center",
@@ -2941,6 +2943,7 @@ export default function LlamaCppPage() {
             {/* Run Models */}
             <div
               className="card-accent-spine"
+              data-accent-el=""
               style={{
                 flex: "none",
                 height: 204,
@@ -2949,7 +2952,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card)",
+                boxShadow: "var(--shadow-card), var(--card-glow)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
@@ -2960,6 +2963,7 @@ export default function LlamaCppPage() {
             {/* Console */}
             <div
               className="card-accent-spine"
+              data-accent-el=""
               style={{
                 flex: 1,
                 minHeight: 0,
@@ -2968,7 +2972,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card)",
+                boxShadow: "var(--shadow-card), var(--card-glow)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >

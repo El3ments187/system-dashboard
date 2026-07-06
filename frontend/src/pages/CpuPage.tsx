@@ -89,6 +89,7 @@ function CpuVerticalProgress({
 
   return (
     <div
+      data-accent-el=""
       style={{
         display: "flex",
         flexDirection: "column",
@@ -123,15 +124,24 @@ function CpuVerticalProgress({
         }}
       >
         <div
+          className={
+            color === accent ? "accent-fill accent-glow-target" : undefined
+          }
           style={{
             position: "absolute",
             bottom: 0,
             left: 0,
             right: 0,
             height: `${pct}%`,
-            background: `linear-gradient(to top, ${color}, ${color}dd)`,
+            minHeight: value > 0 ? 2 : 0,
+            ...(color === accent
+              ? {
+                  background: "var(--accent-fill)",
+                  backgroundSize: "var(--accent-fill-size, 100% 100%)",
+                }
+              : { background: color }),
             borderRadius: 5,
-            transition: "height 0.6s ease, background 0.4s ease",
+            transition: "height 0.6s ease",
           }}
         />
         <div
@@ -431,7 +441,7 @@ function CpuContent({ accent }: CpuPageProps) {
     cpuTemperatureHistory && cpuTemperatureHistory.length > 0;
 
   return (
-    <div className="cpu-row">
+    <div className="cpu-row" data-accent-el="">
       {/* Left column - CPU summary card */}
       <div className="cpu-col-left" style={{ flexShrink: 0 }}>
         <CpuSummaryCard accent={accent} />

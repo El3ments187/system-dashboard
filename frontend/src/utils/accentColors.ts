@@ -12,7 +12,7 @@ export const ACCENT_OBSERVER_ATTRS = [
 ];
 
 /** Modes whose colors shift over time and so need more than a one-shot resolve. */
-const ANIMATED_MODES = new Set(["animated-gradient", "rainbow-wave"]);
+const ANIMATED_MODES = new Set(["sheen", "flow", "rainbow-wave"]);
 
 export function getAccentMode(): string {
   return document.documentElement.getAttribute("data-accent-mode") || "solid";
@@ -57,21 +57,65 @@ export function useAccentSync(
  * `rgb()` value, so every color this module returns is a plain, safely-suffixable hex string.
  */
 let probeEl: HTMLElement | null = null;
-function toHex(colorValue: string): string {
-  if (!colorValue) return colorValue;
-  if (/^#[0-9a-f]{6}$/i.test(colorValue)) return colorValue.toLowerCase();
-  if (typeof document === "undefined") return colorValue;
+
+function ensureProbeEl(): HTMLElement {
   if (!probeEl) {
     probeEl = document.createElement("div");
     probeEl.style.display = "none";
     document.body.appendChild(probeEl);
   }
-  probeEl.style.color = colorValue;
-  const resolved = getComputedStyle(probeEl).color;
+  return probeEl;
+}
+
+let probeCanvas: HTMLCanvasElement | null = null;
+let probeCtx: CanvasRenderingContext2D | null = null;
+
+function ensureCanvas(): CanvasRenderingContext2D | null {
+  if (!probeCanvas) {
+    probeCanvas = document.createElement("canvas");
+    probeCanvas.width = probeCanvas.height = 1;
+    probeCtx = probeCanvas.getContext("2d", { willReadFrequently: true });
+  }
+  return probeCtx;
+}
+
+function toHex(colorValue: string): string {
+  if (!colorValue) return "";
+  if (/^#[0-9a-f]{6}$/i.test(colorValue)) return colorValue.toLowerCase();
+  if (typeof document === "undefined") return "";
+  const el = ensureProbeEl();
+  // jsdom does not resolve var() references when computing standard CSS property
+  // values (getComputedStyle(el).color with `color: var(--x)` returns "" instead
+  // of the resolved color). Read the custom property value directly and recurse.
+  const varMatch = colorValue.match(/^var\(--([\w-]+)(?:,.*?)?\)$/);
+  if (varMatch) {
+    const raw = getComputedStyle(el)
+      .getPropertyValue(`--${varMatch[1]}`)
+      .trim();
+    if (raw) return toHex(raw);
+    return "";
+  }
+  el.style.color = colorValue;
+  const resolved = getComputedStyle(el).color;
+  if (!resolved || resolved === colorValue) return "";
+  // Convert via canvas — handles rgb(), oklch(), lab(), color() uniformly.
+  // Chrome returns oklch() strings for oklch-defined colors instead of rgb(),
+  // so string-parsing the channel values gives wrong results; canvas always
+  // renders to sRGB bytes regardless of the input color space.
+  const ctx = ensureCanvas();
+  if (ctx) {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = resolved;
+    ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    if (d[3] > 0) {
+      const toByte = (v: number) => v.toString(16).padStart(2, "0");
+      return `#${toByte(d[0])}${toByte(d[1])}${toByte(d[2])}`;
+    }
+  }
+  // Fallback: parse rgb(r, g, b) string (0-255 channels).
   const m = resolved.match(/[\d.]+/g);
-  if (!m) return colorValue;
-  // Legacy `rgb(r, g, b)` reports channels 0-255; the CSS Color 4 `color(srgb r g b)`
-  // syntax (what color-mix() resolves to in some browsers) reports channels 0-1.
+  if (!m) return "";
   const scale = resolved.startsWith("color(") ? 255 : 1;
   const [r, g, b] = m.slice(0, 3).map((v) => Math.round(parseFloat(v) * scale));
   const toByte = (v: number) =>
@@ -98,39 +142,6 @@ function hexToHsl(hex: string): [number, number, number] {
     if (hue < 0) hue += 360;
   }
   return [hue, s * 100, l * 100];
-}
-
-/**
- * Hue bands (degrees) reserved for semantic status colors (--danger ~0°, --warning ~38°,
- * --success ~142°), widened to also exclude visually-similar neighboring hues. Generated
- * per-element accent colors are nudged out of these bands so a bar's "this is just its
- * assigned accent color" hue can never be mistaken for a warning/critical/normal state color.
- */
-const SEMANTIC_HUE_BANDS: Array<[number, number]> = [
-  [340, 20], // danger red (wraps through 0)
-  [20, 58], // warning amber
-  [122, 162], // success green
-];
-
-function inHueBand(h: number, start: number, end: number): boolean {
-  return start <= end ? h >= start && h <= end : h >= start || h <= end;
-}
-
-function circularHueDistance(a: number, b: number): number {
-  const diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
-
-function avoidSemanticHues(hue: number): number {
-  let h = ((hue % 360) + 360) % 360;
-  for (const [start, end] of SEMANTIC_HUE_BANDS) {
-    if (inHueBand(h, start, end)) {
-      const distToStart = circularHueDistance(h, start);
-      const distToEnd = circularHueDistance(h, end);
-      h = distToStart <= distToEnd ? (start - 1 + 360) % 360 : (end + 1) % 360;
-    }
-  }
-  return h;
 }
 
 /**
@@ -242,19 +253,42 @@ export function getSecondarySeriesColor(primaryHex: string): string {
   return hslToHex(h, s, targetL);
 }
 
+function spectrumColors(n: number): string[] {
+  const probe = ensureProbeEl();
+  const rootCs = getComputedStyle(document.documentElement);
+  const fxSpread =
+    parseFloat(rootCs.getPropertyValue("--fx-spread").trim()) || 34;
+  return Array.from({ length: n }, (_, i) => {
+    probe.style.setProperty(
+      "--accent-primary",
+      `oklch(from var(--accent-base) l c calc(h + ${i * fxSpread}))`,
+    );
+    const resolved = toHex("var(--accent-primary)");
+    return /^#[0-9a-f]{6}$/i.test(resolved)
+      ? resolved
+      : SPECTRUM[i % SPECTRUM.length];
+  });
+}
+
+function rainbowColors(n: number, cs: CSSStyleDeclaration): string[] {
+  const spin = parseFloat(cs.getPropertyValue("--accent-spin").trim()) || 0;
+  const accentHex = toHex("var(--accent-base)") || "#3b82f6";
+  const [accentH, , accentL] = hexToHsl(accentHex);
+  let lit = accentL;
+  if (accentL > 60) {
+    lit = accentL - 10;
+  } else if (accentL < 40) {
+    lit = accentL + 10;
+  }
+  return spreadHues(accentH + spin, n).map((hue) => hslToHex(hue, 80, lit));
+}
+
 /** Resolves the single "primary" series color for the active mode, ignoring count entirely. */
-function resolvePrimaryModeColor(
-  mode: string,
-  cs: CSSStyleDeclaration,
-): string {
+function resolvePrimaryModeColor(mode: string): string {
   if (mode === "spectrum") {
-    return SPECTRUM[0];
+    return toHex("var(--accent-primary)") || SPECTRUM[0];
   }
-  if (mode === "rainbow-wave") {
-    const spin = parseFloat(cs.getPropertyValue("--accent-spin")) || 0;
-    return hslToHex(avoidSemanticHues(spin), 85, 60);
-  }
-  return toHex(cs.getPropertyValue("--accent-primary").trim()) || "#6366f1";
+  return toHex("var(--accent-primary)") || "#6366f1";
 }
 
 /**
@@ -271,10 +305,70 @@ function resolvePrimaryModeColor(
 export function resolveAccentColors(
   count: number,
   perCoreExemption = false,
+  contextEl?: Element | null,
 ): string[] {
   const n = Math.max(1, count);
   const mode = getAccentMode();
-  const cs = getComputedStyle(document.documentElement);
+
+  // Propagate --el-index from the DOM context so --accent-primary resolves with the
+  // right per-element hue offset in Rainbow Wave / Spectrum modes. Without this,
+  // getComputedStyle(documentElement) always sees el-index=0 (the registered initial
+  // value) regardless of where on the page the chart is actually rendered.
+  const probe = ensureProbeEl();
+  if (contextEl) {
+    const rawIndex = getComputedStyle(contextEl)
+      .getPropertyValue("--el-index")
+      .trim();
+    const index = parseFloat(rawIndex) || 0;
+    probe.style.setProperty("--el-index", String(index));
+    // Chrome evaluates the entire custom-property chain at the html element and
+    // inherits already-substituted values, so setting --el-index on the probe has
+    // no downstream effect. For per-element-hue modes we set --accent-primary (and
+    // fill counterparts) directly using relative-color-syntax so the accent base hue
+    // is preserved and only the hue offset changes per element.
+    const rootCs = getComputedStyle(document.documentElement);
+    const spread =
+      parseFloat(rootCs.getPropertyValue("--fx-spread").trim()) || 34;
+    const depth =
+      parseFloat(rootCs.getPropertyValue("--fx-depth").trim()) || 30;
+    const spin =
+      parseFloat(rootCs.getPropertyValue("--accent-spin").trim()) || 0;
+    const elOff = spin + index * spread;
+    probe.style.setProperty("--el-off", String(elOff));
+    if (mode === "spectrum" || mode === "rainbow-wave") {
+      probe.style.setProperty(
+        "--accent-primary",
+        `oklch(from var(--accent-base) l c calc(h + ${elOff}))`,
+      );
+      probe.style.setProperty(
+        "--accent-fill-stop-1",
+        `oklch(from var(--accent-base) l c calc(h + ${elOff}))`,
+      );
+      probe.style.setProperty(
+        "--accent-fill-stop-2",
+        `oklch(from var(--accent-base) l c calc(h + ${elOff + depth}))`,
+      );
+    } else {
+      probe.style.removeProperty("--accent-primary");
+      probe.style.removeProperty("--accent-fill-stop-1");
+      probe.style.removeProperty("--accent-fill-stop-2");
+    }
+  } else {
+    probe.style.removeProperty("--el-index");
+    probe.style.removeProperty("--el-off");
+    probe.style.removeProperty("--accent-primary");
+    probe.style.removeProperty("--accent-fill-stop-1");
+    probe.style.removeProperty("--accent-fill-stop-2");
+  }
+  const cs = getComputedStyle(probe);
+
+  // Spectrum always uses its fixed palette regardless of count, including n <= 2,
+  // so it must be checked before the n<=2 shortcut that reads --accent-primary.
+  if (mode === "spectrum") {
+    const cols = spectrumColors(n);
+    if (n === 2) return [cols[0], getSecondarySeriesColor(cols[0])];
+    return cols;
+  }
 
   if (n <= 2) {
     // Every genuinely two-series consumer (Memory/Swap, dual-axis charts, storage
@@ -282,38 +376,28 @@ export function resolveAccentColors(
     // primary line in the mode's active color, one secondary line that's clearly a variant
     // of that same color (never an unrelated hue) so the dashed/solid distinction is the
     // only thing doing double duty with color, not fighting it.
-    const primary = resolvePrimaryModeColor(mode, cs);
+    const primary = resolvePrimaryModeColor(mode);
     if (n === 1) return [primary];
     return [primary, getSecondarySeriesColor(primary)];
   }
 
-  if (mode === "spectrum") {
-    return Array.from({ length: n }, (_, i) => SPECTRUM[i % SPECTRUM.length]);
-  }
-
   if (mode === "rainbow-wave") {
-    // Offset by the live --accent-spin so discrete multi-series colors actually rotate over
-    // time too (read via the synced interval in useAccentSync), not just a fixed index spread.
-    // Normalized to hex (not left as an `hsl()` string) so callers can safely alpha-suffix it.
-    const spin = parseFloat(cs.getPropertyValue("--accent-spin")) || 0;
-    return spreadHues(spin, n).map((hue) => hslToHex(hue, 85, 60));
+    return rainbowColors(n, cs);
   }
 
-  // Only the per-core utilization chart ignores the accent in Solid mode and falls back to
-  // the fixed palette, per spec. Every other n > 2 consumer (e.g. multi-device storage
-  // colors) falls through to the hue-spread-from-accent below, same as Animated Gradient.
+  // In Solid mode, the per-core utilization chart always uses the fixed SPECTRUM palette
+  // regardless of the selected accent — it is the one component exempted from accent tracking.
   if (mode === "solid" && perCoreExemption) {
     return Array.from({ length: n }, (_, i) => SPECTRUM[i % SPECTRUM.length]);
   }
 
-  const primary =
-    toHex(cs.getPropertyValue("--accent-primary").trim()) || "#6366f1";
+  const primary = toHex("var(--accent-primary)") || "#6366f1";
   const [h, s, l] = hexToHsl(primary);
   return spreadHues(h, n).map((hue) => hslToHex(hue, s, l));
 }
 
-export function resolveAccentColor(): string {
-  return resolveAccentColors(1)[0];
+export function resolveAccentColor(contextEl?: Element | null): string {
+  return resolveAccentColors(1, false, contextEl)[0];
 }
 
 /**
@@ -328,4 +412,19 @@ export function useResolvedAccentColor(): string {
   const [color, setColor] = useState(() => resolveAccentColor());
   useAccentSync(() => setColor(resolveAccentColor()));
   return color;
+}
+
+export function useAccentIndexer(): void {
+  useEffect(() => {
+    function assignIndices() {
+      const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      els.forEach((el, i) => {
+        el.style.setProperty("--el-index", String(i));
+      });
+    }
+    assignIndices();
+    const observer = new MutationObserver(assignIndices);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 }

@@ -74,11 +74,8 @@ describe("resolveAccentColors(2) - dual-line series across modes", () => {
     expect(secondary).toBe(getSecondarySeriesColor("#40e0d0"));
   });
 
-  it("Animated Gradient mode: same relationship as Solid (participates in the live accent)", () => {
-    document.documentElement.setAttribute(
-      "data-accent-mode",
-      "animated-gradient",
-    );
+  it("Sheen mode: same relationship as Solid (participates in the live accent)", () => {
+    document.documentElement.setAttribute("data-accent-mode", "sheen");
     document.documentElement.style.setProperty("--accent-primary", "#EF4444");
     const [primary, secondary] = resolveAccentColors(2);
     expect(primary).toBe("#ef4444");
@@ -101,12 +98,7 @@ describe("resolveAccentColors(2) - dual-line series across modes", () => {
   });
 
   it("never returns identical primary/secondary in any mode", () => {
-    for (const mode of [
-      "solid",
-      "animated-gradient",
-      "rainbow-wave",
-      "spectrum",
-    ]) {
+    for (const mode of ["solid", "sheen", "rainbow-wave", "spectrum"]) {
       document.documentElement.setAttribute("data-accent-mode", mode);
       const [primary, secondary] = resolveAccentColors(2);
       expect(primary.toLowerCase()).not.toBe(secondary.toLowerCase());
