@@ -204,8 +204,10 @@ export default function MetricChart({
     return (
       <div
         className="chart-container"
+        data-accent-el=""
         style={{ flex: 1, minHeight: 0, ...style }}
       >
+        <span className="card-accent-spine accent-glow-target" aria-hidden />
         <div
           className="chart-title"
           style={{
@@ -438,6 +440,7 @@ export default function MetricChart({
       data-accent-el=""
       style={{ flex: 1, minHeight: 0, ...style }}
     >
+      <span className="card-accent-spine accent-glow-target" aria-hidden />
       <div
         className="chart-title"
         style={{

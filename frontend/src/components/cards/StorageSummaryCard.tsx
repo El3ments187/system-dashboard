@@ -2,6 +2,7 @@ import { useMetricsContext } from "../../context/MetricsContext";
 import { HardDrive, ArrowUp, ArrowDown } from "lucide-react";
 import ProgressBar from "../shared/ProgressBar";
 import { useProgressStatus } from "../../hooks/useProgressStatus";
+import { Card } from "../shared/CardComponents";
 
 interface CardProps {
   accent?: { color: string; glow: string };
@@ -50,7 +51,7 @@ export default function StorageSummaryCard(_props: CardProps) {
 
   if (storageLoading) {
     return (
-      <div className="metric-card" style={{ opacity: 0.5 }}>
+      <Card style={{ opacity: 0.5 }}>
         <div className="card-header">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
@@ -79,13 +80,13 @@ export default function StorageSummaryCard(_props: CardProps) {
           />
           <div className="skeleton" style={{ height: 36, width: "100%" }} />
         </div>
-      </div>
+      </Card>
     );
   }
 
   if (allMounts.length === 0) {
     return (
-      <div className="metric-card">
+      <Card>
         <div className="card-header">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
@@ -112,12 +113,12 @@ export default function StorageSummaryCard(_props: CardProps) {
         >
           No storage devices detected
         </div>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="metric-card">
+    <Card>
       <div className="card-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
@@ -223,6 +224,6 @@ export default function StorageSummaryCard(_props: CardProps) {
       </div>
 
       <div className="card-filler" />
-    </div>
+    </Card>
   );
 }

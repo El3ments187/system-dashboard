@@ -85,12 +85,18 @@ export default function App() {
     setPulse,
     pulseSpeed,
     setPulseSpeed,
+    pulseIntensity,
+    setPulseIntensity,
     innerGlow,
     setInnerGlow,
     gradientBorder,
     setGradientBorder,
     cardGlow,
     setCardGlow,
+    glowColor,
+    setGlowColor,
+    glowCustom,
+    setGlowCustom,
     resetTheme,
     current,
   } = useTheme();
@@ -195,12 +201,18 @@ export default function App() {
                   onPulseChange={setPulse}
                   pulseSpeed={pulseSpeed}
                   onPulseSpeedChange={setPulseSpeed}
+                  pulseIntensity={pulseIntensity}
+                  onPulseIntensityChange={setPulseIntensity}
                   innerGlow={innerGlow}
                   onInnerGlowChange={setInnerGlow}
                   gradientBorder={gradientBorder}
                   onGradientBorderChange={setGradientBorder}
                   cardGlow={cardGlow}
                   onCardGlowChange={setCardGlow}
+                  glowColor={glowColor}
+                  onGlowColorChange={setGlowColor}
+                  glowCustom={glowCustom}
+                  onGlowCustomChange={setGlowCustom}
                 />
               ) : (
                 <PageContent activePage={activePage} accent={current} />

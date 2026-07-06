@@ -958,6 +958,12 @@ main {
     0 0 0 1px color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
 
+.card {
+  position: relative;
+  overflow: visible;
+  padding-left: 16px;
+}
+
 .card-header {
   display: flex;
   align-items: center;
@@ -1104,6 +1110,7 @@ main {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: 4px;
+  padding-left: 16px;
   border: 1px solid var(--border-subtle, var(--border-color));
   box-shadow: var(--shadow-card);
   transition:
@@ -1111,9 +1118,14 @@ main {
     box-shadow var(--transition-normal);
   animation: fadeIn 400ms ease;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.ov-chart-wrap .chart-container .card-accent-spine {
+  display: none;
 }
 
 .chart-title {
@@ -1176,11 +1188,23 @@ main {
 }
 
 .settings-card {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
   transition: var(--transition-normal);
+}
+
+.card-accent-spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-top-left-radius: inherit;
+  border-bottom-left-radius: inherit;
+  background: var(--accent-primary);
 }
 
 .settings-card:hover {

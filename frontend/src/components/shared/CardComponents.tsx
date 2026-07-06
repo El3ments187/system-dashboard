@@ -119,17 +119,43 @@ export function CardHeader({
 export function CardShell({ children }: { children: React.ReactNode }) {
   return (
     <div
+      data-accent-el=""
       style={{
+        position: "relative",
         display: "flex",
         flexDirection: "column",
         background: "var(--bg-card)",
         borderRadius: "var(--radius-md)",
         border: "1px solid var(--border-color)",
-        overflow: "hidden",
+        overflow: "visible",
         minWidth: 0,
         flex: "1 1 0",
+        paddingLeft: "16px",
       }}
     >
+      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      {children}
+    </div>
+  );
+}
+
+/* ─── universal card root (one component for every card on every page) ─── */
+export function Card({
+  children,
+  style,
+  className,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+}) {
+  return (
+    <div
+      className={["metric-card", "card", className].filter(Boolean).join(" ")}
+      data-accent-el=""
+      style={style}
+    >
+      <span className="card-accent-spine accent-glow-target" aria-hidden />
       {children}
     </div>
   );

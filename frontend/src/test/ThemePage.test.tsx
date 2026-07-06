@@ -126,6 +126,38 @@ describe("ThemePage effects toggles", () => {
   });
 });
 
+describe("ThemePage preview parity", () => {
+  it("preview cards use CardShell: each has data-accent-el and card-accent-spine child", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const previewRow = container.querySelector(".preview-cards-row");
+    expect(previewRow).toBeTruthy();
+    const cards = previewRow!.querySelectorAll("[data-accent-el]");
+    expect(cards.length).toBeGreaterThanOrEqual(3);
+    cards.forEach((card) => {
+      const spine = card.querySelector(".card-accent-spine.accent-glow-target");
+      expect(spine).toBeTruthy();
+    });
+  });
+
+  it("preview bar fills have accent-glow-target class for Pulse and Neon Glow", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const bars = container.querySelectorAll(".preview-bar-fill");
+    expect(bars.length).toBeGreaterThan(0);
+    bars.forEach((bar) => {
+      expect(bar.classList.contains("accent-glow-target")).toBe(true);
+    });
+  });
+
+  it("accent-glow-target elements carry no inline opacity — Pulse animates ::after in CSS only", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const targets = container.querySelectorAll(".accent-glow-target");
+    expect(targets.length).toBeGreaterThan(0);
+    targets.forEach((el) => {
+      expect((el as HTMLElement).style.opacity).toBe("");
+    });
+  });
+});
+
 describe("useAccentIndexer", () => {
   beforeEach(() => {
     document.body.innerHTML = "";

@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import PanelErrorBoundary from "../common/PanelErrorBoundary";
 import PanelErrorState from "../common/PanelErrorState";
 import StorageHistoryChart from "../../charts/StorageHistoryChart";
+import { Card } from "../shared/CardComponents";
 
 export default function StoragePerformanceCard() {
   const {
@@ -16,10 +17,7 @@ export default function StoragePerformanceCard() {
   if (storageLoading) {
     return (
       <PanelErrorBoundary panelName="Storage Performance">
-        <div
-          className="metric-card"
-          style={{ gridColumn: "1 / -1", opacity: 0.5 }}
-        >
+        <Card style={{ gridColumn: "1 / -1", opacity: 0.5 }}>
           <div className="card-header">
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Activity size={16} style={{ color: "var(--accent-primary)" }} />
@@ -37,7 +35,7 @@ export default function StoragePerformanceCard() {
           >
             <div className="skeleton" style={{ height: 200, width: "100%" }} />
           </div>
-        </div>
+        </Card>
       </PanelErrorBoundary>
     );
   }
@@ -62,8 +60,7 @@ export default function StoragePerformanceCard() {
 
   return (
     <PanelErrorBoundary panelName="Storage Performance">
-      <div
-        className="metric-card"
+      <Card
         style={{
           gridColumn: "1 / -1",
           display: "flex",
@@ -96,7 +93,7 @@ export default function StoragePerformanceCard() {
         >
           <StorageHistoryChart data={storageHistories} />
         </div>
-      </div>
+      </Card>
     </PanelErrorBoundary>
   );
 }

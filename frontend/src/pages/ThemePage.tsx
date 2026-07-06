@@ -1,3 +1,5 @@
+import { Monitor, Cpu, HardDrive } from "lucide-react";
+import { CardShell, CardHeader } from "../components/shared/CardComponents";
 import { ACCENT_MODES, PRESETS, BG_PRESETS } from "../hooks/useTheme";
 
 function ToggleSwitch({ on }: { on: boolean }) {
@@ -100,19 +102,31 @@ function SliderRow({
   );
 }
 
-const SPINE_STYLE = {
-  width: 3,
-  flexShrink: 0,
-  borderRadius: "var(--radius-md) 0 0 var(--radius-md)",
-  alignSelf: "stretch",
-} as const;
-
 const CHART_VALS = [40, 65, 50, 80, 60, 90, 70, 55, 75, 45, 85, 60];
 
 const PREVIEW_CARDS = [
-  { title: "GPU", value: 65, sub: "41°C · 47 W" },
-  { title: "CPU", value: 32, sub: "64°C · 16/32" },
-  { title: "MEM", value: 57, sub: "17.5 / 30.5 GB" },
+  {
+    title: "GPU",
+    value: 65,
+    sub: "41°C · 47 W",
+    icon: (
+      <Monitor size={14} style={{ color: "var(--accent-primary)" }} />
+    ),
+  },
+  {
+    title: "CPU",
+    value: 32,
+    sub: "64°C · 16/32",
+    icon: <Cpu size={14} style={{ color: "var(--accent-primary)" }} />,
+  },
+  {
+    title: "MEM",
+    value: 57,
+    sub: "17.5 / 30.5 GB",
+    icon: (
+      <HardDrive size={14} style={{ color: "var(--accent-primary)" }} />
+    ),
+  },
 ];
 
 const PREVIEW_METERS = [
@@ -125,42 +139,51 @@ const PREVIEW_METERS = [
 function ThemePreview() {
   return (
     <div className="theme-preview-panel">
-      {/* Metric cards with accent spines */}
+      {/* Metric cards — use real CardShell/CardHeader for effect parity */}
       <div className="preview-cards-row">
         {PREVIEW_CARDS.map((card) => (
-          <div
-            key={card.title}
-            data-accent-el=""
-            className="preview-card"
-            style={{
-              boxShadow:
-                "var(--shadow-card), var(--card-glow), var(--card-halo)",
-            }}
-          >
-            <div className="accent-spine accent-fill" style={SPINE_STYLE} />
-            <div className="preview-card-body">
-              <span className="preview-card-title">{card.title}</span>
-              <span className="accent-text preview-card-value">
+          <CardShell key={card.title}>
+            <CardHeader icon={card.icon} title={card.title} online={true} />
+            <div style={{ padding: "8px 10px" }}>
+              <span
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  display: "block",
+                  marginBottom: 2,
+                  color: "var(--accent-primary)",
+                }}
+              >
                 {card.value}%
               </span>
-              <span className="preview-card-sub">{card.sub}</span>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-secondary)",
+                  display: "block",
+                  marginBottom: 6,
+                }}
+              >
+                {card.sub}
+              </span>
               <div className="preview-bar-track">
                 <div
-                  className="accent-fill accent-glow-target preview-bar-fill"
+                  className="accent-fill preview-bar-fill"
                   style={{ width: `${card.value}%` }}
                 />
               </div>
             </div>
-          </div>
+          </CardShell>
         ))}
       </div>
 
       {/* History chart */}
-      <div data-accent-el="" className="preview-chart">
+      <div className="preview-chart">
         <div className="preview-chart-inner">
           {CHART_VALS.map((h, i) => (
             <div
               key={i}
+              data-accent-el=""
               className="theme-live-preview-bar"
               style={{ height: `${h}%` }}
             />
@@ -175,7 +198,7 @@ function ThemePreview() {
             <span className="preview-meter-label">{m.label}</span>
             <div className="preview-meter-track">
               <div
-                className="accent-fill accent-glow-target preview-meter-fill"
+                  className="accent-fill preview-meter-fill"
                 style={{ width: `${m.value}%` }}
               />
             </div>
@@ -247,12 +270,18 @@ export interface ThemePageProps {
   onPulseChange?: (v: boolean) => void;
   pulseSpeed?: number;
   onPulseSpeedChange?: (v: number) => void;
+  pulseIntensity?: number;
+  onPulseIntensityChange?: (v: number) => void;
   innerGlow?: boolean;
   onInnerGlowChange?: (v: boolean) => void;
   gradientBorder?: boolean;
   onGradientBorderChange?: (v: boolean) => void;
   cardGlow?: boolean;
   onCardGlowChange?: (v: boolean) => void;
+  glowColor?: "match" | "accent" | "custom";
+  onGlowColorChange?: (v: "match" | "accent" | "custom") => void;
+  glowCustom?: string;
+  onGlowCustomChange?: (v: string) => void;
 }
 
 export default function ThemePage({
@@ -277,12 +306,18 @@ export default function ThemePage({
   onPulseChange,
   pulseSpeed = 4,
   onPulseSpeedChange,
+  pulseIntensity = 1.5,
+  onPulseIntensityChange,
   innerGlow,
   onInnerGlowChange,
   gradientBorder,
   onGradientBorderChange,
   cardGlow,
   onCardGlowChange,
+  glowColor = "match",
+  onGlowColorChange,
+  glowCustom = "#3b82f6",
+  onGlowCustomChange,
 }: ThemePageProps) {
   const prefersReducedMotion =
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -489,6 +524,60 @@ export default function ThemePage({
                           onGlowIntensityChange(v);
                         }}
                       />
+                      {onGlowColorChange && (
+                        <div style={{ marginTop: 8 }}>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              marginBottom: 6,
+                            }}
+                          >
+                            Glow Color
+                          </div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            {(["accent", "match", "custom"] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                onClick={() => onGlowColorChange(opt)}
+                                style={{
+                                  fontSize: 11,
+                                  padding: "3px 10px",
+                                  borderRadius: 4,
+                                  border: "1px solid",
+                                  borderColor: glowColor === opt ? "var(--accent-primary)" : "var(--border-color)",
+                                  background: glowColor === opt ? "var(--accent-tint-15)" : "transparent",
+                                  color: glowColor === opt ? "var(--accent-primary)" : "var(--text-muted)",
+                                  cursor: "pointer",
+                                  textTransform: "capitalize",
+                                }}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                            {glowColor === "custom" && onGlowCustomChange && (
+                              <input
+                                type="color"
+                                value={glowCustom}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  document.documentElement.style.setProperty("--glow-custom", v);
+                                  onGlowCustomChange(v);
+                                }}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  border: "1px solid var(--border-color)",
+                                  borderRadius: 4,
+                                  cursor: "pointer",
+                                  padding: 2,
+                                  background: "transparent",
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -519,8 +608,8 @@ export default function ThemePage({
                             ? "Pulse Speed (reduced-motion active)"
                             : "Pulse Speed"
                         }
-                        min={1}
-                        max={10}
+                        min={2}
+                        max={8}
                         step={0.5}
                         value={pulseSpeed}
                         display={`${pulseSpeed}s`}
@@ -533,6 +622,29 @@ export default function ThemePage({
                           onPulseSpeedChange(v);
                         }}
                       />
+                      {onPulseIntensityChange && (
+                        <SliderRow
+                          id="tp-pulse-intensity"
+                          label={
+                            prefersReducedMotion
+                              ? "Pulse Intensity (reduced-motion active)"
+                              : "Pulse Intensity"
+                          }
+                          min={0.5}
+                          max={4}
+                          step={0.1}
+                          value={pulseIntensity}
+                          display={pulseIntensity.toFixed(1)}
+                          disabled={prefersReducedMotion}
+                          onChange={(v) => {
+                            document.documentElement.style.setProperty(
+                              "--pulse-intensity",
+                              String(v),
+                            );
+                            onPulseIntensityChange(v);
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>

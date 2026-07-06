@@ -40,7 +40,7 @@ interface SettingsPageProps {
 
 type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
-export default function SettingsPage({ accent }: SettingsPageProps) {
+export default function SettingsPage({}: SettingsPageProps) {
   const [settings, setSettings] = useState<AiSettings>({
     llama_server_url: "",
     openwebui_url: "",
@@ -362,9 +362,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
   return (
     <main className="settings-grid">
       <div className="settings-card" data-accent-el="">
+        <span className="card-accent-spine accent-glow-target" aria-hidden />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
-            <SettingsIcon size={16} style={{ color: accent.color }} />
+            <SettingsIcon size={16} style={{ color: "var(--accent-primary)" }} />
           </div>
           <div>
             <div className="settings-card-title">AI Service Configuration</div>
@@ -419,9 +420,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
+        <span className="card-accent-spine accent-glow-target" aria-hidden />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
-            <GitBranch size={16} style={{ color: accent.color }} />
+            <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
           </div>
           <div>
             <div className="settings-card-title">LLAMA.CPP Configuration</div>
@@ -535,9 +537,10 @@ export default function SettingsPage({ accent }: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
+        <span className="card-accent-spine accent-glow-target" aria-hidden />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
-            <BookOpen size={16} style={{ color: accent.color }} />
+            <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />
           </div>
           <div>
             <div className="settings-card-title">LLAMA.CPP Documentation</div>

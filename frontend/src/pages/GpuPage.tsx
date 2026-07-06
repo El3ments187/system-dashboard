@@ -3,6 +3,7 @@ import { useMetricsContext } from "../context/MetricsContext";
 import MetricChart from "../charts/MetricChart";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import PanelErrorState from "../components/common/PanelErrorState";
+import { Card } from "../components/shared/CardComponents";
 import {
   Gpu,
   Thermometer,
@@ -218,7 +219,6 @@ function VerticalProgress({
 
 function GpuSummaryCard({
   gpu,
-  accent,
   index,
 }: {
   gpu: GpuMetrics;
@@ -248,8 +248,8 @@ function GpuSummaryCard({
     gpu.power_limit_watts > 0 ? gpu.power_limit_watts : undefined;
 
   return (
-    <div
-      className="metric-card gpu-summary-card"
+    <Card
+      className="gpu-summary-card"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -261,7 +261,7 @@ function GpuSummaryCard({
       {/* Header */}
       <div className="card-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Gpu size={16} style={{ color: accent.color }} />
+          <Gpu size={16} style={{ color: "var(--accent-primary)" }} />
           <span className="card-title" style={{ fontSize: "12px" }}>
             GPU {index}
           </span>
@@ -313,7 +313,7 @@ function GpuSummaryCard({
             />
             Temp
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {gpu.temperature_celsius.toFixed(0)}°C
           </span>
         </div>
@@ -325,7 +325,7 @@ function GpuSummaryCard({
             />
             Power
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {gpu.power_usage_watts.toFixed(0)}W
           </span>
         </div>
@@ -337,7 +337,7 @@ function GpuSummaryCard({
             />
             VRAM
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {formatBytes(gpu.vram_used_gb)} / {formatBytes(gpu.vram_total_gb)}
           </span>
         </div>
@@ -349,7 +349,7 @@ function GpuSummaryCard({
             />
             Fan
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {gpu.fan_speed_rpm > 0 ? `${gpu.fan_speed_rpm} RPM` : "—"}
           </span>
         </div>
@@ -362,7 +362,7 @@ function GpuSummaryCard({
               />
               Clock
             </span>
-            <span className="card-detail-value" style={{ color: accent.color }}>
+            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
               {gpu.clock_speed_mhz.toFixed(0)} MHz
             </span>
           </div>
@@ -376,7 +376,7 @@ function GpuSummaryCard({
               />
               MemClk
             </span>
-            <span className="card-detail-value" style={{ color: accent.color }}>
+            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
               {gpu.memory_clock_mhz.toFixed(0)} MHz
             </span>
           </div>
@@ -456,7 +456,7 @@ function GpuSummaryCard({
           warning={warning}
         />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -577,8 +577,7 @@ export default function GpuPage({ accent }: GpuPageProps) {
         })
       ) : (
         <div className="dashboard-row">
-          <div
-            className="metric-card"
+          <Card
             style={{
               display: "flex",
               alignItems: "center",
@@ -593,7 +592,7 @@ export default function GpuPage({ accent }: GpuPageProps) {
               />
               <div style={{ fontSize: "14px" }}>No GPU data available</div>
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </main>

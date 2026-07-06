@@ -2,13 +2,13 @@ import { useMemo, useState } from "react";
 import { Cpu } from "lucide-react";
 import { resolveAccentColors, useAccentSync } from "../utils/accentColors";
 import { getProgressState } from "../utils/progress";
+import { Card } from "../components/shared/CardComponents";
 
 interface CoreBarProps {
   cores: Array<{
     utilization_percent: number;
     temperature_celsius?: number;
   } | null>;
-  accent: { color: string; glow: string };
 }
 
 function resolveVar(name: string): string {
@@ -121,7 +121,7 @@ const CoreRow = ({
 
 /* ─── CoreBars Component ─── */
 
-export default function CoreBars({ cores, accent }: CoreBarProps) {
+export default function CoreBars({ cores }: CoreBarProps) {
   const [themeTick, setThemeTick] = useState(0);
   useAccentSync(() => setThemeTick((t) => t + 1));
 
@@ -158,8 +158,7 @@ export default function CoreBars({ cores, accent }: CoreBarProps) {
   const colB = indexedCores.slice(half);
 
   return (
-    <div
-      className="metric-card"
+    <Card
       style={{
         display: "flex",
         flexDirection: "column",
@@ -170,7 +169,7 @@ export default function CoreBars({ cores, accent }: CoreBarProps) {
     >
       <div className="card-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Cpu size={14} style={{ color: accent.color }} />
+          <Cpu size={14} style={{ color: "var(--accent-primary)" }} />
           <span className="card-title" style={{ fontSize: "11px" }}>
             Per-Core Utilization
           </span>
@@ -234,6 +233,6 @@ export default function CoreBars({ cores, accent }: CoreBarProps) {
       >
         {totalCores} logical threads
       </div>
-    </div>
+    </Card>
   );
 }

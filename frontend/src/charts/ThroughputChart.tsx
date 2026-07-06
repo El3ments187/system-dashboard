@@ -66,7 +66,6 @@ export default function ThroughputChart({
   const [seriesColors, setSeriesColors] = useState(() =>
     resolveAccentColors(2),
   );
-  const accent = { color: seriesColors[0] };
   const promptColor = seriesColors[1];
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState<{
@@ -131,7 +130,7 @@ export default function ThroughputChart({
             current={genStats.current}
             avg={genStats.avg}
             peak={genStats.peak}
-            color={accent.color}
+            color={"var(--accent-primary)"}
           />
           <StatBadge
             label="Prompt TPS"
@@ -162,7 +161,7 @@ export default function ThroughputChart({
           current={genStats.current}
           avg={genStats.avg}
           peak={genStats.peak}
-          color={accent.color}
+          color={"var(--accent-primary)"}
         />
         <StatBadge
           label="Prompt TPS"
@@ -221,7 +220,7 @@ export default function ThroughputChart({
                     >
                       {d.timeLabel}
                     </div>
-                    <div style={{ color: accent.color }}>
+                    <div style={{ color: "var(--accent-primary)" }}>
                       Gen TPS: {d.genTps ?? "\u2014"}
                     </div>
                     <div style={{ color: promptColor }}>
@@ -238,8 +237,8 @@ export default function ThroughputChart({
             />
             <Area
               dataKey="genTps"
-              stroke={accent.color}
-              fill={`${accent.color}20`}
+              stroke={"var(--accent-primary)"}
+              fill={`${"var(--accent-primary)"}20`}
               strokeWidth={1.5}
               fillOpacity={0.3}
               isAnimationActive={false}
@@ -248,7 +247,7 @@ export default function ThroughputChart({
                 r: 3,
                 stroke: chartColors.dotStroke,
                 strokeWidth: 1.5,
-                fill: accent.color,
+                fill: "var(--accent-primary)",
               }}
             />
             <Area

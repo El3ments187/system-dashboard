@@ -4,6 +4,7 @@ import MetricChart from "../charts/MetricChart";
 import CoreBars from "../charts/CoreBars";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import PanelErrorState from "../components/common/PanelErrorState";
+import { Card } from "../components/shared/CardComponents";
 import { Cpu, Thermometer, Activity, Server, Zap } from "lucide-react";
 import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
 import {
@@ -185,9 +186,7 @@ function CpuVerticalProgress({
 
 /* ─── CPU Summary Card (Left Column) ─── */
 
-function CpuSummaryCard({
-  accent,
-}: {
+function CpuSummaryCard({}: {
   accent: { color: string; glow: string };
 }) {
   const barColor = useResolvedAccentColor();
@@ -216,8 +215,7 @@ function CpuSummaryCard({
   const load15Pct = threads > 0 ? Math.min((load15 / threads) * 100, 100) : 0;
 
   return (
-    <div
-      className="metric-card"
+    <Card
       style={{
         display: "flex",
         flexDirection: "column",
@@ -229,7 +227,7 @@ function CpuSummaryCard({
       {/* Header */}
       <div className="card-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Cpu size={16} style={{ color: accent.color }} />
+          <Cpu size={16} style={{ color: "var(--accent-primary)" }} />
           <span className="card-title" style={{ fontSize: "12px" }}>
             CPU
           </span>
@@ -281,7 +279,7 @@ function CpuSummaryCard({
             />
             Temp
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {temp.toFixed(0)}°C
           </span>
         </div>
@@ -293,7 +291,7 @@ function CpuSummaryCard({
             />
             Freq
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {freq > 0 ? `${(freq / 1000).toFixed(1)} GHz` : "—"}
           </span>
         </div>
@@ -305,7 +303,7 @@ function CpuSummaryCard({
             />
             Cores
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {physCores}
           </span>
         </div>
@@ -317,7 +315,7 @@ function CpuSummaryCard({
             />
             Threads
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {threads}
           </span>
         </div>
@@ -329,7 +327,7 @@ function CpuSummaryCard({
             />
             Load 1m
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {load1.toFixed(2)}
           </span>
         </div>
@@ -341,7 +339,7 @@ function CpuSummaryCard({
             />
             Load 5m
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {load5.toFixed(2)}
           </span>
         </div>
@@ -353,7 +351,7 @@ function CpuSummaryCard({
             />
             Load 15m
           </span>
-          <span className="card-detail-value" style={{ color: accent.color }}>
+          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
             {load15.toFixed(2)}
           </span>
         </div>
@@ -419,7 +417,7 @@ function CpuSummaryCard({
           warning={warning}
         />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -461,7 +459,7 @@ function CpuContent({ accent }: CpuPageProps) {
         {/* Per-core bars - larger portion */}
         {coreData.length > 0 && (
           <div style={{ flex: 1.3, minHeight: 0 }}>
-            <CoreBars cores={coreData} accent={accent} />
+            <CoreBars cores={coreData} />
           </div>
         )}
 

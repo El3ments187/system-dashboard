@@ -143,10 +143,11 @@ export default function Header({
               key={page}
               onClick={() => onPageChange?.(page)}
               className={`dash-nav-btn${activePage === page ? " active" : ""}`}
+              {...(activePage === page ? { "data-accent-el": "" } : {})}
               style={
                 activePage === page
                   ? {
-                      color: accent.color,
+                      color: "var(--accent-primary)",
                       background: "var(--accent-tint-15)",
                       borderColor: "var(--accent-tint-40)",
                     }
@@ -178,7 +179,7 @@ export default function Header({
           {system && (
             <span className="status-chip">
               <span className="chip-label">Host</span>
-              <span className="chip-value" style={{ color: accent.color }}>
+              <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
                 {system.hostname}
               </span>
             </span>
@@ -187,7 +188,7 @@ export default function Header({
           {/* Uptime chip */}
           <span className="status-chip">
             <span className="chip-label">Uptime</span>
-            <span className="chip-value" style={{ color: accent.color }}>
+            <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
               {uptime}
             </span>
           </span>
@@ -196,7 +197,7 @@ export default function Header({
           {system && (
             <span className="status-chip">
               <span className="chip-label">Updated</span>
-              <span className="chip-value" style={{ color: accent.color }}>
+              <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
                 {system.last_update}
               </span>
             </span>
@@ -205,6 +206,7 @@ export default function Header({
           {/* Online / Offline chip */}
           <span
             className="status-chip accent"
+            {...(healthOk !== false ? { "data-accent-el": "" } : {})}
             style={
               healthOk === false
                 ? {
@@ -213,7 +215,7 @@ export default function Header({
                       "color-mix(in srgb, var(--danger) 15%, transparent)",
                   }
                 : {
-                    color: accent.color,
+                    color: "var(--accent-primary)",
                     background: "var(--accent-tint-15)",
                   }
             }
@@ -221,7 +223,7 @@ export default function Header({
             <span
               className="chip-dot"
               style={{
-                background: healthOk === false ? "var(--danger)" : accent.color,
+                background: healthOk === false ? "var(--danger)" : "var(--accent-primary)",
               }}
             />
             {healthOk === false ? "Offline" : "Online"}
@@ -231,6 +233,7 @@ export default function Header({
           <button
             onClick={toggleLiveData}
             className="status-chip accent"
+            {...(!isPaused ? { "data-accent-el": "" } : {})}
             style={
               isPaused
                 ? {
@@ -242,7 +245,7 @@ export default function Header({
                     fontFamily: "inherit",
                   }
                 : {
-                    color: accent.color,
+                    color: "var(--accent-primary)",
                     background: "var(--accent-tint-15)",
                     cursor: "pointer",
                     border: "none",
@@ -254,7 +257,7 @@ export default function Header({
             <span
               className={`chip-dot${isPaused ? "" : " live"}`}
               style={{
-                background: isPaused ? "var(--warning)" : accent.color,
+                background: isPaused ? "var(--warning)" : "var(--accent-primary)",
               }}
             />
             {isPaused ? "Paused" : "Live"}

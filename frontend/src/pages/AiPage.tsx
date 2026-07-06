@@ -24,13 +24,13 @@ export default function AiPage() {
           minHeight: 0,
         }}
       >
-        <div data-accent-el="" style={{ minHeight: 0, display: "flex" }}>
+        <div style={{ minHeight: 0, display: "flex" }}>
           <OpenCodeCard />
         </div>
-        <div data-accent-el="" style={{ minHeight: 0, display: "flex" }}>
+        <div style={{ minHeight: 0, display: "flex" }}>
           <OpenWebUICard />
         </div>
-        <div data-accent-el="" style={{ minHeight: 0, display: "flex" }}>
+        <div style={{ minHeight: 0, display: "flex" }}>
           <ComfyUICard />
         </div>
       </div>

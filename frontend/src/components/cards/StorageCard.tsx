@@ -8,6 +8,7 @@ import { getMetricDescription } from "../../data/metricDescriptions";
 import ProgressBar from "../shared/ProgressBar";
 import { useProgressStatus } from "../../hooks/useProgressStatus";
 import { getProgressColor, getStorageTempColor } from "../../utils/progress";
+import { Card } from "../shared/CardComponents";
 
 interface CardProps {
   accent?: { color: string; glow: string };
@@ -88,36 +89,36 @@ export default function StorageCard(_props: CardProps) {
   if (storageLoading) {
     return (
       <PanelErrorBoundary panelName="Storage">
-        <div className="metric-card" style={{ opacity: 0.5 }}>
-          <div className="card-header">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
-              <span className="card-title">Storage</span>
-            </div>
-            <div className="card-status">
-              <div
-                className="status-dot"
-                style={{ background: "var(--success)" }}
-              />
-              <span style={{ color: "var(--success)" }}>Active</span>
-            </div>
+      <Card style={{ opacity: 0.5 }}>
+        <div className="card-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
+            <span className="card-title">Storage</span>
           </div>
-          <div className="card-value">
-            <span className="card-unit">%</span>
-          </div>
-          <ProgressBar percent={0} />
-          <div style={{ padding: "8px 0" }}>
+          <div className="card-status">
             <div
-              className="skeleton"
-              style={{ height: 40, width: "100%", marginBottom: 8 }}
+              className="status-dot"
+              style={{ background: "var(--success)" }}
             />
-            <div
-              className="skeleton"
-              style={{ height: 40, width: "100%", marginBottom: 8 }}
-            />
-            <div className="skeleton" style={{ height: 40, width: "100%" }} />
+            <span style={{ color: "var(--success)" }}>Active</span>
           </div>
         </div>
+        <div className="card-value">
+          <span className="card-unit">%</span>
+        </div>
+        <ProgressBar percent={0} />
+        <div style={{ padding: "8px 0" }}>
+          <div
+            className="skeleton"
+            style={{ height: 40, width: "100%", marginBottom: 8 }}
+          />
+          <div
+            className="skeleton"
+            style={{ height: 40, width: "100%", marginBottom: 8 }}
+          />
+          <div className="skeleton" style={{ height: 40, width: "100%" }} />
+        </div>
+      </Card>
       </PanelErrorBoundary>
     );
   }
@@ -138,7 +139,7 @@ export default function StorageCard(_props: CardProps) {
   if (allMounts.length === 0) {
     return (
       <PanelErrorBoundary panelName="Storage">
-        <div className="metric-card">
+        <Card>
           <div className="card-header">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
@@ -165,14 +166,14 @@ export default function StorageCard(_props: CardProps) {
           >
             No storage devices detected
           </div>
-        </div>
+        </Card>
       </PanelErrorBoundary>
     );
   }
 
   return (
     <PanelErrorBoundary panelName="Storage">
-      <div className="metric-card">
+      <Card>
         <div className="card-header">
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <HardDrive size={16} style={{ color: "var(--accent-primary)" }} />
@@ -476,7 +477,7 @@ export default function StorageCard(_props: CardProps) {
           })}
           <div className="card-filler" />
         </div>
-      </div>
+      </Card>
     </PanelErrorBoundary>
   );
 }

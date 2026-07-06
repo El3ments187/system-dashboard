@@ -248,6 +248,12 @@ export function useTheme() {
     return parseFloat(localStorage.getItem("dashboard-pulse-speed") || "4");
   });
 
+  const [pulseIntensity, setPulseIntensity] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-pulse-intensity") || "1.5",
+    );
+  });
+
   const [innerGlow, setInnerGlow] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-inner-glow") === "on";
   });
@@ -258,6 +264,14 @@ export function useTheme() {
 
   const [cardGlow, setCardGlow] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-card-glow") === "on";
+  });
+
+  const [glowColor, setGlowColor] = useState<"match" | "accent" | "custom">(() => {
+    return (localStorage.getItem("dashboard-glow-color") as "match" | "accent" | "custom") || "match";
+  });
+
+  const [glowCustom, setGlowCustom] = useState<string>(() => {
+    return localStorage.getItem("dashboard-glow-custom") || "#3b82f6";
   });
 
   const resetTheme = useCallback(() => {
@@ -271,9 +285,12 @@ export function useTheme() {
     setGlowIntensity(1.4);
     setPulse(false);
     setPulseSpeed(4);
+    setPulseIntensity(1.5);
     setInnerGlow(false);
     setGradientBorder(false);
     setCardGlow(false);
+    setGlowColor("match");
+    setGlowCustom("#3b82f6");
   }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -354,6 +371,14 @@ export function useTheme() {
   }, [pulseSpeed]);
 
   useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--pulse-intensity",
+      String(pulseIntensity),
+    );
+    localStorage.setItem("dashboard-pulse-intensity", String(pulseIntensity));
+  }, [pulseIntensity]);
+
+  useEffect(() => {
     if (innerGlow) {
       document.documentElement.setAttribute("data-inner-glow", "on");
     } else {
@@ -383,6 +408,20 @@ export function useTheme() {
     localStorage.setItem("dashboard-card-glow", cardGlow ? "on" : "");
   }, [cardGlow]);
 
+  useEffect(() => {
+    if (glowColor === "accent" || glowColor === "custom") {
+      document.documentElement.setAttribute("data-glow-color", glowColor);
+    } else {
+      document.documentElement.removeAttribute("data-glow-color");
+    }
+    localStorage.setItem("dashboard-glow-color", glowColor);
+  }, [glowColor]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--glow-custom", glowCustom);
+    localStorage.setItem("dashboard-glow-custom", glowCustom);
+  }, [glowCustom]);
+
   return {
     accent,
     setAccent,
@@ -404,12 +443,18 @@ export function useTheme() {
     setPulse,
     pulseSpeed,
     setPulseSpeed,
+    pulseIntensity,
+    setPulseIntensity,
     innerGlow,
     setInnerGlow,
     gradientBorder,
     setGradientBorder,
     cardGlow,
     setCardGlow,
+    glowColor,
+    setGlowColor,
+    glowCustom,
+    setGlowCustom,
     resetTheme,
     current,
     presets: PRESETS,

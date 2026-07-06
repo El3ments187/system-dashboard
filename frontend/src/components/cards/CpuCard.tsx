@@ -6,12 +6,9 @@ import { useTooltip } from "../../components/common/TooltipProvider";
 import { getMetricDescription } from "../../data/metricDescriptions";
 import ProgressBar from "../shared/ProgressBar";
 import { useProgressStatus } from "../../hooks/useProgressStatus";
+import { Card } from "../shared/CardComponents";
 
-interface CardProps {
-  accent: { color: string; glow: string };
-}
-
-export default function CpuCard({ accent }: CardProps) {
+export default function CpuCard() {
   const tooltip = useTooltip();
   const { cpuCurrentValues, cpuLoading, cpuError, retryCpu } =
     useMetricsContext();
@@ -31,25 +28,25 @@ export default function CpuCard({ accent }: CardProps) {
   if (cpuLoading) {
     return (
       <PanelErrorBoundary panelName="CPU">
-        <div className="metric-card" style={{ opacity: 0.5 }}>
-          <div className="card-header">
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Cpu size={16} style={{ color: accent.color }} />
-              <span className="card-title">CPU</span>
-            </div>
-          </div>
-          <div
-            style={{
-              padding: 8,
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div className="skeleton" style={{ height: 200, width: "100%" }} />
+      <Card style={{ opacity: 0.5 }}>
+        <div className="card-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Cpu size={16} style={{ color: "var(--accent-primary)" }} />
+            <span className="card-title">CPU</span>
           </div>
         </div>
+        <div
+          style={{
+            padding: 8,
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div className="skeleton" style={{ height: 200, width: "100%" }} />
+        </div>
+      </Card>
       </PanelErrorBoundary>
     );
   }
@@ -69,10 +66,10 @@ export default function CpuCard({ accent }: CardProps) {
 
   return (
     <PanelErrorBoundary panelName="CPU">
-      <div className="metric-card">
+      <Card>
         <div className="card-header">
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Cpu size={16} style={{ color: accent.color }} />
+            <Cpu size={16} style={{ color: "var(--accent-primary)" }} />
             <span className="card-title">CPU</span>
           </div>
           <div className="card-status">
@@ -109,7 +106,7 @@ export default function CpuCard({ accent }: CardProps) {
             <span
               className="card-detail-value"
               style={{
-                color: temp != null ? accent.color : "var(--text-muted)",
+                color: temp != null ? "var(--accent-primary)" : "var(--text-muted)",
               }}
             >
               {temp != null ? `${temp.toFixed(0)}\u00B0C` : "\u2014"}
@@ -133,7 +130,7 @@ export default function CpuCard({ accent }: CardProps) {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Frequency</span>
-            <span className="card-detail-value" style={{ color: accent.color }}>
+            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
               {freq != null ? `${freq.toFixed(0)} MHz` : "\u2014"}
             </span>
           </div>
@@ -154,7 +151,7 @@ export default function CpuCard({ accent }: CardProps) {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Cores</span>
-            <span className="card-detail-value" style={{ color: accent.color }}>
+            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
               {cores != null && cores > 0 ? cores : "\u2014"}
             </span>
           </div>
@@ -175,7 +172,7 @@ export default function CpuCard({ accent }: CardProps) {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Threads</span>
-            <span className="card-detail-value" style={{ color: accent.color }}>
+            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
               {threads != null && threads > 0 ? threads : "\u2014"}
             </span>
           </div>
@@ -199,7 +196,7 @@ export default function CpuCard({ accent }: CardProps) {
             <span className="card-detail-label">Load</span>
             <span
               className="card-detail-value"
-              style={{ color: accent.color, fontSize: "14px" }}
+              style={{ color: "var(--accent-primary)", fontSize: "14px" }}
             >
               {[load1, load5, load15]
                 .map((v) => (v != null ? v.toFixed(2) : "\u2014"))
@@ -211,7 +208,7 @@ export default function CpuCard({ accent }: CardProps) {
             <span style={{ color: statusColor }}>{statusLabel}</span>
           </div>
         </div>
-      </div>
+      </Card>
     </PanelErrorBoundary>
   );
 }

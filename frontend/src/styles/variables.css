@@ -41,7 +41,7 @@
   --accent-primary: var(--accent-base);
   --accent-secondary: color-mix(in srgb, var(--accent-primary) 70%, white);
   --accent-primary-rgb: var(--accent-base-rgb);
-  --accent-glow: rgba(var(--accent-primary-rgb), 0.3);
+  --accent-glow: color-mix(in oklab, var(--accent-primary), transparent 55%);
   /* Generic translucent tints derived from whatever --accent-primary currently resolves to.
      Components use these instead of hand-rolling `${accent.color}NN` strings, so tinted
      backgrounds/borders (active nav tabs, hover highlights, etc.) stay mode-aware for free. */
@@ -53,8 +53,8 @@
   --bg-card: #151d2e;
   --bg-card-hover: #1c2740;
   --text-primary: #e2e8f0;
-  --text-secondary: #8b95a8;
-  --text-muted: #7a8899;
+  --text-secondary: #c2ccd9;
+  --text-muted: var(--text-secondary);
   --border-color: #2a3143;
   --border-light: #1e2535;
   --success: #22c55e;
@@ -82,6 +82,7 @@
   --accent-inner-glow: 0 0 0 rgba(0, 0, 0, 0);
   --glow-intensity: 1.4;
   --pulse-speed: 4s;
+  --pulse-intensity: 1.5;
   /* Per-metric color tokens — footer bars, inline sparklines; no stray hex allowed */
   --metric-cpu: var(--success);
   --metric-ram: var(--warning);
@@ -104,9 +105,32 @@
   --border-color: var(--accent-tint-40, var(--border-color));
 }
 
-[data-glow="neon"] .accent-glow-target,
-[data-inner-glow="on"] .accent-glow-target {
+.accent-glow-target {
+  position: relative;
+}
+.accent-glow-target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
   box-shadow: var(--card-glow), var(--accent-inner-glow);
+  opacity: 1;
+}
+
+/* PULSE flare — ::before, 3-layer static shadow, opacity-only animation */
+.accent-glow-target::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 calc(4px * var(--pulse-intensity, 1.5)) var(--accent-glow),
+    0 0 calc(12px * var(--pulse-intensity, 1.5)) var(--accent-glow),
+    0 0 calc(26px * var(--pulse-intensity, 1.5)) var(--accent-glow);
+  opacity: 0;
+  will-change: opacity;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -308,8 +332,7 @@
   --bg-card: #151d2e;
   --bg-card-hover: #1c2740;
   --text-primary: #e2e8f0;
-  --text-secondary: #8b95a8;
-  --text-muted: #5a6578;
+  --text-secondary: #c2ccd9;
   --border-color: #2a3143;
   --border-light: #1e2535;
   --chart-grid: #1e2535;
@@ -330,7 +353,6 @@
   --bg-card-hover: #162038;
   --text-primary: #cbd5e1;
   --text-secondary: #64748b;
-  --text-muted: #3b4a63;
   --border-color: #1e293b;
   --border-light: #111827;
   --chart-grid: #111827;
@@ -351,7 +373,6 @@
   --bg-card-hover: #1a3055;
   --text-primary: #ccd6f6;
   --text-secondary: #8892b0;
-  --text-muted: #4a5568;
   --border-color: #1e3a5f;
   --border-light: #0a192f;
   --chart-grid: #0a192f;
@@ -370,7 +391,6 @@
   --bg-card-hover: #24422e;
   --text-primary: #d1fae5;
   --text-secondary: #6ee7b7;
-  --text-muted: #3d5e3f;
   --border-color: #2d5e3f;
   --border-light: #12241a;
   --chart-grid: #12241a;
@@ -391,7 +411,6 @@
   --bg-card-hover: #2f4059;
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
-  --text-muted: #475569;
   --border-color: #334155;
   --border-light: #1e293b;
   --chart-grid: #1e293b;
@@ -412,7 +431,6 @@
   --bg-card-hover: #383838;
   --text-primary: #e5e5e5;
   --text-secondary: #a3a3a3;
-  --text-muted: #525252;
   --border-color: #404040;
   --border-light: #252525;
   --chart-grid: #252525;
@@ -431,7 +449,6 @@
   --bg-card-hover: #313131;
   --text-primary: #e0e0e0;
   --text-secondary: #9e9e9e;
-  --text-muted: #4a4a4a;
   --border-color: #363636;
   --border-light: #1e1e1e;
   --chart-grid: #1e1e1e;
@@ -452,7 +469,6 @@
   --bg-card-hover: #4c566a;
   --text-primary: #eceff4;
   --text-secondary: #d8dee9;
-  --text-muted: #4c566a;
   --border-color: #4c566a;
   --border-light: #3b4252;
   --chart-grid: #3b4252;
@@ -473,7 +489,6 @@
   --bg-card-hover: #4a4d62;
   --text-primary: #f8f8f2;
   --text-secondary: #f8f8f2;
-  --text-muted: #6272a4;
   --border-color: #6272a4;
   --border-light: #353745;
   --chart-grid: #353745;
@@ -492,7 +507,6 @@
   --bg-card-hover: #141414;
   --text-primary: #e0e0e0;
   --text-secondary: #999999;
-  --text-muted: #333333;
   --border-color: #1a1a1a;
   --border-light: #0a0a0a;
   --chart-grid: #0a0a0a;
@@ -513,7 +527,6 @@
   --bg-card-hover: #2a2a2a;
   --text-primary: #d4d4d4;
   --text-secondary: #737373;
-  --text-muted: #3f3f3f;
   --border-color: #2a2a2a;
   --border-light: #1a1a1a;
   --chart-grid: #1a1a1a;
@@ -532,7 +545,6 @@
   --bg-card-hover: #383838;
   --text-primary: #e0e0e0;
   --text-secondary: #a0a0a0;
-  --text-muted: #404040;
   --border-color: #383838;
   --border-light: #262626;
   --chart-grid: #262626;
@@ -553,7 +565,6 @@
   --bg-card-hover: #162038;
   --text-primary: #c9d1d9;
   --text-secondary: #8b949e;
-  --text-muted: #30363d;
   --border-color: #21262d;
   --border-light: #0a1020;
   --chart-grid: #0a1020;
@@ -574,7 +585,6 @@
   --bg-card-hover: #002a00;
   --text-primary: #00ff00;
   --text-secondary: #00cc00;
-  --text-muted: #006600;
   --border-color: #003300;
   --border-light: #001400;
   --chart-grid: #001400;
@@ -595,7 +605,6 @@
   --bg-card-hover: #294275;
   --text-primary: #e2e8f0;
   --text-secondary: #a0aec0;
-  --text-muted: #4a5568;
   --border-color: #2d4a7a;
   --border-light: #152243;
   --chart-grid: #152243;
@@ -614,7 +623,6 @@
   --bg-card-hover: #2e1a52;
   --text-primary: #d4c5f9;
   --text-secondary: #9f7aea;
-  --text-muted: #5a3d7a;
   --border-color: #3d2a6b;
   --border-light: #1a0b2e;
   --chart-grid: #1a0b2e;
@@ -635,7 +643,6 @@
   --bg-card-hover: #23405a;
   --text-primary: #e2e8f0;
   --text-secondary: #8892a5;
-  --text-muted: #3b5068;
   --border-color: #1e3a5f;
   --border-light: #122333;
   --chart-grid: #122333;
@@ -654,7 +661,6 @@
   --bg-card-hover: #262626;
   --text-primary: #d4d4d4;
   --text-secondary: #737373;
-  --text-muted: #3f3f3f;
   --border-color: #262626;
   --border-light: #161616;
   --chart-grid: #161616;
@@ -677,7 +683,6 @@
   --bg-card-hover: #f8f9fa;
   --text-primary: #1e293b;
   --text-secondary: #64748b;
-  --text-muted: #6b7280;
   --border-color: #e2e8f0;
   --border-light: #f1f5f9;
   --chart-grid: #e2e8f0;
@@ -700,7 +705,6 @@
   --bg-card-hover: #fdfbf7;
   --text-primary: #1a1a1a;
   --text-secondary: #5c5c5c;
-  --text-muted: #6b7280;
   --border-color: #e8e3dc;
   --border-light: #f7f3ee;
   --chart-grid: #f7f3ee;
@@ -723,7 +727,6 @@
   --bg-card-hover: #f1f5f9;
   --text-primary: #2e3440;
   --text-secondary: #4c566a;
-  --text-muted: #5e6878;
   --border-color: #d8dee9;
   --border-light: #e5e9f0;
   --chart-grid: #e5e9f0;
@@ -746,7 +749,6 @@
   --bg-card-hover: #fffef5;
   --text-primary: #1a1a1a;
   --text-secondary: #5c5c5c;
-  --text-muted: #6b7280;
   --border-color: #f0e8c8;
   --border-light: #fff9e6;
   --chart-grid: #fff9e6;
@@ -963,6 +965,24 @@
   );
 }
 
+/* Glow Color base overrides — come AFTER all accent-mode rules so they win the cascade
+   on <html> (same specificity, last source position wins). */
+[data-glow-color="accent"] {
+  --accent-glow: color-mix(in oklab, var(--accent-base), transparent 55%);
+}
+[data-glow-color="custom"] {
+  --accent-glow: color-mix(in oklab, var(--glow-custom, var(--accent-primary)), transparent 45%);
+}
+
+/* Per-element glow color overrides — must come AFTER per-element hue rules so these
+   win the cascade for --accent-glow on elements that carry --el-index. */
+[data-glow-color="accent"] [style*="--el-index"] {
+  --accent-glow: color-mix(in oklab, var(--accent-base), transparent 55%);
+}
+[data-glow-color="custom"] [style*="--el-index"] {
+  --accent-glow: color-mix(in oklab, var(--glow-custom, var(--accent-primary)), transparent 45%);
+}
+
 @keyframes accent-fill-pan {
   from {
     background-position: 0% center;
@@ -1095,37 +1115,27 @@
 
 /* ========================================
    Pulse Effect
-   Compositor-accelerated opacity animation on glow targets.
-   Combines with sheen/flow fill animation when both are active.
+   Animates ::after pseudo-element opacity so glow breathes
+   without fading card content (text, values).
    ======================================== */
-@keyframes pulse-breathe {
+@keyframes accent-pulse {
   0%,
   100% {
-    opacity: 1;
+    opacity: 0;
   }
   50% {
-    opacity: 0.35;
+    opacity: 1;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  [data-pulse="on"] .accent-glow-target {
-    animation: pulse-breathe var(--pulse-speed, 4s) ease-in-out infinite;
-  }
-
-  /* When pulse combines with sheen/flow, preserve both animations. */
-  [data-pulse="on"][data-accent-mode="sheen"] .accent-glow-target,
-  [data-pulse="on"][data-accent-mode="flow"] .accent-glow-target {
-    animation:
-      fx-pan var(--fx-speed) linear infinite,
-      pulse-breathe var(--pulse-speed, 4s) ease-in-out infinite;
-    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24), 0s;
-  }
+[data-pulse="on"] .accent-glow-target::before {
+  animation: accent-pulse var(--pulse-speed, 4s) ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-pulse="on"] .accent-glow-target {
+  [data-pulse="on"] .accent-glow-target::before {
     animation: none;
+    opacity: 0;
   }
 }
 

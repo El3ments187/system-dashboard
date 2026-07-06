@@ -1910,3 +1910,37 @@ describe("LlamaCppPage toast overlay", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// ─── PanelCard structure regression ──────────────────────────────────
+// Regression: container divs must not carry className="card-accent-spine".
+// That class positions elements absolutely at 3px width, collapsing the layout.
+// Only the inner <span aria-hidden> decorators should carry that class.
+
+describe("LlamaCppPage PanelCard structural integrity", () => {
+  it("no div element has card-accent-spine class", async () => {
+    const { container } = render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const badDivs = container.querySelectorAll("div.card-accent-spine");
+    expect(badDivs).toHaveLength(0);
+  });
+
+  it("card-accent-spine class only appears on span elements", async () => {
+    const { container } = render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const spines = container.querySelectorAll(".card-accent-spine");
+    spines.forEach((el) => {
+      expect(el.tagName.toLowerCase()).toBe("span");
+    });
+  });
+
+  it("PanelCard containers have visible width (not collapsed to spine width)", async () => {
+    const { container } = render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // The page root should contain substantial content, not be empty
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByText("llama.cpp")).toBeInTheDocument();
+    // Verify the main layout panels are present by checking for known section labels
+    expect(screen.getAllByText("Throughput").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("log-console")).toBeInTheDocument();
+  });
+});

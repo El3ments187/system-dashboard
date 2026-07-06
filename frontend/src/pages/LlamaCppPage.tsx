@@ -180,7 +180,6 @@ function PanelCard({
 }) {
   return (
     <div
-      className="card-accent-spine"
       data-accent-el=""
       style={{
         background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
@@ -2942,7 +2941,6 @@ export default function LlamaCppPage() {
           >
             {/* Run Models */}
             <div
-              className="card-accent-spine"
               data-accent-el=""
               style={{
                 flex: "none",
@@ -2962,7 +2960,6 @@ export default function LlamaCppPage() {
 
             {/* Console */}
             <div
-              className="card-accent-spine"
               data-accent-el=""
               style={{
                 flex: 1,
