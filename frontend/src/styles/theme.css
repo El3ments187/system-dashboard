@@ -504,118 +504,232 @@ main {
   background: var(--bg-card-hover) !important;
 }
 
-/* Theme panel */
-.theme-panel-overlay {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 200;
-  opacity: 0;
-  pointer-events: none;
-  transition: var(--transition-normal);
-}
-
-.theme-panel-overlay.open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.theme-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 440px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  z-index: 201;
-  padding: 12px 14px;
-  transform: translateX(100%);
-  transition: var(--transition-normal);
-  overflow-y: auto;
+/* ── Theme Page (dedicated route /theme) ── */
+.theme-page {
   display: flex;
   flex-direction: column;
-  min-width: 400px;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 14px 14px;
+  gap: 8px;
+  overflow: hidden;
 }
 
-.theme-panel.open {
-  transform: translateX(0);
+.theme-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 12px;
 }
 
-.theme-panel-title {
-  font-size: 15px;
+.theme-page-title {
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  line-height: 1.3;
 }
 
-.theme-panel-subtitle {
+.theme-page-subtitle {
   font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-top: 2px;
 }
 
-.theme-panel-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 28px;
-  height: 28px;
+.theme-page-body {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  transition: var(--transition-fast);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
-.theme-panel-close:hover {
-  color: var(--text-primary);
-  background: var(--bg-card);
-}
-
-/* Compact preview section */
-.theme-preview-row {
+/* Two-column control grid (accent+bg left, mode+effects right) */
+.theme-page-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
-  flex-shrink: 0;
+  gap: 10px;
+  flex: 0 0 56%;
+  overflow-y: auto;
+  align-content: start;
+  padding-right: 2px;
 }
 
-.theme-preview-info {
+.theme-ctrl-col {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 7px 10px;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
-.theme-preview-swatches {
-  padding: 7px 10px;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
+/* Wider grids on the full page */
+.theme-page .accent-grid {
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.theme-page .bg-grid {
+  grid-template-columns: repeat(8, 1fr);
+}
+
+/* Effects section — flex column, designed to hold many toggle rows */
+.effects-grid {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.effect-row-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Preview column */
+.theme-page-preview-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  align-items: center;
-  justify-content: center;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-.theme-preview-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
+.theme-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  flex: 1;
+}
+
+/* Preview metric cards */
+.preview-cards-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preview-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle, var(--border-color));
+  display: flex;
+  overflow: hidden;
+  min-height: 76px;
+  transition: box-shadow var(--transition-normal);
+}
+
+.preview-card-body {
+  flex: 1;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.preview-card-title {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.preview-card-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.preview-card-sub {
+  font-size: 9px;
+  color: var(--text-secondary);
+  margin-bottom: auto;
+}
+
+.preview-bar-track {
+  height: 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  margin-top: 4px;
+}
+
+.preview-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* Preview history chart */
+.preview-chart {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  padding: 8px 10px;
+}
+
+.preview-chart-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 56px;
+}
+
+/* Preview horizontal meter bars */
+.preview-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  padding: 8px 10px;
+}
+
+.preview-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-meter-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 26px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.preview-meter-track {
+  flex: 1;
+  height: 5px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.preview-meter-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.preview-meter-value {
+  font-size: 9px;
+  color: var(--text-secondary);
+  width: 28px;
+  text-align: right;
   flex-shrink: 0;
 }
 
-.theme-preview-swatch.gradient {
-  background: var(--accent-fill);
-  background-size: var(--accent-fill-size);
+/* Preview action buttons/chips row */
+.preview-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
+  padding: 8px 10px;
 }
 
 /* Section headers */
@@ -780,17 +894,7 @@ main {
   white-space: nowrap;
 }
 
-/* Preview section: button, progress bar, chart sample */
-.theme-live-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-
+/* Preview chart bars — reused inside ThemePage's ThemePreview */
 .theme-live-preview-chart {
   display: flex;
   align-items: flex-end;

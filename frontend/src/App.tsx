@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "./components/Header";
-import ThemePanel from "./components/ThemePanel";
 import { MetricsProvider } from "./context/MetricsContext";
 import { LiveDataControlsProvider } from "./context/LiveDataControlsContext";
 import { AlertsProvider } from "./context/AlertsContext";
@@ -17,9 +16,17 @@ import AiPage from "./pages/AiPage";
 import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
 import OverviewPage from "./pages/OverviewPage";
+import ThemePage from "./pages/ThemePage";
 
 type ActivePage =
-  "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings";
+  | "overview"
+  | "gpu"
+  | "cpu"
+  | "llama-cpp"
+  | "ai"
+  | "terminal"
+  | "settings"
+  | "theme";
 
 function getPageFromPathname(pathname: string): ActivePage {
   if (pathname === "/gpu") return "gpu";
@@ -28,6 +35,7 @@ function getPageFromPathname(pathname: string): ActivePage {
   if (pathname === "/llama-cpp/terminal") return "terminal";
   if (pathname === "/ai") return "ai";
   if (pathname === "/settings") return "settings";
+  if (pathname === "/theme") return "theme";
   return "overview";
 }
 
@@ -76,7 +84,6 @@ export default function App() {
     resetTheme,
     current,
   } = useTheme();
-  const [showThemePanel, setShowThemePanel] = useState(false);
   const [loading, setLoading] = useState(true);
   const isInitialMount = useRef(true);
   const isNavigatingRef = useRef(false);
@@ -151,35 +158,33 @@ export default function App() {
             <div className="app-root">
               <Header
                 accent={current}
-                showThemePanel={showThemePanel}
-                onToggleThemePanel={() => setShowThemePanel(!showThemePanel)}
                 healthOk={healthOk}
                 activePage={activePage}
                 onPageChange={setActivePage}
               />
-              <ThemePanel
-                open={showThemePanel}
-                onClose={() => setShowThemePanel(false)}
-                accent={accent}
-                onAccentChange={setAccent}
-                accentMode={accentMode}
-                onAccentModeChange={setAccentMode}
-                bg={bg}
-                onBgChange={setBg}
-                current={current}
-                onReset={resetTheme}
-                glow={glow}
-                onGlowChange={setGlow}
-                fxSpeed={fxSpeed}
-                onFxSpeedChange={setFxSpeed}
-                fxSpread={fxSpread}
-                onFxSpreadChange={setFxSpread}
-                fxDepth={fxDepth}
-                onFxDepthChange={setFxDepth}
-                glowIntensity={glowIntensity}
-                onGlowIntensityChange={setGlowIntensity}
-              />
-              <PageContent activePage={activePage} accent={current} />
+              {activePage === "theme" ? (
+                <ThemePage
+                  accent={accent}
+                  onAccentChange={setAccent}
+                  accentMode={accentMode}
+                  onAccentModeChange={setAccentMode}
+                  bg={bg}
+                  onBgChange={setBg}
+                  onReset={resetTheme}
+                  glow={glow}
+                  onGlowChange={setGlow}
+                  fxSpeed={fxSpeed}
+                  onFxSpeedChange={setFxSpeed}
+                  fxSpread={fxSpread}
+                  onFxSpreadChange={setFxSpread}
+                  fxDepth={fxDepth}
+                  onFxDepthChange={setFxDepth}
+                  glowIntensity={glowIntensity}
+                  onGlowIntensityChange={setGlowIntensity}
+                />
+              ) : (
+                <PageContent activePage={activePage} accent={current} />
+              )}
             </div>
           </MetricsProvider>
         </AlertsProvider>

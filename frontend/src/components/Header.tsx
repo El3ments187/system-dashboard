@@ -9,14 +9,26 @@ import { useEffect, useRef, useState, useMemo } from "react";
 
 interface HeaderProps {
   accent: { color: string; glow: string };
-  showThemePanel: boolean;
-  onToggleThemePanel: () => void;
   healthOk?: boolean;
   activePage?:
-    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings";
+    | "overview"
+    | "gpu"
+    | "cpu"
+    | "llama-cpp"
+    | "ai"
+    | "terminal"
+    | "settings"
+    | "theme";
   onPageChange?: (
     page:
-      "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "terminal" | "settings",
+      | "overview"
+      | "gpu"
+      | "cpu"
+      | "llama-cpp"
+      | "ai"
+      | "terminal"
+      | "settings"
+      | "theme",
   ) => void;
 }
 
@@ -27,6 +39,7 @@ const PAGE_LABELS: Record<string, string> = {
   "llama-cpp": "llama.cpp",
   ai: "AI",
   settings: "Settings",
+  theme: "Theme",
 };
 
 const severityColors: Record<AlertSeverity, string> = {
@@ -43,14 +56,13 @@ const severityBgColors: Record<AlertSeverity, string> = {
 
 export default function Header({
   accent,
-  onToggleThemePanel,
   healthOk,
   activePage = "overview",
   onPageChange,
 }: HeaderProps) {
   const pages: Array<
-    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "settings"
-  > = ["overview", "gpu", "cpu", "llama-cpp", "ai", "settings"];
+    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "settings" | "theme"
+  > = ["overview", "gpu", "cpu", "llama-cpp", "ai", "settings", "theme"];
 
   const { data: system } = useQuery<SystemMetrics>({
     queryKey: ["metrics", "system"],
@@ -389,8 +401,8 @@ export default function Header({
           </div>
 
           <button
-            className="dash-iconbtn"
-            onClick={onToggleThemePanel}
+            className={`dash-iconbtn${activePage === "theme" ? " active" : ""}`}
+            onClick={() => onPageChange?.("theme")}
             aria-label="Theme settings"
           >
             <svg
