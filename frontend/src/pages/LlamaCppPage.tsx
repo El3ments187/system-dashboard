@@ -182,6 +182,7 @@ function PanelCard({
     <div
       data-accent-el=""
       style={{
+        position: "relative",
         background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
         border: "1px solid var(--border-light, var(--border-color))",
         borderRadius: "var(--radius-md)",
@@ -192,7 +193,7 @@ function PanelCard({
         ...style,
       }}
     >
-      <span className="accent-spine" style={SPINE_STYLE} />
+      <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden />
       {children}
     </div>
   );
@@ -1437,6 +1438,7 @@ export default function LlamaCppPage() {
     wide?: boolean,
   ) => (
     <div
+      data-accent-el=""
       style={{
         ...accentTileBase,
         borderRadius: 8,
@@ -1829,6 +1831,7 @@ export default function LlamaCppPage() {
               ).map(({ label, value, testId }) => (
                 <div
                   key={label}
+                  data-accent-el=""
                   data-testid={testId}
                   style={{
                     ...accentTileBase,
@@ -1892,6 +1895,7 @@ export default function LlamaCppPage() {
             >
               {/* Gen Speed banner */}
               <div
+                data-accent-el=""
                 data-testid="thrpt-gen-tps"
                 style={{
                   ...accentTileBase,
@@ -1954,6 +1958,7 @@ export default function LlamaCppPage() {
 
               {/* Prompt Speed banner */}
               <div
+                data-accent-el=""
                 data-testid="thrpt-prompt-tps"
                 style={{
                   ...accentTileBase,
@@ -2023,6 +2028,7 @@ export default function LlamaCppPage() {
                 }}
               >
                 <div
+                  data-accent-el=""
                   data-testid="thrpt-prompt-tokens"
                   style={{
                     ...accentTileBase,
@@ -2052,6 +2058,7 @@ export default function LlamaCppPage() {
                   </div>
                 </div>
                 <div
+                  data-accent-el=""
                   data-testid="thrpt-generated"
                   style={{
                     ...accentTileBase,
@@ -2091,6 +2098,7 @@ export default function LlamaCppPage() {
                   </div>
                 </div>
                 <div
+                  data-accent-el=""
                   data-testid="thrpt-total-sent"
                   style={{
                     ...accentTileBase,
@@ -2120,6 +2128,7 @@ export default function LlamaCppPage() {
                   </div>
                 </div>
                 <div
+                  data-accent-el=""
                   data-testid="thrpt-active-req"
                   style={{
                     ...accentTileBase,
@@ -2298,6 +2307,7 @@ export default function LlamaCppPage() {
                   ).map(({ label, value, accent, span, testId }) => (
                     <div
                       key={label}
+                      data-accent-el=""
                       data-testid={testId}
                       style={{
                         ...accentTileBase,
@@ -2630,6 +2640,7 @@ export default function LlamaCppPage() {
                 {/* Build boxes */}
                 <div style={{ display: "flex", gap: 7 }}>
                   <div
+                    data-accent-el=""
                     style={{
                       flex: 1,
                       ...accentTileBase,
@@ -2658,6 +2669,7 @@ export default function LlamaCppPage() {
                     </div>
                   </div>
                   <div
+                    data-accent-el=""
                     style={{
                       flex: 1,
                       ...accentTileBase,
@@ -2943,6 +2955,7 @@ export default function LlamaCppPage() {
             <div
               data-accent-el=""
               style={{
+                position: "relative",
                 flex: "none",
                 height: 204,
                 border: "1px solid var(--border-light, var(--border-color))",
@@ -2954,7 +2967,7 @@ export default function LlamaCppPage() {
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span className="accent-spine" style={SPINE_STYLE} />
+              <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden />
               <RunModelsSection />
             </div>
 
@@ -2962,6 +2975,7 @@ export default function LlamaCppPage() {
             <div
               data-accent-el=""
               style={{
+                position: "relative",
                 flex: 1,
                 minHeight: 0,
                 border: "1px solid var(--border-light, var(--border-color))",
@@ -2973,7 +2987,7 @@ export default function LlamaCppPage() {
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span className="accent-spine" style={SPINE_STYLE} />
+              <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden />
               <LogConsole />
             </div>
           </div>

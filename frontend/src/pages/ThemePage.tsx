@@ -168,7 +168,7 @@ function ThemePreview() {
               </span>
               <div className="preview-bar-track">
                 <div
-                  className="accent-fill preview-bar-fill"
+                  className="accent-fill preview-bar-fill accent-glow-target"
                   style={{ width: `${card.value}%` }}
                 />
               </div>
@@ -184,7 +184,7 @@ function ThemePreview() {
             <div
               key={i}
               data-accent-el=""
-              className="theme-live-preview-bar"
+              className="theme-live-preview-bar accent-glow-target"
               style={{ height: `${h}%` }}
             />
           ))}
@@ -198,7 +198,7 @@ function ThemePreview() {
             <span className="preview-meter-label">{m.label}</span>
             <div className="preview-meter-track">
               <div
-                  className="accent-fill preview-meter-fill"
+                  className="accent-fill preview-meter-fill accent-glow-target"
                 style={{ width: `${m.value}%` }}
               />
             </div>

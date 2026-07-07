@@ -118,17 +118,24 @@
   opacity: 1;
 }
 
-/* PULSE flare — ::before, 3-layer static shadow, opacity-only animation */
+/* PULSE flare — gradient radiates from the spine rightward into the card so it
+   stays within the card's own bounds. An outward box-shadow was clipped by
+   overflow:hidden on ancestor containers, leaving only the bottom gap visible. */
 .accent-glow-target::before {
   content: "";
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: auto;
+  width: calc(var(--pulse-intensity, 1.5) * 20px + 12px);
   border-radius: inherit;
   pointer-events: none;
-  box-shadow:
-    0 0 calc(4px * var(--pulse-intensity, 1.5)) var(--accent-glow),
-    0 0 calc(12px * var(--pulse-intensity, 1.5)) var(--accent-glow),
-    0 0 calc(26px * var(--pulse-intensity, 1.5)) var(--accent-glow);
+  background: linear-gradient(
+    to right,
+    var(--accent-glow) 0%,
+    transparent 100%
+  );
   opacity: 0;
   will-change: opacity;
 }
@@ -983,6 +990,35 @@
   --accent-glow: color-mix(in oklab, var(--glow-custom, var(--accent-primary)), transparent 45%);
 }
 
+/* Per-element re-declarations of derived glow tokens.
+   Chrome evaluates var() chains at the declaring element and inherits already-substituted
+   values, so --card-glow / --accent-inner-glow / --card-halo set on <html> always resolve
+   with el-index=0's hue. Re-declaring here forces re-evaluation at each element's own scope,
+   so every spine/bar glows in its own per-element hue in spectrum and rainbow-wave modes. */
+[data-glow="neon"][data-accent-mode="spectrum"] [style*="--el-index"],
+[data-glow="neon"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
+  --card-glow:
+    0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(20px * var(--glow-intensity, 1.4)) var(--accent-glow);
+}
+
+[data-inner-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
+[data-inner-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
+  --accent-inner-glow:
+    inset 0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow);
+}
+
+[data-glow="neon"][data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
+[data-glow="neon"][data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"],
+[data-inner-glow="on"][data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
+[data-inner-glow="on"][data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
+  --card-halo:
+    0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px * var(--glow-intensity, 1.4))
+      rgba(var(--accent-primary-rgb), 0.12);
+}
+
 @keyframes accent-fill-pan {
   from {
     background-position: 0% center;
@@ -1126,6 +1162,50 @@
   50% {
     opacity: 1;
   }
+}
+
+/* Bar fills have an accent-colored background — an accent gradient overlay would
+   be invisible. Use a white shine that pulses visibly against the bar's color. */
+.accent-fill.accent-glow-target::before {
+  inset: 0;
+  width: auto;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, white 55%, transparent) 0%,
+    color-mix(in srgb, white 20%, transparent) 45%,
+    transparent 100%
+  );
+}
+
+/* Vertical bar chart columns: shine from top downward so it's visible on narrow bars */
+.theme-live-preview-bar.accent-glow-target::before {
+  inset: 0;
+  width: auto;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, white 55%, transparent) 0%,
+    color-mix(in srgb, white 20%, transparent) 50%,
+    transparent 100%
+  );
+}
+
+/* Disk fill bars are position:absolute so we target them directly rather than
+   via the glow-target class (which sets position:relative, breaking the layout) */
+[data-pulse="on"] .ov-disk-fill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, white 60%, transparent) 0%,
+    color-mix(in srgb, white 25%, transparent) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+  will-change: opacity;
+  animation: accent-pulse var(--pulse-speed, 4s) ease-in-out infinite;
 }
 
 [data-pulse="on"] .accent-glow-target::before {

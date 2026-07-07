@@ -480,7 +480,7 @@ function GpuRow({
   gpuTemperatureHistory: MetricHistoryPoint[] | null;
 }) {
   return (
-    <div className="gpu-row" data-accent-el="">
+    <div className="gpu-row">
       {/* Left column - combined GPU card */}
       <div className="gpu-col-left">
         <GpuSummaryCard gpu={gpu} accent={accent} index={index} />

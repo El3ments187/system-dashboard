@@ -439,7 +439,7 @@ function CpuContent({ accent }: CpuPageProps) {
     cpuTemperatureHistory && cpuTemperatureHistory.length > 0;
 
   return (
-    <div className="cpu-row" data-accent-el="">
+    <div className="cpu-row">
       {/* Left column - CPU summary card */}
       <div className="cpu-col-left" style={{ flexShrink: 0 }}>
         <CpuSummaryCard accent={accent} />
