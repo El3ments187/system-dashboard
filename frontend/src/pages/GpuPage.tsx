@@ -292,6 +292,7 @@ function GpuSummaryCard({
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
+            textAlign: "center",
           }}
         >
           {gpu.name || "Unknown GPU"}
