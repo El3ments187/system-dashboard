@@ -1362,8 +1362,13 @@
   animation-delay: 0s;
 }
 
-/* Charts encode data — accent-fill bars are excluded from breathe */
-[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe {
+/* Data elements encode metrics — excluded from breathe (fill brightness + glow) */
+[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe,
+[data-breathe="on"] .theme-live-preview-bar.accent-glow-target .bright-breathe {
+  animation: none;
+}
+[data-breathe="on"] .accent-fill.accent-glow-target::after,
+[data-breathe="on"] .theme-live-preview-bar.accent-glow-target::after {
   animation: none;
 }
 
@@ -1374,6 +1379,12 @@
     var(--el-index, 0) * 80ms - var(--surge-period, 6s)
   );
   will-change: opacity;
+}
+
+/* Data elements excluded from surge */
+[data-surge="on"] .accent-fill.accent-glow-target .bright-surge,
+[data-surge="on"] .theme-live-preview-bar.accent-glow-target .bright-surge {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
