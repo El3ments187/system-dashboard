@@ -207,7 +207,10 @@ export default function MetricChart({
         data-accent-el=""
         style={{ flex: 1, minHeight: 0, ...style }}
       >
-        <span className="card-accent-spine accent-glow-target" aria-hidden />
+        <span className="card-accent-spine accent-glow-target" aria-hidden>
+          <span className="bright-breathe" aria-hidden />
+          <span className="bright-surge" aria-hidden />
+        </span>
         <div
           className="chart-title"
           style={{
@@ -440,7 +443,10 @@ export default function MetricChart({
       data-accent-el=""
       style={{ flex: 1, minHeight: 0, ...style }}
     >
-      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      <span className="card-accent-spine accent-glow-target" aria-hidden>
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </span>
       <div
         className="chart-title"
         style={{

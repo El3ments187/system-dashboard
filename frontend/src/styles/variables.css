@@ -954,6 +954,9 @@
   --accent-glow: oklch(
     from var(--accent-base) l c calc(h + var(--el-off)) / 0.45
   );
+  --accent-tint-10: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+  --accent-tint-15: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  --accent-tint-40: color-mix(in srgb, var(--accent-primary) 40%, transparent);
   --accent-fill: linear-gradient(
     180deg,
     oklch(from var(--accent-base) l c calc(h + var(--el-off))) 0%,
@@ -1285,5 +1288,102 @@
       .accent-glow-target
     )::before {
     animation: none;
+  }
+}
+
+/* ========================================
+   Breathe Effect — unison brightness pulse
+   Uses real <span class="bright-breathe"> children because ::before and ::after
+   on .accent-glow-target are already taken by Pulse and Neon Glow respectively.
+   mix-blend-mode: screen brightens without hue-washing the accent fill.
+   ======================================== */
+@keyframes fx-breathe {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   Surge Effect — traveling brightness pulse
+   Same brightening technique as Breathe but staggered by --el-index so the
+   pulse sweeps across elements in index order (stagger = index * 80ms).
+   Delay is always ≤ 0 so elements start mid-cycle immediately on mount.
+   ======================================== */
+@keyframes fx-surge {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Base layer styles — present in DOM regardless of effect state */
+.bright-breathe,
+.bright-surge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  animation: none;
+}
+
+/* Background alpha encodes intensity so getComputedStyle(el).backgroundColor
+   changes when --breathe-intensity / --surge-intensity is updated. */
+.bright-breathe {
+  background-color: rgb(255 255 255 / calc(var(--breathe-intensity, 1) * 0.15));
+}
+
+.bright-surge {
+  background-color: rgb(255 255 255 / calc(var(--surge-intensity, 1) * 0.15));
+}
+
+/* Breathe active: all elements share delay 0s → unison */
+[data-breathe="on"] .accent-glow-target .bright-breathe {
+  animation: fx-breathe var(--breathe-speed, 4s) ease-in-out infinite;
+  animation-delay: 0s;
+  will-change: opacity;
+}
+
+/* Glow halos breathe in sync: ::after opacity cycles 0.4 → 1 (matches fill peak) */
+@keyframes fx-breathe-glow {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+
+[data-breathe="on"] .accent-glow-target::after {
+  animation: fx-breathe-glow var(--breathe-speed, 4s) ease-in-out infinite;
+  animation-delay: 0s;
+}
+
+/* Charts encode data — accent-fill bars are excluded from breathe */
+[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe {
+  animation: none;
+}
+
+/* Surge active: staggered delay — always ≤ 0 so elements enter mid-cycle */
+[data-surge="on"] .accent-glow-target .bright-surge {
+  animation: fx-surge var(--surge-period, 6s) ease-in-out infinite;
+  animation-delay: calc(
+    var(--el-index, 0) * 80ms - var(--surge-period, 6s)
+  );
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-breathe="on"] .accent-glow-target .bright-breathe,
+  [data-breathe="on"] .accent-glow-target::after,
+  [data-surge="on"] .accent-glow-target .bright-surge {
+    animation: none;
+    will-change: auto;
+  }
+  [data-breathe="on"] .accent-glow-target::after {
+    opacity: 1;
   }
 }

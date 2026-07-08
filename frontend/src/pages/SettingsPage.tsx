@@ -362,7 +362,10 @@ export default function SettingsPage({}: SettingsPageProps) {
   return (
     <main className="settings-grid">
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden />
+        <span className="card-accent-spine accent-glow-target" aria-hidden>
+          <span className="bright-breathe" aria-hidden />
+          <span className="bright-surge" aria-hidden />
+        </span>
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <SettingsIcon size={16} style={{ color: "var(--accent-primary)" }} />
@@ -420,7 +423,10 @@ export default function SettingsPage({}: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden />
+        <span className="card-accent-spine accent-glow-target" aria-hidden>
+          <span className="bright-breathe" aria-hidden />
+          <span className="bright-surge" aria-hidden />
+        </span>
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
@@ -537,7 +543,10 @@ export default function SettingsPage({}: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden />
+        <span className="card-accent-spine accent-glow-target" aria-hidden>
+          <span className="bright-breathe" aria-hidden />
+          <span className="bright-surge" aria-hidden />
+        </span>
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />

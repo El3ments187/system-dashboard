@@ -15,6 +15,43 @@ pub static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| {
 
 static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(read_physical_cores);
 static CPU_MAX_FREQ_MHZ: LazyLock<f64> = LazyLock::new(read_cpu_max_freq);
+/// Strip redundant suffix words like "Processor" that add no information.
+pub fn normalize_cpu_model(raw: &str) -> String {
+    let s = raw.trim();
+    // Remove trailing " Processor" (case-insensitive) if present.
+    let s = if s.to_lowercase().ends_with(" processor") {
+        s[..s.len() - " processor".len()].trim_end()
+    } else {
+        s
+    };
+    s.to_string()
+}
+
+static CPU_MODEL: LazyLock<String> = LazyLock::new(|| {
+    // Read brand from sysinfo once; static on any given host.
+    let mut sys = sysinfo::System::new();
+    sys.refresh_cpu_all();
+    if let Some(cpu) = sys.cpus().first() {
+        let brand = normalize_cpu_model(cpu.brand());
+        if !brand.is_empty() {
+            return brand;
+        }
+    }
+    // Fallback: /proc/cpuinfo "model name"
+    eprintln!("sysinfo cpu.brand() returned empty; falling back to /proc/cpuinfo");
+    if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("model name") {
+                let val = normalize_cpu_model(rest.trim_start_matches(':'));
+                if !val.is_empty() {
+                    return val;
+                }
+            }
+        }
+    }
+    eprintln!("CPU model unavailable from sysinfo and /proc/cpuinfo");
+    "Unknown CPU".to_string()
+});
 
 pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
     let status = read_cpu_utilization().await;
@@ -36,6 +73,7 @@ pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
     let (load1, load5, load15) = (load_avg.one, load_avg.five, load_avg.fifteen);
 
     let metrics = CpuMetrics {
+        model: CPU_MODEL.clone(),
         utilization_percent: status.avg_util,
         temperature_celsius: temp,
         physical_cores: *PHYSICAL_CORES,
@@ -305,4 +343,46 @@ fn read_cpu_temperature() -> f64 {
         return temp / 1000.0;
     }
     0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_cpu_model;
+
+    #[test]
+    fn strips_trailing_processor() {
+        assert_eq!(
+            normalize_cpu_model("AMD Ryzen 9 9950X3D 16-Core Processor"),
+            "AMD Ryzen 9 9950X3D 16-Core"
+        );
+    }
+
+    #[test]
+    fn strips_trailing_processor_case_insensitive() {
+        assert_eq!(
+            normalize_cpu_model("Intel Core i9-13900K PROCESSOR"),
+            "Intel Core i9-13900K"
+        );
+    }
+
+    #[test]
+    fn leaves_model_without_processor_suffix_unchanged() {
+        assert_eq!(
+            normalize_cpu_model("Apple M2 Pro"),
+            "Apple M2 Pro"
+        );
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        assert_eq!(
+            normalize_cpu_model("  AMD Ryzen 5 5600X  "),
+            "AMD Ryzen 5 5600X"
+        );
+    }
+
+    #[test]
+    fn empty_string_returns_empty() {
+        assert_eq!(normalize_cpu_model(""), "");
+    }
 }

@@ -203,6 +203,41 @@ function migrateAccentMode(mode: string | null): string {
   return mode || DEFAULT_ACCENT_MODE;
 }
 
+function _hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m
+    ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)]
+    : null;
+}
+
+function _nearestPaletteColor(hex: string): string {
+  const rgb = _hexToRgb(hex);
+  if (!rgb) return ACCENT_THEMES[0].color;
+  let nearest = ACCENT_THEMES[0];
+  let minDist = Infinity;
+  for (const t of ACCENT_THEMES) {
+    const tr = _hexToRgb(t.color);
+    if (!tr) continue;
+    const d =
+      (rgb[0] - tr[0]) ** 2 + (rgb[1] - tr[1]) ** 2 + (rgb[2] - tr[2]) ** 2;
+    if (d < minDist) {
+      minDist = d;
+      nearest = t;
+    }
+  }
+  return nearest.color;
+}
+
+/** Map a saved glow-custom hex to the nearest palette color; never returns an out-of-palette value. */
+export function migrateGlowCustom(saved: string | null | undefined): string {
+  if (!saved) return ACCENT_THEMES[0].color;
+  const inPalette = ACCENT_THEMES.some(
+    (t) => t.color.toLowerCase() === saved.toLowerCase(),
+  );
+  if (inPalette) return saved;
+  return _nearestPaletteColor(saved);
+}
+
 /* ---- hook ---- */
 
 export function useTheme() {
@@ -271,7 +306,35 @@ export function useTheme() {
   });
 
   const [glowCustom, setGlowCustom] = useState<string>(() => {
-    return localStorage.getItem("dashboard-glow-custom") || "#3b82f6";
+    return migrateGlowCustom(localStorage.getItem("dashboard-glow-custom"));
+  });
+
+  const [breathe, setBreathe] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-breathe") === "on";
+  });
+
+  const [breatheSpeed, setBreatheSpeed] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-breathe-speed") || "4");
+  });
+
+  const [breatheIntensity, setBreatheIntensity] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-breathe-intensity") || "1",
+    );
+  });
+
+  const [surge, setSurge] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-surge") === "on";
+  });
+
+  const [surgePeriod, setSurgePeriod] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("dashboard-surge-period") || "6");
+  });
+
+  const [surgeIntensity, setSurgeIntensity] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-surge-intensity") || "1",
+    );
   });
 
   const resetTheme = useCallback(() => {
@@ -291,6 +354,12 @@ export function useTheme() {
     setCardGlow(false);
     setGlowColor("match");
     setGlowCustom("#3b82f6");
+    setBreathe(false);
+    setBreatheSpeed(4);
+    setBreatheIntensity(1);
+    setSurge(false);
+    setSurgePeriod(6);
+    setSurgeIntensity(1);
   }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -422,6 +491,59 @@ export function useTheme() {
     localStorage.setItem("dashboard-glow-custom", glowCustom);
   }, [glowCustom]);
 
+  useEffect(() => {
+    if (breathe) {
+      document.documentElement.setAttribute("data-breathe", "on");
+    } else {
+      document.documentElement.removeAttribute("data-breathe");
+    }
+    localStorage.setItem("dashboard-breathe", breathe ? "on" : "");
+  }, [breathe]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--breathe-speed",
+      `${breatheSpeed}s`,
+    );
+    localStorage.setItem("dashboard-breathe-speed", String(breatheSpeed));
+  }, [breatheSpeed]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--breathe-intensity",
+      String(breatheIntensity),
+    );
+    localStorage.setItem(
+      "dashboard-breathe-intensity",
+      String(breatheIntensity),
+    );
+  }, [breatheIntensity]);
+
+  useEffect(() => {
+    if (surge) {
+      document.documentElement.setAttribute("data-surge", "on");
+    } else {
+      document.documentElement.removeAttribute("data-surge");
+    }
+    localStorage.setItem("dashboard-surge", surge ? "on" : "");
+  }, [surge]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--surge-period",
+      `${surgePeriod}s`,
+    );
+    localStorage.setItem("dashboard-surge-period", String(surgePeriod));
+  }, [surgePeriod]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--surge-intensity",
+      String(surgeIntensity),
+    );
+    localStorage.setItem("dashboard-surge-intensity", String(surgeIntensity));
+  }, [surgeIntensity]);
+
   return {
     accent,
     setAccent,
@@ -455,6 +577,18 @@ export function useTheme() {
     setGlowColor,
     glowCustom,
     setGlowCustom,
+    breathe,
+    setBreathe,
+    breatheSpeed,
+    setBreatheSpeed,
+    breatheIntensity,
+    setBreatheIntensity,
+    surge,
+    setSurge,
+    surgePeriod,
+    setSurgePeriod,
+    surgeIntensity,
+    setSurgeIntensity,
     resetTheme,
     current,
     presets: PRESETS,

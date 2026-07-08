@@ -1,6 +1,6 @@
 import { Monitor, Cpu, HardDrive } from "lucide-react";
 import { CardShell, CardHeader } from "../components/shared/CardComponents";
-import { ACCENT_MODES, PRESETS, BG_PRESETS } from "../hooks/useTheme";
+import { ACCENT_MODES, PRESETS, BG_PRESETS, ACCENT_THEMES } from "../hooks/useTheme";
 
 function ToggleSwitch({ on }: { on: boolean }) {
   return (
@@ -170,7 +170,10 @@ function ThemePreview() {
                 <div
                   className="accent-fill preview-bar-fill accent-glow-target"
                   style={{ width: `${card.value}%` }}
-                />
+                >
+                  <span className="bright-breathe" aria-hidden />
+                  <span className="bright-surge" aria-hidden />
+                </div>
               </div>
             </div>
           </CardShell>
@@ -186,7 +189,10 @@ function ThemePreview() {
               data-accent-el=""
               className="theme-live-preview-bar accent-glow-target"
               style={{ height: `${h}%` }}
-            />
+            >
+              <span className="bright-breathe" aria-hidden />
+              <span className="bright-surge" aria-hidden />
+            </div>
           ))}
         </div>
       </div>
@@ -198,9 +204,12 @@ function ThemePreview() {
             <span className="preview-meter-label">{m.label}</span>
             <div className="preview-meter-track">
               <div
-                  className="accent-fill preview-meter-fill accent-glow-target"
+                className="accent-fill preview-meter-fill accent-glow-target"
                 style={{ width: `${m.value}%` }}
-              />
+              >
+                <span className="bright-breathe" aria-hidden />
+                <span className="bright-surge" aria-hidden />
+              </div>
             </div>
             <span className="preview-meter-value">{m.value}%</span>
           </div>
@@ -282,6 +291,172 @@ export interface ThemePageProps {
   onGlowColorChange?: (v: "match" | "accent" | "custom") => void;
   glowCustom?: string;
   onGlowCustomChange?: (v: string) => void;
+  breathe?: boolean;
+  onBreatheChange?: (v: boolean) => void;
+  breatheSpeed?: number;
+  onBreatheSpeedChange?: (v: number) => void;
+  breatheIntensity?: number;
+  onBreatheIntensityChange?: (v: number) => void;
+  surge?: boolean;
+  onSurgeChange?: (v: boolean) => void;
+  surgePeriod?: number;
+  onSurgePeriodChange?: (v: number) => void;
+  surgeIntensity?: number;
+  onSurgeIntensityChange?: (v: number) => void;
+}
+
+function BreatheEffectRow({
+  breathe,
+  onBreatheChange,
+  breatheSpeed,
+  onBreatheSpeedChange,
+  breatheIntensity,
+  onBreatheIntensityChange,
+}: {
+  breathe?: boolean;
+  onBreatheChange: (v: boolean) => void;
+  breatheSpeed: number;
+  onBreatheSpeedChange?: (v: number) => void;
+  breatheIntensity: number;
+  onBreatheIntensityChange?: (v: number) => void;
+}) {
+  return (
+    <div className="effect-row-group">
+      <div
+        className={`mode-row${breathe ? " active" : ""}`}
+        onClick={() => onBreatheChange(!breathe)}
+        style={{ cursor: "pointer" }}
+      >
+        <span className="mode-radio" />
+        <div className="mode-text">
+          <span className="mode-name">Breathe</span>
+          <span className="mode-desc">
+            All accent elements brighten in perfect unison
+          </span>
+        </div>
+        <ToggleSwitch on={!!breathe} />
+      </div>
+      {breathe && onBreatheSpeedChange && (
+        <div style={{ paddingLeft: 20, paddingTop: 6 }}>
+          <SliderRow
+            id="tp-breathe-speed"
+            label="Breathe Speed"
+            min={2}
+            max={10}
+            step={0.5}
+            value={breatheSpeed}
+            display={`${breatheSpeed}s`}
+            onChange={(v) => {
+              document.documentElement.style.setProperty(
+                "--breathe-speed",
+                `${v}s`,
+              );
+              onBreatheSpeedChange(v);
+            }}
+          />
+          {onBreatheIntensityChange && (
+            <SliderRow
+              id="tp-breathe-intensity"
+              label="Breathe Intensity"
+              min={0.25}
+              max={3}
+              step={0.05}
+              value={breatheIntensity}
+              display={breatheIntensity.toFixed(2)}
+              onChange={(v) => {
+                document.documentElement.style.setProperty(
+                  "--breathe-intensity",
+                  String(v),
+                );
+                onBreatheIntensityChange(v);
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SurgeEffectRow({
+  surge,
+  onSurgeChange,
+  surgePeriod,
+  onSurgePeriodChange,
+  surgeIntensity,
+  onSurgeIntensityChange,
+}: {
+  surge?: boolean;
+  onSurgeChange: (v: boolean) => void;
+  surgePeriod: number;
+  onSurgePeriodChange?: (v: number) => void;
+  surgeIntensity: number;
+  onSurgeIntensityChange?: (v: number) => void;
+}) {
+  return (
+    <div className="effect-row-group">
+      <div
+        className={`mode-row${surge ? " active" : ""}`}
+        onClick={() => onSurgeChange(!surge)}
+        style={{ cursor: "pointer" }}
+      >
+        <span className="mode-radio" />
+        <div className="mode-text">
+          <span className="mode-name">Surge</span>
+          <span className="mode-desc">
+            Traveling pulse sweeping across accent elements
+          </span>
+        </div>
+        <ToggleSwitch on={!!surge} />
+      </div>
+      {surge && onSurgePeriodChange && (
+        <div style={{ paddingLeft: 20, paddingTop: 6 }}>
+          <SliderRow
+            id="tp-surge-period"
+            label="Surge Period"
+            min={2}
+            max={12}
+            step={0.5}
+            value={surgePeriod}
+            display={`${surgePeriod}s`}
+            onChange={(v) => {
+              document.documentElement.style.setProperty(
+                "--surge-period",
+                `${v}s`,
+              );
+              onSurgePeriodChange(v);
+            }}
+          />
+          {onSurgeIntensityChange && (
+            <SliderRow
+              id="tp-surge-intensity"
+              label="Surge Intensity"
+              min={0.25}
+              max={3}
+              step={0.05}
+              value={surgeIntensity}
+              display={surgeIntensity.toFixed(2)}
+              onChange={(v) => {
+                document.documentElement.style.setProperty(
+                  "--surge-intensity",
+                  String(v),
+                );
+                onSurgeIntensityChange(v);
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function _getReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
 }
 
 export default function ThemePage({
@@ -318,11 +493,20 @@ export default function ThemePage({
   onGlowColorChange,
   glowCustom = "#3b82f6",
   onGlowCustomChange,
+  breathe,
+  onBreatheChange,
+  breatheSpeed = 4,
+  onBreatheSpeedChange,
+  breatheIntensity = 1,
+  onBreatheIntensityChange,
+  surge,
+  onSurgeChange,
+  surgePeriod = 6,
+  onSurgePeriodChange,
+  surgeIntensity = 1,
+  onSurgeIntensityChange,
 }: ThemePageProps) {
-  const prefersReducedMotion =
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : false;
+  const prefersReducedMotion = _getReducedMotion();
 
   const showSpeed = ["sheen", "flow", "rainbow-wave"].includes(accentMode);
   const showSpread = ["sheen", "flow", "rainbow-wave", "spectrum"].includes(
@@ -556,24 +740,41 @@ export default function ThemePage({
                               </button>
                             ))}
                             {glowColor === "custom" && onGlowCustomChange && (
-                              <input
-                                type="color"
-                                value={glowCustom}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  document.documentElement.style.setProperty("--glow-custom", v);
-                                  onGlowCustomChange(v);
-                                }}
+                              <div
+                                data-testid="glow-custom-swatches"
                                 style={{
-                                  width: 28,
-                                  height: 28,
-                                  border: "1px solid var(--border-color)",
-                                  borderRadius: 4,
-                                  cursor: "pointer",
-                                  padding: 2,
-                                  background: "transparent",
+                                  display: "grid",
+                                  gridTemplateColumns: "repeat(8, 20px)",
+                                  gap: 4,
+                                  marginTop: 8,
                                 }}
-                              />
+                              >
+                                {ACCENT_THEMES.map((t) => (
+                                  <button
+                                    key={t.color}
+                                    title={t.name}
+                                    onClick={() => {
+                                      document.documentElement.style.setProperty("--glow-custom", t.color);
+                                      onGlowCustomChange(t.color);
+                                    }}
+                                    style={{
+                                      width: 20,
+                                      height: 20,
+                                      borderRadius: 4,
+                                      border: glowCustom.toLowerCase() === t.color.toLowerCase()
+                                        ? "2px solid var(--text-primary)"
+                                        : "2px solid transparent",
+                                      background: t.color,
+                                      cursor: "pointer",
+                                      padding: 0,
+                                      outline: glowCustom.toLowerCase() === t.color.toLowerCase()
+                                        ? "1px solid var(--accent-primary)"
+                                        : "none",
+                                      outlineOffset: 1,
+                                    }}
+                                  />
+                                ))}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -712,6 +913,28 @@ export default function ThemePage({
                     <ToggleSwitch on={!!cardGlow && (!!glow || !!innerGlow)} />
                   </div>
                 </div>
+              )}
+
+              {onBreatheChange && (
+                <BreatheEffectRow
+                  breathe={breathe}
+                  onBreatheChange={onBreatheChange}
+                  breatheSpeed={breatheSpeed}
+                  onBreatheSpeedChange={onBreatheSpeedChange}
+                  breatheIntensity={breatheIntensity}
+                  onBreatheIntensityChange={onBreatheIntensityChange}
+                />
+              )}
+
+              {onSurgeChange && (
+                <SurgeEffectRow
+                  surge={surge}
+                  onSurgeChange={onSurgeChange}
+                  surgePeriod={surgePeriod}
+                  onSurgePeriodChange={onSurgePeriodChange}
+                  surgeIntensity={surgeIntensity}
+                  onSurgeIntensityChange={onSurgeIntensityChange}
+                />
               )}
             </div>
           </div>

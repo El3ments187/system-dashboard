@@ -208,7 +208,10 @@ function OvCard({
       className={className ? `ov-card ${className}` : "ov-card"}
       data-accent-el=""
     >
-      <div className="ov-spine accent-glow-target" />
+      <div className="ov-spine accent-glow-target">
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </div>
       <div className="ov-card-inner">{children}</div>
     </div>
   );
@@ -291,7 +294,10 @@ function OvChartCard({
 }) {
   return (
     <div className="ov-card" data-accent-el="">
-      <div className="ov-spine accent-glow-target" />
+      <div className="ov-spine accent-glow-target">
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </div>
       <div className="ov-card-inner">
         <div className="ov-chart-head">
           <div

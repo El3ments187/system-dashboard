@@ -10,6 +10,7 @@ pub struct CpuCoreInfo {
 
 #[derive(Debug, Serialize)]
 pub struct CpuMetrics {
+    pub model: String,
     pub utilization_percent: f64,
     pub temperature_celsius: f64,
     pub physical_cores: usize,

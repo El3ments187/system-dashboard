@@ -418,8 +418,15 @@ export function useAccentIndexer(): void {
   useEffect(() => {
     function assignIndices() {
       const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
-      els.forEach((el, i) => {
+      let i = 0;
+      els.forEach((el) => {
+        if (el.dataset.accentEl === "inherit") {
+          // Explicitly marked to inherit parent card's --el-index instead of having its own
+          el.style.removeProperty("--el-index");
+          return;
+        }
         el.style.setProperty("--el-index", String(i));
+        i++;
       });
     }
     assignIndices();

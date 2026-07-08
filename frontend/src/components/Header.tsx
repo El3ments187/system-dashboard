@@ -241,14 +241,12 @@ export default function Header({
                     background:
                       "color-mix(in srgb, var(--warning) 15%, transparent)",
                     cursor: "pointer",
-                    border: "none",
                     fontFamily: "inherit",
                   }
                 : {
                     color: "var(--accent-primary)",
                     background: "var(--accent-tint-15)",
                     cursor: "pointer",
-                    border: "none",
                     fontFamily: "inherit",
                   }
             }

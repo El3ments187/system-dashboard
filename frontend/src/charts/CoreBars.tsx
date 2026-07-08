@@ -76,7 +76,7 @@ const CoreRow = ({
         style={{
           width: "100%",
           height: 14,
-          background: "var(--bg-secondary)",
+          background: "var(--accent-tint-10)",
           borderRadius: 4,
           overflow: "hidden",
           position: "relative",

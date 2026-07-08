@@ -144,7 +144,14 @@ function CpuVerticalProgress({
             borderRadius: 5,
             transition: "height 0.6s ease",
           }}
-        />
+        >
+          {color === accent && (
+            <>
+              <span className="bright-breathe" aria-hidden />
+              <span className="bright-surge" aria-hidden />
+            </>
+          )}
+        </div>
         <div
           style={{
             position: "absolute",

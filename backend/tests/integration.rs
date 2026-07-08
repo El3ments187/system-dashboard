@@ -9,7 +9,8 @@ use system_dashboard::collectors::alerts::{
     check_memory_collector_status, check_storage_collector_status, clear_alert_tracking,
 };
 use system_dashboard::collectors::cpu::{
-    CoreStat, ProcStat, compute_cpu_utilization, parse_physical_cores, parse_proc_stat,
+    CoreStat, ProcStat, compute_cpu_utilization, normalize_cpu_model, parse_physical_cores,
+    parse_proc_stat,
 };
 use system_dashboard::collectors::gpu::{extract_tag, extract_tag_float, parse_smi_xml};
 use system_dashboard::collectors::storage::{
@@ -198,6 +199,7 @@ mod model_serialization {
     #[test]
     fn test_cpu_metrics_serializes() {
         let metrics = CpuMetrics {
+            model: "Test CPU".to_string(),
             utilization_percent: 42.5,
             temperature_celsius: 65.0,
             physical_cores: 8,
@@ -210,6 +212,7 @@ mod model_serialization {
                 utilization_percent: 50.0,
             }],
             frequency_mhz: 3500.0,
+            freq_max_mhz: 5000.0,
         };
         let json = serde_json::to_string(&metrics).unwrap();
         assert!(json.contains("42.5"));
@@ -1332,6 +1335,7 @@ mod api_serialization {
     #[test]
     fn test_cpu_metrics_serializes() {
         let m = CpuMetrics {
+            model: "Test CPU".to_string(),
             utilization_percent: 50.0,
             temperature_celsius: 65.0,
             physical_cores: 8,
@@ -1344,6 +1348,7 @@ mod api_serialization {
                 utilization_percent: 50.0,
             }],
             frequency_mhz: 3500.0,
+            freq_max_mhz: 5000.0,
         };
         let json = serde_json::to_string(&m).expect("CpuMetrics should serialize");
         assert!(json.contains("50.0"));
@@ -1455,6 +1460,7 @@ mod api_serialization {
     #[test]
     fn test_metrics_with_extreme_values() {
         let m = CpuMetrics {
+            model: "Test CPU".to_string(),
             utilization_percent: 100.0,
             temperature_celsius: f64::MAX,
             physical_cores: usize::MAX,
@@ -1464,6 +1470,7 @@ mod api_serialization {
             load_15m: f64::MAX,
             cores: vec![],
             frequency_mhz: f64::MAX,
+            freq_max_mhz: f64::MAX,
         };
         let json = serde_json::to_string(&m);
         assert!(json.is_ok());
@@ -2208,5 +2215,60 @@ mod launcher_metrics_capture {
         assert_eq!(entry.peak_ram_mb, None);
         assert_eq!(entry.avg_gen_tps, None);
         assert_eq!(entry.last_context_size, None);
+    }
+}
+
+// ============================================================================
+// CPU model normalization tests
+// ============================================================================
+
+#[cfg(test)]
+mod cpu_model {
+    use super::*;
+
+    #[test]
+    fn normalize_strips_processor_suffix() {
+        assert_eq!(
+            normalize_cpu_model("AMD Ryzen 9 9950X3D 16-Core Processor"),
+            "AMD Ryzen 9 9950X3D 16-Core"
+        );
+    }
+
+    #[test]
+    fn normalize_no_suffix_passthrough() {
+        assert_eq!(
+            normalize_cpu_model("Intel Core i7-12700K"),
+            "Intel Core i7-12700K"
+        );
+    }
+
+    #[test]
+    fn normalize_proc_cpuinfo_fallback_format() {
+        // /proc/cpuinfo lines look like "model name\t: Intel Core i9-13900K Processor"
+        // normalize_cpu_model receives the value after stripping "model name" and ":"
+        assert_eq!(
+            normalize_cpu_model(" Intel Core i9-13900K Processor"),
+            "Intel Core i9-13900K"
+        );
+    }
+
+    #[test]
+    fn cpu_metrics_model_field_is_present() {
+        // Verify CpuMetrics struct has a model field of type String.
+        let m = CpuMetrics {
+            model: "AMD Ryzen 9 9950X3D 16-Core".to_string(),
+            utilization_percent: 0.0,
+            temperature_celsius: 0.0,
+            physical_cores: 16,
+            threads: 32,
+            load_1m: 0.0,
+            load_5m: 0.0,
+            load_15m: 0.0,
+            cores: vec![],
+            frequency_mhz: 0.0,
+            freq_max_mhz: 0.0,
+        };
+        assert!(!m.model.is_empty());
+        assert!(!m.model.to_lowercase().ends_with("processor"));
     }
 }

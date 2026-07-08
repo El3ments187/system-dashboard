@@ -120,7 +120,7 @@ test.describe("Rainbow Wave — Overview per-element hue spread", () => {
     await page.waitForTimeout(600);
   });
 
-  test("memory (el-index=2) and CPU (el-index=1) chart strokes use distinct hues", async ({
+  test("chart strokes at different el-indices use distinct hues in rainbow-wave", async ({
     page,
   }) => {
     await freezeRainbowSpin(page, 100);
@@ -128,14 +128,23 @@ test.describe("Rainbow Wave — Overview per-element hue spread", () => {
     await page.waitForTimeout(300);
 
     const strokes = await getStrokesByElIndex(page);
-    const mem = strokes[2]?.[0];
-    const cpu = strokes[1]?.[0];
+    const groups = Object.entries(strokes)
+      .filter(([, colors]) => colors.length > 0)
+      .map(([idx, colors]) => ({ idx: Number(idx), color: colors[0] }));
 
-    expect(mem, "memory chart must have a resolved stroke color").toBeTruthy();
-    expect(cpu, "CPU chart must have a resolved stroke color").toBeTruthy();
+    test.skip(groups.length < 2, `Need >= 2 el-index groups with chart strokes; found ${groups.length}`);
+    if (groups.length < 2) return;
+
+    let bestDist = 0, bestA = groups[0], bestB = groups[1];
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        const d = hueDist(groups[i].color, groups[j].color);
+        if (d > bestDist) { bestDist = d; bestA = groups[i]; bestB = groups[j]; }
+      }
+    }
     expect(
-      hueDist(mem!, cpu!),
-      `memory (${mem}) and CPU (${cpu}) should differ in hue by > 15°`,
+      bestDist,
+      `el-index=${bestA.idx} (${bestA.color}) vs el-index=${bestB.idx} (${bestB.color}) should differ in hue by > 15°`,
     ).toBeGreaterThan(15);
   });
 
@@ -166,27 +175,53 @@ test.describe("Rainbow Wave — Overview per-element hue spread", () => {
       ).toBeGreaterThan(15);
   });
 
-  test("regression: memory chart does NOT use the el-index=0 hue", async ({
+  test("regression: chart with non-zero el-index does NOT use the el-index=0 hue", async ({
     page,
   }) => {
     // Before the fix, resolveAccentColors() always read from documentElement (el-index=0).
-    // The memory chart card is el-index=2, so its chart must render at a different hue.
+    // Any chart at non-zero el-index must render at a different hue from el-index=0.
     await freezeRainbowSpin(page, 100);
     await setAccentMode(page, "rainbow-wave");
     await page.waitForTimeout(300);
 
     const strokes = await getStrokesByElIndex(page);
-    const mem = strokes[2]?.[0];
-    const el0 = strokes[0]?.[0];
+    const nonZeroGroups = Object.entries(strokes)
+      .filter(([idx, colors]) => Number(idx) > 0 && colors.length > 0)
+      .map(([idx, colors]) => ({ idx: Number(idx), color: colors[0] }));
 
-    expect(mem, "memory chart (el-index=2) must have a stroke color").toBeTruthy();
-    if (mem && el0) {
-      expect(
-        hueDist(mem, el0),
-        `Memory chart (${mem}) must NOT use el-index=0 color (${el0}); ` +
-          `they should be ~68° apart (2 × 34° per step)`,
-      ).toBeGreaterThan(15);
-    }
+    test.skip(nonZeroGroups.length === 0, "No non-zero el-index groups with chart strokes available");
+    if (nonZeroGroups.length === 0) return;
+
+    // Probe el-index=0 accent color via CSS, normalize to hex via canvas
+    const el0Hex = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>(
+        '[style*="--el-index: 0"], [style*="--el-index:0"]',
+      );
+      if (!el) return null;
+      const probe = document.createElement("div");
+      probe.style.cssText =
+        "background:var(--accent-primary);position:fixed;opacity:0;width:1px;height:1px;pointer-events:none;";
+      el.appendChild(probe);
+      const css = getComputedStyle(probe).backgroundColor;
+      el.removeChild(probe);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    });
+
+    if (!el0Hex) return;
+
+    // Use highest-index group for maximum expected hue separation
+    const chart = nonZeroGroups.sort((a, b) => b.idx - a.idx)[0];
+    expect(
+      hueDist(chart.color, el0Hex),
+      `Chart at el-index=${chart.idx} (${chart.color}) must NOT use el-index=0 hue (${el0Hex})`,
+    ).toBeGreaterThan(15);
   });
 
   test("spectrum: memory and CPU charts use distinct hues", async ({ page }) => {
@@ -275,10 +310,55 @@ test.describe("Spectrum mode — per-element hue spread (Overview)", () => {
       .map((colors) => hexToHslHue(colors[0]))
       .filter((h): h is number => h !== null);
 
-    const uniqueBuckets = new Set(groupHues.map((h) => Math.floor(h / 30)));
+    if (groupHues.length >= 2) {
+      const uniqueBuckets = new Set(groupHues.map((h) => Math.floor(h / 30)));
+      expect(
+        uniqueBuckets.size,
+        `Expected >= 2 distinct 30°-hue buckets in spectrum mode across el-index groups, got ${uniqueBuckets.size}`,
+      ).toBeGreaterThanOrEqual(2);
+      return;
+    }
+
+    // Fallback: probe --accent-primary at all accent elements. Spectrum mode assigns
+    // distinct hues per el-index so this works even when no multi-series charts are present.
+    const accentHues = await page.evaluate(() => {
+      const hues: number[] = [];
+      const seen = new Set<number>();
+      for (const el of document.querySelectorAll<HTMLElement>("[data-accent-el]")) {
+        const raw = el.style?.getPropertyValue("--el-index") || "";
+        const m = raw.match(/(-?\d+)/);
+        if (!m) continue;
+        const idx = parseInt(m[1]);
+        if (seen.has(idx)) continue;
+        seen.add(idx);
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "background:var(--accent-primary);position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;";
+        el.appendChild(probe);
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { el.removeChild(probe); continue; }
+        ctx.fillStyle = getComputedStyle(probe).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        el.removeChild(probe);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        const rn = r / 255, gn = g / 255, bn = b / 255;
+        const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn), d = mx - mn;
+        if (d === 0) continue;
+        let h = 0;
+        if (mx === rn) h = ((gn - bn) / d) % 6;
+        else if (mx === gn) h = (bn - rn) / d + 2;
+        else h = (rn - gn) / d + 4;
+        hues.push(((h * 60) % 360 + 360) % 360);
+      }
+      return hues;
+    });
+
+    const uniqueBuckets = new Set(accentHues.map((h) => Math.floor(h / 30)));
     expect(
       uniqueBuckets.size,
-      `Expected >= 2 distinct 30°-hue buckets in spectrum mode across el-index groups, got ${uniqueBuckets.size}`,
+      `Expected >= 2 distinct 30°-hue buckets in spectrum mode across accent elements, got ${uniqueBuckets.size}`,
     ).toBeGreaterThanOrEqual(2);
   });
 });

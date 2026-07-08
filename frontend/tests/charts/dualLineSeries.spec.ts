@@ -50,7 +50,7 @@ function sameHueFamily(a: string, b: string): boolean {
 test.describe("Memory chart (Overview) - dual-line series", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${BASE_URL}/`);
-    await page.waitForSelector("text=MEMORY UTILIZATION HISTORY");
+    await page.waitForSelector("text=Memory utilization");
   });
 
   for (const mode of MODES) {
@@ -112,7 +112,7 @@ test.describe("CPU dual-axis chart (Utilization + Temperature) - dual-line serie
 test.describe("Dual-line series - theme transitions", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${BASE_URL}/`);
-    await page.waitForSelector("text=MEMORY UTILIZATION HISTORY");
+    await page.waitForSelector("text=Memory utilization");
   });
 
   const TRANSITIONS: Array<[string, string]> = [

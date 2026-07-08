@@ -97,6 +97,18 @@ export default function App() {
     setGlowColor,
     glowCustom,
     setGlowCustom,
+    breathe,
+    setBreathe,
+    breatheSpeed,
+    setBreatheSpeed,
+    breatheIntensity,
+    setBreatheIntensity,
+    surge,
+    setSurge,
+    surgePeriod,
+    setSurgePeriod,
+    surgeIntensity,
+    setSurgeIntensity,
     resetTheme,
     current,
   } = useTheme();
@@ -213,6 +225,18 @@ export default function App() {
                   onGlowColorChange={setGlowColor}
                   glowCustom={glowCustom}
                   onGlowCustomChange={setGlowCustom}
+                  breathe={breathe}
+                  onBreatheChange={setBreathe}
+                  breatheSpeed={breatheSpeed}
+                  onBreatheSpeedChange={setBreatheSpeed}
+                  breatheIntensity={breatheIntensity}
+                  onBreatheIntensityChange={setBreatheIntensity}
+                  surge={surge}
+                  onSurgeChange={setSurge}
+                  surgePeriod={surgePeriod}
+                  onSurgePeriodChange={setSurgePeriod}
+                  surgeIntensity={surgeIntensity}
+                  onSurgeIntensityChange={setSurgeIntensity}
                 />
               ) : (
                 <PageContent activePage={activePage} accent={current} />

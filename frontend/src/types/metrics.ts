@@ -6,6 +6,7 @@ export interface CpuCoreInfo {
 }
 
 export interface CpuMetrics {
+  model?: string;
   utilization_percent: number;
   temperature_celsius: number;
   cores: CpuCoreInfo[];

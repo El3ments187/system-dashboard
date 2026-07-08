@@ -133,7 +133,10 @@ export function CardShell({ children }: { children: React.ReactNode }) {
         paddingLeft: "16px",
       }}
     >
-      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      <span className="card-accent-spine accent-glow-target" aria-hidden>
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </span>
       {children}
     </div>
   );
@@ -155,7 +158,10 @@ export function Card({
       data-accent-el=""
       style={style}
     >
-      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      <span className="card-accent-spine accent-glow-target" aria-hidden>
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </span>
       {children}
     </div>
   );
