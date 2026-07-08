@@ -1,6 +1,11 @@
 import { Monitor, Cpu, HardDrive } from "lucide-react";
 import { CardShell, CardHeader } from "../components/shared/CardComponents";
-import { ACCENT_MODES, PRESETS, BG_PRESETS, ACCENT_THEMES } from "../hooks/useTheme";
+import {
+  ACCENT_MODES,
+  PRESETS,
+  BG_PRESETS,
+  ACCENT_THEMES,
+} from "../hooks/useTheme";
 
 function ToggleSwitch({ on }: { on: boolean }) {
   return (
@@ -109,9 +114,7 @@ const PREVIEW_CARDS = [
     title: "GPU",
     value: 65,
     sub: "41°C · 47 W",
-    icon: (
-      <Monitor size={14} style={{ color: "var(--accent-primary)" }} />
-    ),
+    icon: <Monitor size={14} style={{ color: "var(--accent-primary)" }} />,
   },
   {
     title: "CPU",
@@ -123,9 +126,7 @@ const PREVIEW_CARDS = [
     title: "MEM",
     value: 57,
     sub: "17.5 / 30.5 GB",
-    icon: (
-      <HardDrive size={14} style={{ color: "var(--accent-primary)" }} />
-    ),
+    icon: <HardDrive size={14} style={{ color: "var(--accent-primary)" }} />,
   },
 ];
 
@@ -719,26 +720,43 @@ export default function ThemePage({
                           >
                             Glow Color
                           </div>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                            {(["accent", "match", "custom"] as const).map((opt) => (
-                              <button
-                                key={opt}
-                                onClick={() => onGlowColorChange(opt)}
-                                style={{
-                                  fontSize: 11,
-                                  padding: "3px 10px",
-                                  borderRadius: 4,
-                                  border: "1px solid",
-                                  borderColor: glowColor === opt ? "var(--accent-primary)" : "var(--border-color)",
-                                  background: glowColor === opt ? "var(--accent-tint-15)" : "transparent",
-                                  color: glowColor === opt ? "var(--accent-primary)" : "var(--text-muted)",
-                                  cursor: "pointer",
-                                  textTransform: "capitalize",
-                                }}
-                              >
-                                {opt}
-                              </button>
-                            ))}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                            }}
+                          >
+                            {(["accent", "match", "custom"] as const).map(
+                              (opt) => (
+                                <button
+                                  key={opt}
+                                  onClick={() => onGlowColorChange(opt)}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 10px",
+                                    borderRadius: 4,
+                                    border: "1px solid",
+                                    borderColor:
+                                      glowColor === opt
+                                        ? "var(--accent-primary)"
+                                        : "var(--border-color)",
+                                    background:
+                                      glowColor === opt
+                                        ? "var(--accent-tint-15)"
+                                        : "transparent",
+                                    color:
+                                      glowColor === opt
+                                        ? "var(--accent-primary)"
+                                        : "var(--text-muted)",
+                                    cursor: "pointer",
+                                    textTransform: "capitalize",
+                                  }}
+                                >
+                                  {opt}
+                                </button>
+                              ),
+                            )}
                             {glowColor === "custom" && onGlowCustomChange && (
                               <div
                                 data-testid="glow-custom-swatches"
@@ -754,22 +772,29 @@ export default function ThemePage({
                                     key={t.color}
                                     title={t.name}
                                     onClick={() => {
-                                      document.documentElement.style.setProperty("--glow-custom", t.color);
+                                      document.documentElement.style.setProperty(
+                                        "--glow-custom",
+                                        t.color,
+                                      );
                                       onGlowCustomChange(t.color);
                                     }}
                                     style={{
                                       width: 20,
                                       height: 20,
                                       borderRadius: 4,
-                                      border: glowCustom.toLowerCase() === t.color.toLowerCase()
-                                        ? "2px solid var(--text-primary)"
-                                        : "2px solid transparent",
+                                      border:
+                                        glowCustom.toLowerCase() ===
+                                        t.color.toLowerCase()
+                                          ? "2px solid var(--text-primary)"
+                                          : "2px solid transparent",
                                       background: t.color,
                                       cursor: "pointer",
                                       padding: 0,
-                                      outline: glowCustom.toLowerCase() === t.color.toLowerCase()
-                                        ? "1px solid var(--accent-primary)"
-                                        : "none",
+                                      outline:
+                                        glowCustom.toLowerCase() ===
+                                        t.color.toLowerCase()
+                                          ? "1px solid var(--accent-primary)"
+                                          : "none",
                                       outlineOffset: 1,
                                     }}
                                   />

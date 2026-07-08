@@ -89,36 +89,36 @@ export default function StorageCard(_props: CardProps) {
   if (storageLoading) {
     return (
       <PanelErrorBoundary panelName="Storage">
-      <Card style={{ opacity: 0.5 }}>
-        <div className="card-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
-            <span className="card-title">Storage</span>
+        <Card style={{ opacity: 0.5 }}>
+          <div className="card-header">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <HardDrive size={20} style={{ color: "var(--accent-primary)" }} />
+              <span className="card-title">Storage</span>
+            </div>
+            <div className="card-status">
+              <div
+                className="status-dot"
+                style={{ background: "var(--success)" }}
+              />
+              <span style={{ color: "var(--success)" }}>Active</span>
+            </div>
           </div>
-          <div className="card-status">
+          <div className="card-value">
+            <span className="card-unit">%</span>
+          </div>
+          <ProgressBar percent={0} />
+          <div style={{ padding: "8px 0" }}>
             <div
-              className="status-dot"
-              style={{ background: "var(--success)" }}
+              className="skeleton"
+              style={{ height: 40, width: "100%", marginBottom: 8 }}
             />
-            <span style={{ color: "var(--success)" }}>Active</span>
+            <div
+              className="skeleton"
+              style={{ height: 40, width: "100%", marginBottom: 8 }}
+            />
+            <div className="skeleton" style={{ height: 40, width: "100%" }} />
           </div>
-        </div>
-        <div className="card-value">
-          <span className="card-unit">%</span>
-        </div>
-        <ProgressBar percent={0} />
-        <div style={{ padding: "8px 0" }}>
-          <div
-            className="skeleton"
-            style={{ height: 40, width: "100%", marginBottom: 8 }}
-          />
-          <div
-            className="skeleton"
-            style={{ height: 40, width: "100%", marginBottom: 8 }}
-          />
-          <div className="skeleton" style={{ height: 40, width: "100%" }} />
-        </div>
-      </Card>
+        </Card>
       </PanelErrorBoundary>
     );
   }

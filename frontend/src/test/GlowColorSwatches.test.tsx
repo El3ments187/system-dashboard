@@ -73,12 +73,16 @@ describe("Glow Color swatch selector", () => {
   });
 
   it("swatch grid is hidden when glowColor=match", () => {
-    render(<ThemePage {...makeGlowCustomProps({ glowColor: "match" as const })} />);
+    render(
+      <ThemePage {...makeGlowCustomProps({ glowColor: "match" as const })} />,
+    );
     expect(screen.queryByRole("button", { name: "Cyan" })).toBeNull();
   });
 
   it("swatch grid is hidden when glowColor=accent", () => {
-    render(<ThemePage {...makeGlowCustomProps({ glowColor: "accent" as const })} />);
+    render(
+      <ThemePage {...makeGlowCustomProps({ glowColor: "accent" as const })} />,
+    );
     expect(screen.queryByRole("button", { name: "Cyan" })).toBeNull();
   });
 

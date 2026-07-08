@@ -50,9 +50,7 @@ describe("SettingsPage card spine parity", () => {
     });
     const cards = container.querySelectorAll(".settings-card");
     cards.forEach((card) => {
-      const spine = card.querySelector(
-        ".card-accent-spine.accent-glow-target",
-      );
+      const spine = card.querySelector(".card-accent-spine.accent-glow-target");
       expect(spine).toBeTruthy();
     });
   });

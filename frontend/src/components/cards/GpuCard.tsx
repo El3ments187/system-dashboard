@@ -25,25 +25,25 @@ export default function GpuCard() {
   if (gpuLoading) {
     return (
       <PanelErrorBoundary panelName="GPU">
-      <Card style={{ opacity: 0.5 }}>
-        <div className="card-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Monitor size={16} style={{ color: "var(--accent-primary)" }} />
-            <span className="card-title">GPU</span>
+        <Card style={{ opacity: 0.5 }}>
+          <div className="card-header">
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Monitor size={16} style={{ color: "var(--accent-primary)" }} />
+              <span className="card-title">GPU</span>
+            </div>
           </div>
-        </div>
-        <div
-          style={{
-            padding: 8,
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div className="skeleton" style={{ height: 200, width: "100%" }} />
-        </div>
-      </Card>
+          <div
+            style={{
+              padding: 8,
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div className="skeleton" style={{ height: 200, width: "100%" }} />
+          </div>
+        </Card>
       </PanelErrorBoundary>
     );
   }
@@ -100,7 +100,8 @@ export default function GpuCard() {
             <span
               className="card-detail-value"
               style={{
-                color: temp != null ? "var(--accent-primary)" : "var(--text-muted)",
+                color:
+                  temp != null ? "var(--accent-primary)" : "var(--text-muted)",
               }}
             >
               {temp != null ? `${temp.toFixed(0)}°C` : "\u2014"}
@@ -123,7 +124,10 @@ export default function GpuCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">VRAM Used</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {vramUsed != null && vramTotal != null
                 ? `${vramUsed.toFixed(1)} / ${vramTotal.toFixed(1)} GB`
                 : "\u2014"}
@@ -146,7 +150,10 @@ export default function GpuCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Power Draw</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {powerDraw != null && powerLimit != null
                 ? `${powerDraw.toFixed(0)}W / ${powerLimit.toFixed(0)}W`
                 : "\u2014"}

@@ -109,7 +109,9 @@ describe("ThemePage Surge toggle", () => {
 describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
   it("card-accent-spine has bright-breathe child", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const spines = container.querySelectorAll(".card-accent-spine.accent-glow-target");
+    const spines = container.querySelectorAll(
+      ".card-accent-spine.accent-glow-target",
+    );
     expect(spines.length).toBeGreaterThan(0);
     spines.forEach((spine) => {
       expect(spine.querySelector(".bright-breathe")).not.toBeNull();
@@ -118,7 +120,9 @@ describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
 
   it("card-accent-spine has bright-surge child", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const spines = container.querySelectorAll(".card-accent-spine.accent-glow-target");
+    const spines = container.querySelectorAll(
+      ".card-accent-spine.accent-glow-target",
+    );
     expect(spines.length).toBeGreaterThan(0);
     spines.forEach((spine) => {
       expect(spine.querySelector(".bright-surge")).not.toBeNull();
@@ -127,7 +131,9 @@ describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
 
   it("preview bar fills have bright-breathe child", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const bars = container.querySelectorAll(".preview-bar-fill.accent-glow-target");
+    const bars = container.querySelectorAll(
+      ".preview-bar-fill.accent-glow-target",
+    );
     expect(bars.length).toBeGreaterThan(0);
     bars.forEach((bar) => {
       expect(bar.querySelector(".bright-breathe")).not.toBeNull();
@@ -136,7 +142,9 @@ describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
 
   it("preview bar fills have bright-surge child", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const bars = container.querySelectorAll(".preview-bar-fill.accent-glow-target");
+    const bars = container.querySelectorAll(
+      ".preview-bar-fill.accent-glow-target",
+    );
     expect(bars.length).toBeGreaterThan(0);
     bars.forEach((bar) => {
       expect(bar.querySelector(".bright-surge")).not.toBeNull();

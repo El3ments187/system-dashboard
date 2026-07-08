@@ -179,7 +179,11 @@ export default function Header({
           {system && (
             <span className="status-chip">
               <span className="chip-label">Host</span>
-              <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
+              <span
+                data-accent-el=""
+                className="chip-value"
+                style={{ color: "var(--accent-primary)" }}
+              >
                 {system.hostname}
               </span>
             </span>
@@ -188,7 +192,11 @@ export default function Header({
           {/* Uptime chip */}
           <span className="status-chip">
             <span className="chip-label">Uptime</span>
-            <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              data-accent-el=""
+              className="chip-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {uptime}
             </span>
           </span>
@@ -197,7 +205,11 @@ export default function Header({
           {system && (
             <span className="status-chip">
               <span className="chip-label">Updated</span>
-              <span data-accent-el="" className="chip-value" style={{ color: "var(--accent-primary)" }}>
+              <span
+                data-accent-el=""
+                className="chip-value"
+                style={{ color: "var(--accent-primary)" }}
+              >
                 {system.last_update}
               </span>
             </span>
@@ -223,7 +235,10 @@ export default function Header({
             <span
               className="chip-dot"
               style={{
-                background: healthOk === false ? "var(--danger)" : "var(--accent-primary)",
+                background:
+                  healthOk === false
+                    ? "var(--danger)"
+                    : "var(--accent-primary)",
               }}
             />
             {healthOk === false ? "Offline" : "Online"}
@@ -255,7 +270,9 @@ export default function Header({
             <span
               className={`chip-dot${isPaused ? "" : " live"}`}
               style={{
-                background: isPaused ? "var(--warning)" : "var(--accent-primary)",
+                background: isPaused
+                  ? "var(--warning)"
+                  : "var(--accent-primary)",
               }}
             />
             {isPaused ? "Paused" : "Live"}

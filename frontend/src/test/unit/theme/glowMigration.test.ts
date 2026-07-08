@@ -9,7 +9,9 @@ describe("migrateGlowCustom", () => {
   it("returns an in-palette color unchanged (case-insensitive)", () => {
     const cyan = ACCENT_THEMES.find((t) => t.id === "cyan")!.color;
     expect(migrateGlowCustom(cyan).toLowerCase()).toBe(cyan.toLowerCase());
-    expect(migrateGlowCustom(cyan.toLowerCase()).toLowerCase()).toBe(cyan.toLowerCase());
+    expect(migrateGlowCustom(cyan.toLowerCase()).toLowerCase()).toBe(
+      cyan.toLowerCase(),
+    );
   });
 
   it("migrates an out-of-palette hex to a palette color", () => {
@@ -23,8 +25,18 @@ describe("migrateGlowCustom", () => {
     const result = migrateGlowCustom("#ff0000");
     expect(PALETTE_COLORS).toContain(result.toLowerCase());
     // Should be a warm color, not teal or blue
-    const chosen = ACCENT_THEMES.find((t) => t.color.toLowerCase() === result.toLowerCase())!;
-    const warmIds = ["red", "coral", "rose", "crimson", "ruby", "orange", "pink"];
+    const chosen = ACCENT_THEMES.find(
+      (t) => t.color.toLowerCase() === result.toLowerCase(),
+    )!;
+    const warmIds = [
+      "red",
+      "coral",
+      "rose",
+      "crimson",
+      "ruby",
+      "orange",
+      "pink",
+    ];
     expect(warmIds).toContain(chosen.id);
   });
 

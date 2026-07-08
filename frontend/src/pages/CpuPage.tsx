@@ -193,9 +193,7 @@ function CpuVerticalProgress({
 
 /* ─── CPU Summary Card (Left Column) ─── */
 
-function CpuSummaryCard({}: {
-  accent: { color: string; glow: string };
-}) {
+function CpuSummaryCard({}: { accent: { color: string; glow: string } }) {
   const barColor = useResolvedAccentColor();
   const [danger, setDanger] = useState(() => resolveVar("--danger"));
   const [warning, setWarning] = useState(() => resolveVar("--warning"));
@@ -287,7 +285,10 @@ function CpuSummaryCard({}: {
             />
             Temp
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {temp.toFixed(0)}°C
           </span>
         </div>
@@ -299,7 +300,10 @@ function CpuSummaryCard({}: {
             />
             Freq
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {freq > 0 ? `${(freq / 1000).toFixed(1)} GHz` : "—"}
           </span>
         </div>
@@ -311,7 +315,10 @@ function CpuSummaryCard({}: {
             />
             Cores
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {physCores}
           </span>
         </div>
@@ -323,7 +330,10 @@ function CpuSummaryCard({}: {
             />
             Threads
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {threads}
           </span>
         </div>
@@ -335,7 +345,10 @@ function CpuSummaryCard({}: {
             />
             Load 1m
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {load1.toFixed(2)}
           </span>
         </div>
@@ -347,7 +360,10 @@ function CpuSummaryCard({}: {
             />
             Load 5m
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {load5.toFixed(2)}
           </span>
         </div>
@@ -359,7 +375,10 @@ function CpuSummaryCard({}: {
             />
             Load 15m
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {load15.toFixed(2)}
           </span>
         </div>

@@ -193,7 +193,11 @@ function PanelCard({
         ...style,
       }}
     >
-      <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden>
+      <span
+        className="accent-spine accent-glow-target"
+        style={SPINE_STYLE}
+        aria-hidden
+      >
         <span className="bright-breathe" aria-hidden />
         <span className="bright-surge" aria-hidden />
       </span>
@@ -2966,14 +2970,19 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card), var(--card-glow), var(--card-halo)",
+                boxShadow:
+                  "var(--shadow-card), var(--card-glow), var(--card-halo)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden>
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+              <span
+                className="accent-spine accent-glow-target"
+                style={SPINE_STYLE}
+                aria-hidden
+              >
+                <span className="bright-breathe" aria-hidden />
+                <span className="bright-surge" aria-hidden />
+              </span>
               <RunModelsSection />
             </div>
 
@@ -2989,14 +2998,19 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                boxShadow: "var(--shadow-card), var(--card-glow), var(--card-halo)",
+                boxShadow:
+                  "var(--shadow-card), var(--card-glow), var(--card-halo)",
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span className="accent-spine accent-glow-target" style={SPINE_STYLE} aria-hidden>
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+              <span
+                className="accent-spine accent-glow-target"
+                style={SPINE_STYLE}
+                aria-hidden
+              >
+                <span className="bright-breathe" aria-hidden />
+                <span className="bright-surge" aria-hidden />
+              </span>
               <LogConsole />
             </div>
           </div>

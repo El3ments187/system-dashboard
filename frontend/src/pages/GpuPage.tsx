@@ -321,7 +321,10 @@ function GpuSummaryCard({
             />
             Temp
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {gpu.temperature_celsius.toFixed(0)}°C
           </span>
         </div>
@@ -333,7 +336,10 @@ function GpuSummaryCard({
             />
             Power
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {gpu.power_usage_watts.toFixed(0)}W
           </span>
         </div>
@@ -345,7 +351,10 @@ function GpuSummaryCard({
             />
             VRAM
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {formatBytes(gpu.vram_used_gb)} / {formatBytes(gpu.vram_total_gb)}
           </span>
         </div>
@@ -357,7 +366,10 @@ function GpuSummaryCard({
             />
             Fan
           </span>
-          <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+          <span
+            className="card-detail-value"
+            style={{ color: "var(--accent-primary)" }}
+          >
             {gpu.fan_speed_rpm > 0 ? `${gpu.fan_speed_rpm} RPM` : "—"}
           </span>
         </div>
@@ -370,7 +382,10 @@ function GpuSummaryCard({
               />
               Clock
             </span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {gpu.clock_speed_mhz.toFixed(0)} MHz
             </span>
           </div>
@@ -384,7 +399,10 @@ function GpuSummaryCard({
               />
               MemClk
             </span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {gpu.memory_clock_mhz.toFixed(0)} MHz
             </span>
           </div>

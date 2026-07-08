@@ -368,7 +368,10 @@ export default function SettingsPage({}: SettingsPageProps) {
         </span>
         <div className="settings-card-header">
           <div className="settings-icon-badge">
-            <SettingsIcon size={16} style={{ color: "var(--accent-primary)" }} />
+            <SettingsIcon
+              size={16}
+              style={{ color: "var(--accent-primary)" }}
+            />
           </div>
           <div>
             <div className="settings-card-title">AI Service Configuration</div>

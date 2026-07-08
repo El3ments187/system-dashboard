@@ -301,9 +301,14 @@ export function useTheme() {
     return localStorage.getItem("dashboard-card-glow") === "on";
   });
 
-  const [glowColor, setGlowColor] = useState<"match" | "accent" | "custom">(() => {
-    return (localStorage.getItem("dashboard-glow-color") as "match" | "accent" | "custom") || "match";
-  });
+  const [glowColor, setGlowColor] = useState<"match" | "accent" | "custom">(
+    () => {
+      return (
+        (localStorage.getItem("dashboard-glow-color") as
+          "match" | "accent" | "custom") || "match"
+      );
+    },
+  );
 
   const [glowCustom, setGlowCustom] = useState<string>(() => {
     return migrateGlowCustom(localStorage.getItem("dashboard-glow-custom"));
@@ -332,9 +337,7 @@ export function useTheme() {
   });
 
   const [surgeIntensity, setSurgeIntensity] = useState<number>(() => {
-    return parseFloat(
-      localStorage.getItem("dashboard-surge-intensity") || "1",
-    );
+    return parseFloat(localStorage.getItem("dashboard-surge-intensity") || "1");
   });
 
   const resetTheme = useCallback(() => {

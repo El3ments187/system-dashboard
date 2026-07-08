@@ -25,25 +25,28 @@ export default function MemoryCard() {
   if (memoryLoading) {
     return (
       <PanelErrorBoundary panelName="Memory">
-      <Card style={{ opacity: 0.5 }}>
-        <div className="card-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <MemoryStick size={16} style={{ color: "var(--accent-primary)" }} />
-            <span className="card-title">Memory</span>
+        <Card style={{ opacity: 0.5 }}>
+          <div className="card-header">
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <MemoryStick
+                size={16}
+                style={{ color: "var(--accent-primary)" }}
+              />
+              <span className="card-title">Memory</span>
+            </div>
           </div>
-        </div>
-        <div
-          style={{
-            padding: 8,
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div className="skeleton" style={{ height: 200, width: "100%" }} />
-        </div>
-      </Card>
+          <div
+            style={{
+              padding: 8,
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div className="skeleton" style={{ height: 200, width: "100%" }} />
+          </div>
+        </Card>
       </PanelErrorBoundary>
     );
   }
@@ -99,7 +102,10 @@ export default function MemoryCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Used</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {usedValue !== null ? `${usedValue.toFixed(1)} GB` : "\u2014"}
             </span>
           </div>
@@ -120,7 +126,10 @@ export default function MemoryCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Total</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {totalValue !== null ? `${totalValue.toFixed(1)} GB` : "\u2014"}
             </span>
           </div>
@@ -141,7 +150,10 @@ export default function MemoryCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Swap Used</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {swapUsedValue !== null
                 ? `${swapUsedValue.toFixed(1)} GB`
                 : "\u2014"}
@@ -164,7 +176,10 @@ export default function MemoryCard() {
             onMouseLeave={() => tooltip.setCardTooltip(null)}
           >
             <span className="card-detail-label">Swap Total</span>
-            <span className="card-detail-value" style={{ color: "var(--accent-primary)" }}>
+            <span
+              className="card-detail-value"
+              style={{ color: "var(--accent-primary)" }}
+            >
               {swapTotalValue !== null
                 ? `${swapTotalValue.toFixed(1)} GB`
                 : "\u2014"}
