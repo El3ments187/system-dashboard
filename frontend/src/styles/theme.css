@@ -1204,7 +1204,8 @@ main {
   width: 3px;
   border-top-left-radius: inherit;
   border-bottom-left-radius: inherit;
-  background: var(--accent-primary);
+  background: var(--accent-fill);
+  background-size: var(--accent-fill-size);
 }
 
 .settings-card:hover {
