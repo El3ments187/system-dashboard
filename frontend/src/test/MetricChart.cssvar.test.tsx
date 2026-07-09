@@ -152,3 +152,51 @@ describe("MetricChart — CSS var stroke/fill (Issue A: rainbow-wave animation)"
     expect(secondary_!.stroke).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });
+
+describe("MetricChart — ChartFrame structure", () => {
+  const mockHistory: MetricHistoryPoint[] = Array.from(
+    { length: 5 },
+    (_, i) => ({
+      slot: i,
+      timestamp: new Date(Date.now() - i * 500),
+      value: i * 10,
+    }),
+  );
+
+  it("renders exactly one .chart-container[data-accent-el]", () => {
+    const { container } = render(
+      <MetricChart
+        accent={{ color: "#3b82f6", glow: "#60a5fa" }}
+        title="Test"
+        data={mockHistory}
+      />,
+    );
+    const frames = container.querySelectorAll(".chart-container[data-accent-el]");
+    expect(frames).toHaveLength(1);
+  });
+
+  it("chart-container contains exactly one .card-accent-spine.accent-glow-target", () => {
+    const { container } = render(
+      <MetricChart
+        accent={{ color: "#3b82f6", glow: "#60a5fa" }}
+        title="Test"
+        data={mockHistory}
+      />,
+    );
+    const frame = container.querySelector(".chart-container[data-accent-el]")!;
+    expect(frame.querySelectorAll(".card-accent-spine.accent-glow-target")).toHaveLength(1);
+  });
+
+  it("spine contains exactly one .bright-breathe and one .bright-surge", () => {
+    const { container } = render(
+      <MetricChart
+        accent={{ color: "#3b82f6", glow: "#60a5fa" }}
+        title="Test"
+        data={mockHistory}
+      />,
+    );
+    const spine = container.querySelector(".card-accent-spine")!;
+    expect(spine.querySelectorAll(".bright-breathe")).toHaveLength(1);
+    expect(spine.querySelectorAll(".bright-surge")).toHaveLength(1);
+  });
+});

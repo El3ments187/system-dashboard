@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import DirectoryBrowserModal from "../components/DirectoryBrowserModal";
 import EditUpdateScriptModal from "../components/EditUpdateScriptModal";
+import { AccentSpine } from "../components/shared/CardComponents";
 
 const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
@@ -362,10 +363,7 @@ export default function SettingsPage({}: SettingsPageProps) {
   return (
     <main className="settings-grid">
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden>
-          <span className="bright-breathe" aria-hidden />
-          <span className="bright-surge" aria-hidden />
-        </span>
+        <AccentSpine />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <SettingsIcon
@@ -426,10 +424,7 @@ export default function SettingsPage({}: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden>
-          <span className="bright-breathe" aria-hidden />
-          <span className="bright-surge" aria-hidden />
-        </span>
+        <AccentSpine />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
@@ -546,10 +541,7 @@ export default function SettingsPage({}: SettingsPageProps) {
       </div>
 
       <div className="settings-card" data-accent-el="">
-        <span className="card-accent-spine accent-glow-target" aria-hidden>
-          <span className="bright-breathe" aria-hidden />
-          <span className="bright-surge" aria-hidden />
-        </span>
+        <AccentSpine />
         <div className="settings-card-header">
           <div className="settings-icon-badge">
             <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />

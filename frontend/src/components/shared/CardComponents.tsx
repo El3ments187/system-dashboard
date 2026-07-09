@@ -144,10 +144,7 @@ export function CardShell({ children }: { children: React.ReactNode }) {
         paddingLeft: "16px",
       }}
     >
-      <span className="card-accent-spine accent-glow-target" aria-hidden>
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+      <AccentSpine />
       {children}
     </div>
   );
@@ -170,10 +167,27 @@ export function Card({
       data-accent-el=""
       style={style}
     >
-      <span className="card-accent-spine accent-glow-target" aria-hidden>
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+      <AccentSpine />
+      {children}
+    </div>
+  );
+}
+
+/* ─── chart frame: the canonical wrapper for every chart surface ─── */
+export function ChartFrame({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      className="chart-container"
+      data-accent-el=""
+      style={{ flex: 1, minHeight: 0, ...style }}
+    >
+      <AccentSpine />
       {children}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   useAccentSync,
   SECONDARY_LINE_DASH,
 } from "../utils/accentColors";
+import { ChartFrame } from "../components/shared/CardComponents";
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -201,15 +202,7 @@ export default function MetricChart({
 
   if (!chartComponents) {
     return (
-      <div
-        className="chart-container"
-        data-accent-el=""
-        style={{ flex: 1, minHeight: 0, ...style }}
-      >
-        <span className="card-accent-spine accent-glow-target" aria-hidden>
-          <span className="bright-breathe" aria-hidden />
-          <span className="bright-surge" aria-hidden />
-        </span>
+      <ChartFrame style={style}>
         <div
           className="chart-title"
           style={{
@@ -244,7 +237,7 @@ export default function MetricChart({
         >
           Loading chart...
         </div>
-      </div>
+      </ChartFrame>
     );
   }
 
@@ -438,15 +431,7 @@ export default function MetricChart({
   };
 
   return (
-    <div
-      className="chart-container"
-      data-accent-el=""
-      style={{ flex: 1, minHeight: 0, ...style }}
-    >
-      <span className="card-accent-spine accent-glow-target" aria-hidden>
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+    <ChartFrame style={style}>
       <div
         className="chart-title"
         style={{
@@ -693,6 +678,6 @@ export default function MetricChart({
           </div>
         )}
       </div>
-    </div>
+    </ChartFrame>
   );
 }

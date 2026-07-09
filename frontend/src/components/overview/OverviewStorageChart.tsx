@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { StorageHistoryPoint } from "../../types/metrics";
 import { ACCENT_OBSERVER_ATTRS } from "../../utils/accentColors";
+import { ChartFrame } from "../shared/CardComponents";
 
 interface Props {
   data: StorageHistoryPoint[];
@@ -103,20 +104,21 @@ export default function OverviewStorageChart({ data }: Props) {
 
   if (!recharts) {
     return (
-      <div
-        ref={chartRef}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-muted)",
-          fontSize: 12,
-        }}
-      >
-        Loading chart...
-      </div>
+      <ChartFrame>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text-muted)",
+            fontSize: 12,
+          }}
+        >
+          Loading chart...
+        </div>
+      </ChartFrame>
     );
   }
 
@@ -128,10 +130,11 @@ export default function OverviewStorageChart({ data }: Props) {
   const Tooltip = recharts.Tooltip as any;
 
   return (
-    <div
-      ref={chartRef}
-      style={{ flex: 1, minHeight: 0, overflow: "hidden", height: "100%" }}
-    >
+    <ChartFrame>
+      <div
+        ref={chartRef}
+        style={{ flex: 1, minHeight: 0, overflow: "hidden", height: "100%" }}
+      >
       {chartSize && (
         <AreaChart
           data={chartData}
@@ -316,6 +319,7 @@ export default function OverviewStorageChart({ data }: Props) {
           />
         </AreaChart>
       )}
-    </div>
+      </div>
+    </ChartFrame>
   );
 }
