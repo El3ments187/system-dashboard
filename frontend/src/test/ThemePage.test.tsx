@@ -188,6 +188,25 @@ describe("ThemePage slider accessibility", () => {
   });
 });
 
+describe("ThemePage mode-dependency hints", () => {
+  it("shows Effect Controls mode hint when accentMode is solid", () => {
+    render(<ThemePage {...makeProps({ accentMode: "solid" })} />);
+    expect(
+      screen.getByText(/Active in Sheen/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show Effect Controls mode hint when accentMode is sheen", () => {
+    render(<ThemePage {...makeProps({ accentMode: "sheen", fxSpeed: 12, onFxSpeedChange: vi.fn() })} />);
+    expect(screen.queryByText(/Active in Sheen/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show Effect Controls mode hint when accentMode is spectrum", () => {
+    render(<ThemePage {...makeProps({ accentMode: "spectrum", fxSpread: 34, onFxSpreadChange: vi.fn() })} />);
+    expect(screen.queryByText(/Active in Sheen/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("useAccentIndexer", () => {
   beforeEach(() => {
     document.body.innerHTML = "";

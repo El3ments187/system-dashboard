@@ -481,11 +481,7 @@ export function useTheme() {
   }, [cardGlow]);
 
   useEffect(() => {
-    if (glowColor === "accent" || glowColor === "custom") {
-      document.documentElement.setAttribute("data-glow-color", glowColor);
-    } else {
-      document.documentElement.removeAttribute("data-glow-color");
-    }
+    document.documentElement.setAttribute("data-glow-color", glowColor);
     localStorage.setItem("dashboard-glow-color", glowColor);
   }, [glowColor]);
 

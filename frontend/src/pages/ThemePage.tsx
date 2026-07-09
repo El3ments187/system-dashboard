@@ -659,9 +659,20 @@ export default function ThemePage({
               ))}
             </div>
 
-            {showSliders && (
-              <>
-                <div className="theme-section-header">Effect Controls</div>
+            <>
+              <div className="theme-section-header">Effect Controls</div>
+              {!showSliders ? (
+                <span
+                  className="mode-desc"
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    padding: "2px 0",
+                  }}
+                >
+                  Active in Sheen / Flow / Rainbow-Wave / Spectrum
+                </span>
+              ) : (
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 10 }}
                 >
@@ -725,8 +736,8 @@ export default function ThemePage({
                     />
                   )}
                 </div>
-              </>
-            )}
+              )}
+            </>
 
             <div className="theme-section-header">Effects</div>
             {/* effects-grid is a flex column designed to hold many effect rows */}

@@ -60,6 +60,48 @@ describe("useTheme - defaults", () => {
   });
 });
 
+describe("useTheme - data-glow-color attribute (Fix D)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-glow-color");
+  });
+
+  it("sets data-glow-color='match' when glowColor is match (default)", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const { unmount } = require("@testing-library/react").renderHook(
+      () => useTheme(),
+    );
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe("match");
+    unmount();
+    document.body.removeChild(root);
+  });
+
+  it("sets data-glow-color='accent' when glowColor is accent", () => {
+    localStorage.setItem("dashboard-glow-color", "accent");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const { unmount } = require("@testing-library/react").renderHook(
+      () => useTheme(),
+    );
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe("accent");
+    unmount();
+    document.body.removeChild(root);
+  });
+
+  it("sets data-glow-color='custom' when glowColor is custom", () => {
+    localStorage.setItem("dashboard-glow-color", "custom");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const { unmount } = require("@testing-library/react").renderHook(
+      () => useTheme(),
+    );
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe("custom");
+    unmount();
+    document.body.removeChild(root);
+  });
+});
+
 describe("useTheme - accent mode migration", () => {
   it('migrates legacy "gradient" to "sheen"', () => {
     localStorage.setItem("dashboard-accent-mode", "gradient");

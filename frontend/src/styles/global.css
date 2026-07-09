@@ -199,22 +199,6 @@ a:hover {
   opacity: 0.85;
 }
 
-/* Card accent spine */
-.card-accent-spine {
-  position: relative;
-}
-.card-accent-spine > .accent-spine {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent-fill);
-  background-size: var(--accent-fill-size, 200% 200%);
-  box-shadow: var(--card-glow);
-  z-index: 2;
-  pointer-events: none;
-}
 
 /* Smooth theme switching — card surfaces and structural chrome */
 .metric-card,
