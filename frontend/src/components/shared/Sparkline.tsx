@@ -3,7 +3,7 @@ import { MetricHistoryPoint } from "../../types/metrics";
 interface SparklineProps {
   data: MetricHistoryPoint[] | null;
   color?: string;
-  width?: number;
+  width?: number | string;
   height?: number;
 }
 
@@ -24,16 +24,29 @@ export default function Sparkline({
   const max = Math.max(...values);
   const range = max - min || 1;
 
+  // When width is a string (e.g. "100%"), use a fixed coordinate space and
+  // let the SVG viewBox + CSS handle responsive scaling.
+  const coordW = typeof width === "number" ? width : 100;
+
   const coords = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * width;
+    const x = (i / (values.length - 1)) * coordW;
     const y = height - ((v - min) / range) * height;
     return [x, y];
   });
   const points = coords.map(([x, y]) => `${x},${y}`).join(" ");
-  const areaPoints = `0,${height} ${points} ${width},${height}`;
+  const areaPoints = `0,${height} ${points} ${coordW},${height}`;
+
+  const viewBox =
+    typeof width === "string" ? `0 0 ${coordW} ${height}` : undefined;
 
   return (
-    <svg width={width} height={height} style={{ display: "block" }}>
+    <svg
+      width={width}
+      height={height}
+      viewBox={viewBox}
+      preserveAspectRatio={viewBox ? "none" : undefined}
+      style={{ display: "block" }}
+    >
       <polygon
         points={areaPoints}
         fill={color}

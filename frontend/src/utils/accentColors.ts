@@ -414,6 +414,14 @@ export function useResolvedAccentColor(): string {
   return color;
 }
 
+function hasAccentEl(node: Node): boolean {
+  return (
+    node instanceof Element &&
+    (node.hasAttribute("data-accent-el") ||
+      node.querySelector("[data-accent-el]") !== null)
+  );
+}
+
 export function useAccentIndexer(): void {
   useEffect(() => {
     function assignIndices() {
@@ -430,8 +438,22 @@ export function useAccentIndexer(): void {
       });
     }
     assignIndices();
-    const observer = new MutationObserver(assignIndices);
+
+    let rafId = 0;
+    const observer = new MutationObserver((mutations) => {
+      // Early-exit: skip re-index if no [data-accent-el] elements were added or removed
+      const relevant = mutations.some((m) =>
+        [...m.addedNodes, ...m.removedNodes].some(hasAccentEl),
+      );
+      if (!relevant) return;
+      // rAF coalescing: multiple mutations in one frame collapse into one re-index
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(assignIndices);
+    });
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 }

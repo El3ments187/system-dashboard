@@ -193,7 +193,6 @@ export default function MetricChart({
     return result;
   }, [data, dataKeys, dualData]);
 
-  const fillColor = `${strokeColor}20`;
 
   const seriesLabels: Record<string, string> = {
     memory: "Memory Utilization (%)",
@@ -267,10 +266,10 @@ export default function MetricChart({
           <A
             yAxisId="left"
             dataKey="value"
-            stroke={strokeColor}
-            fill={fillColor}
+            stroke="var(--accent-primary)"
+            fill="var(--accent-primary)"
             strokeWidth={2}
-            fillOpacity={0.3}
+            fillOpacity={0.12}
             isAnimationActive={false}
             animationDuration={0}
             activeDot={{
@@ -303,15 +302,16 @@ export default function MetricChart({
     if (dataKeys) {
       return dataKeys.map((key: string, i: number) => {
         const keyColor = seriesColors[i % seriesColors.length];
+        const isSecondary = i > 0;
         return (
           <A
             key={key}
             dataKey={key}
-            stroke={keyColor}
-            fill={`${keyColor}20`}
+            stroke={isSecondary ? keyColor : "var(--accent-primary)"}
+            fill={isSecondary ? `${keyColor}20` : "var(--accent-primary)"}
             strokeWidth={2}
             strokeDasharray={i === 1 ? SECONDARY_LINE_DASH : "0"}
-            fillOpacity={i === 1 ? 0.2 : 0.3}
+            fillOpacity={isSecondary ? (i === 1 ? 0.2 : 0.3) : 0.12}
             isAnimationActive={false}
             animationDuration={0}
             activeDot={{
@@ -496,7 +496,7 @@ export default function MetricChart({
                     width: 10,
                     height: 3,
                     borderRadius: 2,
-                    background: seriesColors[i % seriesColors.length],
+                    background: i === 0 ? "var(--accent-primary)" : seriesColors[i % seriesColors.length],
                   }}
                 />
               )}
@@ -528,7 +528,7 @@ export default function MetricChart({
                 width: 10,
                 height: 3,
                 borderRadius: 2,
-                background: strokeColor,
+                background: "var(--accent-primary)",
               }}
             />
             <span
@@ -612,7 +612,7 @@ export default function MetricChart({
                 />
                 <Bar
                   dataKey="value"
-                  fill={strokeColor}
+                  fill="var(--accent-primary)"
                   radius={[2, 2, 0, 0]}
                   isAnimationActive={false}
                   animationDuration={0}

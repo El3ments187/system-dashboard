@@ -3,8 +3,8 @@ const C = 2 * Math.PI * R;
 const ARC = C * 0.75;
 
 function gaugeColor(pct: number): string {
-  if (pct >= 85) return "#e56a61";
-  if (pct >= 60) return "#e6a95c";
+  if (pct >= 85) return "var(--danger)";
+  if (pct >= 60) return "var(--warning)";
   return "var(--accent-primary)";
 }
 

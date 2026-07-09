@@ -129,25 +129,15 @@ describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
     });
   });
 
-  it("preview bar fills have bright-breathe child", () => {
+  it("preview metric cards render real ProgressBar (card-progress-bar)", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const bars = container.querySelectorAll(
-      ".preview-bar-fill.accent-glow-target",
-    );
+    const bars = container.querySelectorAll(".card-progress-bar");
     expect(bars.length).toBeGreaterThan(0);
-    bars.forEach((bar) => {
-      expect(bar.querySelector(".bright-breathe")).not.toBeNull();
-    });
   });
 
-  it("preview bar fills have bright-surge child", () => {
+  it("preview no longer contains bespoke preview-bar-fill elements", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const bars = container.querySelectorAll(
-      ".preview-bar-fill.accent-glow-target",
-    );
-    expect(bars.length).toBeGreaterThan(0);
-    bars.forEach((bar) => {
-      expect(bar.querySelector(".bright-surge")).not.toBeNull();
-    });
+    const oldBars = container.querySelectorAll(".preview-bar-fill");
+    expect(oldBars.length).toBe(0);
   });
 });

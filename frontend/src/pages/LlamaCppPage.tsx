@@ -70,6 +70,7 @@ import {
   calcBuildsBehind,
   extractQuant,
 } from "./llamaCppUtils";
+import { AccentSpine } from "../components/shared/CardComponents";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -156,21 +157,6 @@ function useFitText(
 
 // ─── Card layout primitives ───────────────────────────────────────────────────
 
-// Spine uses var(--accent-fill) + var(--accent-fill-size) so animated accent
-// modes (rainbow-wave, animated-gradient, spectrum) work on the spine bar.
-const SPINE_STYLE: React.CSSProperties = {
-  position: "absolute",
-  left: 0,
-  top: 0,
-  bottom: 0,
-  width: 3,
-  background: "var(--accent-fill)",
-  backgroundSize: "var(--accent-fill-size, 200% 200%)",
-  zIndex: 2,
-  pointerEvents: "none",
-  flexShrink: 0,
-};
-
 function PanelCard({
   children,
   style,
@@ -193,14 +179,7 @@ function PanelCard({
         ...style,
       }}
     >
-      <span
-        className="accent-spine accent-glow-target"
-        style={SPINE_STYLE}
-        aria-hidden
-      >
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </span>
+      <AccentSpine />
       {children}
     </div>
   );
@@ -2975,14 +2954,7 @@ export default function LlamaCppPage() {
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span
-                className="accent-spine accent-glow-target"
-                style={SPINE_STYLE}
-                aria-hidden
-              >
-                <span className="bright-breathe" aria-hidden />
-                <span className="bright-surge" aria-hidden />
-              </span>
+              <AccentSpine />
               <RunModelsSection />
             </div>
 
@@ -3003,14 +2975,7 @@ export default function LlamaCppPage() {
                 background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
               }}
             >
-              <span
-                className="accent-spine accent-glow-target"
-                style={SPINE_STYLE}
-                aria-hidden
-              >
-                <span className="bright-breathe" aria-hidden />
-                <span className="bright-surge" aria-hidden />
-              </span>
+              <AccentSpine />
               <LogConsole />
             </div>
           </div>

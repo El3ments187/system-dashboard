@@ -51,8 +51,9 @@ describe("Glow Color swatch selector", () => {
 
   it("swatch colors match ACCENT_THEMES exactly (shared palette source)", () => {
     render(<ThemePage {...makeGlowCustomProps()} />);
+    const container = screen.getByTestId("glow-custom-swatches");
     for (const theme of ACCENT_THEMES) {
-      const btn = screen.getByRole("button", { name: theme.name });
+      const btn = within(container).getByRole("button", { name: theme.name });
       expect(btn).toBeInTheDocument();
     }
   });
@@ -60,14 +61,16 @@ describe("Glow Color swatch selector", () => {
   it("clicking a swatch calls onGlowCustomChange with its color", () => {
     const onGlowCustomChange = vi.fn();
     render(<ThemePage {...makeGlowCustomProps({ onGlowCustomChange })} />);
-    const cyanBtn = screen.getByRole("button", { name: "Cyan" });
+    const container = screen.getByTestId("glow-custom-swatches");
+    const cyanBtn = within(container).getByRole("button", { name: "Cyan" });
     fireEvent.click(cyanBtn);
     expect(onGlowCustomChange).toHaveBeenCalledWith("#06B6D4");
   });
 
   it("the selected swatch (matching glowCustom) is visually marked", () => {
     render(<ThemePage {...makeGlowCustomProps({ glowCustom: "#06B6D4" })} />);
-    const cyanBtn = screen.getByRole("button", { name: "Cyan" });
+    const container = screen.getByTestId("glow-custom-swatches");
+    const cyanBtn = within(container).getByRole("button", { name: "Cyan" });
     // The selected swatch should have a solid border (not transparent)
     expect(cyanBtn.style.border).not.toContain("transparent");
   });
@@ -76,22 +79,23 @@ describe("Glow Color swatch selector", () => {
     render(
       <ThemePage {...makeGlowCustomProps({ glowColor: "match" as const })} />,
     );
-    expect(screen.queryByRole("button", { name: "Cyan" })).toBeNull();
+    expect(screen.queryByTestId("glow-custom-swatches")).toBeNull();
   });
 
   it("swatch grid is hidden when glowColor=accent", () => {
     render(
       <ThemePage {...makeGlowCustomProps({ glowColor: "accent" as const })} />,
     );
-    expect(screen.queryByRole("button", { name: "Cyan" })).toBeNull();
+    expect(screen.queryByTestId("glow-custom-swatches")).toBeNull();
   });
 
   it("swatch grid uses the same ACCENT_THEMES export as accent picker (count invariant)", () => {
     // This test ensures: if the palette changes, both pickers change together.
     // We verify by asserting the swatch count === ACCENT_THEMES.length (not a hardcoded 32).
     render(<ThemePage {...makeGlowCustomProps()} />);
+    const container = screen.getByTestId("glow-custom-swatches");
     const allNamedSwatches = ACCENT_THEMES.map((t) =>
-      screen.queryByRole("button", { name: t.name }),
+      within(container).queryByRole("button", { name: t.name }),
     );
     const found = allNamedSwatches.filter(Boolean);
     expect(found).toHaveLength(ACCENT_THEMES.length);

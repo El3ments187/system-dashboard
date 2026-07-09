@@ -6,6 +6,24 @@
   box-sizing: border-box;
 }
 
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 0 0 6px 0;
+  text-decoration: none;
+  transition: top 150ms ease;
+}
+.skip-link:focus {
+  top: 0;
+}
+
 html {
   font-family:
     "Inter",
@@ -196,4 +214,20 @@ a:hover {
   box-shadow: var(--card-glow);
   z-index: 2;
   pointer-events: none;
+}
+
+/* Smooth theme switching — card surfaces and structural chrome */
+.metric-card,
+.card,
+.card-header,
+.card-section,
+.mode-row,
+.theme-page,
+.theme-ctrl-col,
+.theme-section-header,
+.effect-row-group {
+  transition:
+    background-color 250ms ease,
+    border-color 250ms ease,
+    color 250ms ease;
 }

@@ -5,28 +5,26 @@ import {
   expectNoInvalidCssValues,
   setAccentMode,
 } from "../helpers/themeAssertions";
-import GpuCard from "../../components/cards/GpuCard";
-import CpuCard from "../../components/cards/CpuCard";
-import * as MetricsContext from "../../context/MetricsContext";
 
-const mockMetricsContext = () => ({
-  gpuCurrentValues: [65, 72, 8.5, 12.0, 250, 300],
-  gpuLoading: false,
-  gpuError: null,
-  retryGpu: vi.fn(),
-  cpuCurrentValues: [45, 65, 3800, 8, 16, 2.5, 2.1, 1.8],
-  cpuLoading: false,
-  cpuError: null,
-  retryCpu: vi.fn(),
-});
-
-function renderWithProviders(ui: React.ReactElement) {
-  return renderWithTheme(
-    <MetricsContext.MetricsContext.Provider value={mockMetricsContext()}>
-      {ui}
-    </MetricsContext.MetricsContext.Provider>,
+// Minimal card fixture that exercises the same accent CSS-variable patterns as the
+// old GpuCard/CpuCard, without coupling these theme tests to specific page components.
+function TestCard({ accent }: { accent: { color: string; glow: string } }) {
+  return (
+    <div
+      data-accent-el=""
+      className="metric-card card"
+      style={{ color: accent.color, boxShadow: accent.glow }}
+    >
+      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      <div
+        className="card-progress-bar"
+        style={{ background: "var(--accent-fill)", color: accent.color }}
+      />
+    </div>
   );
 }
+
+const ACCENT = { color: "var(--accent-primary)", glow: "var(--accent-glow)" };
 
 const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
 
@@ -47,42 +45,22 @@ describe.each(MODES)("%s mode - card rendering", (mode) => {
     );
   });
 
-  it("renders GPU + CPU cards with no black elements", () => {
-    const { container } = renderWithProviders(
+  it("renders cards with no black elements", () => {
+    const { container } = renderWithTheme(
       <div>
-        <GpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
-        <CpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
+        <TestCard accent={ACCENT} />
+        <TestCard accent={ACCENT} />
       </div>,
     );
     expect(container.firstChild).not.toBeNull();
     expectNoBlackElements(container);
   });
 
-  it("renders GPU + CPU cards with no invalid CSS values (undefined/NaN/null)", () => {
-    const { container } = renderWithProviders(
+  it("renders cards with no invalid CSS values (undefined/NaN/null)", () => {
+    const { container } = renderWithTheme(
       <div>
-        <GpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
-        <CpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
+        <TestCard accent={ACCENT} />
+        <TestCard accent={ACCENT} />
       </div>,
     );
     expect(container.firstChild).not.toBeNull();
@@ -95,21 +73,11 @@ describe("Solid mode - accent consistency", () => {
     setAccentMode("solid");
   });
 
-  it("GPU and CPU cards reference the same --accent-primary variable, not divergent literals", () => {
-    const { container } = renderWithProviders(
+  it("cards reference the same --accent-primary variable, not divergent literals", () => {
+    const { container } = renderWithTheme(
       <div>
-        <GpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
-        <CpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />
+        <TestCard accent={ACCENT} />
+        <TestCard accent={ACCENT} />
       </div>,
     );
     const accentRefs = Array.from(

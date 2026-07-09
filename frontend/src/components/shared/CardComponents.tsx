@@ -115,10 +115,21 @@ export function CardHeader({
   );
 }
 
+/* ─── canonical accent spine (absolute-positioned, used inside position:relative cards) ─── */
+export function AccentSpine() {
+  return (
+    <span className="card-accent-spine accent-glow-target" aria-hidden>
+      <span className="bright-breathe" aria-hidden />
+      <span className="bright-surge" aria-hidden />
+    </span>
+  );
+}
+
 /* ─── card shell (identical across all cards) ─── */
 export function CardShell({ children }: { children: React.ReactNode }) {
   return (
     <div
+      role="article"
       data-accent-el=""
       style={{
         position: "relative",
@@ -154,6 +165,7 @@ export function Card({
 }) {
   return (
     <div
+      role="article"
       className={["metric-card", "card", className].filter(Boolean).join(" ")}
       data-accent-el=""
       style={style}

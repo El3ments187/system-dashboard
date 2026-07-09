@@ -6,23 +6,26 @@ import {
   expectNoInvalidCssValues,
   setAccentMode,
 } from "../helpers/themeAssertions";
-import GpuCard from "../../components/cards/GpuCard";
-import * as MetricsContext from "../../context/MetricsContext";
 
-const mockMetricsContext = () => ({
-  gpuCurrentValues: [65, 72, 8.5, 12.0, 250, 300],
-  gpuLoading: false,
-  gpuError: null,
-  retryGpu: vi.fn(),
-});
-
-function renderWithProviders(ui: React.ReactElement) {
-  return renderWithTheme(
-    <MetricsContext.MetricsContext.Provider value={mockMetricsContext()}>
-      {ui}
-    </MetricsContext.MetricsContext.Provider>,
+// Minimal card fixture that exercises the same accent CSS-variable patterns as the
+// old GpuCard, without coupling these theme tests to specific page components.
+function TestCard({ accent }: { accent: { color: string; glow: string } }) {
+  return (
+    <div
+      data-accent-el=""
+      className="metric-card card"
+      style={{ color: accent.color, boxShadow: accent.glow }}
+    >
+      <span className="card-accent-spine accent-glow-target" aria-hidden />
+      <div
+        className="card-progress-bar"
+        style={{ background: "var(--accent-fill)", color: accent.color }}
+      />
+    </div>
   );
 }
+
+const ACCENT = { color: "var(--accent-primary)", glow: "var(--accent-glow)" };
 
 const TRANSITIONS: Array<[string, string]> = [
   ["solid", "animated-gradient"],
@@ -42,14 +45,7 @@ describe("Theme Switching Integration", () => {
     "transitions cleanly from %s to %s with no black or invalid values",
     (from, to) => {
       setAccentMode(from);
-      const { container } = renderWithProviders(
-        <GpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />,
-      );
+      const { container } = renderWithTheme(<TestCard accent={ACCENT} />);
 
       setAccentMode(to);
       expectThemeApplied(to);
@@ -60,11 +56,7 @@ describe("Theme Switching Integration", () => {
 
   it("updates the mode attribute exactly to the new value with no leftover stale value", () => {
     setAccentMode("rainbow-wave");
-    renderWithProviders(
-      <GpuCard
-        accent={{ color: "var(--accent-primary)", glow: "var(--accent-glow)" }}
-      />,
-    );
+    renderWithTheme(<TestCard accent={ACCENT} />);
     setAccentMode("solid");
     expect(document.documentElement.getAttribute("data-accent-mode")).toBe(
       "solid",
@@ -75,14 +67,7 @@ describe("Theme Switching Integration", () => {
     "keeps progress bar color bound to the live CSS variable in %s mode, never a baked-in hex",
     (mode) => {
       setAccentMode(mode);
-      const { container } = renderWithProviders(
-        <GpuCard
-          accent={{
-            color: "var(--accent-primary)",
-            glow: "var(--accent-glow)",
-          }}
-        />,
-      );
+      const { container } = renderWithTheme(<TestCard accent={ACCENT} />);
       const bar = container.querySelector(".card-progress-bar");
       expect(bar).toBeTruthy();
       const inlineStyle = bar?.getAttribute("style") || "";

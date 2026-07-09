@@ -4,6 +4,7 @@ import MetricChart from "../charts/MetricChart";
 import RadialGauge from "../components/overview/RadialGauge";
 import OverviewStorageChart from "../components/overview/OverviewStorageChart";
 import { useProgressStatus } from "../hooks/useProgressStatus";
+import { AccentSpine } from "../components/shared/CardComponents";
 
 interface Props {
   accent: { color: string; glow: string };
@@ -207,11 +208,9 @@ function OvCard({
     <div
       className={className ? `ov-card ${className}` : "ov-card"}
       data-accent-el=""
+      style={{ position: "relative" }}
     >
-      <div className="ov-spine accent-glow-target">
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </div>
+      <AccentSpine />
       <div className="ov-card-inner">{children}</div>
     </div>
   );
@@ -293,11 +292,8 @@ function OvChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="ov-card" data-accent-el="">
-      <div className="ov-spine accent-glow-target">
-        <span className="bright-breathe" aria-hidden />
-        <span className="bright-surge" aria-hidden />
-      </div>
+    <div className="ov-card" data-accent-el="" style={{ position: "relative" }}>
+      <AccentSpine />
       <div className="ov-card-inner">
         <div className="ov-chart-head">
           <div

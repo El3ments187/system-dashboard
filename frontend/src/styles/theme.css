@@ -800,6 +800,19 @@ main {
   transform: scale(1.1);
 }
 
+.color-option.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.color-option.disabled:hover {
+  background: var(--bg-card);
+}
+
+.color-option.disabled:hover .color-preview {
+  transform: none;
+}
+
 .color-label {
   font-size: 9px;
   color: var(--text-secondary);

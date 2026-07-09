@@ -1,11 +1,6 @@
 export const THEME_AWARE_COMPONENTS = [
-  "GpuCard",
-  "CpuCard",
-  "MemoryCard",
-  "StorageCard",
   "MetricChart",
   "ProgressBar",
-  "StoragePerformanceCard",
   "StorageHistoryChart",
 ];
 

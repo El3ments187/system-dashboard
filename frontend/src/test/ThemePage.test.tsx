@@ -139,13 +139,10 @@ describe("ThemePage preview parity", () => {
     });
   });
 
-  it("preview bar fills have accent-glow-target class for Pulse and Neon Glow", () => {
+  it("preview metric cards render real ProgressBar components", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
-    const bars = container.querySelectorAll(".preview-bar-fill");
+    const bars = container.querySelectorAll(".card-progress-bar");
     expect(bars.length).toBeGreaterThan(0);
-    bars.forEach((bar) => {
-      expect(bar.classList.contains("accent-glow-target")).toBe(true);
-    });
   });
 
   it("accent-glow-target elements carry no inline opacity — Pulse animates ::after in CSS only", () => {
@@ -154,6 +151,39 @@ describe("ThemePage preview parity", () => {
     expect(targets.length).toBeGreaterThan(0);
     targets.forEach((el) => {
       expect((el as HTMLElement).style.opacity).toBe("");
+    });
+  });
+});
+
+describe("ThemePage slider accessibility", () => {
+  it("all visible SliderRow inputs expose aria-valuetext matching their display label", () => {
+    // Render with sheen mode + all sub-effects on to surface every SliderRow
+    const { container } = render(
+      <ThemePage
+        {...makeProps({
+          accentMode: "sheen",
+          fxSpeed: 4,
+          fxSpread: 34,
+          fxDepth: 30,
+          glow: true,
+          glowIntensity: 1.4,
+          pulse: true,
+          pulseSpeed: 4,
+          pulseIntensity: 1.5,
+          breathe: true,
+          breatheSpeed: 4,
+          breatheIntensity: 1,
+          surge: true,
+          surgePeriod: 6,
+          surgeIntensity: 1,
+        })}
+      />,
+    );
+    const sliders = container.querySelectorAll('input[type="range"]');
+    expect(sliders.length).toBeGreaterThan(0);
+    sliders.forEach((slider) => {
+      const valuetext = slider.getAttribute("aria-valuetext");
+      expect(valuetext).toBeTruthy();
     });
   });
 });

@@ -85,6 +85,8 @@ export default function Header({
 
   const [showAlerts, setShowAlerts] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
+  const prevShowAlertsRef = useRef(false);
 
   useEffect(() => {
     if (showAlerts) refetchAlerts();
@@ -96,15 +98,32 @@ export default function Header({
     }
   }, [healthOk, addAlert]);
 
+  // Return focus to bell button when alerts panel closes
+  useEffect(() => {
+    if (prevShowAlertsRef.current && !showAlerts) {
+      bellButtonRef.current?.focus();
+    }
+    prevShowAlertsRef.current = showAlerts;
+  }, [showAlerts]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowAlerts(false);
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && showAlerts) {
+        setShowAlerts(false);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showAlerts]);
 
   const uptime = (() => {
     if (!system) return "—";
@@ -283,9 +302,12 @@ export default function Header({
         <div className="dash-actions" ref={panelRef}>
           <div style={{ position: "relative" }}>
             <button
+              ref={bellButtonRef}
               className="dash-iconbtn"
               onClick={() => setShowAlerts(!showAlerts)}
               aria-label="Notifications"
+              aria-expanded={showAlerts}
+              aria-haspopup="true"
             >
               <Bell size={18} />
               {alerts.length > 0 && (

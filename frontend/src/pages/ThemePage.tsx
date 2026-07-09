@@ -1,5 +1,8 @@
 import { Monitor, Cpu, HardDrive } from "lucide-react";
 import { CardShell, CardHeader } from "../components/shared/CardComponents";
+import ProgressBar from "../components/shared/ProgressBar";
+import Sparkline from "../components/shared/Sparkline";
+import type { MetricHistoryPoint } from "../types/metrics";
 import {
   ACCENT_MODES,
   PRESETS,
@@ -101,6 +104,7 @@ function SliderRow({
           accentColor: "var(--accent-primary)",
           opacity: disabled ? 0.4 : 1,
         }}
+        aria-valuetext={display}
         onChange={(e) => onChange(Number(e.target.value))}
       />
     </div>
@@ -108,6 +112,11 @@ function SliderRow({
 }
 
 const CHART_VALS = [40, 65, 50, 80, 60, 90, 70, 55, 75, 45, 85, 60];
+const CHART_HISTORY: MetricHistoryPoint[] = CHART_VALS.map((value, slot) => ({
+  slot,
+  timestamp: new Date(0),
+  value,
+}));
 
 const PREVIEW_CARDS = [
   {
@@ -167,15 +176,7 @@ function ThemePreview() {
               >
                 {card.sub}
               </span>
-              <div className="preview-bar-track">
-                <div
-                  className="accent-fill preview-bar-fill accent-glow-target"
-                  style={{ width: `${card.value}%` }}
-                >
-                  <span className="bright-breathe" aria-hidden />
-                  <span className="bright-surge" aria-hidden />
-                </div>
-              </div>
+              <ProgressBar percent={card.value} />
             </div>
           </CardShell>
         ))}
@@ -183,34 +184,16 @@ function ThemePreview() {
 
       {/* History chart */}
       <div className="preview-chart">
-        <div className="preview-chart-inner">
-          {CHART_VALS.map((h, i) => (
-            <div
-              key={i}
-              data-accent-el=""
-              className="theme-live-preview-bar accent-glow-target"
-              style={{ height: `${h}%` }}
-            >
-              <span className="bright-breathe" aria-hidden />
-              <span className="bright-surge" aria-hidden />
-            </div>
-          ))}
-        </div>
+        <Sparkline data={CHART_HISTORY} width="100%" height={56} />
       </div>
 
       {/* Horizontal meter bars */}
       <div className="preview-meters">
         {PREVIEW_METERS.map((m) => (
-          <div key={m.label} data-accent-el="" className="preview-meter-row">
+          <div key={m.label} className="preview-meter-row">
             <span className="preview-meter-label">{m.label}</span>
-            <div className="preview-meter-track">
-              <div
-                className="accent-fill preview-meter-fill accent-glow-target"
-                style={{ width: `${m.value}%` }}
-              >
-                <span className="bright-breathe" aria-hidden />
-                <span className="bright-surge" aria-hidden />
-              </div>
+            <div style={{ flex: 1 }}>
+              <ProgressBar percent={m.value} variant="compact" />
             </div>
             <span className="preview-meter-value">{m.value}%</span>
           </div>
@@ -324,8 +307,12 @@ function BreatheEffectRow({
   return (
     <div className="effect-row-group">
       <div
+        role="switch"
+        tabIndex={0}
+        aria-checked={!!breathe}
         className={`mode-row${breathe ? " active" : ""}`}
         onClick={() => onBreatheChange(!breathe)}
+        onKeyDown={onKeyActivate(() => onBreatheChange(!breathe))}
         style={{ cursor: "pointer" }}
       >
         <span className="mode-radio" />
@@ -397,8 +384,12 @@ function SurgeEffectRow({
   return (
     <div className="effect-row-group">
       <div
+        role="switch"
+        tabIndex={0}
+        aria-checked={!!surge}
         className={`mode-row${surge ? " active" : ""}`}
         onClick={() => onSurgeChange(!surge)}
+        onKeyDown={onKeyActivate(() => onSurgeChange(!surge))}
         style={{ cursor: "pointer" }}
       >
         <span className="mode-radio" />
@@ -458,6 +449,18 @@ function _getReducedMotion(): boolean {
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
+}
+
+const PALE_ACCENT_IDS = new Set(["ice", "silver", "platinum"]);
+const LIGHT_BG_IDS = new Set(["light", "paper", "nord-light", "cream"]);
+
+function onKeyActivate(fn: () => void) {
+  return (e: { key: string; preventDefault: () => void }) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fn();
+    }
+  };
 }
 
 export default function ThemePage({
@@ -539,60 +542,113 @@ export default function ThemePage({
           <div className="theme-ctrl-col">
             <div className="theme-section-header">Accent Colors</div>
             <div className="accent-grid">
-              {PRESETS.map((preset) => (
-                <div
-                  key={preset.value}
-                  className={`color-option${accent === preset.value ? " active" : ""}`}
-                  onClick={() => onAccentChange(preset.value)}
-                >
+              {PRESETS.map((preset) => {
+                const incompatible =
+                  PALE_ACCENT_IDS.has(preset.value) && LIGHT_BG_IDS.has(bg);
+                return (
                   <div
-                    className="color-preview"
-                    style={{
-                      background: `radial-gradient(circle at 30% 30%, ${preset.color}, ${preset.color}44)`,
-                    }}
-                  />
-                  <span className="color-label">{preset.name}</span>
-                </div>
-              ))}
+                    key={preset.value}
+                    role="button"
+                    tabIndex={incompatible ? -1 : 0}
+                    aria-pressed={accent === preset.value}
+                    aria-disabled={incompatible || undefined}
+                    className={`color-option${accent === preset.value ? " active" : ""}${incompatible ? " disabled" : ""}`}
+                    onClick={
+                      incompatible
+                        ? undefined
+                        : () => onAccentChange(preset.value)
+                    }
+                    onKeyDown={
+                      incompatible
+                        ? undefined
+                        : onKeyActivate(() => onAccentChange(preset.value))
+                    }
+                    title={
+                      incompatible
+                        ? "Too low contrast on light backgrounds"
+                        : undefined
+                    }
+                  >
+                    <div
+                      className="color-preview"
+                      style={{
+                        background: `radial-gradient(circle at 30% 30%, ${preset.color}, ${preset.color}44)`,
+                      }}
+                    />
+                    <span className="color-label">{preset.name}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="theme-section-header">Background</div>
             <div className="bg-grid">
-              {BG_PRESETS.map((bgPreset) => (
-                <div
-                  key={bgPreset.value}
-                  className={`color-option${bg === bgPreset.value ? " active" : ""}`}
-                  onClick={() => onBgChange(bgPreset.value)}
-                >
+              {BG_PRESETS.map((bgPreset) => {
+                const incompatible =
+                  LIGHT_BG_IDS.has(bgPreset.value) &&
+                  PALE_ACCENT_IDS.has(accent);
+                return (
                   <div
-                    className="color-preview"
-                    style={{
-                      background: `linear-gradient(135deg, ${bgPreset.color}, ${bgPreset.color}88)`,
-                      border: [
-                        "Light",
-                        "Paper",
-                        "Nord Light",
-                        "Cream",
-                      ].includes(bgPreset.name)
-                        ? "1px solid #ccc"
-                        : "none",
-                    }}
-                  />
-                  <span className="color-label">{bgPreset.name}</span>
-                </div>
-              ))}
+                    key={bgPreset.value}
+                    role="button"
+                    tabIndex={incompatible ? -1 : 0}
+                    aria-pressed={bg === bgPreset.value}
+                    aria-disabled={incompatible || undefined}
+                    className={`color-option${bg === bgPreset.value ? " active" : ""}${incompatible ? " disabled" : ""}`}
+                    onClick={
+                      incompatible
+                        ? undefined
+                        : () => onBgChange(bgPreset.value)
+                    }
+                    onKeyDown={
+                      incompatible
+                        ? undefined
+                        : onKeyActivate(() => onBgChange(bgPreset.value))
+                    }
+                    title={
+                      incompatible
+                        ? "Too low contrast with pale accent colors"
+                        : undefined
+                    }
+                  >
+                    <div
+                      className="color-preview"
+                      style={{
+                        background: `linear-gradient(135deg, ${bgPreset.color}, ${bgPreset.color}88)`,
+                        border: [
+                          "Light",
+                          "Paper",
+                          "Nord Light",
+                          "Cream",
+                        ].includes(bgPreset.name)
+                          ? "1px solid #ccc"
+                          : "none",
+                      }}
+                    />
+                    <span className="color-label">{bgPreset.name}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Right: Accent Mode + Effect sliders + Effects */}
           <div className="theme-ctrl-col">
             <div className="theme-section-header">Accent Mode</div>
-            <div className="mode-list">
+            <div
+              className="mode-list"
+              role="radiogroup"
+              aria-label="Accent mode"
+            >
               {ACCENT_MODES.map((mode) => (
                 <div
                   key={mode.id}
+                  role="radio"
+                  tabIndex={0}
+                  aria-checked={accentMode === mode.id}
                   className={`mode-row${accentMode === mode.id ? " active" : ""}`}
                   onClick={() => onAccentModeChange(mode.id)}
+                  onKeyDown={onKeyActivate(() => onAccentModeChange(mode.id))}
                 >
                   <span className="mode-radio" />
                   <div className="mode-text">
@@ -678,8 +734,12 @@ export default function ThemePage({
               {onGlowChange && (
                 <div className="effect-row-group">
                   <div
+                    role="switch"
+                    tabIndex={0}
+                    aria-checked={!!glow}
                     className={`mode-row${glow ? " active" : ""}`}
                     onClick={() => onGlowChange(!glow)}
+                    onKeyDown={onKeyActivate(() => onGlowChange(!glow))}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="mode-radio" />
@@ -812,8 +872,12 @@ export default function ThemePage({
               {onPulseChange && (
                 <div className="effect-row-group">
                   <div
+                    role="switch"
+                    tabIndex={0}
+                    aria-checked={!!pulse}
                     className={`mode-row${pulse ? " active" : ""}`}
                     onClick={() => onPulseChange(!pulse)}
+                    onKeyDown={onKeyActivate(() => onPulseChange(!pulse))}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="mode-radio" />
@@ -879,8 +943,14 @@ export default function ThemePage({
               {onInnerGlowChange && (
                 <div className="effect-row-group">
                   <div
+                    role="switch"
+                    tabIndex={0}
+                    aria-checked={!!innerGlow}
                     className={`mode-row${innerGlow ? " active" : ""}`}
                     onClick={() => onInnerGlowChange(!innerGlow)}
+                    onKeyDown={onKeyActivate(() =>
+                      onInnerGlowChange(!innerGlow),
+                    )}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="mode-radio" />
@@ -898,8 +968,14 @@ export default function ThemePage({
               {onGradientBorderChange && (
                 <div className="effect-row-group">
                   <div
+                    role="switch"
+                    tabIndex={0}
+                    aria-checked={!!gradientBorder}
                     className={`mode-row${gradientBorder ? " active" : ""}`}
                     onClick={() => onGradientBorderChange(!gradientBorder)}
+                    onKeyDown={onKeyActivate(() =>
+                      onGradientBorderChange(!gradientBorder),
+                    )}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="mode-radio" />
@@ -917,9 +993,18 @@ export default function ThemePage({
               {onCardGlowChange && (
                 <div className="effect-row-group">
                   <div
+                    role="switch"
+                    tabIndex={glow || innerGlow ? 0 : -1}
+                    aria-checked={!!cardGlow && (!!glow || !!innerGlow)}
+                    aria-disabled={!glow && !innerGlow ? true : undefined}
                     className={`mode-row${cardGlow && (glow || innerGlow) ? " active" : ""}`}
                     onClick={() =>
                       (glow || innerGlow) && onCardGlowChange(!cardGlow)
+                    }
+                    onKeyDown={
+                      glow || innerGlow
+                        ? onKeyActivate(() => onCardGlowChange(!cardGlow))
+                        : undefined
                     }
                     style={{
                       cursor: glow || innerGlow ? "pointer" : "not-allowed",
