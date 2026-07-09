@@ -356,7 +356,7 @@ export default function OverviewPage({ accent }: Props) {
   const swapUsed = memoryCurrentValues[3];
   const swapTotal = memoryCurrentValues[4];
 
-  // Merged memory+swap data for the chart (same approach as MemoryChart.tsx)
+  // Merged memory+swap data for the chart
   const memChartData = useMemo(() => {
     if (!memoryHistory || !swapHistory) return [];
     const result: any[] = [];

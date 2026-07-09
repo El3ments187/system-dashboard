@@ -297,10 +297,9 @@ function resolvePrimaryModeColor(mode: string): string {
  * directly, so any future accent-colored component automatically supports all modes.
  *
  * `perCoreExemption` must be passed as `true` ONLY by the CPU per-core utilization chart
- * (CoreBars / PerCoreCpuChart) — per spec, that is the *one* component required to ignore
- * the selected accent in Solid mode and always use the fixed 32-color palette. Every other
- * multi-series consumer with n > 2 (e.g. StorageHistoryChart's per-device colors) must keep
- * participating in the live accent like any other Solid-mode element.
+ * (CoreBars) — per spec, that is the *one* component required to ignore the selected accent
+ * in Solid mode and always use the fixed 32-color palette. Every other multi-series consumer
+ * with n > 2 must keep participating in the live accent like any other Solid-mode element.
  */
 export function resolveAccentColors(
   count: number,
