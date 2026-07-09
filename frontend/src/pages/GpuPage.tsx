@@ -14,6 +14,7 @@ import {
   Fan,
 } from "lucide-react";
 import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
+import { readCssVar } from "../utils/cssVar";
 import {
   getProgressState,
   getTempState,
@@ -40,12 +41,6 @@ function getStatusColor(
 ): { color: string; label: string } {
   const state = worseState(getProgressState(util), getTempState(temp));
   return { color: getStateColor(state), label: getStateLabel(state) };
-}
-
-function resolveVar(name: string): string {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
 }
 
 function getUtilBarColor(
@@ -224,11 +219,11 @@ function GpuSummaryCard({
   index: number;
 }) {
   const barColor = useResolvedAccentColor();
-  const [danger, setDanger] = useState(() => resolveVar("--danger"));
-  const [warning, setWarning] = useState(() => resolveVar("--warning"));
+  const [danger, setDanger] = useState(() => readCssVar("--danger"));
+  const [warning, setWarning] = useState(() => readCssVar("--warning"));
   useAccentSync(() => {
-    setDanger(resolveVar("--danger"));
-    setWarning(resolveVar("--warning"));
+    setDanger(readCssVar("--danger"));
+    setWarning(readCssVar("--warning"));
   });
 
   const vramPct =

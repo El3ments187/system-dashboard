@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { StorageHistoryPoint } from "../../types/metrics";
 import { ACCENT_OBSERVER_ATTRS } from "../../utils/accentColors";
 import { ChartFrame } from "../shared/CardComponents";
+import { getChartChromeColors } from "../../utils/chartColors";
 
 interface Props {
   data: StorageHistoryPoint[];
@@ -19,21 +20,11 @@ function fmtBps(bps: number): string {
   return (bps / Math.pow(1024, i)).toFixed(1) + " " + units[i];
 }
 
-function getChartColors() {
-  const cs = getComputedStyle(document.documentElement);
-  return {
-    grid: cs.getPropertyValue("--chart-grid").trim() || "#1e2535",
-    axis: cs.getPropertyValue("--chart-axis").trim() || "#2a3143",
-    crosshair: cs.getPropertyValue("--chart-crosshair").trim() || "#5a6578",
-    dotStroke: cs.getPropertyValue("--chart-dot-stroke").trim() || "#fff",
-  };
-}
-
 export default function OverviewStorageChart({ data }: Props) {
   const [recharts, setRecharts] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [chartColors, setChartColors] = useState(() => getChartColors());
+  const [chartColors, setChartColors] = useState(() => getChartChromeColors());
   const chartRef = useRef<HTMLDivElement>(null);
   const gradientId = `osc-${useId().replace(/:/g, "")}`;
   const [chartSize, setChartSize] = useState<{
@@ -63,7 +54,7 @@ export default function OverviewStorageChart({ data }: Props) {
   }, [recharts]);
 
   useEffect(() => {
-    const update = () => setChartColors(getChartColors());
+    const update = () => setChartColors(getChartChromeColors());
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
       attributes: true,

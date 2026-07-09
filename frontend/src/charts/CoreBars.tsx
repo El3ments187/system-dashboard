@@ -3,18 +3,13 @@ import { Cpu } from "lucide-react";
 import { resolveAccentColors, useAccentSync } from "../utils/accentColors";
 import { getProgressState } from "../utils/progress";
 import { Card } from "../components/shared/CardComponents";
+import { readCssVar } from "../utils/cssVar";
 
 interface CoreBarProps {
   cores: Array<{
     utilization_percent: number;
     temperature_celsius?: number;
   } | null>;
-}
-
-function resolveVar(name: string): string {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
 }
 
 function getCoreColors(count: number): string[] {
@@ -125,8 +120,8 @@ export default function CoreBars({ cores }: CoreBarProps) {
   const [themeTick, setThemeTick] = useState(0);
   useAccentSync(() => setThemeTick((t) => t + 1));
 
-  const textMuted = resolveVar("--text-muted") || "#8b95a5";
-  const borderColor = resolveVar("--border-color") || "#2a3143";
+  const textMuted = readCssVar("--text-muted") || "#8b95a5";
+  const borderColor = readCssVar("--border-color") || "#2a3143";
 
   const indexedCores = useMemo(
     () =>
@@ -147,8 +142,8 @@ export default function CoreBars({ cores }: CoreBarProps) {
 
   const { danger, warning } = useMemo(
     () => ({
-      danger: resolveVar("--danger"),
-      warning: resolveVar("--warning"),
+      danger: readCssVar("--danger"),
+      warning: readCssVar("--warning"),
     }),
     [themeTick], // eslint-disable-line react-hooks/exhaustive-deps
   );

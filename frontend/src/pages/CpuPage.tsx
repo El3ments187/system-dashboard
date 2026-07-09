@@ -7,6 +7,7 @@ import PanelErrorState from "../components/common/PanelErrorState";
 import { Card } from "../components/shared/CardComponents";
 import { Cpu, Thermometer, Activity, Server, Zap } from "lucide-react";
 import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
+import { readCssVar } from "../utils/cssVar";
 import {
   getProgressState,
   getTempState,
@@ -19,12 +20,6 @@ const CPU_HISTORY_LABEL = "(Last 2m)";
 
 interface CpuPageProps {
   accent: { color: string; glow: string };
-}
-
-function resolveVar(name: string): string {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
 }
 
 function getStatusColor(
@@ -186,11 +181,11 @@ function CpuVerticalProgress({
 
 function CpuSummaryCard({}: { accent: { color: string; glow: string } }) {
   const barColor = useResolvedAccentColor();
-  const [danger, setDanger] = useState(() => resolveVar("--danger"));
-  const [warning, setWarning] = useState(() => resolveVar("--warning"));
+  const [danger, setDanger] = useState(() => readCssVar("--danger"));
+  const [warning, setWarning] = useState(() => readCssVar("--warning"));
   useAccentSync(() => {
-    setDanger(resolveVar("--danger"));
-    setWarning(resolveVar("--warning"));
+    setDanger(readCssVar("--danger"));
+    setWarning(readCssVar("--warning"));
   });
   const { cpuCurrentValues, cpuRawData } = useMetricsContext();
 

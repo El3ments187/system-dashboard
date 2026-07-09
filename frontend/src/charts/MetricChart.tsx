@@ -8,6 +8,7 @@ import {
   SECONDARY_LINE_DASH,
 } from "../utils/accentColors";
 import { ChartFrame } from "../components/shared/CardComponents";
+import { getChartChromeColors } from "../utils/chartColors";
 
 interface ChartProps {
   accent: { color: string; glow: string };
@@ -28,21 +29,6 @@ interface ChartProps {
   dualUnit?: string;
   primaryLabel?: string;
   secondaryLabel?: string;
-}
-
-function getChartColors(): {
-  grid: string;
-  axis: string;
-  crosshair: string;
-  dotStroke: string;
-} {
-  const cs = getComputedStyle(document.documentElement);
-  return {
-    grid: cs.getPropertyValue("--chart-grid").trim() || "#1e2535",
-    axis: cs.getPropertyValue("--chart-axis").trim() || "#2a3143",
-    crosshair: cs.getPropertyValue("--chart-crosshair").trim() || "#5a6578",
-    dotStroke: cs.getPropertyValue("--chart-dot-stroke").trim() || "#fff",
-  };
 }
 
 function getSeriesColors(contextEl?: Element | null): string[] {
@@ -86,7 +72,7 @@ export default function MetricChart({
     string,
     unknown
   > | null>(null);
-  const [chartColors, setChartColors] = useState(() => getChartColors());
+  const [chartColors, setChartColors] = useState(() => getChartChromeColors());
   const [seriesColors, setSeriesColors] = useState(() => getSeriesColors());
   const [strokeColor, setStrokeColor] = useState(
     () => _color || resolveAccentColor(),
@@ -120,7 +106,7 @@ export default function MetricChart({
   }, [chartComponents]);
 
   useAccentSync(() => {
-    setChartColors(getChartColors());
+    setChartColors(getChartChromeColors());
     setSeriesColors(getSeriesColors(chartRef.current));
     if (!_color) {
       setStrokeColor(resolveAccentColor(chartRef.current));

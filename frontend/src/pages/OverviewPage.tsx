@@ -4,7 +4,7 @@ import MetricChart from "../charts/MetricChart";
 import RadialGauge from "../components/overview/RadialGauge";
 import OverviewStorageChart from "../components/overview/OverviewStorageChart";
 import { useProgressStatus } from "../hooks/useProgressStatus";
-import { AccentSpine } from "../components/shared/CardComponents";
+import { AccentSpine, Card } from "../components/shared/CardComponents";
 
 interface Props {
   accent: { color: string; glow: string };
@@ -205,14 +205,15 @@ function OvCard({
   className?: string;
 }) {
   return (
-    <div
-      className={className ? `ov-card ${className}` : "ov-card"}
-      data-accent-el=""
+    <Card
+      role={null}
+      baseClass="ov-card"
+      innerClassName="ov-card-inner"
       style={{ position: "relative" }}
+      className={className}
     >
-      <AccentSpine />
-      <div className="ov-card-inner">{children}</div>
-    </div>
+      {children}
+    </Card>
   );
 }
 

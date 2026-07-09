@@ -155,21 +155,46 @@ export function Card({
   children,
   style,
   className,
+  role,
+  baseClass,
+  innerClassName,
+  spine = true,
 }: {
   children: React.ReactNode;
   style?: React.CSSProperties;
   className?: string;
+  /** undefined = default "article"; null = omit role attribute */
+  role?: string | null;
+  /** CSS class(es) for the root div; defaults to "metric-card card" */
+  baseClass?: string;
+  /** When set, wraps children in <div className={innerClassName}> */
+  innerClassName?: string;
+  spine?: boolean;
 }) {
+  const roleAttr = role === undefined ? "article" : (role || undefined);
+  const resolvedBase = baseClass ?? "metric-card card";
+  const inner = innerClassName
+    ? <div className={innerClassName}>{children}</div>
+    : children;
   return (
     <div
-      role="article"
-      className={["metric-card", "card", className].filter(Boolean).join(" ")}
+      {...(roleAttr !== undefined ? { role: roleAttr } : {})}
+      className={[resolvedBase, className].filter(Boolean).join(" ")}
       data-accent-el=""
       style={style}
     >
-      <AccentSpine />
-      {children}
+      {spine && <AccentSpine />}
+      {inner}
     </div>
+  );
+}
+
+/* ─── settings card wrapper ─── */
+export function SettingsCard({ children }: { children: React.ReactNode }) {
+  return (
+    <Card role={null} baseClass="settings-card">
+      {children}
+    </Card>
   );
 }
 
