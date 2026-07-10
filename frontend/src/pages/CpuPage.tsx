@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useMetricsContext } from "../context/MetricsContext";
 import MetricChart from "../charts/MetricChart";
 import CoreBars from "../charts/CoreBars";
@@ -6,8 +6,7 @@ import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import PanelErrorState from "../components/common/PanelErrorState";
 import { Card } from "../components/shared/CardComponents";
 import { Cpu, Thermometer, Activity, Server, Zap } from "lucide-react";
-import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
-import { readCssVar } from "../utils/cssVar";
+import { useResolvedAccentColor, useThresholdColors } from "../utils/accentColors";
 import {
   getProgressState,
   getTempState,
@@ -181,12 +180,7 @@ function CpuVerticalProgress({
 
 function CpuSummaryCard({}: { accent: { color: string; glow: string } }) {
   const barColor = useResolvedAccentColor();
-  const [danger, setDanger] = useState(() => readCssVar("--danger"));
-  const [warning, setWarning] = useState(() => readCssVar("--warning"));
-  useAccentSync(() => {
-    setDanger(readCssVar("--danger"));
-    setWarning(readCssVar("--warning"));
-  });
+  const { danger, warning } = useThresholdColors();
   const { cpuCurrentValues, cpuRawData } = useMetricsContext();
 
   const util = cpuCurrentValues[0] ?? 0;

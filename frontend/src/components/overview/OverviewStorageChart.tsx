@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { StorageHistoryPoint } from "../../types/metrics";
-import { ACCENT_OBSERVER_ATTRS } from "../../utils/accentColors";
+import { useAccentSync } from "../../utils/accentColors";
 import { ChartFrame } from "../shared/CardComponents";
 import { getChartChromeColors } from "../../utils/chartColors";
 
@@ -33,7 +33,7 @@ export default function OverviewStorageChart({ data }: Props) {
   } | null>(null);
 
   useEffect(() => {
-    import("recharts").then((r) => setRecharts(r as Record<string, unknown>));
+    import("recharts").then((r) => setRecharts(r as Record<string, unknown>)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -53,15 +53,7 @@ export default function OverviewStorageChart({ data }: Props) {
     return () => ro.disconnect();
   }, [recharts]);
 
-  useEffect(() => {
-    const update = () => setChartColors(getChartChromeColors());
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ACCENT_OBSERVER_ATTRS,
-    });
-    return () => observer.disconnect();
-  }, []);
+  useAccentSync(() => setChartColors(getChartChromeColors()));
 
   const chartData = useMemo(() => {
     const slotMap = new Map<number, any>();

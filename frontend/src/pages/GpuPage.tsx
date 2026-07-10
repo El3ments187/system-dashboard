@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useMetricsContext } from "../context/MetricsContext";
 import MetricChart from "../charts/MetricChart";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
@@ -13,8 +12,7 @@ import {
   Activity,
   Fan,
 } from "lucide-react";
-import { useResolvedAccentColor, useAccentSync } from "../utils/accentColors";
-import { readCssVar } from "../utils/cssVar";
+import { useResolvedAccentColor, useThresholdColors } from "../utils/accentColors";
 import {
   getProgressState,
   getTempState,
@@ -219,12 +217,7 @@ function GpuSummaryCard({
   index: number;
 }) {
   const barColor = useResolvedAccentColor();
-  const [danger, setDanger] = useState(() => readCssVar("--danger"));
-  const [warning, setWarning] = useState(() => readCssVar("--warning"));
-  useAccentSync(() => {
-    setDanger(readCssVar("--danger"));
-    setWarning(readCssVar("--warning"));
-  });
+  const { danger, warning } = useThresholdColors();
 
   const vramPct =
     gpu.vram_total_gb > 0 ? (gpu.vram_used_gb / gpu.vram_total_gb) * 100 : 0;

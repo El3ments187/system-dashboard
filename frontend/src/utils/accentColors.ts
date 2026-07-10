@@ -1,5 +1,6 @@
 import { useEffect, useState, type DependencyList } from "react";
 import { ACCENT_THEMES } from "../hooks/useTheme";
+import { readCssVar } from "./cssVar";
 
 /** Full 32-color palette used by Spectrum Per-Element mode. */
 const SPECTRUM = ACCENT_THEMES.map((t) => t.color);
@@ -411,6 +412,16 @@ export function useResolvedAccentColor(): string {
   const [color, setColor] = useState(() => resolveAccentColor());
   useAccentSync(() => setColor(resolveAccentColor()));
   return color;
+}
+
+export function useThresholdColors(): { danger: string; warning: string } {
+  const [danger, setDanger] = useState(() => readCssVar("--danger"));
+  const [warning, setWarning] = useState(() => readCssVar("--warning"));
+  useAccentSync(() => {
+    setDanger(readCssVar("--danger"));
+    setWarning(readCssVar("--warning"));
+  });
+  return { danger, warning };
 }
 
 function hasAccentEl(node: Node): boolean {
