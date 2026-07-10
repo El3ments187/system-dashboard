@@ -85,7 +85,7 @@ test.describe("CPU Page - Per-Core Participates Outside Solid Mode", () => {
     await page.waitForSelector('[data-testid="per-core-bar"]');
   });
 
-  for (const mode of ["animated-gradient"]) {
+  for (const mode of ["sheen", "flow"]) {
     test(`${mode}: per-core chart participates in the active theme (accent changes shift the palette)`, async ({
       page,
     }) => {

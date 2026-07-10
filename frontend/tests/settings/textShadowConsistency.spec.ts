@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { setAccentMode, getCssVariable } from "../helpers/e2eThemeAssertions";
 
-const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
+const MODES = ["solid", "sheen", "flow", "rainbow-wave", "spectrum"];
 
 test.describe("Settings Page - Text Shadow Consistency", () => {
   const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";

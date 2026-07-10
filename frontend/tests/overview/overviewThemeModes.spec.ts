@@ -19,9 +19,15 @@ test.describe("Overview Page - Theme Modes", () => {
     await expectNoBlackElements(page);
   });
 
-  test("Animated Gradient mode - no black elements", async ({ page }) => {
-    await setAccentMode(page, "animated-gradient");
-    await expectAccentModeSet(page, "animated-gradient");
+  test("Sheen mode - no black elements", async ({ page }) => {
+    await setAccentMode(page, "sheen");
+    await expectAccentModeSet(page, "sheen");
+    await expectNoBlackElements(page);
+  });
+
+  test("Flow mode - no black elements", async ({ page }) => {
+    await setAccentMode(page, "flow");
+    await expectAccentModeSet(page, "flow");
     await expectNoBlackElements(page);
   });
 
@@ -40,7 +46,7 @@ test.describe("Overview Page - Theme Modes", () => {
   test("Theme switching does not introduce black elements", async ({
     page,
   }) => {
-    const modes = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
+    const modes = ["solid", "sheen", "flow", "rainbow-wave", "spectrum"];
     for (const mode of modes) {
       await setAccentMode(page, mode);
       await expectNoBlackElements(page);

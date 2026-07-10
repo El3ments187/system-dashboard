@@ -10,7 +10,7 @@ import { setAccentMode } from "../helpers/e2eThemeAssertions";
  * this suite inspects the rendered SVG stroke/stroke-dasharray attributes directly.
  */
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";
-const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
+const MODES = ["solid", "sheen", "flow", "rainbow-wave", "spectrum"];
 
 async function getDashedAndSolidStrokes(page: Page) {
   return page.evaluate(() => {
@@ -116,8 +116,10 @@ test.describe("Dual-line series - theme transitions", () => {
   });
 
   const TRANSITIONS: Array<[string, string]> = [
-    ["solid", "animated-gradient"],
-    ["animated-gradient", "solid"],
+    ["solid", "sheen"],
+    ["sheen", "solid"],
+    ["solid", "flow"],
+    ["flow", "solid"],
     ["solid", "spectrum"],
     ["spectrum", "solid"],
     ["solid", "rainbow-wave"],

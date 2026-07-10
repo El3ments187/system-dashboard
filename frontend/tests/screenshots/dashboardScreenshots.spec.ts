@@ -14,7 +14,7 @@ const PAGES = [
   { name: "cpu", path: "/cpu" },
 ];
 
-const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
+const MODES = ["solid", "sheen", "flow", "rainbow-wave", "spectrum"];
 
 for (const { name, path } of PAGES) {
   test.describe(`${name} screenshots`, () => {
@@ -51,7 +51,7 @@ test.describe("dual-line chart screenshots", () => {
       page,
     }) => {
       await page.goto(`${BASE_URL}/`);
-      await page.waitForSelector("text=MEMORY UTILIZATION HISTORY");
+      await page.waitForSelector("text=Memory utilization");
       await setAccentMode(page, mode);
       await page.evaluate(() => {
         document.documentElement.style.animation = "none";
@@ -62,9 +62,8 @@ test.describe("dual-line chart screenshots", () => {
       });
       await page.waitForTimeout(150);
       const chart = page
-        .locator("text=MEMORY UTILIZATION HISTORY")
-        .locator("..")
-        .locator("..");
+        .locator(".ov-card")
+        .filter({ hasText: "Memory utilization" });
       await expect(chart).toHaveScreenshot(`memory-chart-${mode}.png`);
     });
   }

@@ -20,8 +20,10 @@ const PAGES = [
 ];
 
 const TRANSITIONS: Array<[string, string]> = [
-  ["solid", "animated-gradient"],
-  ["animated-gradient", "solid"],
+  ["solid", "sheen"],
+  ["sheen", "solid"],
+  ["solid", "flow"],
+  ["flow", "solid"],
   ["solid", "spectrum"],
   ["spectrum", "solid"],
   ["solid", "rainbow-wave"],
@@ -58,7 +60,8 @@ for (const { name, path } of PAGES) {
     }) => {
       const modes = [
         "solid",
-        "animated-gradient",
+        "sheen",
+        "flow",
         "rainbow-wave",
         "spectrum",
         "solid",
