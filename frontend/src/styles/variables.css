@@ -35,7 +35,7 @@
      [data-accent="x"] presets below. --accent-primary/--accent-secondary/--accent-glow are
      the tokens components actually consume; the accent-mode rules further down derive these
      FROM --accent-base (never from each other) so there is no same-element self-reference
-     cycle, and rainbow-wave/animated-gradient/gradient can safely transform them. */
+     cycle, and rainbow-wave/sheen/flow can safely transform them. */
   --accent-base: #3b82f6;
   --accent-base-rgb: 59, 130, 246;
   --accent-primary: var(--accent-base);

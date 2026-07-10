@@ -26,7 +26,7 @@ function TestCard({ accent }: { accent: { color: string; glow: string } }) {
 
 const ACCENT = { color: "var(--accent-primary)", glow: "var(--accent-glow)" };
 
-const MODES = ["solid", "animated-gradient", "rainbow-wave", "spectrum"];
+const MODES = ["solid", "sheen", "flow", "rainbow-wave", "spectrum"];
 
 /**
  * One parametrized suite replaces what were four near-identical files (SolidMode,

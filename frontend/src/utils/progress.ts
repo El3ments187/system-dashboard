@@ -79,7 +79,7 @@ export function getStorageTempColor(temp: number): string {
 export function getProgressGradient(percent: number): string {
   const state = getProgressState(percent);
   const mode = getAccentMode();
-  const isAnimated = mode === "animated-gradient" || mode === "rainbow-wave";
+  const isAnimated = mode === "sheen" || mode === "rainbow-wave";
   let colorVar = "var(--accent-primary)";
   if (state === "critical") colorVar = "var(--danger)";
   else if (state === "warning") colorVar = "var(--warning)";

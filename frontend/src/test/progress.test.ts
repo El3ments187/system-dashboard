@@ -249,12 +249,9 @@ describe("getProgressGradient", () => {
     });
   });
 
-  describe("animated-gradient mode", () => {
+  describe("sheen mode", () => {
     beforeEach(() => {
-      document.documentElement.setAttribute(
-        "data-accent-mode",
-        "animated-gradient",
-      );
+      document.documentElement.setAttribute("data-accent-mode", "sheen");
     });
 
     it("returns gradient for normal state", () => {
@@ -292,5 +289,17 @@ describe("getProgressGradient", () => {
       expect(result).toContain("linear-gradient");
       expect(result).toContain("var(--warning)");
     });
+  });
+
+  describe("flat-color modes (solid, flow, spectrum)", () => {
+    it.each(["solid", "flow", "spectrum"])(
+      "%s mode returns a flat CSS variable, not a gradient",
+      (mode) => {
+        document.documentElement.setAttribute("data-accent-mode", mode);
+        const result = getProgressGradient(50);
+        expect(result).not.toContain("linear-gradient");
+        expect(result).toMatch(/^var\(--/);
+      },
+    );
   });
 });

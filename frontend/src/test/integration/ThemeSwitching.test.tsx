@@ -28,8 +28,10 @@ function TestCard({ accent }: { accent: { color: string; glow: string } }) {
 const ACCENT = { color: "var(--accent-primary)", glow: "var(--accent-glow)" };
 
 const TRANSITIONS: Array<[string, string]> = [
-  ["solid", "animated-gradient"],
-  ["animated-gradient", "solid"],
+  ["solid", "sheen"],
+  ["sheen", "solid"],
+  ["solid", "flow"],
+  ["flow", "solid"],
   ["solid", "spectrum"],
   ["spectrum", "solid"],
   ["solid", "rainbow-wave"],
@@ -63,7 +65,7 @@ describe("Theme Switching Integration", () => {
     );
   });
 
-  it.each(["solid", "animated-gradient", "rainbow-wave", "spectrum"])(
+  it.each(["solid", "sheen", "flow", "rainbow-wave", "spectrum"])(
     "keeps progress bar color bound to the live CSS variable in %s mode, never a baked-in hex",
     (mode) => {
       setAccentMode(mode);
