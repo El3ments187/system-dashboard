@@ -62,6 +62,30 @@ describe("PanelErrorBoundary", () => {
   });
 });
 
+describe("PanelErrorBoundary — App-level coverage", () => {
+  it("shows App Error fallback when panelName is App", () => {
+    render(
+      <PanelErrorBoundary panelName="App">
+        <ThrowChild />
+      </PanelErrorBoundary>,
+    );
+    expect(screen.getByText(/App Error/i)).toBeInTheDocument();
+  });
+
+  it("does not propagate — sibling outside the boundary is unaffected", () => {
+    render(
+      <div>
+        <PanelErrorBoundary panelName="App">
+          <ThrowChild />
+        </PanelErrorBoundary>
+        <div data-testid="sibling">Still here</div>
+      </div>,
+    );
+    expect(screen.getByText(/App Error/i)).toBeInTheDocument();
+    expect(screen.getByTestId("sibling")).toBeInTheDocument();
+  });
+});
+
 describe("PanelErrorState", () => {
   it("renders with error info and retry button", () => {
     const mockRetry = vi.fn();

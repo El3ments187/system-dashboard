@@ -17,6 +17,7 @@ import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
 import OverviewPage from "./pages/OverviewPage";
 import ThemePage from "./pages/ThemePage";
+import PanelErrorBoundary from "./components/common/PanelErrorBoundary";
 
 type ActivePage =
   | "overview"
@@ -158,6 +159,21 @@ export default function App() {
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      console.error("[App] Uncaught error:", e.error ?? e.message);
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      console.error("[App] Unhandled rejection:", e.reason);
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
   if (loading) {
     return (
       <div
@@ -194,6 +210,7 @@ export default function App() {
                 onPageChange={setActivePage}
               />
               <div id="main-content" tabIndex={-1} style={{ outline: "none", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                <PanelErrorBoundary panelName="App">
                 {activePage === "theme" ? (
                   <ThemePage
                     accent={accent}
@@ -245,6 +262,7 @@ export default function App() {
                 ) : (
                   <PageContent activePage={activePage} accent={current} />
                 )}
+                </PanelErrorBoundary>
               </div>
             </div>
           </MetricsProvider>
