@@ -8,53 +8,72 @@ const variablesCss = readFileSync(
 );
 
 describe("Breathe effect — data element exclusions in variables.css", () => {
-  it("excludes accent-fill glow targets from bright-breathe animation", () => {
+  it("excludes warning-state accent-fill glow targets from bright-breathe animation", () => {
     expect(variablesCss).toContain(
-      '[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe',
+      '[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-breathe',
     );
   });
 
-  it("excludes theme-live-preview-bar from bright-breathe animation", () => {
+  it("excludes critical-state accent-fill glow targets from bright-breathe animation", () => {
     expect(variablesCss).toContain(
-      '[data-breathe="on"] .theme-live-preview-bar.accent-glow-target .bright-breathe',
+      '[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-breathe',
     );
   });
 
-  it("excludes accent-fill glow targets from breathe ::after glow", () => {
+  it("excludes warning-state accent-fill glow targets from breathe ::after glow", () => {
     expect(variablesCss).toContain(
-      '[data-breathe="on"] .accent-fill.accent-glow-target::after',
+      '[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"]::after',
+    );
+  });
+
+  it("excludes critical-state accent-fill glow targets from breathe ::after glow", () => {
+    expect(variablesCss).toContain(
+      '[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"]::after',
     );
   });
 
   it("breathe exclusion rules set animation: none", () => {
     const idx = variablesCss.indexOf(
-      '[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe',
+      '[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-breathe',
     );
     expect(idx).not.toBe(-1);
-    const ruleBlock = variablesCss.slice(idx, idx + 200);
+    const ruleBlock = variablesCss.slice(idx, idx + 300);
     expect(ruleBlock).toContain("animation: none");
+  });
+
+  it("normal-state bars are NOT excluded from bright-breathe (no blanket exclusion)", () => {
+    // The blanket `.accent-fill.accent-glow-target .bright-breathe { animation: none }` must not exist
+    expect(variablesCss).not.toContain(
+      '[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe',
+    );
   });
 });
 
 describe("Surge effect — data element exclusions in variables.css", () => {
-  it("excludes accent-fill glow targets from bright-surge animation", () => {
+  it("excludes warning-state accent-fill glow targets from bright-surge animation", () => {
     expect(variablesCss).toContain(
-      '[data-surge="on"] .accent-fill.accent-glow-target .bright-surge',
+      '[data-surge="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-surge',
     );
   });
 
-  it("excludes theme-live-preview-bar from bright-surge animation", () => {
+  it("excludes critical-state accent-fill glow targets from bright-surge animation", () => {
     expect(variablesCss).toContain(
-      '[data-surge="on"] .theme-live-preview-bar.accent-glow-target .bright-surge',
+      '[data-surge="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-surge',
     );
   });
 
   it("surge exclusion rules set animation: none", () => {
     const idx = variablesCss.indexOf(
-      '[data-surge="on"] .accent-fill.accent-glow-target .bright-surge',
+      '[data-surge="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-surge',
     );
     expect(idx).not.toBe(-1);
     const ruleBlock = variablesCss.slice(idx, idx + 200);
     expect(ruleBlock).toContain("animation: none");
+  });
+
+  it("normal-state bars are NOT excluded from bright-surge (no blanket exclusion)", () => {
+    expect(variablesCss).not.toContain(
+      '[data-surge="on"] .accent-fill.accent-glow-target .bright-surge',
+    );
   });
 });

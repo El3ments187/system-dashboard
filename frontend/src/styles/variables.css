@@ -1389,13 +1389,13 @@
   animation-delay: 0s;
 }
 
-/* Data elements encode metrics — excluded from breathe (fill brightness + glow) */
-[data-breathe="on"] .accent-fill.accent-glow-target .bright-breathe,
-[data-breathe="on"] .theme-live-preview-bar.accent-glow-target .bright-breathe {
+/* Warning/critical bars encode threshold data — excluded from breathe; normal bars animate freely */
+[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-breathe,
+[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-breathe {
   animation: none;
 }
-[data-breathe="on"] .accent-fill.accent-glow-target::after,
-[data-breathe="on"] .theme-live-preview-bar.accent-glow-target::after {
+[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"]::after,
+[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"]::after {
   animation: none;
 }
 
@@ -1406,9 +1406,9 @@
   will-change: opacity;
 }
 
-/* Data elements excluded from surge */
-[data-surge="on"] .accent-fill.accent-glow-target .bright-surge,
-[data-surge="on"] .theme-live-preview-bar.accent-glow-target .bright-surge {
+/* Warning/critical bars excluded from surge; normal bars animate freely */
+[data-surge="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-surge,
+[data-surge="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-surge {
   animation: none;
 }
 

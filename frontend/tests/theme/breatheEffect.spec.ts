@@ -94,13 +94,13 @@ test.describe("Breathe — glow ::after participates", () => {
   });
 });
 
-// ── (c) Charts excluded ────────────────────────────────────────────────────────
+// ── (c) Normal bars breathe; warning/critical excluded ────────────────────────
 
-test.describe("Breathe — accent-fill bars excluded", () => {
-  test("accent-fill bar bright-breathe has animation:none (bars must not breathe)", async ({
+test.describe("Breathe — normal bars animate, warning/critical excluded (REQ-FX-70/80)", () => {
+  test("normal-state accent-fill bars run fx-breathe when data-breathe=on", async ({
     page,
   }) => {
-    await page.goto(`${BASE_URL}/cpu`);
+    await page.goto(`${BASE_URL}/theme`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(400);
 
@@ -109,60 +109,84 @@ test.describe("Breathe — accent-fill bars excluded", () => {
       document.documentElement.style.setProperty("--breathe-speed", "1s");
     });
 
+    // ThemePage preview bars have fixed percent values (65, 32, 57, 36) — all normal state
     const animNames = await page.evaluate(() =>
       Array.from(
         document.querySelectorAll<HTMLElement>(
-          ".accent-fill.accent-glow-target .bright-breathe",
+          '.accent-fill.accent-glow-target[data-state="normal"] .bright-breathe',
         ),
       ).map((el) => getComputedStyle(el).animationName),
     );
 
-    test.skip(animNames.length === 0, "No accent-fill bars present on CPU page");
+    expect(
+      animNames.length,
+      "Must have normal-state accent-fill glow-target bars on ThemePage",
+    ).toBeGreaterThan(0);
 
     for (const name of animNames) {
       expect(
         name,
-        "accent-fill bar bright-breathe must NOT run fx-breathe (charts excluded from breathe)",
-      ).toBe("none");
+        "normal-state bar bright-breathe MUST run fx-breathe",
+      ).toBe("fx-breathe");
     }
   });
 
-  test("accent-fill bar opacity does not change during breathe cycle", async ({
+  test("warning-state accent-fill bars have animation:none for bright-breathe", async ({
     page,
   }) => {
-    await page.goto(`${BASE_URL}/cpu`);
+    await page.goto(`${BASE_URL}/theme`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(400);
 
     await page.evaluate(() => {
       document.documentElement.setAttribute("data-breathe", "on");
-      document.documentElement.style.setProperty("--breathe-speed", "1s");
+      // Inject a synthetic warning bar into the DOM to test CSS exclusion
+      const bar = document.createElement("div");
+      bar.className = "accent-fill accent-glow-target";
+      bar.setAttribute("data-state", "warning");
+      bar.style.cssText = "position:fixed;top:-20px;width:10px;height:4px";
+      const breathe = document.createElement("span");
+      breathe.className = "bright-breathe";
+      bar.appendChild(breathe);
+      document.body.appendChild(bar);
     });
 
-    const t0 = await page.evaluate(() => {
-      const barBreathe = document.querySelector<HTMLElement>(
-        ".accent-fill.accent-glow-target .bright-breathe",
+    const animName = await page.evaluate(() => {
+      const breathe = document.querySelector<HTMLElement>(
+        '.accent-fill.accent-glow-target[data-state="warning"] .bright-breathe',
       );
-      return barBreathe ? getComputedStyle(barBreathe).opacity : null;
+      return breathe ? getComputedStyle(breathe).animationName : null;
     });
 
-    if (t0 === null) {
-      test.skip(true, "No accent-fill bars present on CPU page");
-      return;
-    }
+    expect(animName, "warning-state bar bright-breathe must NOT animate").toBe("none");
+  });
 
+  test("critical-state accent-fill bars have animation:none for bright-breathe", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/theme`);
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(400);
 
-    const t400 = await page.evaluate(() => {
-      const barBreathe = document.querySelector<HTMLElement>(
-        ".accent-fill.accent-glow-target .bright-breathe",
-      );
-      return barBreathe ? getComputedStyle(barBreathe).opacity : null;
+    await page.evaluate(() => {
+      document.documentElement.setAttribute("data-breathe", "on");
+      const bar = document.createElement("div");
+      bar.className = "accent-fill accent-glow-target";
+      bar.setAttribute("data-state", "critical");
+      bar.style.cssText = "position:fixed;top:-20px;width:10px;height:4px";
+      const breathe = document.createElement("span");
+      breathe.className = "bright-breathe";
+      bar.appendChild(breathe);
+      document.body.appendChild(bar);
     });
 
-    expect(
-      t0,
-      "bar bright-breathe opacity must not change during breathe (charts excluded)",
-    ).toBe(t400);
+    const animName = await page.evaluate(() => {
+      const breathe = document.querySelector<HTMLElement>(
+        '.accent-fill.accent-glow-target[data-state="critical"] .bright-breathe',
+      );
+      return breathe ? getComputedStyle(breathe).animationName : null;
+    });
+
+    expect(animName, "critical-state bar bright-breathe must NOT animate").toBe("none");
   });
 });
