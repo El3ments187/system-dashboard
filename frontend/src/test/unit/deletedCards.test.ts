@@ -4,10 +4,7 @@ import { resolve } from "node:path";
 
 // These card components were deleted because they are unused in production.
 // This test prevents them from being silently re-created.
-const CARDS_DIR = resolve(
-  __dirname,
-  "../../components/cards",
-);
+const CARDS_DIR = resolve(__dirname, "../../components/cards");
 
 const DELETED_CARDS = [
   "CpuCard.tsx",
@@ -30,7 +27,10 @@ describe("deleted card components", () => {
     const { readdirSync } = require("node:fs");
     const remaining = readdirSync(CARDS_DIR) as string[];
     const unexpected = remaining.filter(
-      (f: string) => !["ComfyUICard.tsx", "OpenCodeCard.tsx", "OpenWebUICard.tsx"].includes(f),
+      (f: string) =>
+        !["ComfyUICard.tsx", "OpenCodeCard.tsx", "OpenWebUICard.tsx"].includes(
+          f,
+        ),
     );
     expect(unexpected).toEqual([]);
   });

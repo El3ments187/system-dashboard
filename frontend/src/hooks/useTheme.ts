@@ -352,6 +352,10 @@ export function useTheme() {
     return parseFloat(localStorage.getItem("dashboard-surge-intensity") || "1");
   });
 
+  const [fxSafe, setFxSafe] = useState<boolean>(() => {
+    return localStorage.getItem("dashboard-fx-safe") === "on";
+  });
+
   const resetTheme = useCallback(() => {
     setAccent(DEFAULT_ACCENT);
     setBg(DEFAULT_BG);
@@ -377,6 +381,7 @@ export function useTheme() {
     setSurge(false);
     setSurgePeriod(6);
     setSurgeIntensity(1);
+    setFxSafe(false);
   }, []);
 
   const hexColors = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
@@ -579,6 +584,15 @@ export function useTheme() {
     localStorage.setItem("dashboard-surge-intensity", String(surgeIntensity));
   }, [surgeIntensity]);
 
+  useEffect(() => {
+    if (fxSafe) {
+      document.documentElement.setAttribute("data-fx-safe", "on");
+    } else {
+      document.documentElement.removeAttribute("data-fx-safe");
+    }
+    localStorage.setItem("dashboard-fx-safe", fxSafe ? "on" : "");
+  }, [fxSafe]);
+
   return {
     accent,
     setAccent,
@@ -628,6 +642,8 @@ export function useTheme() {
     setSurgePeriod,
     surgeIntensity,
     setSurgeIntensity,
+    fxSafe,
+    setFxSafe,
     resetTheme,
     current,
     presets: PRESETS,

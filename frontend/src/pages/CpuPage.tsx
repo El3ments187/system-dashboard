@@ -6,7 +6,10 @@ import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import PanelErrorState from "../components/common/PanelErrorState";
 import { Card } from "../components/shared/CardComponents";
 import { Cpu, Thermometer, Activity, Server, Zap } from "lucide-react";
-import { useResolvedAccentColor, useThresholdColors } from "../utils/accentColors";
+import {
+  useResolvedAccentColor,
+  useThresholdColors,
+} from "../utils/accentColors";
 import {
   getProgressState,
   getTempState,

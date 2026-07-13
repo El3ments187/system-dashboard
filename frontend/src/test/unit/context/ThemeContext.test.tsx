@@ -69,10 +69,12 @@ describe("useTheme - data-glow-color attribute (Fix D)", () => {
   it("sets data-glow-color='match' when glowColor is match (default)", () => {
     const root = document.createElement("div");
     document.body.appendChild(root);
-    const { unmount } = require("@testing-library/react").renderHook(
-      () => useTheme(),
+    const { unmount } = require("@testing-library/react").renderHook(() =>
+      useTheme(),
     );
-    expect(document.documentElement.getAttribute("data-glow-color")).toBe("match");
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe(
+      "match",
+    );
     unmount();
     document.body.removeChild(root);
   });
@@ -81,10 +83,12 @@ describe("useTheme - data-glow-color attribute (Fix D)", () => {
     localStorage.setItem("dashboard-glow-color", "accent");
     const root = document.createElement("div");
     document.body.appendChild(root);
-    const { unmount } = require("@testing-library/react").renderHook(
-      () => useTheme(),
+    const { unmount } = require("@testing-library/react").renderHook(() =>
+      useTheme(),
     );
-    expect(document.documentElement.getAttribute("data-glow-color")).toBe("accent");
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe(
+      "accent",
+    );
     unmount();
     document.body.removeChild(root);
   });
@@ -93,10 +97,12 @@ describe("useTheme - data-glow-color attribute (Fix D)", () => {
     localStorage.setItem("dashboard-glow-color", "custom");
     const root = document.createElement("div");
     document.body.appendChild(root);
-    const { unmount } = require("@testing-library/react").renderHook(
-      () => useTheme(),
+    const { unmount } = require("@testing-library/react").renderHook(() =>
+      useTheme(),
     );
-    expect(document.documentElement.getAttribute("data-glow-color")).toBe("custom");
+    expect(document.documentElement.getAttribute("data-glow-color")).toBe(
+      "custom",
+    );
     unmount();
     document.body.removeChild(root);
   });

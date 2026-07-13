@@ -114,6 +114,8 @@ export default function App() {
     setSurgePeriod,
     surgeIntensity,
     setSurgeIntensity,
+    fxSafe,
+    setFxSafe,
     resetTheme,
     current,
   } = useTheme();
@@ -165,9 +167,11 @@ export default function App() {
 
   useEffect(() => {
     const onError = (e: ErrorEvent) => {
+      // eslint-disable-next-line no-console
       console.error("[App] Uncaught error:", e.error ?? e.message);
     };
     const onRejection = (e: PromiseRejectionEvent) => {
+      // eslint-disable-next-line no-console
       console.error("[App] Unhandled rejection:", e.reason);
     };
     window.addEventListener("error", onError);
@@ -276,6 +280,8 @@ export default function App() {
                       onSurgePeriodChange={setSurgePeriod}
                       surgeIntensity={surgeIntensity}
                       onSurgeIntensityChange={setSurgeIntensity}
+                      fxSafe={fxSafe}
+                      onFxSafeChange={setFxSafe}
                     />
                   ) : (
                     <PageContent activePage={activePage} accent={current} />

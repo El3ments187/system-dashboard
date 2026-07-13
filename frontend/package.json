@@ -14,7 +14,10 @@
     "test:e2e:update": "playwright test --update-snapshots",
     "test:fast": "playwright test --config=playwright.config.ts",
     "test:slow": "playwright test --config=playwright.slow.config.ts",
-    "check:dead": "knip"
+    "check:dead": "knip",
+    "lint": "eslint src --ext .ts,.tsx --max-warnings 0",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"*.{ts,tsx,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"*.{ts,tsx,json}\""
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",

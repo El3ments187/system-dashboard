@@ -13,7 +13,7 @@ export const ACCENT_OBSERVER_ATTRS = [
 ];
 
 /** Modes whose colors shift over time and so need more than a one-shot resolve. */
-const ANIMATED_MODES = new Set(["sheen", "flow", "rainbow-wave"]);
+const ANIMATED_MODES = new Set(["sheen", "flow"]);
 
 export function getAccentMode(): string {
   return document.documentElement.getAttribute("data-accent-mode") || "solid";
@@ -269,8 +269,7 @@ function spectrumColors(n: number): string[] {
   });
 }
 
-function rainbowColors(n: number, cs: CSSStyleDeclaration): string[] {
-  const spin = parseFloat(cs.getPropertyValue("--accent-spin").trim()) || 0;
+function rainbowColors(n: number): string[] {
   const accentHex = toHex("var(--accent-base)") || "#3b82f6";
   const [accentH, , accentL] = hexToHsl(accentHex);
   let lit = accentL;
@@ -279,7 +278,7 @@ function rainbowColors(n: number, cs: CSSStyleDeclaration): string[] {
   } else if (accentL < 40) {
     lit = accentL + 10;
   }
-  return spreadHues(accentH + spin, n).map((hue) => hslToHex(hue, 80, lit));
+  return spreadHues(accentH, n).map((hue) => hslToHex(hue, 80, lit));
 }
 
 /** Resolves the single "primary" series color for the active mode, ignoring count entirely. */
@@ -330,9 +329,7 @@ export function resolveAccentColors(
     const step = 360 / accentCount;
     const depth =
       parseFloat(rootCs.getPropertyValue("--fx-depth").trim()) || 30;
-    const spin =
-      parseFloat(rootCs.getPropertyValue("--accent-spin").trim()) || 0;
-    const elOff = spin + index * step;
+    const elOff = index * step;
     probe.style.setProperty("--el-off", String(elOff));
     if (mode === "spectrum" || mode === "rainbow-wave") {
       probe.style.setProperty(
@@ -359,8 +356,6 @@ export function resolveAccentColors(
     probe.style.removeProperty("--accent-fill-stop-1");
     probe.style.removeProperty("--accent-fill-stop-2");
   }
-  const cs = getComputedStyle(probe);
-
   // Spectrum always uses its fixed palette regardless of count, including n <= 2,
   // so it must be checked before the n<=2 shortcut that reads --accent-primary.
   if (mode === "spectrum") {
@@ -381,7 +376,7 @@ export function resolveAccentColors(
   }
 
   if (mode === "rainbow-wave") {
-    return rainbowColors(n, cs);
+    return rainbowColors(n);
   }
 
   // In Solid mode, the per-core utilization chart always uses the fixed SPECTRUM palette

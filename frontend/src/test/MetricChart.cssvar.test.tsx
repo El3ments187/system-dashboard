@@ -11,7 +11,10 @@ vi.mock("recharts", () => ({
     <svg data-testid="area-chart">{children}</svg>
   ),
   Area: (props: any) => {
-    capturedAreaProps.push({ stroke: String(props.stroke), fill: String(props.fill) });
+    capturedAreaProps.push({
+      stroke: String(props.stroke),
+      fill: String(props.fill),
+    });
     return null;
   },
   BarChart: ({ children }: any) => (
@@ -34,11 +37,14 @@ class MockResizeObserver {
 }
 global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-const mockHistory: MetricHistoryPoint[] = Array.from({ length: 10 }, (_, i) => ({
-  slot: i,
-  timestamp: new Date(Date.now() - (10 - i) * 500),
-  value: i * 5,
-}));
+const mockHistory: MetricHistoryPoint[] = Array.from(
+  { length: 10 },
+  (_, i) => ({
+    slot: i,
+    timestamp: new Date(Date.now() - (10 - i) * 500),
+    value: i * 5,
+  }),
+);
 
 describe("MetricChart — CSS var stroke/fill (Issue A: rainbow-wave animation)", () => {
   beforeAll(() => {
@@ -93,7 +99,9 @@ describe("MetricChart — CSS var stroke/fill (Issue A: rainbow-wave animation)"
     );
     await waitFor(() => expect(capturedAreaProps.length).toBeGreaterThan(0));
     // Primary series must use the CSS var so rainbow-wave animation flows through
-    const primary = capturedAreaProps.find((p) => p.stroke === "var(--accent-primary)");
+    const primary = capturedAreaProps.find(
+      (p) => p.stroke === "var(--accent-primary)",
+    );
     expect(primary).toBeDefined();
     expect(primary!.fill).toBe("var(--accent-primary)");
   });
@@ -113,7 +121,9 @@ describe("MetricChart — CSS var stroke/fill (Issue A: rainbow-wave animation)"
       />,
     );
     await waitFor(() => expect(capturedAreaProps.length).toBeGreaterThan(0));
-    const primary = capturedAreaProps.find((p) => p.stroke === "var(--accent-primary)");
+    const primary = capturedAreaProps.find(
+      (p) => p.stroke === "var(--accent-primary)",
+    );
     expect(primary).toBeDefined();
     expect(primary!.fill).toBe("var(--accent-primary)");
   });
@@ -143,10 +153,13 @@ describe("MetricChart — CSS var stroke/fill (Issue A: rainbow-wave animation)"
         secondaryLabel="Temp"
       />,
     );
-    await waitFor(() => expect(capturedAreaProps.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(capturedAreaProps.length).toBeGreaterThanOrEqual(2),
+    );
     // Secondary series should use a hex (not a CSS var) for now
     const secondary_ = capturedAreaProps.find(
-      (p) => p.stroke !== "var(--accent-primary)" && !p.stroke.startsWith("url(#"),
+      (p) =>
+        p.stroke !== "var(--accent-primary)" && !p.stroke.startsWith("url(#"),
     );
     expect(secondary_).toBeDefined();
     expect(secondary_!.stroke).toMatch(/^#[0-9a-f]{6}$/i);
@@ -171,7 +184,9 @@ describe("MetricChart — ChartFrame structure", () => {
         data={mockHistory}
       />,
     );
-    const frames = container.querySelectorAll(".chart-container[data-accent-el]");
+    const frames = container.querySelectorAll(
+      ".chart-container[data-accent-el]",
+    );
     expect(frames).toHaveLength(1);
   });
 
@@ -184,7 +199,9 @@ describe("MetricChart — ChartFrame structure", () => {
       />,
     );
     const frame = container.querySelector(".chart-container[data-accent-el]")!;
-    expect(frame.querySelectorAll(".card-accent-spine.accent-glow-target")).toHaveLength(1);
+    expect(
+      frame.querySelectorAll(".card-accent-spine.accent-glow-target"),
+    ).toHaveLength(1);
   });
 
   it("spine contains exactly one .bright-breathe and one .bright-surge", () => {

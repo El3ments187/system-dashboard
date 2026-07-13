@@ -33,7 +33,9 @@ export default function OverviewStorageChart({ data }: Props) {
   } | null>(null);
 
   useEffect(() => {
-    import("recharts").then((r) => setRecharts(r as Record<string, unknown>)).catch(() => {});
+    import("recharts")
+      .then((r) => setRecharts(r as Record<string, unknown>))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -118,190 +120,190 @@ export default function OverviewStorageChart({ data }: Props) {
         ref={chartRef}
         style={{ flex: 1, minHeight: 0, overflow: "hidden", height: "100%" }}
       >
-      {chartSize && (
-        <AreaChart
-          data={chartData}
-          width={chartSize.width}
-          height={chartSize.height}
-          margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-        >
-          <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
-          <XAxis
-            dataKey="x"
-            type="number"
-            domain={[0, BUFFER_SIZE - 1]}
-            ticks={chartData.map((_, i) => i)}
-            tick={{ fontSize: 10, fill: "var(--text-muted)" }}
-            axisLine={{ stroke: chartColors.axis }}
-            tickFormatter={(v: number) =>
-              chartData[Math.round(v)]?.timeLabel ?? ""
-            }
-            interval="equidistantPreserveStart"
-          />
-          <YAxis
-            width={36}
-            type="number"
-            domain={[0, (dataMax: number) => Math.max(dataMax, 1024)]}
-            tick={{ fontSize: 10, fill: "var(--text-muted)" }}
-            axisLine={{ stroke: chartColors.axis }}
-            tickFormatter={(v: number) => fmtBps(v)}
-          />
-          <Tooltip
-            isAnimationActive={false}
-            animationDuration={0}
-            content={(props: any) => {
-              if (!props?.active || !props.payload?.[0]) return null;
-              const d = props.payload[0].payload;
-              const ts = d.timestampMs
-                ? new Date(d.timestampMs).toLocaleTimeString("en-US", {
-                    hour12: false,
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })
-                : "";
-              return (
-                <div
-                  style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 6,
-                    padding: "6px 10px",
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}
-                >
-                  {ts && (
-                    <div
-                      style={{ color: "var(--text-muted)", marginBottom: 4 }}
-                    >
-                      {ts}
+        {chartSize && (
+          <AreaChart
+            data={chartData}
+            width={chartSize.width}
+            height={chartSize.height}
+            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid stroke={chartColors.grid} strokeDasharray="4 4" />
+            <XAxis
+              dataKey="x"
+              type="number"
+              domain={[0, BUFFER_SIZE - 1]}
+              ticks={chartData.map((_, i) => i)}
+              tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+              axisLine={{ stroke: chartColors.axis }}
+              tickFormatter={(v: number) =>
+                chartData[Math.round(v)]?.timeLabel ?? ""
+              }
+              interval="equidistantPreserveStart"
+            />
+            <YAxis
+              width={36}
+              type="number"
+              domain={[0, (dataMax: number) => Math.max(dataMax, 1024)]}
+              tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+              axisLine={{ stroke: chartColors.axis }}
+              tickFormatter={(v: number) => fmtBps(v)}
+            />
+            <Tooltip
+              isAnimationActive={false}
+              animationDuration={0}
+              content={(props: any) => {
+                if (!props?.active || !props.payload?.[0]) return null;
+                const d = props.payload[0].payload;
+                const ts = d.timestampMs
+                  ? new Date(d.timestampMs).toLocaleTimeString("en-US", {
+                      hour12: false,
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })
+                  : "";
+                return (
+                  <div
+                    style={{
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 6,
+                      padding: "6px 10px",
+                      fontSize: 11,
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}
+                  >
+                    {ts && (
+                      <div
+                        style={{ color: "var(--text-muted)", marginBottom: 4 }}
+                      >
+                        {ts}
+                      </div>
+                    )}
+                    <div style={{ color: "var(--accent-fill-stop-1)" }}>
+                      Read: {fmtBps(d.read ?? 0)}
                     </div>
-                  )}
-                  <div style={{ color: "var(--accent-fill-stop-1)" }}>
-                    Read: {fmtBps(d.read ?? 0)}
+                    <div style={{ color: "var(--accent-fill-stop-2)" }}>
+                      Write: {fmtBps(d.write ?? 0)}
+                    </div>
                   </div>
-                  <div style={{ color: "var(--accent-fill-stop-2)" }}>
-                    Write: {fmtBps(d.write ?? 0)}
-                  </div>
-                </div>
-              );
-            }}
-            cursor={{
-              stroke: chartColors.crosshair,
-              strokeWidth: 1,
-              strokeDasharray: "3 3",
-              opacity: 0.5,
-            }}
-            offset={8}
-          />
-          <defs>
-            {/* gradientUnits="userSpaceOnUse" avoids Chrome's degenerate-bbox bug
+                );
+              }}
+              cursor={{
+                stroke: chartColors.crosshair,
+                strokeWidth: 1,
+                strokeDasharray: "3 3",
+                opacity: 0.5,
+              }}
+              offset={8}
+            />
+            <defs>
+              {/* gradientUnits="userSpaceOnUse" avoids Chrome's degenerate-bbox bug
                 where a perfectly flat line (all y=same) has zero bounding-box height,
                 causing objectBoundingBox gradients to vanish */}
-            <linearGradient
-              id={`${gradientId}-read-stroke`}
-              x1="0"
-              y1="0"
-              x2={chartSize.width}
-              y2="0"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop
-                offset="0%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-1)",
-                  stopOpacity: 1,
-                }}
-              />
-              <stop
-                offset="100%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-2)",
-                  stopOpacity: 1,
-                }}
-              />
-            </linearGradient>
-            <linearGradient
-              id={`${gradientId}-read-fill`}
-              x1="0"
-              y1="0"
-              x2="0"
-              y2={chartSize.height}
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop
-                offset="0%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-1)",
-                  stopOpacity: 0.25,
-                }}
-              />
-              <stop
-                offset="100%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-1)",
-                  stopOpacity: 0,
-                }}
-              />
-            </linearGradient>
-            <linearGradient
-              id={`${gradientId}-write-stroke`}
-              x1="0"
-              y1="0"
-              x2={chartSize.width}
-              y2="0"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop
-                offset="0%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-2)",
-                  stopOpacity: 1,
-                }}
-              />
-              <stop
-                offset="100%"
-                style={{
-                  stopColor: "var(--accent-fill-stop-2)",
-                  stopOpacity: 1,
-                }}
-              />
-            </linearGradient>
-          </defs>
-          <Area
-            dataKey="read"
-            stroke={`url(#${gradientId}-read-stroke)`}
-            fill={`url(#${gradientId}-read-fill)`}
-            strokeWidth={2}
-            fillOpacity={1}
-            isAnimationActive={false}
-            animationDuration={0}
-            activeDot={{
-              r: 5,
-              stroke: chartColors.dotStroke,
-              strokeWidth: 2,
-              fill: "var(--accent-fill-stop-1)",
-            }}
-          />
-          <Area
-            dataKey="write"
-            stroke={`url(#${gradientId}-write-stroke)`}
-            fill="none"
-            strokeWidth={2}
-            strokeDasharray="6 4"
-            fillOpacity={0}
-            isAnimationActive={false}
-            animationDuration={0}
-            activeDot={{
-              r: 5,
-              stroke: chartColors.dotStroke,
-              strokeWidth: 2,
-              fill: "var(--accent-fill-stop-2)",
-            }}
-          />
-        </AreaChart>
-      )}
+              <linearGradient
+                id={`${gradientId}-read-stroke`}
+                x1="0"
+                y1="0"
+                x2={chartSize.width}
+                y2="0"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop
+                  offset="0%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-1)",
+                    stopOpacity: 1,
+                  }}
+                />
+                <stop
+                  offset="100%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-2)",
+                    stopOpacity: 1,
+                  }}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`${gradientId}-read-fill`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2={chartSize.height}
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop
+                  offset="0%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-1)",
+                    stopOpacity: 0.25,
+                  }}
+                />
+                <stop
+                  offset="100%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-1)",
+                    stopOpacity: 0,
+                  }}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`${gradientId}-write-stroke`}
+                x1="0"
+                y1="0"
+                x2={chartSize.width}
+                y2="0"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop
+                  offset="0%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-2)",
+                    stopOpacity: 1,
+                  }}
+                />
+                <stop
+                  offset="100%"
+                  style={{
+                    stopColor: "var(--accent-fill-stop-2)",
+                    stopOpacity: 1,
+                  }}
+                />
+              </linearGradient>
+            </defs>
+            <Area
+              dataKey="read"
+              stroke={`url(#${gradientId}-read-stroke)`}
+              fill={`url(#${gradientId}-read-fill)`}
+              strokeWidth={2}
+              fillOpacity={1}
+              isAnimationActive={false}
+              animationDuration={0}
+              activeDot={{
+                r: 5,
+                stroke: chartColors.dotStroke,
+                strokeWidth: 2,
+                fill: "var(--accent-fill-stop-1)",
+              }}
+            />
+            <Area
+              dataKey="write"
+              stroke={`url(#${gradientId}-write-stroke)`}
+              fill="none"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              fillOpacity={0}
+              isAnimationActive={false}
+              animationDuration={0}
+              activeDot={{
+                r: 5,
+                stroke: chartColors.dotStroke,
+                strokeWidth: 2,
+                fill: "var(--accent-fill-stop-2)",
+              }}
+            />
+          </AreaChart>
+        )}
       </div>
     </ChartFrame>
   );

@@ -1,0 +1,138 @@
+/**
+ * Crash-hardening guard tests — RED phase (TDD).
+ *
+ * These tests assert the desired post-fix invariants for the three crash
+ * mechanisms.  They FAIL before the corresponding phase is applied and PASS
+ * after.  Do not skip or remove them — they are the regression guard.
+ *
+ * Mechanism A: animated @property --accent-spin must not drive --el-off in
+ *   rainbow-wave, because that causes per-frame oklch() relative-color
+ *   recomputation on every [data-accent-el] → Chrome renderer SIGILL.
+ *
+ * Mechanism B: @keyframes fx-pan / gradient-border-pan / accent-fill-pan
+ *   must not contain background-position — animated background-position on
+ *   oklch() relative-color gradients causes per-frame GPU shader re-evaluation.
+ *
+ * Mechanism A (JS): accentColors.ts must not poll --accent-spin at runtime so
+ *   chart colors stay stable without a 800 ms interval in rainbow-wave mode.
+ */
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+const variablesCss = readFileSync(
+  resolve(__dirname, "../../../styles/variables.css"),
+  "utf8",
+);
+
+const accentColorsSrc = readFileSync(
+  resolve(__dirname, "../../../utils/accentColors.ts"),
+  "utf8",
+);
+
+// ── Mechanism A CSS ───────────────────────────────────────────────────────────
+
+describe("Mechanism A CSS — rainbow-wave --el-off must not include --accent-spin", () => {
+  it("rainbow-wave root block --el-off does not reference --accent-spin", () => {
+    const rwIdx = variablesCss.indexOf('[data-accent-mode="rainbow-wave"] {');
+    expect(rwIdx, '[data-accent-mode="rainbow-wave"] block not found').not.toBe(
+      -1,
+    );
+    const block = variablesCss.slice(rwIdx, rwIdx + 600);
+    const elOffIdx = block.indexOf("--el-off:");
+    expect(elOffIdx, "--el-off not found in rainbow-wave block").not.toBe(-1);
+    const elOffDecl = block.slice(elOffIdx, elOffIdx + 200);
+    expect(elOffDecl).not.toContain("--accent-spin");
+  });
+
+  it("per-element rainbow-wave --el-off does not reference --accent-spin", () => {
+    const perElIdx = variablesCss.indexOf(
+      '[data-accent-mode="rainbow-wave"] [style*="--el-index"]',
+    );
+    expect(perElIdx, "per-element rainbow-wave block not found").not.toBe(-1);
+    const block = variablesCss.slice(perElIdx, perElIdx + 400);
+    const elOffIdx = block.indexOf("--el-off:");
+    expect(elOffIdx, "--el-off not found in per-element block").not.toBe(-1);
+    const elOffDecl = block.slice(elOffIdx, elOffIdx + 200);
+    expect(elOffDecl).not.toContain("--accent-spin");
+  });
+
+  it("prefers-reduced-motion:no-preference block uses hue-spin, not accent-spin-rotate", () => {
+    const noPreferIdx = variablesCss.indexOf(
+      "prefers-reduced-motion: no-preference",
+    );
+    expect(noPreferIdx, "no-preference media block not found").not.toBe(-1);
+    const mediaBlock = variablesCss.slice(noPreferIdx, noPreferIdx + 300);
+    expect(mediaBlock).not.toContain("accent-spin-rotate");
+    expect(mediaBlock).toContain("hue-spin");
+  });
+
+  it("@keyframes hue-spin exists and uses filter: hue-rotate", () => {
+    const idx = variablesCss.indexOf("@keyframes hue-spin");
+    expect(idx, "@keyframes hue-spin not found").not.toBe(-1);
+    const block = variablesCss.slice(idx, idx + 150);
+    expect(block).toContain("hue-rotate");
+  });
+});
+
+// ── Mechanism B CSS ───────────────────────────────────────────────────────────
+
+describe("Mechanism B CSS — animated keyframes must not use background-position", () => {
+  it("@keyframes fx-pan does not contain background-position", () => {
+    const idx = variablesCss.indexOf("@keyframes fx-pan");
+    expect(idx, "@keyframes fx-pan not found").not.toBe(-1);
+    const block = variablesCss.slice(idx, idx + 200);
+    expect(block).not.toContain("background-position");
+  });
+
+  it("@keyframes gradient-border-pan does not contain background-position", () => {
+    const idx = variablesCss.indexOf("@keyframes gradient-border-pan");
+    expect(idx, "@keyframes gradient-border-pan not found").not.toBe(-1);
+    const block = variablesCss.slice(idx, idx + 200);
+    expect(block).not.toContain("background-position");
+  });
+
+  it("@keyframes accent-fill-pan does not contain background-position", () => {
+    const idx = variablesCss.indexOf("@keyframes accent-fill-pan");
+    expect(idx, "@keyframes accent-fill-pan not found").not.toBe(-1);
+    const block = variablesCss.slice(idx, idx + 200);
+    expect(block).not.toContain("background-position");
+  });
+});
+
+// ── Mechanism A JS ────────────────────────────────────────────────────────────
+
+describe("Mechanism A JS — accentColors.ts must not poll --accent-spin", () => {
+  it("rainbow-wave is not in ANIMATED_MODES", () => {
+    const modesIdx = accentColorsSrc.indexOf("ANIMATED_MODES");
+    expect(modesIdx, "ANIMATED_MODES not found").not.toBe(-1);
+    const modesDecl = accentColorsSrc.slice(modesIdx, modesIdx + 80);
+    expect(modesDecl).not.toContain('"rainbow-wave"');
+  });
+
+  it("rainbowColors function does not read --accent-spin", () => {
+    const fnIdx = accentColorsSrc.indexOf("function rainbowColors");
+    expect(fnIdx, "rainbowColors not found").not.toBe(-1);
+    const fn = accentColorsSrc.slice(fnIdx, fnIdx + 400);
+    expect(fn).not.toContain("--accent-spin");
+  });
+
+  it("resolveAccentColors does not call getPropertyValue on --accent-spin", () => {
+    expect(accentColorsSrc).not.toContain('getPropertyValue("--accent-spin")');
+  });
+});
+
+// ── Phase 5 — data-fx-safe kill-switch present in CSS ────────────────────────
+
+describe("Phase 5 — data-fx-safe kill-switch", () => {
+  it("variables.css contains data-fx-safe rules", () => {
+    expect(variablesCss).toContain('[data-fx-safe="on"]');
+  });
+
+  it("data-fx-safe disables rainbow-wave animation", () => {
+    const idx = variablesCss.indexOf('[data-fx-safe="on"]');
+    expect(idx).not.toBe(-1);
+    const region = variablesCss.slice(idx, idx + 2000);
+    expect(region).toContain("animation: none");
+  });
+});

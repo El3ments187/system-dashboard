@@ -30,14 +30,18 @@ const mockData: StorageHistoryPoint[] = Array.from({ length: 5 }, (_, i) => ({
 describe("OverviewStorageChart — ChartFrame structure", () => {
   it("renders exactly one .chart-container[data-accent-el]", () => {
     const { container } = render(<OverviewStorageChart data={mockData} />);
-    const frames = container.querySelectorAll(".chart-container[data-accent-el]");
+    const frames = container.querySelectorAll(
+      ".chart-container[data-accent-el]",
+    );
     expect(frames).toHaveLength(1);
   });
 
   it("chart-container contains exactly one .card-accent-spine.accent-glow-target", () => {
     const { container } = render(<OverviewStorageChart data={mockData} />);
     const frame = container.querySelector(".chart-container[data-accent-el]")!;
-    expect(frame.querySelectorAll(".card-accent-spine.accent-glow-target")).toHaveLength(1);
+    expect(
+      frame.querySelectorAll(".card-accent-spine.accent-glow-target"),
+    ).toHaveLength(1);
   });
 
   it("spine contains exactly one .bright-breathe and one .bright-surge", () => {

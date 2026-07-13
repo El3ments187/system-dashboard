@@ -12,7 +12,10 @@ import {
   Activity,
   Fan,
 } from "lucide-react";
-import { useResolvedAccentColor, useThresholdColors } from "../utils/accentColors";
+import {
+  useResolvedAccentColor,
+  useThresholdColors,
+} from "../utils/accentColors";
 import {
   getProgressState,
   getTempState,

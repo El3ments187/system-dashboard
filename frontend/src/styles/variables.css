@@ -36,6 +36,27 @@
   initial-value: 30;
 }
 
+/* Registered so keyframe animations can drive these values via @keyframes without
+   putting background-position / filter directly in keyframe bodies, which would
+   force per-frame oklch() relative-color recomputation in the GPU driver. */
+@property --fx-pan-x {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: false;
+}
+
+@property --fill-pan-x {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: false;
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 90deg;
+  inherits: false;
+}
+
 :root {
   /* --accent-base/--accent-base-rgb hold the literal chosen accent color, set by the
      [data-accent="x"] presets below. --accent-primary/--accent-secondary/--accent-glow are
@@ -906,9 +927,7 @@
 }
 
 [data-accent-mode="rainbow-wave"] {
-  --el-off: calc(
-    var(--accent-spin, 0) + var(--el-index, 0) * (360 / var(--accent-count, 12))
-  );
+  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
 
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
@@ -944,6 +963,18 @@
   }
   to {
     --accent-spin: 360;
+  }
+}
+
+/* Compositor-accelerated hue rotation: one filter: hue-rotate() on the root
+   container replaces per-element --accent-spin animation, eliminating per-frame
+   oklch() relative-color recomputation on every [data-accent-el]. */
+@keyframes hue-spin {
+  from {
+    filter: hue-rotate(0deg);
+  }
+  to {
+    filter: hue-rotate(360deg);
   }
 }
 
@@ -988,9 +1019,7 @@
    var(--accent-spin, 0) is 0 in Spectrum (no animation), non-zero in Rainbow Wave. */
 [data-accent-mode="spectrum"] [style*="--el-index"],
 [data-accent-mode="rainbow-wave"] [style*="--el-index"] {
-  --el-off: calc(
-    var(--accent-spin, 0) + var(--el-index, 0) * (360 / var(--accent-count, 12))
-  );
+  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
     from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))
@@ -1064,10 +1093,8 @@
     inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
-[data-card-glow="on"][data-accent-mode="spectrum"]
-  [style*="--el-index"],
-[data-card-glow="on"][data-accent-mode="rainbow-wave"]
-  [style*="--el-index"] {
+[data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
+[data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-halo:
     0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
     0 0 calc(48px * var(--glow-intensity, 1.4))
@@ -1076,28 +1103,29 @@
 
 @keyframes accent-fill-pan {
   from {
-    background-position: 0% center;
+    --fill-pan-x: 0;
   }
   to {
-    background-position: 100% center;
+    --fill-pan-x: 1;
   }
 }
 
-/* Right-to-left sweep: position goes from 100% to 0% so the highlight band enters
-   from the right and exits left. Both endpoints show the gradient's base-color ends,
-   making the loop seamless at any animation speed. */
+/* Right-to-left sweep: --fx-pan-x is consumed by the animated selector as
+   calc(var(--fx-pan-x) * 100%) so gradient stops stay static between frames
+   and the GPU driver does not re-evaluate oklch() on each tick. */
 @keyframes fx-pan {
   from {
-    background-position: 100% 0;
+    --fx-pan-x: 1;
   }
   to {
-    background-position: 0% 0;
+    --fx-pan-x: 0;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   [data-accent-mode="rainbow-wave"] {
-    animation: accent-spin-rotate var(--fx-speed) linear infinite;
+    animation: hue-spin var(--fx-speed) linear infinite;
+    will-change: filter;
   }
 
   /* Staggered per-element delay ripples the highlight across the page:
@@ -1132,6 +1160,7 @@
   [data-accent-mode="flow"] [data-accent-el] {
     animation: fx-pan var(--fx-speed) linear infinite;
     animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
+    background-position: calc(var(--fx-pan-x, 1) * 100%) 0;
   }
 }
 
@@ -1279,12 +1308,14 @@
    creates a gradient ring that respects border-radius without overflow issues.
    Targets card containers only (not spine/bar elements).
    ======================================== */
+/* Rotates the gradient angle via --border-angle rather than panning background-position,
+   so gradient stops stay static and the GPU does not re-evaluate oklch() each frame. */
 @keyframes gradient-border-pan {
   from {
-    background-position: 0% 50%;
+    --border-angle: 90deg;
   }
   to {
-    background-position: 200% 50%;
+    --border-angle: 450deg;
   }
 }
 
@@ -1306,12 +1337,11 @@
   border-radius: inherit;
   padding: 1px;
   background: linear-gradient(
-    90deg,
+    var(--border-angle, 90deg),
     var(--accent-fill-stop-1),
     var(--accent-fill-stop-2),
     var(--accent-fill-stop-1)
   );
-  background-size: 200% 100%;
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -1329,7 +1359,8 @@
     [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
       .accent-glow-target
     )::before {
-    animation: gradient-border-pan var(--gradient-border-speed, 3s) linear infinite;
+    animation: gradient-border-pan var(--gradient-border-speed, 3s) linear
+      infinite;
   }
 }
 
@@ -1419,12 +1450,18 @@
 }
 
 /* Warning/critical bars encode threshold data — excluded from breathe; normal bars animate freely */
-[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-breathe,
-[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-breathe {
+[data-breathe="on"]
+  .accent-fill.accent-glow-target[data-state="warning"]
+  .bright-breathe,
+[data-breathe="on"]
+  .accent-fill.accent-glow-target[data-state="critical"]
+  .bright-breathe {
   animation: none;
 }
-[data-breathe="on"] .accent-fill.accent-glow-target[data-state="warning"]::after,
-[data-breathe="on"] .accent-fill.accent-glow-target[data-state="critical"]::after {
+[data-breathe="on"]
+  .accent-fill.accent-glow-target[data-state="warning"]::after,
+[data-breathe="on"]
+  .accent-fill.accent-glow-target[data-state="critical"]::after {
   animation: none;
 }
 
@@ -1436,8 +1473,12 @@
 }
 
 /* Warning/critical bars excluded from surge; normal bars animate freely */
-[data-surge="on"] .accent-fill.accent-glow-target[data-state="warning"] .bright-surge,
-[data-surge="on"] .accent-fill.accent-glow-target[data-state="critical"] .bright-surge {
+[data-surge="on"]
+  .accent-fill.accent-glow-target[data-state="warning"]
+  .bright-surge,
+[data-surge="on"]
+  .accent-fill.accent-glow-target[data-state="critical"]
+  .bright-surge {
   animation: none;
 }
 
@@ -1450,5 +1491,63 @@
   }
   [data-breathe="on"] .accent-glow-target::after {
     opacity: 1;
+  }
+}
+
+/* ========================================
+   FX-Safe kill-switch
+   data-fx-safe="on" on <html> stops all heavy animated paint paths (rainbow-wave
+   hue-spin, gradient-border rotation, sheen/flow background-position panning)
+   while keeping static accent spread, glow halos, and opacity effects intact.
+   Toggle via useTheme's fxSafe state for users experiencing GPU driver crashes.
+   ======================================== */
+[data-fx-safe="on"][data-accent-mode="rainbow-wave"] {
+  animation: none;
+  will-change: auto;
+}
+
+[data-fx-safe="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  )::before {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-fill,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-bg,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-spine,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .card-accent-spine,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .btn-accent,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .progress-accent,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .card-progress-bar,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .core-bar,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .ov-spine,
+  [data-fx-safe="on"][data-accent-mode="sheen"]
+    .settings-btn-accent:hover:not(:disabled),
+  [data-fx-safe="on"][data-accent-mode="sheen"] .theme-preview-swatch.gradient,
+  [data-fx-safe="on"][data-accent-mode="sheen"] .theme-live-preview-bar,
+  [data-fx-safe="on"][data-accent-mode="sheen"]
+    .mode-row.active
+    .mode-radio::after,
+  [data-fx-safe="on"][data-accent-mode="sheen"] [data-accent-el],
+  [data-fx-safe="on"][data-accent-mode="flow"] .accent-fill,
+  [data-fx-safe="on"][data-accent-mode="flow"] .accent-bg,
+  [data-fx-safe="on"][data-accent-mode="flow"] .accent-spine,
+  [data-fx-safe="on"][data-accent-mode="flow"] .card-accent-spine,
+  [data-fx-safe="on"][data-accent-mode="flow"] .btn-accent,
+  [data-fx-safe="on"][data-accent-mode="flow"] .progress-accent,
+  [data-fx-safe="on"][data-accent-mode="flow"] .card-progress-bar,
+  [data-fx-safe="on"][data-accent-mode="flow"] .core-bar,
+  [data-fx-safe="on"][data-accent-mode="flow"] .ov-spine,
+  [data-fx-safe="on"][data-accent-mode="flow"]
+    .settings-btn-accent:hover:not(:disabled),
+  [data-fx-safe="on"][data-accent-mode="flow"] .theme-preview-swatch.gradient,
+  [data-fx-safe="on"][data-accent-mode="flow"] .theme-live-preview-bar,
+  [data-fx-safe="on"][data-accent-mode="flow"]
+    .mode-row.active
+    .mode-radio::after,
+  [data-fx-safe="on"][data-accent-mode="flow"] [data-accent-el] {
+    animation: none;
   }
 }

@@ -18,7 +18,8 @@ function walk(dir: string): string[] {
 describe("colorSingleSource invariant", () => {
   it("no src/ file outside accentColors.ts reads --accent* via getPropertyValue", () => {
     const files = walk(SRC).filter(
-      (f) => f !== CANONICAL && !f.includes("/test/") && !f.includes("/invariants/"),
+      (f) =>
+        f !== CANONICAL && !f.includes("/test/") && !f.includes("/invariants/"),
     );
 
     const violations: string[] = [];
@@ -33,7 +34,8 @@ describe("colorSingleSource invariant", () => {
 
   it("no src/ file has an alpha-suffix on a CSS var() (e.g. `${var(--x)}20`)", () => {
     const files = walk(SRC).filter(
-      (f) => f !== CANONICAL && !f.includes("/test/") && !f.includes("/invariants/"),
+      (f) =>
+        f !== CANONICAL && !f.includes("/test/") && !f.includes("/invariants/"),
     );
 
     const violations: string[] = [];

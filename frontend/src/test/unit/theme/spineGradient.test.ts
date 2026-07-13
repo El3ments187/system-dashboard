@@ -11,7 +11,10 @@ describe("card-accent-spine — gradient fill", () => {
   function getSpineRuleBlock(): string {
     // Match only the standalone rule (newline before selector), not a descendant selector
     const start = themeCss.indexOf("\n.card-accent-spine {");
-    expect(start, "standalone .card-accent-spine rule must exist in theme.css").not.toBe(-1);
+    expect(
+      start,
+      "standalone .card-accent-spine rule must exist in theme.css",
+    ).not.toBe(-1);
     const end = themeCss.indexOf("}", start);
     return themeCss.slice(start, end + 1);
   }

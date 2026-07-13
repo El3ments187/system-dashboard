@@ -171,11 +171,13 @@ export function Card({
   innerClassName?: string;
   spine?: boolean;
 }) {
-  const roleAttr = role === undefined ? "article" : (role || undefined);
+  const roleAttr = role === undefined ? "article" : role || undefined;
   const resolvedBase = baseClass ?? "metric-card card";
-  const inner = innerClassName
-    ? <div className={innerClassName}>{children}</div>
-    : children;
+  const inner = innerClassName ? (
+    <div className={innerClassName}>{children}</div>
+  ) : (
+    children
+  );
   return (
     <div
       {...(roleAttr !== undefined ? { role: roleAttr } : {})}

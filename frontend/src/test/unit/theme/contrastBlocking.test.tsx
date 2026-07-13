@@ -100,13 +100,17 @@ describe("Contrast blocking — pale accent × light background", () => {
 
   it("disabled swatch carries a tooltip that mentions contrast", () => {
     render(<ThemePage {...makeProps({ bg: "light" })} />);
-    const iceSwatch = screen.getByText("Ice").closest(".color-option") as HTMLElement;
+    const iceSwatch = screen
+      .getByText("Ice")
+      .closest(".color-option") as HTMLElement;
     expect(iceSwatch.title).toMatch(/contrast/i);
   });
 
   it("disabled bg swatch carries a tooltip that mentions contrast", () => {
     render(<ThemePage {...makeProps({ accent: "ice" })} />);
-    const lightSwatch = screen.getByText("Light").closest(".color-option") as HTMLElement;
+    const lightSwatch = screen
+      .getByText("Light")
+      .closest(".color-option") as HTMLElement;
     expect(lightSwatch.title).toMatch(/contrast/i);
   });
 });

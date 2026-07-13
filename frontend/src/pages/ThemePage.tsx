@@ -311,6 +311,8 @@ export interface ThemePageProps {
   onSurgePeriodChange?: (v: number) => void;
   surgeIntensity?: number;
   onSurgeIntensityChange?: (v: number) => void;
+  fxSafe?: boolean;
+  onFxSafeChange?: (v: boolean) => void;
 }
 
 function BreatheEffectRow({
@@ -537,6 +539,8 @@ export default function ThemePage({
   onSurgePeriodChange,
   surgeIntensity = 1,
   onSurgeIntensityChange,
+  fxSafe,
+  onFxSafeChange,
 }: ThemePageProps) {
   const prefersReducedMotion = _getReducedMotion();
 
@@ -1112,6 +1116,28 @@ export default function ThemePage({
                   surgeIntensity={surgeIntensity}
                   onSurgeIntensityChange={onSurgeIntensityChange}
                 />
+              )}
+
+              {onFxSafeChange && (
+                <div
+                  role="switch"
+                  tabIndex={0}
+                  aria-checked={!!fxSafe}
+                  className={`mode-row${fxSafe ? " active" : ""}`}
+                  onClick={() => onFxSafeChange(!fxSafe)}
+                  onKeyDown={onKeyActivate(() => onFxSafeChange(!fxSafe))}
+                  style={{ cursor: "pointer" }}
+                >
+                  <span className="mode-radio" />
+                  <div className="mode-text">
+                    <span className="mode-name">FX Safe Mode</span>
+                    <span className="mode-desc">
+                      Freezes animated paint (hue-spin, sheen, border glow) —
+                      use if the GPU driver crashes under animated themes
+                    </span>
+                  </div>
+                  <ToggleSwitch on={!!fxSafe} />
+                </div>
               )}
             </div>
           </div>
