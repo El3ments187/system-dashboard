@@ -90,6 +90,8 @@ export default function App() {
     setPulseIntensity,
     innerGlow,
     setInnerGlow,
+    innerGlowIntensity,
+    setInnerGlowIntensity,
     gradientBorder,
     setGradientBorder,
     cardGlow,
@@ -238,6 +240,8 @@ export default function App() {
                     onPulseIntensityChange={setPulseIntensity}
                     innerGlow={innerGlow}
                     onInnerGlowChange={setInnerGlow}
+                    innerGlowIntensity={innerGlowIntensity}
+                    onInnerGlowIntensityChange={setInnerGlowIntensity}
                     gradientBorder={gradientBorder}
                     onGradientBorderChange={setGradientBorder}
                     cardGlow={cardGlow}

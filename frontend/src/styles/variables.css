@@ -87,6 +87,7 @@
   --card-halo: 0 0 0 rgba(0, 0, 0, 0);
   --accent-inner-glow: 0 0 0 rgba(0, 0, 0, 0);
   --glow-intensity: 1.4;
+  --inner-glow-intensity: 1.4;
   --pulse-speed: 4s;
   --pulse-intensity: 1.5;
   /* Per-metric color tokens — footer bars, inline sparklines; no stray hex allowed */
@@ -1022,8 +1023,8 @@
 [data-inner-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-inner-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --accent-inner-glow:
-    inset 0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    inset 0 0 calc(6px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
 [data-glow="neon"][data-card-glow="on"][data-accent-mode="spectrum"]
@@ -1145,8 +1146,8 @@
    ======================================== */
 [data-inner-glow="on"] {
   --accent-inner-glow:
-    inset 0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    inset 0 0 calc(6px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
 /* ========================================

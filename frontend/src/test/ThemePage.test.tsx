@@ -188,6 +188,44 @@ describe("ThemePage slider accessibility", () => {
   });
 });
 
+describe("ThemePage Inner Glow intensity slider (REQ-FX-31)", () => {
+  it("Inner Glow Intensity slider hidden when innerGlow is off", () => {
+    render(<ThemePage {...makeProps({ innerGlow: false, onInnerGlowChange: vi.fn() })} />);
+    expect(screen.queryByText("Inner Glow Intensity")).not.toBeInTheDocument();
+  });
+
+  it("Inner Glow Intensity slider shown when innerGlow is on", () => {
+    render(
+      <ThemePage
+        {...makeProps({
+          innerGlow: true,
+          onInnerGlowChange: vi.fn(),
+          innerGlowIntensity: 1.4,
+          onInnerGlowIntensityChange: vi.fn(),
+        })}
+      />,
+    );
+    expect(screen.getByText("Inner Glow Intensity")).toBeInTheDocument();
+  });
+
+  it("Inner Glow Intensity slider calls handler on change", () => {
+    const onInnerGlowIntensityChange = vi.fn();
+    render(
+      <ThemePage
+        {...makeProps({
+          innerGlow: true,
+          onInnerGlowChange: vi.fn(),
+          innerGlowIntensity: 1.4,
+          onInnerGlowIntensityChange,
+        })}
+      />,
+    );
+    const slider = screen.getByRole("slider", { name: /inner glow intensity/i });
+    fireEvent.change(slider, { target: { value: "2" } });
+    expect(onInnerGlowIntensityChange).toHaveBeenCalledWith(2);
+  });
+});
+
 describe("ThemePage mode-dependency hints", () => {
   it("shows Effect Controls mode hint when accentMode is solid", () => {
     render(<ThemePage {...makeProps({ accentMode: "solid" })} />);

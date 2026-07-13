@@ -293,6 +293,12 @@ export function useTheme() {
     return localStorage.getItem("dashboard-inner-glow") === "on";
   });
 
+  const [innerGlowIntensity, setInnerGlowIntensity] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-inner-glow-intensity") || "1.4",
+    );
+  });
+
   const [gradientBorder, setGradientBorder] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-gradient-border") === "on";
   });
@@ -353,6 +359,7 @@ export function useTheme() {
     setPulseSpeed(4);
     setPulseIntensity(1.5);
     setInnerGlow(false);
+    setInnerGlowIntensity(1.4);
     setGradientBorder(false);
     setCardGlow(false);
     setGlowColor("match");
@@ -458,6 +465,17 @@ export function useTheme() {
     }
     localStorage.setItem("dashboard-inner-glow", innerGlow ? "on" : "");
   }, [innerGlow]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--inner-glow-intensity",
+      String(innerGlowIntensity),
+    );
+    localStorage.setItem(
+      "dashboard-inner-glow-intensity",
+      String(innerGlowIntensity),
+    );
+  }, [innerGlowIntensity]);
 
   useEffect(() => {
     if (gradientBorder) {
@@ -568,6 +586,8 @@ export function useTheme() {
     setPulseIntensity,
     innerGlow,
     setInnerGlow,
+    innerGlowIntensity,
+    setInnerGlowIntensity,
     gradientBorder,
     setGradientBorder,
     cardGlow,
