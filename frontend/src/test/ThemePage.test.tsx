@@ -190,7 +190,11 @@ describe("ThemePage slider accessibility", () => {
 
 describe("ThemePage Inner Glow intensity slider (REQ-FX-31)", () => {
   it("Inner Glow Intensity slider hidden when innerGlow is off", () => {
-    render(<ThemePage {...makeProps({ innerGlow: false, onInnerGlowChange: vi.fn() })} />);
+    render(
+      <ThemePage
+        {...makeProps({ innerGlow: false, onInnerGlowChange: vi.fn() })}
+      />,
+    );
     expect(screen.queryByText("Inner Glow Intensity")).not.toBeInTheDocument();
   });
 
@@ -220,7 +224,9 @@ describe("ThemePage Inner Glow intensity slider (REQ-FX-31)", () => {
         })}
       />,
     );
-    const slider = screen.getByRole("slider", { name: /inner glow intensity/i });
+    const slider = screen.getByRole("slider", {
+      name: /inner glow intensity/i,
+    });
     fireEvent.change(slider, { target: { value: "2" } });
     expect(onInnerGlowIntensityChange).toHaveBeenCalledWith(2);
   });
@@ -228,7 +234,14 @@ describe("ThemePage Inner Glow intensity slider (REQ-FX-31)", () => {
 
 describe("ThemePage Gradient Border speed slider (REQ-FX-51)", () => {
   it("Border Speed slider hidden when gradientBorder is off", () => {
-    render(<ThemePage {...makeProps({ gradientBorder: false, onGradientBorderChange: vi.fn() })} />);
+    render(
+      <ThemePage
+        {...makeProps({
+          gradientBorder: false,
+          onGradientBorderChange: vi.fn(),
+        })}
+      />,
+    );
     expect(screen.queryByText("Border Speed")).not.toBeInTheDocument();
   });
 
@@ -343,18 +356,32 @@ describe("ThemePage per-element preview chart (REQ-AM-71)", () => {
 describe("ThemePage mode-dependency hints", () => {
   it("shows Effect Controls mode hint when accentMode is solid", () => {
     render(<ThemePage {...makeProps({ accentMode: "solid" })} />);
-    expect(
-      screen.getByText(/Active in Sheen/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Active in Sheen/i)).toBeInTheDocument();
   });
 
   it("does not show Effect Controls mode hint when accentMode is sheen", () => {
-    render(<ThemePage {...makeProps({ accentMode: "sheen", fxSpeed: 12, onFxSpeedChange: vi.fn() })} />);
+    render(
+      <ThemePage
+        {...makeProps({
+          accentMode: "sheen",
+          fxSpeed: 12,
+          onFxSpeedChange: vi.fn(),
+        })}
+      />,
+    );
     expect(screen.queryByText(/Active in Sheen/i)).not.toBeInTheDocument();
   });
 
   it("does not show Effect Controls mode hint when accentMode is spectrum", () => {
-    render(<ThemePage {...makeProps({ accentMode: "spectrum", fxSpread: 34, onFxSpreadChange: vi.fn() })} />);
+    render(
+      <ThemePage
+        {...makeProps({
+          accentMode: "spectrum",
+          fxSpread: 34,
+          onFxSpreadChange: vi.fn(),
+        })}
+      />,
+    );
     expect(screen.queryByText(/Active in Sheen/i)).not.toBeInTheDocument();
   });
 });

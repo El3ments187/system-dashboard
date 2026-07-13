@@ -213,63 +213,73 @@ export default function App() {
                 activePage={activePage}
                 onPageChange={setActivePage}
               />
-              <div id="main-content" tabIndex={-1} style={{ outline: "none", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                id="main-content"
+                tabIndex={-1}
+                style={{
+                  outline: "none",
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
                 <PanelErrorBoundary panelName="App">
-                {activePage === "theme" ? (
-                  <ThemePage
-                    accent={accent}
-                    onAccentChange={setAccent}
-                    accentMode={accentMode}
-                    onAccentModeChange={setAccentMode}
-                    bg={bg}
-                    onBgChange={setBg}
-                    onReset={resetTheme}
-                    glow={glow}
-                    onGlowChange={setGlow}
-                    fxSpeed={fxSpeed}
-                    onFxSpeedChange={setFxSpeed}
-                    fxSpread={fxSpread}
-                    onFxSpreadChange={setFxSpread}
-                    fxDepth={fxDepth}
-                    onFxDepthChange={setFxDepth}
-                    glowIntensity={glowIntensity}
-                    onGlowIntensityChange={setGlowIntensity}
-                    pulse={pulse}
-                    onPulseChange={setPulse}
-                    pulseSpeed={pulseSpeed}
-                    onPulseSpeedChange={setPulseSpeed}
-                    pulseIntensity={pulseIntensity}
-                    onPulseIntensityChange={setPulseIntensity}
-                    innerGlow={innerGlow}
-                    onInnerGlowChange={setInnerGlow}
-                    innerGlowIntensity={innerGlowIntensity}
-                    onInnerGlowIntensityChange={setInnerGlowIntensity}
-                    gradientBorder={gradientBorder}
-                    onGradientBorderChange={setGradientBorder}
-                    gradientBorderSpeed={gradientBorderSpeed}
-                    onGradientBorderSpeedChange={setGradientBorderSpeed}
-                    cardGlow={cardGlow}
-                    onCardGlowChange={setCardGlow}
-                    glowColor={glowColor}
-                    onGlowColorChange={setGlowColor}
-                    glowCustom={glowCustom}
-                    onGlowCustomChange={setGlowCustom}
-                    breathe={breathe}
-                    onBreatheChange={setBreathe}
-                    breatheSpeed={breatheSpeed}
-                    onBreatheSpeedChange={setBreatheSpeed}
-                    breatheIntensity={breatheIntensity}
-                    onBreatheIntensityChange={setBreatheIntensity}
-                    surge={surge}
-                    onSurgeChange={setSurge}
-                    surgePeriod={surgePeriod}
-                    onSurgePeriodChange={setSurgePeriod}
-                    surgeIntensity={surgeIntensity}
-                    onSurgeIntensityChange={setSurgeIntensity}
-                  />
-                ) : (
-                  <PageContent activePage={activePage} accent={current} />
-                )}
+                  {activePage === "theme" ? (
+                    <ThemePage
+                      accent={accent}
+                      onAccentChange={setAccent}
+                      accentMode={accentMode}
+                      onAccentModeChange={setAccentMode}
+                      bg={bg}
+                      onBgChange={setBg}
+                      onReset={resetTheme}
+                      glow={glow}
+                      onGlowChange={setGlow}
+                      fxSpeed={fxSpeed}
+                      onFxSpeedChange={setFxSpeed}
+                      fxSpread={fxSpread}
+                      onFxSpreadChange={setFxSpread}
+                      fxDepth={fxDepth}
+                      onFxDepthChange={setFxDepth}
+                      glowIntensity={glowIntensity}
+                      onGlowIntensityChange={setGlowIntensity}
+                      pulse={pulse}
+                      onPulseChange={setPulse}
+                      pulseSpeed={pulseSpeed}
+                      onPulseSpeedChange={setPulseSpeed}
+                      pulseIntensity={pulseIntensity}
+                      onPulseIntensityChange={setPulseIntensity}
+                      innerGlow={innerGlow}
+                      onInnerGlowChange={setInnerGlow}
+                      innerGlowIntensity={innerGlowIntensity}
+                      onInnerGlowIntensityChange={setInnerGlowIntensity}
+                      gradientBorder={gradientBorder}
+                      onGradientBorderChange={setGradientBorder}
+                      gradientBorderSpeed={gradientBorderSpeed}
+                      onGradientBorderSpeedChange={setGradientBorderSpeed}
+                      cardGlow={cardGlow}
+                      onCardGlowChange={setCardGlow}
+                      glowColor={glowColor}
+                      onGlowColorChange={setGlowColor}
+                      glowCustom={glowCustom}
+                      onGlowCustomChange={setGlowCustom}
+                      breathe={breathe}
+                      onBreatheChange={setBreathe}
+                      breatheSpeed={breatheSpeed}
+                      onBreatheSpeedChange={setBreatheSpeed}
+                      breatheIntensity={breatheIntensity}
+                      onBreatheIntensityChange={setBreatheIntensity}
+                      surge={surge}
+                      onSurgeChange={setSurge}
+                      surgePeriod={surgePeriod}
+                      onSurgePeriodChange={setSurgePeriod}
+                      surgeIntensity={surgeIntensity}
+                      onSurgeIntensityChange={setSurgeIntensity}
+                    />
+                  ) : (
+                    <PageContent activePage={activePage} accent={current} />
+                  )}
                 </PanelErrorBoundary>
               </div>
             </div>

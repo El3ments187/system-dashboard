@@ -188,7 +188,10 @@ function ThemePreview() {
       </div>
 
       {/* History chart — per-element series, each data-accent-el gets its own hue */}
-      <div className="preview-chart" style={{ position: "relative", height: 56 }}>
+      <div
+        className="preview-chart"
+        style={{ position: "relative", height: 56 }}
+      >
         {CHART_SERIES.map((series, i) => (
           <div
             key={i}
