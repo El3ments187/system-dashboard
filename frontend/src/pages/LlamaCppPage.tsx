@@ -6,7 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { useMetricsContext } from "../context/MetricsContext";
-import LogConsole from "../components/LogConsole";
+import { LogConsole } from "../components/LogConsole";
 import Sparkline from "../components/shared/Sparkline";
 import UpdateOutputModal from "../components/UpdateOutputModal";
 import { useLlamaCppManagement } from "../hooks/useLlamaCppManagement";

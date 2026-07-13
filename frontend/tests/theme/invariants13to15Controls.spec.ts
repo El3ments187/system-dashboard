@@ -20,10 +20,7 @@ async function getLS(page: Page, key: string): Promise<string | null> {
 }
 
 async function getHtmlAttr(page: Page, attr: string): Promise<string | null> {
-  return page.evaluate(
-    (a) => document.documentElement.getAttribute(a),
-    attr,
-  );
+  return page.evaluate((a) => document.documentElement.getAttribute(a), attr);
 }
 
 async function getCssVar(page: Page, name: string): Promise<string> {
@@ -42,7 +39,9 @@ test("Invariant 13: accent mode button updates data-accent-mode and persists", a
   await goToTheme(page);
 
   // Find and click the "rainbow-wave" mode option
-  const rainbowBtn = page.locator(".mode-row", { hasText: /rainbow wave/i }).first();
+  const rainbowBtn = page
+    .locator(".mode-row", { hasText: /rainbow wave/i })
+    .first();
   await rainbowBtn.click();
   await page.waitForTimeout(200);
 
@@ -89,7 +88,9 @@ test("Invariant 13: Neon Glow toggle sets data-glow and persists", async ({
   // Restore on reload
   await page.reload();
   await page.waitForSelector(".theme-page", { timeout: 8000 });
-  const restoredRow = page.locator(".mode-row", { hasText: /neon glow/i }).first();
+  const restoredRow = page
+    .locator(".mode-row", { hasText: /neon glow/i })
+    .first();
   const restoredActive = await restoredRow.evaluate((el) =>
     el.classList.contains("active"),
   );
@@ -137,11 +138,17 @@ test("Invariant 13: Glow Intensity slider updates --glow-intensity CSS var and p
   await page.waitForTimeout(200);
 
   // Find the glow intensity slider
-  const slider = page.locator('input[type="range"]').filter({ hasText: "" }).first();
+  const slider = page
+    .locator('input[type="range"]')
+    .filter({ hasText: "" })
+    .first();
 
   // Sliders exist on the page - find by proximity to Glow Intensity label
-  const glowIntensitySlider = page.locator(".effect-row-group").filter({ hasText: /glow intensity/i })
-    .locator('input[type="range"]').first();
+  const glowIntensitySlider = page
+    .locator(".effect-row-group")
+    .filter({ hasText: /glow intensity/i })
+    .locator('input[type="range"]')
+    .first();
 
   if ((await glowIntensitySlider.count()) === 0) {
     // Skip if slider not found - may need glow enabled
@@ -229,7 +236,9 @@ test("Invariant 14: Pulse speed slider hidden when pulse is off", async ({
   }
 
   // Pulse speed controls shouldn't be visible
-  const pulseGroup = page.locator(".effect-row-group").filter({ hasText: /pulse speed/i });
+  const pulseGroup = page
+    .locator(".effect-row-group")
+    .filter({ hasText: /pulse speed/i });
   await expect(pulseGroup).not.toBeVisible();
 });
 
@@ -240,8 +249,7 @@ test("Invariant 15: live preview shows accent-glow-target elements (preview upda
 }) => {
   await goToTheme(page);
 
-  // The theme preview section should contain live preview bars with accent styling
-  const previewBars = page.locator(".preview-bar-fill, .theme-live-preview-bar");
+  const previewBars = page.locator(".card-progress-bar.accent-glow-target");
   const count = await previewBars.count();
   expect(count, "Theme page should have live preview bars").toBeGreaterThan(0);
 });
@@ -252,7 +260,7 @@ test("Invariant 15: live preview bar has accent-glow-target class", async ({
   await goToTheme(page);
 
   const previewAccentTargets = page.locator(
-    ".preview-bar-fill.accent-glow-target, .theme-live-preview-bar.accent-glow-target",
+    ".card-progress-bar.accent-glow-target",
   );
   const count = await previewAccentTargets.count();
   expect(
@@ -287,8 +295,10 @@ test("Invariant 13: Custom glow color selection persists across reload", async (
   await customBtn.click();
   await page.waitForTimeout(200);
 
-  // Pick Cyan swatch
-  const cyanBtn = page.getByRole("button", { name: "Cyan" }).first();
+  // Pick Cyan swatch (scope to swatches panel to avoid matching accent color picker)
+  const cyanBtn = page
+    .getByTestId("glow-custom-swatches")
+    .getByRole("button", { name: "Cyan" });
   await cyanBtn.click();
   await page.waitForTimeout(300);
 

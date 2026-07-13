@@ -19,7 +19,7 @@ import type { AiMetrics, ProfileResponse } from "../types/metrics";
 // ─── Module mocks ─────────────────────────────────────────────────────
 
 vi.mock("../components/LogConsole", () => ({
-  default: () => <div data-testid="log-console" />,
+  LogConsole: () => <div data-testid="log-console" />,
 }));
 
 vi.mock("../components/UpdateOutputModal", () => ({

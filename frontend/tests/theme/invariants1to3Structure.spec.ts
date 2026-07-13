@@ -24,14 +24,17 @@ const PAGES = [
 async function waitForIndices(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      // Exclude "inherit" elements — the indexer intentionally omits --el-index on them
+      // so they cascade from their parent card's value.
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+      ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
       return (
         els.length > 0 &&
-        Array.from(els).every(
-          (el) => el.style.getPropertyValue("--el-index") !== "",
-        )
+        els.every((el) => el.style.getPropertyValue("--el-index") !== "")
       );
     },
+    null,
     { timeout: 8000 },
   );
 }
@@ -48,7 +51,9 @@ for (const { name, path } of PAGES) {
     }) => {
       // Accept all spine class variants: card-accent-spine (shared Card), accent-spine (LlamaCpp custom), ov-spine (Overview)
       const count = await page
-        .locator(".card-accent-spine.accent-glow-target, .accent-spine.accent-glow-target, .ov-spine.accent-glow-target")
+        .locator(
+          ".card-accent-spine.accent-glow-target, .accent-spine.accent-glow-target, .ov-spine.accent-glow-target",
+        )
         .count();
       expect(
         count,
@@ -70,7 +75,9 @@ for (const { name, path } of PAGES) {
       page,
     }) => {
       const spines = await page
-        .locator(".card-accent-spine.accent-glow-target, .accent-spine.accent-glow-target, .ov-spine.accent-glow-target")
+        .locator(
+          ".card-accent-spine.accent-glow-target, .accent-spine.accent-glow-target, .ov-spine.accent-glow-target",
+        )
         .count();
       const accentEls = await page.locator("[data-accent-el]").count();
       // Spines should be <= accent elements (some accent-els may be bars, not cards)
@@ -92,7 +99,7 @@ for (const { name, path } of PAGES) {
       const result = await page.evaluate(() => {
         const els = Array.from(
           document.querySelectorAll<HTMLElement>("[data-accent-el]"),
-        );
+        ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
         const indices = els.map((el) =>
           parseInt(el.style.getPropertyValue("--el-index"), 10),
         );
@@ -101,9 +108,17 @@ for (const { name, path } of PAGES) {
           (i, pos) => !isNaN(i) && indices.indexOf(i) !== pos,
         );
         // Check sequential: sorted indices should be 0,1,2,...n-1
-        const sorted = [...indices].filter((i) => !isNaN(i)).sort((a, b) => a - b);
+        const sorted = [...indices]
+          .filter((i) => !isNaN(i))
+          .sort((a, b) => a - b);
         const isSequential = sorted.every((v, i) => v === i);
-        return { total: els.length, missing, duplicates, indices, isSequential };
+        return {
+          total: els.length,
+          missing,
+          duplicates,
+          indices,
+          isSequential,
+        };
       });
 
       expect(

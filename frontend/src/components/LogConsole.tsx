@@ -952,5 +952,3 @@ function fallbackCopy(text: string) {
   document.execCommand("copy");
   document.body.removeChild(ta);
 }
-
-export default LogConsole;

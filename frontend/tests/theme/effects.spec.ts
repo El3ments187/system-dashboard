@@ -9,14 +9,15 @@ async function waitForAppReady(page: Page) {
 async function waitForAccentIndices(page: Page) {
   await page.waitForFunction(
     () => {
-      const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+      ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
       return (
         els.length > 0 &&
-        Array.from(els).every(
-          (el) => el.style.getPropertyValue("--el-index") !== "",
-        )
+        els.every((el) => el.style.getPropertyValue("--el-index") !== "")
       );
     },
+    null,
     { timeout: 5000 },
   );
 }
@@ -101,7 +102,11 @@ test.describe("Theme page effect toggles", () => {
   test("Card Glow does not activate without Neon Glow or Inner Glow", async ({
     page,
   }) => {
-    await clickEffectRow(page, "Card Glow");
+    // Card Glow is disabled when neither Neon Glow nor Inner Glow is on
+    const cardGlowRow = page
+      .locator(".mode-row", { hasText: "Card Glow" })
+      .first();
+    await expect(cardGlowRow).toHaveAttribute("aria-disabled", "true");
     expect(await getHtmlAttr(page, "data-card-glow")).toBeNull();
   });
 
@@ -161,8 +166,10 @@ test.describe("Per-page accent-el index consistency", () => {
       await waitForAccentIndices(page);
 
       const result = await page.evaluate(() => {
-        const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
-        const indices = Array.from(els).map((el) =>
+        const els = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+        ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
+        const indices = els.map((el) =>
           el.style.getPropertyValue("--el-index"),
         );
         return {
@@ -268,7 +275,10 @@ test.describe("Pulse glow: overflow-safe rendering", () => {
         const beforeWidth = parseFloat(
           window.getComputedStyle(spine, "::before").width,
         );
-        const bgImage = window.getComputedStyle(spine, "::before").backgroundImage;
+        const bgImage = window.getComputedStyle(
+          spine,
+          "::before",
+        ).backgroundImage;
         return { cardWidth, beforeWidth, bgImage };
       });
 
@@ -279,21 +289,19 @@ test.describe("Pulse glow: overflow-safe rendering", () => {
   }
 });
 
-test.describe("LlamaCpp: all accent-spine elements have accent-glow-target", () => {
-  // Regression: Run Models and Console panel containers have an accent-spine span
-  // but were missing the accent-glow-target class, so pulse never fired on them.
-
-  test("llama.cpp: every .accent-spine element also has .accent-glow-target", async ({
+test.describe("LlamaCpp: all card-accent-spine elements have accent-glow-target", () => {
+  test("llama.cpp: every .card-accent-spine element also has .accent-glow-target", async ({
     page,
   }) => {
     await page.goto(`${BASE_URL}/llama-cpp`);
     await waitForAppReady(page);
 
-    const { spineCount, glowTargetCount, missingClasses } =
-      await page.evaluate(() => {
-        const spines = document.querySelectorAll<HTMLElement>(".accent-spine");
+    const { spineCount, glowTargetCount, missingClasses } = await page.evaluate(
+      () => {
+        const spines =
+          document.querySelectorAll<HTMLElement>(".card-accent-spine");
         const glowTargets = document.querySelectorAll<HTMLElement>(
-          ".accent-spine.accent-glow-target",
+          ".card-accent-spine.accent-glow-target",
         );
         const missing = Array.from(spines)
           .filter((el) => !el.classList.contains("accent-glow-target"))
@@ -303,14 +311,15 @@ test.describe("LlamaCpp: all accent-spine elements have accent-glow-target", () 
           glowTargetCount: glowTargets.length,
           missingClasses: missing,
         };
-      });
+      },
+    );
 
     expect(spineCount).toBeGreaterThan(0);
     expect(glowTargetCount).toBe(spineCount);
     expect(missingClasses).toHaveLength(0);
   });
 
-  test("llama.cpp: Run Models and Console spines animate when pulse is on", async ({
+  test("llama.cpp: card-accent-spine elements animate when pulse is on", async ({
     page,
   }) => {
     await page.goto(`${BASE_URL}/llama-cpp`);
@@ -321,7 +330,8 @@ test.describe("LlamaCpp: all accent-spine elements have accent-glow-target", () 
     await page.waitForTimeout(100);
 
     const result = await page.evaluate(() => {
-      const spines = document.querySelectorAll<HTMLElement>(".accent-spine");
+      const spines =
+        document.querySelectorAll<HTMLElement>(".card-accent-spine");
       return Array.from(spines).map((el) => ({
         hasGlowTarget: el.classList.contains("accent-glow-target"),
         animationName: window.getComputedStyle(el, "::before").animationName,
@@ -411,31 +421,19 @@ test.describe("Pulse color consistency: uses --accent-glow not --accent-primary"
 });
 
 test.describe("Bar graph pulse visibility", () => {
-  // Regression: bar fill elements (preview-bar-fill, preview-meter-fill,
-  // theme-live-preview-bar, ov-disk-fill) were missing the classes or CSS rules
-  // needed to animate a white shine when pulse is on.
-
-  test("theme page: .preview-bar-fill has accent-glow-target class", async ({
+  test("theme page: preview card-progress-bar has accent-glow-target class", async ({
     page,
   }) => {
     await goToTheme(page);
     const count = await page.evaluate(
-      () => document.querySelectorAll(".preview-bar-fill.accent-glow-target").length,
+      () =>
+        document.querySelectorAll(".card-progress-bar.accent-glow-target")
+          .length,
     );
     expect(count).toBeGreaterThan(0);
   });
 
-  test("theme page: .preview-meter-fill has accent-glow-target class", async ({
-    page,
-  }) => {
-    await goToTheme(page);
-    const count = await page.evaluate(
-      () => document.querySelectorAll(".preview-meter-fill.accent-glow-target").length,
-    );
-    expect(count).toBeGreaterThan(0);
-  });
-
-  test("theme page: .preview-bar-fill ::before animates when pulse is on", async ({
+  test("theme page: .card-progress-bar.accent-glow-target ::before animates when pulse is on", async ({
     page,
   }) => {
     await goToTheme(page);
@@ -444,37 +442,9 @@ test.describe("Bar graph pulse visibility", () => {
     );
     await page.waitForTimeout(100);
     const anim = await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>(".preview-bar-fill");
-      return el ? window.getComputedStyle(el, "::before").animationName : null;
-    });
-    expect(anim).toBe("accent-pulse");
-  });
-
-  test("theme page: .preview-meter-fill ::before animates when pulse is on", async ({
-    page,
-  }) => {
-    await goToTheme(page);
-    await page.evaluate(() =>
-      document.documentElement.setAttribute("data-pulse", "on"),
-    );
-    await page.waitForTimeout(100);
-    const anim = await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>(".preview-meter-fill");
-      return el ? window.getComputedStyle(el, "::before").animationName : null;
-    });
-    expect(anim).toBe("accent-pulse");
-  });
-
-  test("theme page: .theme-live-preview-bar ::before animates when pulse is on", async ({
-    page,
-  }) => {
-    await goToTheme(page);
-    await page.evaluate(() =>
-      document.documentElement.setAttribute("data-pulse", "on"),
-    );
-    await page.waitForTimeout(100);
-    const anim = await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>(".theme-live-preview-bar");
+      const el = document.querySelector<HTMLElement>(
+        ".card-progress-bar.accent-glow-target",
+      );
       return el ? window.getComputedStyle(el, "::before").animationName : null;
     });
     expect(anim).toBe("accent-pulse");

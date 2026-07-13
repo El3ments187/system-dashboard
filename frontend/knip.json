@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/services/api.ts",
+    "src/types/metrics.ts",
+    "src/components/shared/CardComponents.tsx",
+    "src/components/common/TooltipProvider.tsx",
+    "src/data/metricDescriptions.ts",
+    "src/hooks/useTheme.ts",
+    "src/hooks/useMultiMetrics.ts",
+    "src/test/**/*.{ts,tsx}",
+    "src/pages/__tests__/**/*.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": ["tests/**", "playwright.config.ts", "playwright.slow.config.ts"],
+  "ignoreDependencies": [
+    "puppeteer",
+    "@testing-library/user-event",
+    "depcheck",
+    "eslint-plugin-import",
+    "prettier"
+  ],
+  "ignoreBinaries": ["playwright"],
+  "ignoreExportsUsedInFile": true
+}

@@ -13,7 +13,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:fast": "playwright test --config=playwright.config.ts",
-    "test:slow": "playwright test --config=playwright.slow.config.ts"
+    "test:slow": "playwright test --config=playwright.slow.config.ts",
+    "check:dead": "knip"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",

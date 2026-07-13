@@ -176,7 +176,10 @@ function ThemePreview() {
               >
                 {card.sub}
               </span>
-              <ProgressBar percent={card.value} />
+              <ProgressBar
+                percent={card.value}
+                barClassName="accent-glow-target"
+              />
             </div>
           </CardShell>
         ))}
@@ -193,7 +196,11 @@ function ThemePreview() {
           <div key={m.label} className="preview-meter-row">
             <span className="preview-meter-label">{m.label}</span>
             <div style={{ flex: 1 }}>
-              <ProgressBar percent={m.value} variant="compact" />
+              <ProgressBar
+                percent={m.value}
+                variant="compact"
+                barClassName="accent-glow-target"
+              />
             </div>
             <span className="preview-meter-value">{m.value}%</span>
           </div>

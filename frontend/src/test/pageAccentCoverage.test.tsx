@@ -32,7 +32,7 @@ vi.mock("../services/api", () => ({
   getRepoInfo: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("../components/LogConsole", () => ({ default: () => null }));
+vi.mock("../components/LogConsole", () => ({ LogConsole: () => null }));
 vi.mock("../components/UpdateOutputModal", () => ({ default: () => null }));
 vi.mock("../components/DirectoryBrowserModal", () => ({ default: () => null }));
 vi.mock("../components/EditUpdateScriptModal", () => ({ default: () => null }));
@@ -97,7 +97,11 @@ const mockCtx = {
   gpuTemperatureHistory: null,
   gpuVramUtilHistory: null,
   perCoreCpuHistories: [],
-  perGpuHistories: { utilHistories: [], tempHistories: [], vramUtilHistories: [] },
+  perGpuHistories: {
+    utilHistories: [],
+    tempHistories: [],
+    vramUtilHistories: [],
+  },
   cpuCurrentFrequency: 3200,
   cpuMaxFrequency: 4200,
   cpuLoading: false,
@@ -151,21 +155,24 @@ describe("pageAccentCoverage — canonical spine on every non-AI page", () => {
   it("CpuPage: renders at least one .card-accent-spine.accent-glow-target", () => {
     const { container } = renderWithCtx(<CpuPage accent={accent} />);
     expect(
-      container.querySelectorAll(".card-accent-spine.accent-glow-target").length,
+      container.querySelectorAll(".card-accent-spine.accent-glow-target")
+        .length,
     ).toBeGreaterThan(0);
   });
 
   it("GpuPage: renders at least one .card-accent-spine.accent-glow-target", () => {
     const { container } = renderWithCtx(<GpuPage accent={accent} />);
     expect(
-      container.querySelectorAll(".card-accent-spine.accent-glow-target").length,
+      container.querySelectorAll(".card-accent-spine.accent-glow-target")
+        .length,
     ).toBeGreaterThan(0);
   });
 
   it("OverviewPage: renders at least one .card-accent-spine.accent-glow-target", () => {
     const { container } = renderWithCtx(<OverviewPage accent={accent} />);
     expect(
-      container.querySelectorAll(".card-accent-spine.accent-glow-target").length,
+      container.querySelectorAll(".card-accent-spine.accent-glow-target")
+        .length,
     ).toBeGreaterThan(0);
   });
 
@@ -173,7 +180,8 @@ describe("pageAccentCoverage — canonical spine on every non-AI page", () => {
     const { container } = renderWithCtx(<SettingsPage accent={accent} />);
     await waitFor(() => {
       expect(
-        container.querySelectorAll(".card-accent-spine.accent-glow-target").length,
+        container.querySelectorAll(".card-accent-spine.accent-glow-target")
+          .length,
       ).toBeGreaterThan(0);
     });
   });
@@ -181,13 +189,16 @@ describe("pageAccentCoverage — canonical spine on every non-AI page", () => {
   it("LlamaCppPage: renders at least one .card-accent-spine.accent-glow-target", () => {
     const { container } = renderWithCtx(<LlamaCppPage />);
     expect(
-      container.querySelectorAll(".card-accent-spine.accent-glow-target").length,
+      container.querySelectorAll(".card-accent-spine.accent-glow-target")
+        .length,
     ).toBeGreaterThan(0);
   });
 
   it("every spine has .bright-breathe and .bright-surge children (CpuPage)", () => {
     const { container } = renderWithCtx(<CpuPage accent={accent} />);
-    const spines = container.querySelectorAll(".card-accent-spine.accent-glow-target");
+    const spines = container.querySelectorAll(
+      ".card-accent-spine.accent-glow-target",
+    );
     expect(spines.length).toBeGreaterThan(0);
     spines.forEach((spine) => {
       expect(spine.querySelector(".bright-breathe")).not.toBeNull();
@@ -197,7 +208,9 @@ describe("pageAccentCoverage — canonical spine on every non-AI page", () => {
 
   it("every spine is inside a [data-accent-el] element (GpuPage)", () => {
     const { container } = renderWithCtx(<GpuPage accent={accent} />);
-    const spines = container.querySelectorAll(".card-accent-spine.accent-glow-target");
+    const spines = container.querySelectorAll(
+      ".card-accent-spine.accent-glow-target",
+    );
     expect(spines.length).toBeGreaterThan(0);
     spines.forEach((spine) => {
       expect(spine.closest("[data-accent-el]")).not.toBeNull();

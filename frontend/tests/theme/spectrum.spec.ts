@@ -11,14 +11,15 @@ async function waitForAppReady(page: Page) {
 async function waitForAccentIndices(page: Page) {
   await page.waitForFunction(
     () => {
-      const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+      ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
       return (
         els.length > 0 &&
-        Array.from(els).every(
-          (el) => el.style.getPropertyValue("--el-index") !== "",
-        )
+        els.every((el) => el.style.getPropertyValue("--el-index") !== "")
       );
     },
+    null,
     { timeout: 5000 },
   );
 }
@@ -168,8 +169,10 @@ test.describe("Spectrum Per-Element: --el-index assignment", () => {
     await waitForAccentIndices(page);
 
     const result = await page.evaluate(() => {
-      const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
-      const indices = Array.from(els)
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+      ).filter((el) => el.getAttribute("data-accent-el") !== "inherit");
+      const indices = els
         .map((el) => el.style.getPropertyValue("--el-index"))
         .filter((i) => i !== "");
       return {
