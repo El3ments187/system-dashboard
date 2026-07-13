@@ -314,6 +314,32 @@ describe("ThemePage Card Glow independent of Neon/Inner Glow (REQ-FX-41)", () =>
   });
 });
 
+describe("ThemePage per-element preview chart (REQ-AM-71)", () => {
+  it("preview chart contains multiple data-accent-el series elements", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const chart = container.querySelector(".preview-chart");
+    expect(chart).toBeTruthy();
+    const series = chart!.querySelectorAll("[data-accent-el]");
+    expect(series.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("each chart series is a distinct element with data-accent-el", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const chart = container.querySelector(".preview-chart");
+    const series = chart!.querySelectorAll("[data-accent-el]");
+    series.forEach((el) => {
+      expect(el).toHaveAttribute("data-accent-el");
+    });
+  });
+
+  it("each chart series contains an SVG sparkline", () => {
+    const { container } = render(<ThemePage {...makeProps()} />);
+    const chart = container.querySelector(".preview-chart");
+    const svgs = chart!.querySelectorAll("svg");
+    expect(svgs.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe("ThemePage mode-dependency hints", () => {
   it("shows Effect Controls mode hint when accentMode is solid", () => {
     render(<ThemePage {...makeProps({ accentMode: "solid" })} />);

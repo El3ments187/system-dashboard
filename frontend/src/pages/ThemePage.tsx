@@ -111,12 +111,14 @@ function SliderRow({
   );
 }
 
-const CHART_VALS = [40, 65, 50, 80, 60, 90, 70, 55, 75, 45, 85, 60];
-const CHART_HISTORY: MetricHistoryPoint[] = CHART_VALS.map((value, slot) => ({
-  slot,
-  timestamp: new Date(0),
-  value,
-}));
+const toHistory = (vals: number[]): MetricHistoryPoint[] =>
+  vals.map((value, slot) => ({ slot, timestamp: new Date(0), value }));
+
+const CHART_SERIES: MetricHistoryPoint[][] = [
+  toHistory([60, 72, 58, 80, 65, 88, 70, 62, 78, 55, 82, 65]),
+  toHistory([28, 35, 22, 40, 30, 45, 38, 25, 42, 20, 36, 32]),
+  toHistory([50, 60, 48, 65, 55, 70, 58, 52, 62, 45, 68, 57]),
+];
 
 const PREVIEW_CARDS = [
   {
@@ -185,9 +187,17 @@ function ThemePreview() {
         ))}
       </div>
 
-      {/* History chart */}
-      <div className="preview-chart">
-        <Sparkline data={CHART_HISTORY} width="100%" height={56} />
+      {/* History chart — per-element series, each data-accent-el gets its own hue */}
+      <div className="preview-chart" style={{ position: "relative", height: 56 }}>
+        {CHART_SERIES.map((series, i) => (
+          <div
+            key={i}
+            data-accent-el=""
+            style={{ position: "absolute", inset: 0 }}
+          >
+            <Sparkline data={series} width="100%" height={56} />
+          </div>
+        ))}
       </div>
 
       {/* Horizontal meter bars */}
