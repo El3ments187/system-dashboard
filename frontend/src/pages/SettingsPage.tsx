@@ -167,7 +167,8 @@ export default function SettingsPage({}: SettingsPageProps) {
       docSettings.buildNotesUrl.trim(),
     );
     setDocSaveState("success");
-    setTimeout(() => setDocSaveState("idle"), 2000);
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => setDocSaveState("idle"), 2000);
   };
 
   const handleSelectWorkingDir = (path: string) => {
@@ -194,6 +195,14 @@ export default function SettingsPage({}: SettingsPageProps) {
     localStorage.setItem("llama_cpp_latest_version_cmd", cmd);
     setDocSettings((prev) => ({ ...prev, latestVersionCmd: cmd }));
   };
+
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    },
+    [],
+  );
 
   const initialLlamaDirRef = useRef(llamaDir);
   const initialScanDirRef = useRef(scanDir);

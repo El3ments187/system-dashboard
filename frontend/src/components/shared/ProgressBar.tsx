@@ -17,7 +17,8 @@ export default function ProgressBar({
 
   const containerClass =
     variant === "compact" ? "card-progress progress-compact" : "card-progress";
-  const barClass = `card-progress-bar accent-fill progress-bar-${state}${barClassName ? ` ${barClassName}` : ""}`;
+  const extraClass = barClassName ? ` ${barClassName}` : "";
+  const barClass = `card-progress-bar accent-fill progress-bar-${state}${extraClass}`;
 
   const isGlowTarget = barClassName?.includes("accent-glow-target");
 

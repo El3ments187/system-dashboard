@@ -10,6 +10,11 @@ import {
 import { ChartFrame } from "../components/shared/CardComponents";
 import { getChartChromeColors } from "../utils/chartColors";
 
+function fillOpacityFor(isSecondary: boolean, i: number): number {
+  if (!isSecondary) return 0.12;
+  return i === 1 ? 0.2 : 0.3;
+}
+
 interface ChartProps {
   accent: { color: string; glow: string };
   title: string;
@@ -180,7 +185,6 @@ export default function MetricChart({
     return result;
   }, [data, dataKeys, dualData]);
 
-
   const seriesLabels: Record<string, string> = {
     memory: "Memory Utilization (%)",
     swap: "Swap Utilization (%)",
@@ -290,7 +294,7 @@ export default function MetricChart({
             fill={isSecondary ? `${keyColor}20` : "var(--accent-primary)"}
             strokeWidth={2}
             strokeDasharray={i === 1 ? SECONDARY_LINE_DASH : "0"}
-            fillOpacity={isSecondary ? (i === 1 ? 0.2 : 0.3) : 0.12}
+            fillOpacity={fillOpacityFor(isSecondary, i)}
             isAnimationActive={false}
             animationDuration={0}
             activeDot={{
@@ -467,7 +471,10 @@ export default function MetricChart({
                     width: 10,
                     height: 3,
                     borderRadius: 2,
-                    background: i === 0 ? "var(--accent-primary)" : seriesColors[i % seriesColors.length],
+                    background:
+                      i === 0
+                        ? "var(--accent-primary)"
+                        : seriesColors[i % seriesColors.length],
                   }}
                 />
               )}

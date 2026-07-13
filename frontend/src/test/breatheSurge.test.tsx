@@ -138,6 +138,6 @@ describe("ThemePage bright-breathe / bright-surge children in DOM", () => {
   it("preview no longer contains bespoke preview-bar-fill elements", () => {
     const { container } = render(<ThemePage {...makeProps()} />);
     const oldBars = container.querySelectorAll(".preview-bar-fill");
-    expect(oldBars.length).toBe(0);
+    expect(oldBars).toHaveLength(0);
   });
 });

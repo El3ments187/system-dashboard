@@ -39,7 +39,8 @@ describe("useAccentIndexer", () => {
       document.body.appendChild(el);
     });
     renderHook(() => useAccentIndexer());
-    const [a, b, c] = document.querySelectorAll<HTMLElement>("[data-accent-el]");
+    const [a, b, c] =
+      document.querySelectorAll<HTMLElement>("[data-accent-el]");
     expect(a.style.getPropertyValue("--el-index")).toBe("0");
     expect(b.style.getPropertyValue("--el-index")).toBe(""); // not set
     expect(c.style.getPropertyValue("--el-index")).toBe("1"); // counter skipped inherit
@@ -49,7 +50,7 @@ describe("useAccentIndexer", () => {
 
   it("does NOT schedule rAF when a mutation contains no [data-accent-el] nodes", async () => {
     let rafScheduled = false;
-    vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
+    vi.stubGlobal("requestAnimationFrame", (_cb: () => void) => {
       rafScheduled = true;
       return 0;
     });
@@ -173,8 +174,10 @@ describe("useAccentIndexer", () => {
     // Fire it — querySelectorAll("[data-accent-el]") called exactly once
     const qsa = vi.spyOn(document, "querySelectorAll");
     pendingCb!();
-    const accentElCalls = qsa.mock.calls.filter((c) => c[0] === "[data-accent-el]");
-    expect(accentElCalls.length).toBe(1);
+    const accentElCalls = qsa.mock.calls.filter(
+      (c) => c[0] === "[data-accent-el]",
+    );
+    expect(accentElCalls).toHaveLength(1);
   });
 
   // ── Cleanup ───────────────────────────────────────────────────────────
@@ -182,7 +185,7 @@ describe("useAccentIndexer", () => {
   it("cancels pending rAF on unmount", async () => {
     const cancelledIds: number[] = [];
     let lastId = 0;
-    vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
+    vi.stubGlobal("requestAnimationFrame", (_cb: () => void) => {
       lastId++;
       return lastId;
     });
