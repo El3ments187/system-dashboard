@@ -779,6 +779,43 @@
 }
 
 /* ========================================
+   Light-background readability floor (REQ-AM-77/78)
+   Pale accent bases are auto-darkened on light backgrounds so
+   --accent-primary and derived colors stay readable against white cards.
+   All accent-mode rules derive from --accent-base, so this single override
+   is sufficient without touching per-mode oklch expressions.
+   ======================================== */
+:is(
+  [data-bg="light"],
+  [data-bg="paper"],
+  [data-bg="nord-light"],
+  [data-bg="cream"]
+)[data-accent="ice"] {
+  --accent-base: #0284c7;
+  --accent-base-rgb: 2, 132, 199;
+}
+
+:is(
+  [data-bg="light"],
+  [data-bg="paper"],
+  [data-bg="nord-light"],
+  [data-bg="cream"]
+)[data-accent="silver"] {
+  --accent-base: #475569;
+  --accent-base-rgb: 71, 85, 105;
+}
+
+:is(
+  [data-bg="light"],
+  [data-bg="paper"],
+  [data-bg="nord-light"],
+  [data-bg="cream"]
+)[data-accent="platinum"] {
+  --accent-base: #52525b;
+  --accent-base-rgb: 82, 82, 91;
+}
+
+/* ========================================
     Accent Modes
     Every mode derives --accent-primary/--accent-secondary/--accent-glow FROM --accent-base
     (never from itself, avoiding a same-element cycle) so every existing consumer — icons,
