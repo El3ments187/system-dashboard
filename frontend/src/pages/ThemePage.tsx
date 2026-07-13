@@ -1060,33 +1060,21 @@ export default function ThemePage({
                 <div className="effect-row-group">
                   <div
                     role="switch"
-                    tabIndex={glow || innerGlow ? 0 : -1}
-                    aria-checked={!!cardGlow && (!!glow || !!innerGlow)}
-                    aria-disabled={!glow && !innerGlow ? true : undefined}
-                    className={`mode-row${cardGlow && (glow || innerGlow) ? " active" : ""}`}
-                    onClick={() =>
-                      (glow || innerGlow) && onCardGlowChange(!cardGlow)
-                    }
-                    onKeyDown={
-                      glow || innerGlow
-                        ? onKeyActivate(() => onCardGlowChange(!cardGlow))
-                        : undefined
-                    }
-                    style={{
-                      cursor: glow || innerGlow ? "pointer" : "not-allowed",
-                      opacity: !glow && !innerGlow ? 0.5 : 1,
-                    }}
+                    tabIndex={0}
+                    aria-checked={!!cardGlow}
+                    className={`mode-row${cardGlow ? " active" : ""}`}
+                    onClick={() => onCardGlowChange(!cardGlow)}
+                    onKeyDown={onKeyActivate(() => onCardGlowChange(!cardGlow))}
+                    style={{ cursor: "pointer" }}
                   >
                     <span className="mode-radio" />
                     <div className="mode-text">
                       <span className="mode-name">Card Glow</span>
                       <span className="mode-desc">
-                        {!glow && !innerGlow
-                          ? "Requires Neon Glow or Inner Glow"
-                          : "Extend halo to full card border"}
+                        Extend halo to full card border
                       </span>
                     </div>
-                    <ToggleSwitch on={!!cardGlow && (!!glow || !!innerGlow)} />
+                    <ToggleSwitch on={!!cardGlow} />
                   </div>
                 </div>
               )}

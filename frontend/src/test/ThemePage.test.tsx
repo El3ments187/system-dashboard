@@ -84,7 +84,7 @@ describe("ThemePage effects toggles", () => {
     expect(onGradientBorderChange).toHaveBeenCalledWith(true);
   });
 
-  it("Card Glow does not call onCardGlowChange when glow and innerGlow are both off", () => {
+  it("Card Glow calls onCardGlowChange when glow and innerGlow are both off (REQ-FX-41)", () => {
     const onCardGlowChange = vi.fn();
     render(
       <ThemePage
@@ -92,7 +92,7 @@ describe("ThemePage effects toggles", () => {
       />,
     );
     fireEvent.click(screen.getByText("Card Glow").closest(".mode-row")!);
-    expect(onCardGlowChange).not.toHaveBeenCalled();
+    expect(onCardGlowChange).toHaveBeenCalledWith(true);
   });
 
   it("Card Glow calls onCardGlowChange(true) when Neon Glow is active", () => {
@@ -109,10 +109,10 @@ describe("ThemePage effects toggles", () => {
     expect(onCardGlowChange).toHaveBeenCalledWith(true);
   });
 
-  it("Card Glow shows 'Requires' hint when no glow is active", () => {
+  it("Card Glow shows description text regardless of Neon/Inner Glow state (REQ-FX-41)", () => {
     render(<ThemePage {...makeProps({ glow: false, innerGlow: false })} />);
     expect(
-      screen.getByText(/Requires Neon Glow or Inner Glow/),
+      screen.getByText(/Extend halo to full card border/),
     ).toBeInTheDocument();
   });
 
@@ -261,6 +261,56 @@ describe("ThemePage Gradient Border speed slider (REQ-FX-51)", () => {
     const slider = screen.getByRole("slider", { name: /border speed/i });
     fireEvent.change(slider, { target: { value: "5" } });
     expect(onGradientBorderSpeedChange).toHaveBeenCalledWith(5);
+  });
+});
+
+describe("ThemePage Card Glow independent of Neon/Inner Glow (REQ-FX-41)", () => {
+  it("Card Glow toggle is always enabled regardless of Neon/Inner Glow state", () => {
+    render(
+      <ThemePage
+        {...makeProps({
+          glow: false,
+          innerGlow: false,
+          cardGlow: false,
+          onCardGlowChange: vi.fn(),
+        })}
+      />,
+    );
+    const toggle = screen.getByRole("switch", { name: /card glow/i });
+    expect(toggle).not.toHaveAttribute("aria-disabled");
+    expect(toggle).toHaveAttribute("tabIndex", "0");
+  });
+
+  it("Card Glow toggle is active when cardGlow is on, even with Neon off", () => {
+    render(
+      <ThemePage
+        {...makeProps({
+          glow: false,
+          innerGlow: false,
+          cardGlow: true,
+          onCardGlowChange: vi.fn(),
+        })}
+      />,
+    );
+    const toggle = screen.getByRole("switch", { name: /card glow/i });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("Card Glow toggle calls handler when clicked without Neon or Inner Glow", () => {
+    const onCardGlowChange = vi.fn();
+    render(
+      <ThemePage
+        {...makeProps({
+          glow: false,
+          innerGlow: false,
+          cardGlow: false,
+          onCardGlowChange,
+        })}
+      />,
+    );
+    const toggle = screen.getByRole("switch", { name: /card glow/i });
+    fireEvent.click(toggle);
+    expect(onCardGlowChange).toHaveBeenCalledWith(true);
   });
 });
 

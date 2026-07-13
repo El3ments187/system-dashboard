@@ -1027,13 +1027,9 @@
     inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
-[data-glow="neon"][data-card-glow="on"][data-accent-mode="spectrum"]
+[data-card-glow="on"][data-accent-mode="spectrum"]
   [style*="--el-index"],
-[data-glow="neon"][data-card-glow="on"][data-accent-mode="rainbow-wave"]
-  [style*="--el-index"],
-[data-inner-glow="on"][data-card-glow="on"][data-accent-mode="spectrum"]
-  [style*="--el-index"],
-[data-inner-glow="on"][data-card-glow="on"][data-accent-mode="rainbow-wave"]
+[data-card-glow="on"][data-accent-mode="rainbow-wave"]
   [style*="--el-index"] {
   --card-halo:
     0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
@@ -1153,10 +1149,9 @@
 /* ========================================
    Card Glow Effect
    Extends halo to the full card container via --card-halo.
-   Requires Neon Glow or Inner Glow to be active.
+   Works independently — does not require Neon Glow or Inner Glow.
    ======================================== */
-[data-glow="neon"][data-card-glow="on"],
-[data-inner-glow="on"][data-card-glow="on"] {
+[data-card-glow="on"] {
   --card-halo:
     0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
     0 0 calc(48px * var(--glow-intensity, 1.4))
@@ -1164,11 +1159,7 @@
 }
 
 /* Apply card-halo to card containers (not spines/bars) that carry data-accent-el. */
-[data-glow="neon"][data-card-glow="on"]
-  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
-    .accent-glow-target
-  ),
-[data-inner-glow="on"][data-card-glow="on"]
+[data-card-glow="on"]
   [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
     .accent-glow-target
   ) {
