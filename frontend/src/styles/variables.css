@@ -984,7 +984,7 @@
   --accent-glow: color-mix(
     in oklab,
     var(--glow-custom, var(--accent-primary)),
-    transparent 45%
+    transparent 55%
   );
 }
 
@@ -997,7 +997,7 @@
   --accent-glow: color-mix(
     in oklab,
     var(--glow-custom, var(--accent-primary)),
-    transparent 45%
+    transparent 55%
   );
 }
 

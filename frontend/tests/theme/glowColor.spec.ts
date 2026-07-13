@@ -174,6 +174,43 @@ test.describe("Glow Color: Custom swatch selector", () => {
     expect(attr).toBe("match");
   });
 
+  test("match/accent/custom glow alpha are identical at the same intensity (REQ-FX-9)", async ({
+    page,
+  }) => {
+    // Use the same source color for all three modes so only the percentage matters
+    await page.evaluate(() => {
+      document.documentElement.setAttribute("data-accent", "blue");
+      document.documentElement.style.setProperty("--glow-custom", "#3b82f6");
+    });
+    await page.waitForTimeout(100);
+
+    async function readGlowAlpha(mode: string): Promise<number> {
+      return page.evaluate((m) => {
+        document.documentElement.setAttribute("data-glow-color", m);
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "position:fixed;top:-10px;width:1px;height:1px;background:var(--accent-glow);pointer-events:none";
+        document.body.appendChild(probe);
+        const color = window.getComputedStyle(probe).backgroundColor;
+        document.body.removeChild(probe);
+        const match = color.match(
+          /rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*([\d.]+))?\s*\)/,
+        );
+        return match && match[1] !== undefined ? parseFloat(match[1]) : 1;
+      }, mode);
+    }
+
+    const matchAlpha = await readGlowAlpha("match");
+    const accentAlpha = await readGlowAlpha("accent");
+    const customAlpha = await readGlowAlpha("custom");
+
+    expect(matchAlpha).toBeGreaterThan(0);
+    expect(matchAlpha).toBeLessThan(1);
+    // All three modes must produce the same glow alpha (within rounding tolerance)
+    expect(accentAlpha).toBeCloseTo(matchAlpha, 1);
+    expect(customAlpha).toBeCloseTo(matchAlpha, 1);
+  });
+
   test("Out-of-palette saved value migrates to a valid accent on load", async ({
     page,
   }) => {
