@@ -908,7 +908,7 @@ pub async fn collect_ai_metrics(
         busy_slots: derived.busy_slots,
         context_tokens: derived.context_tokens,
         max_context: derived.max_context,
-        slots: slot_list.and_then(|s| if s.is_empty() { None } else { Some(s) }),
+        slots: slot_list.filter(|s| !s.is_empty()),
         model_alias: props.as_ref().and_then(|p| p.model_alias.clone()),
         model_path: props.as_ref().and_then(|p| p.model_path.clone()),
         total_slots: props.as_ref().and_then(|p| p.total_slots),

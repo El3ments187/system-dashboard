@@ -249,7 +249,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
         on_load_ready(script);
         let t = get_load_time_ms(script).unwrap();
-        assert!(t >= 5.0 && t < 2000.0, "Expected 5..2000ms, got {t}");
+        assert!((5.0..2000.0).contains(&t), "Expected 5..2000ms, got {t}");
         clear(script);
     }
 

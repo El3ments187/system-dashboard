@@ -578,7 +578,7 @@ mod calculations {
 
     #[test]
     fn test_bytes_to_gb_conversion() {
-        let gb = 1_073_741_824u64 as f64 / (1024.0 * 1024.0 * 1024.0);
+        let gb = 1_073_741_824_f64 / (1024.0 * 1024.0 * 1024.0);
         assert!((gb - 1.0).abs() < 0.001);
     }
 
@@ -773,16 +773,14 @@ mod system_metrics {
     #[test]
     fn test_uptime_seconds_matches_proc() {
         let metrics = collect_system_metrics();
-        if let Ok(content) = std::fs::read_to_string("/proc/uptime") {
-            if let Some(val) = content.split_whitespace().next() {
-                if let Ok(proc_uptime) = val.parse::<f64>() {
+        if let Ok(content) = std::fs::read_to_string("/proc/uptime")
+            && let Some(val) = content.split_whitespace().next()
+                && let Ok(proc_uptime) = val.parse::<f64>() {
                     assert!(
                         (metrics.uptime_seconds - proc_uptime).abs() < 2.0,
                         "Uptime should match /proc/uptime within 2 seconds"
                     );
                 }
-            }
-        }
     }
 
     #[test]
@@ -798,7 +796,7 @@ mod system_metrics {
     #[test]
     fn test_collector_health_values_are_valid() {
         let health = get_collector_health_state();
-        for (_, status) in &health {
+        for status in health.values() {
             assert!(
                 *status == "healthy" || *status == "degraded" || *status == "unavailable",
                 "Invalid collector status: {}",
@@ -1221,7 +1219,7 @@ mod cpu_parsing {
             cores: vec![],
         };
         let (util, _) = compute_cpu_utilization(&s1, &s2);
-        assert!(util >= 0.0 && util <= 100.0);
+        assert!((0.0..=100.0).contains(&util));
     }
 
     #[test]

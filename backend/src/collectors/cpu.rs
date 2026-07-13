@@ -287,11 +287,9 @@ pub fn parse_physical_cores(content: &str) -> usize {
 fn read_cpu_max_freq() -> f64 {
     if let Ok(content) =
         std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
-    {
-        if let Ok(khz) = content.trim().parse::<u64>() {
+        && let Ok(khz) = content.trim().parse::<u64>() {
             return khz as f64 / 1000.0;
         }
-    }
     0.0
 }
 

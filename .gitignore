@@ -1,3 +1,7 @@
+# Archives
+*.tar.gz
+*.zip
+
 # Node / Vite
 node_modules/
 dist/
