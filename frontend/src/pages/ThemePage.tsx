@@ -278,6 +278,8 @@ export interface ThemePageProps {
   onInnerGlowIntensityChange?: (v: number) => void;
   gradientBorder?: boolean;
   onGradientBorderChange?: (v: boolean) => void;
+  gradientBorderSpeed?: number;
+  onGradientBorderSpeedChange?: (v: number) => void;
   cardGlow?: boolean;
   onCardGlowChange?: (v: boolean) => void;
   glowColor?: "match" | "accent" | "custom";
@@ -502,6 +504,8 @@ export default function ThemePage({
   onInnerGlowIntensityChange,
   gradientBorder,
   onGradientBorderChange,
+  gradientBorderSpeed = 3,
+  onGradientBorderSpeedChange,
   cardGlow,
   onCardGlowChange,
   glowColor = "match",
@@ -1029,6 +1033,26 @@ export default function ThemePage({
                     </div>
                     <ToggleSwitch on={!!gradientBorder} />
                   </div>
+                  {gradientBorder && onGradientBorderSpeedChange && (
+                    <div style={{ paddingLeft: 20, paddingTop: 6 }}>
+                      <SliderRow
+                        id="tp-gradient-border-speed"
+                        label="Border Speed"
+                        min={0.5}
+                        max={10}
+                        step={0.5}
+                        value={gradientBorderSpeed}
+                        display={`${gradientBorderSpeed.toFixed(1)}s`}
+                        onChange={(v) => {
+                          document.documentElement.style.setProperty(
+                            "--gradient-border-speed",
+                            `${v}s`,
+                          );
+                          onGradientBorderSpeedChange(v);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

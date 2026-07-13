@@ -94,6 +94,8 @@ export default function App() {
     setInnerGlowIntensity,
     gradientBorder,
     setGradientBorder,
+    gradientBorderSpeed,
+    setGradientBorderSpeed,
     cardGlow,
     setCardGlow,
     glowColor,
@@ -244,6 +246,8 @@ export default function App() {
                     onInnerGlowIntensityChange={setInnerGlowIntensity}
                     gradientBorder={gradientBorder}
                     onGradientBorderChange={setGradientBorder}
+                    gradientBorderSpeed={gradientBorderSpeed}
+                    onGradientBorderSpeedChange={setGradientBorderSpeed}
                     cardGlow={cardGlow}
                     onCardGlowChange={setCardGlow}
                     glowColor={glowColor}

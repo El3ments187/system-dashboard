@@ -1301,7 +1301,7 @@
     [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
       .accent-glow-target
     )::before {
-    animation: gradient-border-pan 3s linear infinite;
+    animation: gradient-border-pan var(--gradient-border-speed, 3s) linear infinite;
   }
 }
 

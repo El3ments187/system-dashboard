@@ -303,6 +303,12 @@ export function useTheme() {
     return localStorage.getItem("dashboard-gradient-border") === "on";
   });
 
+  const [gradientBorderSpeed, setGradientBorderSpeed] = useState<number>(() => {
+    return parseFloat(
+      localStorage.getItem("dashboard-gradient-border-speed") || "3",
+    );
+  });
+
   const [cardGlow, setCardGlow] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-card-glow") === "on";
   });
@@ -361,6 +367,7 @@ export function useTheme() {
     setInnerGlow(false);
     setInnerGlowIntensity(1.4);
     setGradientBorder(false);
+    setGradientBorderSpeed(3);
     setCardGlow(false);
     setGlowColor("match");
     setGlowCustom("#3b82f6");
@@ -519,6 +526,17 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.style.setProperty(
+      "--gradient-border-speed",
+      `${gradientBorderSpeed}s`,
+    );
+    localStorage.setItem(
+      "dashboard-gradient-border-speed",
+      String(gradientBorderSpeed),
+    );
+  }, [gradientBorderSpeed]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
       "--breathe-speed",
       `${breatheSpeed}s`,
     );
@@ -590,6 +608,8 @@ export function useTheme() {
     setInnerGlowIntensity,
     gradientBorder,
     setGradientBorder,
+    gradientBorderSpeed,
+    setGradientBorderSpeed,
     cardGlow,
     setCardGlow,
     glowColor,

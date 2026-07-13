@@ -226,6 +226,44 @@ describe("ThemePage Inner Glow intensity slider (REQ-FX-31)", () => {
   });
 });
 
+describe("ThemePage Gradient Border speed slider (REQ-FX-51)", () => {
+  it("Border Speed slider hidden when gradientBorder is off", () => {
+    render(<ThemePage {...makeProps({ gradientBorder: false, onGradientBorderChange: vi.fn() })} />);
+    expect(screen.queryByText("Border Speed")).not.toBeInTheDocument();
+  });
+
+  it("Border Speed slider shown when gradientBorder is on", () => {
+    render(
+      <ThemePage
+        {...makeProps({
+          gradientBorder: true,
+          onGradientBorderChange: vi.fn(),
+          gradientBorderSpeed: 3,
+          onGradientBorderSpeedChange: vi.fn(),
+        })}
+      />,
+    );
+    expect(screen.getByText("Border Speed")).toBeInTheDocument();
+  });
+
+  it("Border Speed slider calls handler on change", () => {
+    const onGradientBorderSpeedChange = vi.fn();
+    render(
+      <ThemePage
+        {...makeProps({
+          gradientBorder: true,
+          onGradientBorderChange: vi.fn(),
+          gradientBorderSpeed: 3,
+          onGradientBorderSpeedChange,
+        })}
+      />,
+    );
+    const slider = screen.getByRole("slider", { name: /border speed/i });
+    fireEvent.change(slider, { target: { value: "5" } });
+    expect(onGradientBorderSpeedChange).toHaveBeenCalledWith(5);
+  });
+});
+
 describe("ThemePage mode-dependency hints", () => {
   it("shows Effect Controls mode hint when accentMode is solid", () => {
     render(<ThemePage {...makeProps({ accentMode: "solid" })} />);
