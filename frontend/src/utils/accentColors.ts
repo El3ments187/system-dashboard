@@ -256,13 +256,11 @@ export function getSecondarySeriesColor(primaryHex: string): string {
 
 function spectrumColors(n: number): string[] {
   const probe = ensureProbeEl();
-  const rootCs = getComputedStyle(document.documentElement);
-  const fxSpread =
-    parseFloat(rootCs.getPropertyValue("--fx-spread").trim()) || 34;
+  const step = n > 1 ? 360 / n : 0;
   return Array.from({ length: n }, (_, i) => {
     probe.style.setProperty(
       "--accent-primary",
-      `oklch(from var(--accent-base) l c calc(h + ${i * fxSpread}))`,
+      `oklch(from var(--accent-base) l c calc(h + ${i * step}))`,
     );
     const resolved = toHex("var(--accent-primary)");
     return /^#[0-9a-f]{6}$/i.test(resolved)
@@ -327,13 +325,14 @@ export function resolveAccentColors(
     // fill counterparts) directly using relative-color-syntax so the accent base hue
     // is preserved and only the hue offset changes per element.
     const rootCs = getComputedStyle(document.documentElement);
-    const spread =
-      parseFloat(rootCs.getPropertyValue("--fx-spread").trim()) || 34;
+    const accentCount =
+      parseFloat(rootCs.getPropertyValue("--accent-count").trim()) || 12;
+    const step = 360 / accentCount;
     const depth =
       parseFloat(rootCs.getPropertyValue("--fx-depth").trim()) || 30;
     const spin =
       parseFloat(rootCs.getPropertyValue("--accent-spin").trim()) || 0;
-    const elOff = spin + index * spread;
+    const elOff = spin + index * step;
     probe.style.setProperty("--el-off", String(elOff));
     if (mode === "spectrum" || mode === "rainbow-wave") {
       probe.style.setProperty(
@@ -446,6 +445,7 @@ export function useAccentIndexer(): void {
         el.style.setProperty("--el-index", String(i));
         i++;
       });
+      document.documentElement.style.setProperty("--accent-count", String(i));
     }
     assignIndices();
 

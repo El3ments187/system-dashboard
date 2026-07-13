@@ -18,6 +18,12 @@
   initial-value: 0;
 }
 
+@property --accent-count {
+  syntax: "<integer>";
+  inherits: true;
+  initial-value: 12;
+}
+
 @property --fx-spread {
   syntax: "<number>";
   inherits: true;
@@ -863,7 +869,7 @@
 
 [data-accent-mode="rainbow-wave"] {
   --el-off: calc(
-    var(--accent-spin, 0) + var(--el-index, 0) * var(--fx-spread, 34)
+    var(--accent-spin, 0) + var(--el-index, 0) * (360 / var(--accent-count, 12))
   );
 
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
@@ -905,7 +911,7 @@
 
 /* ---- Spectrum Per-Element (same engine as Wave, no animation — spread only) ---- */
 [data-accent-mode="spectrum"] {
-  --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
+  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
 
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
@@ -945,7 +951,7 @@
 [data-accent-mode="spectrum"] [style*="--el-index"],
 [data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --el-off: calc(
-    var(--accent-spin, 0) + var(--el-index, 0) * var(--fx-spread, 34)
+    var(--accent-spin, 0) + var(--el-index, 0) * (360 / var(--accent-count, 12))
   );
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
