@@ -80,8 +80,7 @@ describe("per-element hue indexing guard", () => {
 
       renderHook(() => useAccentIndexer());
 
-      const all =
-        document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      const all = document.querySelectorAll<HTMLElement>("[data-accent-el]");
       const indices = [...all].map((el) =>
         el.style.getPropertyValue("--el-index"),
       );
@@ -135,8 +134,7 @@ describe("per-element hue indexing guard", () => {
 
       renderHook(() => useAccentIndexer());
 
-      const all =
-        document.querySelectorAll<HTMLElement>("[data-accent-el]");
+      const all = document.querySelectorAll<HTMLElement>("[data-accent-el]");
       const indices = [...all].map((el) =>
         el.style.getPropertyValue("--el-index"),
       );
@@ -162,17 +160,14 @@ describe("per-element hue indexing guard", () => {
         expect(rows).toHaveLength(N);
       });
 
-      const rows =
-        document.querySelectorAll<HTMLElement>(".run-models-row");
+      const rows = document.querySelectorAll<HTMLElement>(".run-models-row");
       rows.forEach((row, i) => {
         expect(row.style.getPropertyValue("--el-index")).toBe(String(i));
       });
 
       // The scroll container (direct parent of rows) must carry --accent-count
       const scrollEl = rows[0].parentElement as HTMLElement;
-      expect(scrollEl.style.getPropertyValue("--accent-count")).toBe(
-        String(N),
-      );
+      expect(scrollEl.style.getPropertyValue("--accent-count")).toBe(String(N));
     });
 
     it("--accent-count updates when profile count changes via re-render", async () => {
@@ -188,9 +183,7 @@ describe("per-element hue indexing guard", () => {
       const scrollEl = document.querySelectorAll<HTMLElement>(
         ".run-models-row",
       )[0].parentElement as HTMLElement;
-      expect(scrollEl.style.getPropertyValue("--accent-count")).toBe(
-        String(N),
-      );
+      expect(scrollEl.style.getPropertyValue("--accent-count")).toBe(String(N));
     });
   });
 });
@@ -236,5 +229,73 @@ describe("spread-wiring guard — variables.css", () => {
         (l) => l.includes("--el-off: calc(") && l.includes("var(--fx-spread"),
       );
     expect(elOffWithSpread.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ── Phase 4: Runtime card KvRow own-hue guard ──────────────────────────────────
+// Fails if KvRow is ever set back to data-accent-el="inherit" (all 13 runtime
+// tiles would share the card's single index instead of getting their own).
+
+const llamaCppSrc = readFileSync(
+  resolve(__dirname, "../../../pages/LlamaCppPage.tsx"),
+  "utf8",
+);
+
+describe("Runtime card KvRow — own-hue guard", () => {
+  it('KvRow root uses data-accent-el="" not inherit', () => {
+    expect(llamaCppSrc).toMatch(/function KvRow[\s\S]{0,400}data-accent-el=""/);
+    expect(llamaCppSrc).not.toMatch(
+      /function KvRow[\s\S]{0,400}data-accent-el="inherit"/,
+    );
+  });
+
+  it("13 runtime tiles each get a distinct --el-index", () => {
+    document.body.innerHTML = "";
+
+    const card = document.createElement("div");
+    card.setAttribute("data-accent-el", "");
+    document.body.append(card);
+
+    const RUNTIME_IDS = [
+      "runtime-server",
+      "runtime-uptime",
+      "runtime-load-time",
+      "runtime-pid",
+      "runtime-port",
+      "runtime-memory",
+      "runtime-cpu",
+      "runtime-context",
+      "runtime-gpu-layers",
+      "runtime-cpu-layers",
+      "runtime-draft-layers",
+      "runtime-speculative",
+      "runtime-tokens-cached",
+    ];
+
+    for (const id of RUNTIME_IDS) {
+      const row = document.createElement("div");
+      row.setAttribute("data-accent-el", "");
+      const inner = document.createElement("div");
+      inner.setAttribute("data-testid", id);
+      row.append(inner);
+      card.append(row);
+    }
+
+    renderHook(() => useAccentIndexer());
+
+    const roots = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="runtime-"]'),
+    ).map((el) => el.closest<HTMLElement>("[data-accent-el]"));
+
+    expect(roots).toHaveLength(13);
+    roots.forEach((root) => {
+      expect(root).not.toBeNull();
+      expect(root!.getAttribute("data-accent-el")).toBe("");
+    });
+
+    const idx = roots.map((r) => r!.style.getPropertyValue("--el-index"));
+    expect(new Set(idx).size).toBe(13);
+
+    document.body.innerHTML = "";
   });
 });

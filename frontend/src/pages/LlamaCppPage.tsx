@@ -120,7 +120,7 @@ function KvRow({
 }) {
   return (
     <div
-      data-accent-el="inherit"
+      data-accent-el=""
       style={{
         background: "var(--accent-tint-10)",
         border: "1px solid var(--accent-tint-40)",
