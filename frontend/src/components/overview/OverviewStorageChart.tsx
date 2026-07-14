@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useId } from "react";
+import type * as RechartsTypes from "recharts";
 import { StorageHistoryPoint } from "../../types/metrics";
 import { useAccentSync } from "../../utils/accentColors";
 import { ChartFrame } from "../shared/CardComponents";
@@ -21,9 +22,7 @@ function fmtBps(bps: number): string {
 }
 
 export default function OverviewStorageChart({ data }: Props) {
-  const [recharts, setRecharts] = useState<Record<string, unknown> | null>(
-    null,
-  );
+  const [recharts, setRecharts] = useState<typeof RechartsTypes | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartChromeColors());
   const chartRef = useRef<HTMLDivElement>(null);
   const gradientId = `osc-${useId().replace(/:/g, "")}`;
@@ -34,7 +33,7 @@ export default function OverviewStorageChart({ data }: Props) {
 
   useEffect(() => {
     import("recharts")
-      .then((r) => setRecharts(r as Record<string, unknown>))
+      .then((r) => setRecharts(r))
       .catch(() => {});
   }, []);
 
@@ -107,12 +106,7 @@ export default function OverviewStorageChart({ data }: Props) {
     );
   }
 
-  const AreaChart = recharts.AreaChart as any;
-  const Area = recharts.Area as any;
-  const XAxis = recharts.XAxis as any;
-  const YAxis = recharts.YAxis as any;
-  const CartesianGrid = recharts.CartesianGrid as any;
-  const Tooltip = recharts.Tooltip as any;
+  const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } = recharts;
 
   return (
     <ChartFrame>

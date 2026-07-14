@@ -76,27 +76,44 @@ describe("Mechanism A CSS — rainbow-wave --el-off must not include --accent-sp
 });
 
 // ── Mechanism B CSS ───────────────────────────────────────────────────────────
+//
+// The keyframes themselves animate @property values (--fx-pan-x, --fill-pan-x,
+// --border-angle) rather than background-position directly. background-position
+// is still driven indirectly via calc(var(--fx-pan-x,1)*100%) in the consuming
+// selector, so gradient stops remain static even though position updates each
+// frame. Measured non-issue as of 2025-07: no crash observed from this path on
+// the NVIDIA 595 / Chrome 150 / Blackwell stack. These tests guard what is
+// actually guaranteed (no background-position inside the keyframe bodies and
+// static gradient stop declarations) — not the absence of animated panning.
 
-describe("Mechanism B CSS — animated keyframes must not use background-position", () => {
-  it("@keyframes fx-pan does not contain background-position", () => {
+describe("Mechanism B CSS — keyframe bodies must not contain background-position directly", () => {
+  it("@keyframes fx-pan body does not contain background-position", () => {
     const idx = variablesCss.indexOf("@keyframes fx-pan");
     expect(idx, "@keyframes fx-pan not found").not.toBe(-1);
     const block = variablesCss.slice(idx, idx + 200);
     expect(block).not.toContain("background-position");
   });
 
-  it("@keyframes gradient-border-pan does not contain background-position", () => {
+  it("@keyframes gradient-border-pan body does not contain background-position", () => {
     const idx = variablesCss.indexOf("@keyframes gradient-border-pan");
     expect(idx, "@keyframes gradient-border-pan not found").not.toBe(-1);
     const block = variablesCss.slice(idx, idx + 200);
     expect(block).not.toContain("background-position");
   });
 
-  it("@keyframes accent-fill-pan does not contain background-position", () => {
+  it("@keyframes accent-fill-pan body does not contain background-position", () => {
     const idx = variablesCss.indexOf("@keyframes accent-fill-pan");
     expect(idx, "@keyframes accent-fill-pan not found").not.toBe(-1);
     const block = variablesCss.slice(idx, idx + 200);
     expect(block).not.toContain("background-position");
+  });
+
+  it("gradient stops in fx-pan consuming selector are static (no oklch in keyframe body)", () => {
+    const idx = variablesCss.indexOf("@keyframes fx-pan");
+    expect(idx).not.toBe(-1);
+    const block = variablesCss.slice(idx, idx + 200);
+    expect(block).not.toContain("oklch");
+    expect(block).not.toContain("--accent-fill-stop");
   });
 });
 
@@ -119,6 +136,19 @@ describe("Mechanism A JS — accentColors.ts must not poll --accent-spin", () =>
 
   it("resolveAccentColors does not call getPropertyValue on --accent-spin", () => {
     expect(accentColorsSrc).not.toContain('getPropertyValue("--accent-spin")');
+  });
+});
+
+// ── Phase 6 — dead accent-spin code removed ───────────────────────────────────
+
+describe("Phase 6 — @property --accent-spin and @keyframes accent-spin-rotate removed", () => {
+  it("variables.css does not declare @property --accent-spin outside comments", () => {
+    const withoutComments = variablesCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(withoutComments).not.toContain("--accent-spin");
+  });
+
+  it("variables.css does not define @keyframes accent-spin-rotate", () => {
+    expect(variablesCss).not.toContain("accent-spin-rotate");
   });
 });
 

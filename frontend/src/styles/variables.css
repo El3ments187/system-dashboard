@@ -1,11 +1,3 @@
-/* Registered so it can be smoothly keyframe-animated (Rainbow Wave, Animated Gradient) —
-   plain custom properties cannot be interpolated by @keyframes without this. */
-@property --accent-spin {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 0;
-}
-
 @property --accent-pulse {
   syntax: "<number>";
   inherits: true;
@@ -957,17 +949,8 @@
   );
 }
 
-@keyframes accent-spin-rotate {
-  from {
-    --accent-spin: 0;
-  }
-  to {
-    --accent-spin: 360;
-  }
-}
-
 /* Compositor-accelerated hue rotation: one filter: hue-rotate() on the root
-   container replaces per-element --accent-spin animation, eliminating per-frame
+   container replaces per-element spin animation, eliminating per-frame
    oklch() relative-color recomputation on every [data-accent-el]. */
 @keyframes hue-spin {
   from {
@@ -1016,7 +999,7 @@
    --el-index=0 (the html initial-value). Re-declaring these tokens on elements that
    carry an inline --el-index forces Chrome to re-evaluate var(--el-index) at each
    element's own scope, giving each card/chart its correct per-element hue.
-   var(--accent-spin, 0) is 0 in Spectrum (no animation), non-zero in Rainbow Wave. */
+    Spectrum is static (no animation); Rainbow Wave drives hue via filter: hue-rotate() on the root. */
 [data-accent-mode="spectrum"] [style*="--el-index"],
 [data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
@@ -1503,6 +1486,7 @@
    ======================================== */
 [data-fx-safe="on"][data-accent-mode="rainbow-wave"] {
   animation: none;
+  filter: none;
   will-change: auto;
 }
 
@@ -1511,6 +1495,22 @@
     .accent-glow-target
   )::before {
   animation: none;
+}
+
+/* Stops accent-pulse / fx-breathe / fx-surge / gradient-border-pan on all animated
+   accent surfaces — covers what the per-mode rules above don't reach (spine pulsing,
+   breathe glow, surge flash, gradient border rotation). */
+[data-fx-safe="on"] .accent-glow-target,
+[data-fx-safe="on"] .accent-glow-target::before,
+[data-fx-safe="on"] .accent-glow-target::after,
+[data-fx-safe="on"] .accent-glow-target .bright-breathe,
+[data-fx-safe="on"] .accent-glow-target .bright-surge,
+[data-fx-safe="on"] .accent-spine,
+[data-fx-safe="on"] .card-accent-spine,
+[data-fx-safe="on"] .ov-spine,
+[data-fx-safe="on"] [data-accent-el]::before,
+[data-fx-safe="on"] [data-accent-el]::after {
+  animation: none !important;
 }
 
 @media (prefers-reduced-motion: no-preference) {

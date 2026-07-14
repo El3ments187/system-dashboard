@@ -5,7 +5,7 @@ import { resolve } from "path";
 const variablesCss = readFileSync(
   resolve(__dirname, "../../../styles/variables.css"),
   "utf-8",
-);
+).replace(/\s+/g, " ");
 
 describe("Breathe effect — data element exclusions in variables.css", () => {
   it("excludes warning-state accent-fill glow targets from bright-breathe animation", () => {

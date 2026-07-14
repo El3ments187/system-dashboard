@@ -432,15 +432,19 @@ export function useAccentIndexer(): void {
       const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
       let i = 0;
       els.forEach((el) => {
-        if (el.dataset.accentEl === "inherit") {
-          // Explicitly marked to inherit parent card's --el-index instead of having its own
+        const nestedInAccent =
+          el.parentElement?.closest("[data-accent-el]") != null;
+        if (el.dataset.accentEl === "inherit" || nestedInAccent) {
           el.style.removeProperty("--el-index");
           return;
         }
         el.style.setProperty("--el-index", String(i));
         i++;
       });
-      document.documentElement.style.setProperty("--accent-count", String(i));
+      document.documentElement.style.setProperty(
+        "--accent-count",
+        String(Math.max(i, 1)),
+      );
     }
     assignIndices();
 

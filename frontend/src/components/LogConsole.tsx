@@ -244,12 +244,12 @@ function ToolbarBtn({
         fontSize: 9,
         fontWeight: 600,
         padding: "2px 6px",
-        background: active ? "var(--accent-primary)" : "var(--accent-tint-10)",
+        background: active ? "var(--accent-primary)" : "transparent",
         border: active
           ? "1px solid var(--accent-primary)"
-          : "1px solid var(--accent-tint-40)",
+          : "1px solid color-mix(in srgb, var(--text-muted) 30%, transparent)",
         borderRadius: 3,
-        color: active ? "#fff" : "var(--accent-primary)",
+        color: active ? "#fff" : "var(--text-muted)",
         cursor: "pointer",
         whiteSpace: "nowrap",
         lineHeight: "16px",
@@ -284,8 +284,8 @@ function FilterChip({
         padding: "1px 5px",
         background: active
           ? `color-mix(in srgb, ${color} 15%, transparent)`
-          : "var(--accent-tint-10)",
-        border: `1px solid ${active ? color : "var(--accent-tint-40)"}`,
+          : "transparent",
+        border: `1px solid ${active ? color : "color-mix(in srgb, var(--text-muted) 30%, transparent)"}`,
         borderRadius: 2,
         color: active ? color : "var(--text-muted)",
         cursor: "pointer",
@@ -636,7 +636,7 @@ export function LogConsole({
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          flexWrap: "wrap",
           padding: "6px 12px",
           borderBottom: "1px solid var(--border-color)",
           minHeight: 36,
@@ -689,7 +689,7 @@ export function LogConsole({
           )}
         </div>
         {/* Toolbar */}
-        <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 3, flexShrink: 0, order: 2, marginLeft: "auto" }}>
           <ToolbarBtn
             active={paused}
             onClick={() => setPaused((p) => !p)}
@@ -740,21 +740,6 @@ export function LogConsole({
             </ToolbarBtn>
           )}
         </div>
-      </div>
-
-      {/* Search + Filters */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "4px 12px",
-          borderBottom: "1px solid var(--border-color)",
-          background: "var(--bg-tertiary)",
-          flexShrink: 0,
-          flexWrap: "wrap",
-        }}
-      >
         <div
           style={{
             display: "flex",

@@ -41,9 +41,9 @@ function buildDeviceBuffer(
         device,
         slot: i,
         timestamp: new Date().toISOString(),
-        read_bytes_per_sec: null as any,
-        write_bytes_per_sec: null as any,
-        utilization: null as any,
+        read_bytes_per_sec: null,
+        write_bytes_per_sec: null,
+        utilization: null,
       };
     }
   }

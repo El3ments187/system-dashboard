@@ -182,7 +182,10 @@ export default function LlamaCppTerminalViewer() {
       if (fitAddonRef.current) {
         try {
           fitAddonRef.current.fit();
-        } catch {}
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("[TerminalViewer] fitAddon.fit() failed on resize:", e);
+        }
       }
     };
     window.addEventListener("resize", handleResize);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { isBadGpuStack } from "../utils/gpuHeuristic";
 
 /* ---- color utilities ---- */
 
@@ -353,7 +354,9 @@ export function useTheme() {
   });
 
   const [fxSafe, setFxSafe] = useState<boolean>(() => {
-    return localStorage.getItem("dashboard-fx-safe") === "on";
+    const stored = localStorage.getItem("dashboard-fx-safe");
+    if (stored !== null) return stored === "on";
+    return isBadGpuStack();
   });
 
   const resetTheme = useCallback(() => {

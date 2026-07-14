@@ -80,11 +80,56 @@ export function CardHeader({
   icon,
   title,
   online,
+  right,
+  compact = false,
 }: {
   icon: React.ReactNode;
   title: string;
-  online: boolean;
+  online?: boolean;
+  right?: React.ReactNode;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 15px",
+          borderBottom: "1px solid var(--border-light, var(--border-color))",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 10.5,
+            fontWeight: 600,
+            color: "var(--text-secondary)",
+            textTransform: "uppercase",
+            letterSpacing: "1.1px",
+          }}
+        >
+          {icon && (
+            <span
+              style={{
+                color: "var(--accent-primary)",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              {icon}
+            </span>
+          )}
+          {title}
+        </div>
+        {right}
+      </div>
+    );
+  }
   return (
     <div
       className="card-header"
@@ -110,7 +155,7 @@ export function CardHeader({
         {title}
       </span>
       <div style={{ flex: 1 }} />
-      <StatusBadge online={online} />
+      {right ?? (online !== undefined && <StatusBadge online={online} />)}
     </div>
   );
 }

@@ -77,6 +77,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updatePtsRef = useRef<string | null>(null);
   const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const outputAccRef = useRef("");
@@ -91,6 +92,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     return () => {
       if (updatePollRef.current) clearInterval(updatePollRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, []);
 
@@ -171,7 +173,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         stopPolling();
         ptyKillTerminal(pts);
         updatePtsRef.current = null;
-        setTimeout(() => setUpdateState("idle"), 2000);
+        idleTimerRef.current = setTimeout(() => setUpdateState("idle"), 2000);
       }
     },
     [stopPolling],

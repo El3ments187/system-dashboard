@@ -1,10 +1,18 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 interface MetricTileProps {
   label: ReactNode;
   value: string | number | null;
   unit?: string;
   color?: string;
+  accent?: boolean;
+  testId?: string;
+  accentEl?: string;
+  mono?: boolean;
+  style?: CSSProperties;
+  icon?: ReactNode;
+  valueSize?: number;
+  labelSize?: number;
 }
 
 export default function MetricTile({
@@ -12,47 +20,79 @@ export default function MetricTile({
   value,
   unit = "",
   color,
+  accent,
+  testId,
+  accentEl,
+  mono,
+  style,
+  icon,
+  valueSize = 13,
+  labelSize = 9,
 }: MetricTileProps) {
   const displayValue =
     value !== null && value !== undefined ? `${value}${unit}` : "\u2014";
 
+  const accentElVal =
+    accentEl !== undefined ? accentEl : accent ? "" : undefined;
+
   return (
     <div
       className="metric-tile"
+      {...(accentElVal !== undefined ? { "data-accent-el": accentElVal } : {})}
+      {...(testId !== undefined ? { "data-testid": testId } : {})}
       style={{
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
         borderRadius: "var(--radius-sm)",
-        border: "1px solid var(--border-color)",
-        background: "var(--bg-secondary)",
+        border: accent
+          ? "1px solid var(--accent-tint-40)"
+          : "1px solid var(--border-color)",
+        background: accent ? "var(--accent-tint-10)" : "var(--bg-secondary)",
         padding: "3px 5px",
         minWidth: 0,
         minHeight: 24,
+        ...style,
       }}
     >
       <span
         className="metric-tile-label"
         style={{
-          fontSize: 9,
+          fontSize: labelSize,
           fontWeight: 600,
-          color: "var(--text-muted)",
+          color: accent ? "var(--accent-primary)" : "var(--text-muted)",
           textTransform: "uppercase",
           letterSpacing: 0.5,
           marginBottom: 1,
           textShadow: "var(--text-shadow-sm)",
+          ...(icon
+            ? { display: "flex", alignItems: "center", gap: 3 }
+            : undefined),
         }}
       >
+        {icon && (
+          <span
+            style={{ display: "flex", alignItems: "center", opacity: 0.7 }}
+          >
+            {icon}
+          </span>
+        )}
         {label}
       </span>
       <span
         className="metric-tile-value"
         style={{
-          fontSize: 13,
+          fontSize: valueSize,
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
+          ...(mono
+            ? { fontFamily: '"JetBrains Mono", "Fira Code", monospace' }
+            : undefined),
           color: color || "var(--text-primary)",
           textShadow: "var(--text-shadow-sm)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
         {displayValue}
