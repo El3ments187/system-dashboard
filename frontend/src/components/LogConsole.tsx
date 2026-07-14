@@ -238,6 +238,7 @@ function ToolbarBtn({
 }) {
   return (
     <button
+      data-accent-el="inherit" /* grouped toolbar — uniform page hue */
       onClick={onClick}
       title={title}
       style={{
@@ -276,6 +277,7 @@ function FilterChip({
 }) {
   return (
     <button
+      data-accent-el="inherit" /* grouped filter chips — uniform page hue */
       onClick={onClick}
       aria-pressed={active}
       style={{
@@ -689,7 +691,15 @@ export function LogConsole({
           )}
         </div>
         {/* Toolbar */}
-        <div style={{ display: "flex", gap: 3, flexShrink: 0, order: 2, marginLeft: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 3,
+            flexShrink: 0,
+            order: 2,
+            marginLeft: "auto",
+          }}
+        >
           <ToolbarBtn
             active={paused}
             onClick={() => setPaused((p) => !p)}
@@ -894,6 +904,7 @@ export function LogConsole({
             }}
           >
             <button
+              data-accent-el="inherit"
               data-testid="jump-to-latest"
               onClick={() => {
                 isAtBottomRef.current = true;

@@ -256,7 +256,7 @@ export function ChartFrame({
   return (
     <div
       className="chart-container"
-      data-accent-el=""
+      data-accent-el="inherit"
       style={{ flex: 1, minHeight: 0, ...style }}
     >
       <AccentSpine />

@@ -32,7 +32,7 @@ describe("useAccentIndexer", () => {
     expect(els[2].style.getPropertyValue("--el-index")).toBe("2");
   });
 
-  it("nested accent elements lose --el-index; only top-level roots get indices", () => {
+  it("nested tiles each get their own --el-index (per-element spread, no nested-inheritance collapse)", () => {
     const card1 = document.createElement("div");
     card1.setAttribute("data-accent-el", "");
 
@@ -52,13 +52,14 @@ describe("useAccentIndexer", () => {
 
     renderHook(() => useAccentIndexer());
 
+    // Every accent element (card or nested tile) gets its own index.
     expect(card1.style.getPropertyValue("--el-index")).toBe("0");
-    expect(tile1.style.getPropertyValue("--el-index")).toBe("");
-    expect(tile2.style.getPropertyValue("--el-index")).toBe("");
-    expect(card2.style.getPropertyValue("--el-index")).toBe("1");
+    expect(tile1.style.getPropertyValue("--el-index")).toBe("1");
+    expect(tile2.style.getPropertyValue("--el-index")).toBe("2");
+    expect(card2.style.getPropertyValue("--el-index")).toBe("3");
     expect(
       document.documentElement.style.getPropertyValue("--accent-count"),
-    ).toBe("2");
+    ).toBe("4");
   });
 
   it('skips elements with data-accent-el="inherit" and does not increment the counter for them', () => {

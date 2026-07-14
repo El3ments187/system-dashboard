@@ -919,7 +919,7 @@
 }
 
 [data-accent-mode="rainbow-wave"] {
-  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
+  --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
 
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
@@ -963,7 +963,7 @@
 
 /* ---- Spectrum Per-Element (same engine as Wave, no animation — spread only) ---- */
 [data-accent-mode="spectrum"] {
-  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
+  --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
 
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
@@ -1002,7 +1002,7 @@
     Spectrum is static (no animation); Rainbow Wave drives hue via filter: hue-rotate() on the root. */
 [data-accent-mode="spectrum"] [style*="--el-index"],
 [data-accent-mode="rainbow-wave"] [style*="--el-index"] {
-  --el-off: calc(var(--el-index, 0) * (360 / var(--accent-count, 12)));
+  --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
   --accent-primary: oklch(from var(--accent-base) l c calc(h + var(--el-off)));
   --accent-secondary: oklch(
     from var(--accent-base) l c calc(h + var(--el-off) + var(--fx-depth, 30))

@@ -116,6 +116,7 @@ export default function OpenCodeCard() {
               {url}
             </span>
             <a
+              data-accent-el=""
               href={url}
               target="_blank"
               rel="noopener noreferrer"

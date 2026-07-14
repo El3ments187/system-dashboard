@@ -167,6 +167,7 @@ export default function EditUpdateScriptModal({
             Cancel
           </button>
           <button
+            data-accent-el=""
             onClick={() => {
               onSave(value);
               onClose();

@@ -85,9 +85,7 @@ function CapPill({
           ? "rgba(var(--success-rgb, 34,197,94),0.1)"
           : "var(--bg-secondary)",
         border: `1px solid ${
-          on
-            ? "rgba(var(--success-rgb, 34,197,94),0.3)"
-            : "var(--border-color)"
+          on ? "rgba(var(--success-rgb, 34,197,94),0.3)" : "var(--border-color)"
         }`,
         color: on ? "var(--success)" : "var(--text-muted)",
         fontSize: 12,
@@ -524,7 +522,12 @@ export default function LlamaCppPage() {
                         padding: "3px 8px",
                       }}
                     >
-                      <b style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      <b
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
+                      >
                         {runningMeta.params}
                       </b>
                     </span>
@@ -543,7 +546,10 @@ export default function LlamaCppPage() {
                       }}
                     >
                       <b
-                        style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
                       >
                         {formatCtx(slotCtx)}
                       </b>{" "}
@@ -564,7 +570,10 @@ export default function LlamaCppPage() {
                       }}
                     >
                       <b
-                        style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
                       >
                         {modelQuant}
                       </b>
@@ -572,6 +581,7 @@ export default function LlamaCppPage() {
                   )}
                   {pageModelAlias && (
                     <span
+                      data-accent-el=""
                       style={{
                         fontFamily: MONO,
                         fontSize: 10,
@@ -584,14 +594,11 @@ export default function LlamaCppPage() {
                         padding: "3px 8px",
                       }}
                     >
-                      alias{" "}
-                      <b style={{ fontWeight: 600 }}>{pageModelAlias}</b>
+                      alias <b style={{ fontWeight: 600 }}>{pageModelAlias}</b>
                     </span>
                   )}
                 </div>
-                <StatusIndicator
-                  status={llamaOnline ? "running" : "stopped"}
-                />
+                <StatusIndicator status={llamaOnline ? "running" : "stopped"} />
               </div>
               {/* Capability pills */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -629,7 +636,8 @@ export default function LlamaCppPage() {
                 gridTemplateColumns: "repeat(4, 1fr)",
                 gap: 6,
                 paddingTop: 9,
-                borderTop: "1px dashed var(--border-light, var(--border-color))",
+                borderTop:
+                  "1px dashed var(--border-light, var(--border-color))",
               }}
             >
               {(
@@ -637,9 +645,7 @@ export default function LlamaCppPage() {
                   {
                     label: "Temperature",
                     value:
-                      m?.temperature != null
-                        ? m.temperature.toFixed(2)
-                        : null,
+                      m?.temperature != null ? m.temperature.toFixed(2) : null,
                     testId: "sampling-temperature",
                   },
                   {
@@ -1412,6 +1418,7 @@ export default function LlamaCppPage() {
                       {behind} build{behind === 1 ? "" : "s"} behind
                     </span>
                     <button
+                      data-accent-el=""
                       onClick={mgmt.runUpdate}
                       disabled={!hasDir || mgmt.updateState === "running"}
                       style={{
@@ -1514,6 +1521,7 @@ export default function LlamaCppPage() {
                       {mgmt.updateProgress}%
                     </span>
                     <button
+                      data-accent-el=""
                       onClick={() => mgmt.setOutputOpen(true)}
                       style={{
                         display: "flex",
@@ -1545,6 +1553,7 @@ export default function LlamaCppPage() {
                   }}
                 >
                   <button
+                    data-accent-el=""
                     onClick={() => mgmt.openTerminal()}
                     disabled={!hasDir}
                     style={{
@@ -1570,6 +1579,7 @@ export default function LlamaCppPage() {
                     Terminal
                   </button>
                   <button
+                    data-accent-el=""
                     onClick={() =>
                       mgmt.readmeUrl &&
                       window.open(
@@ -1602,6 +1612,7 @@ export default function LlamaCppPage() {
                     Readme
                   </button>
                   <a
+                    data-accent-el=""
                     href="https://github.com/ggml-org/llama.cpp/releases"
                     target="_blank"
                     rel="noopener noreferrer"

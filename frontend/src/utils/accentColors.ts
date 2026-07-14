@@ -432,9 +432,10 @@ export function useAccentIndexer(): void {
       const els = document.querySelectorAll<HTMLElement>("[data-accent-el]");
       let i = 0;
       els.forEach((el) => {
-        const nestedInAccent =
-          el.parentElement?.closest("[data-accent-el]") != null;
-        if (el.dataset.accentEl === "inherit" || nestedInAccent) {
+        // Per-element spread: EVERY accent element (card, panel, tile, bar) gets its
+        // own hue index, so Spectrum Per-Element / Rainbow give each tile a distinct
+        // colour. Only an explicit data-accent-el="inherit" opts out.
+        if (el.dataset.accentEl === "inherit") {
           el.style.removeProperty("--el-index");
           return;
         }

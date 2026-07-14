@@ -273,6 +273,7 @@ export function RunModelsSection() {
           )}
         </div>
         <button
+          data-accent-el=""
           onClick={() => loadProfiles()}
           disabled={loading}
           style={{
@@ -438,7 +439,15 @@ export function RunModelsSection() {
           No profiles found in scan directory.
         </div>
       ) : (
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div
+          style={
+            {
+              flex: 1,
+              overflowY: "auto",
+              "--accent-count": String(Math.max(profiles.length, 1)),
+            } as React.CSSProperties
+          }
+        >
           {getSortedProfiles().map((profile: LaunchProfile, idx: number) => {
             const running = isRunning(profile);
             const active = isActive(profile);
@@ -472,6 +481,7 @@ export function RunModelsSection() {
                 className="run-models-row"
                 data-running={String(running)}
                 style={{
+                  ...({ "--el-index": String(idx) } as React.CSSProperties),
                   display: "grid",
                   gridTemplateColumns: COL_GRID,
                   gap: 0,

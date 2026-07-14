@@ -373,7 +373,7 @@ export default function SettingsPage({}: SettingsPageProps) {
     <main className="settings-grid">
       <SettingsCard>
         <div className="settings-card-header">
-          <div className="settings-icon-badge">
+          <div data-accent-el="" className="settings-icon-badge">
             <SettingsIcon
               size={16}
               style={{ color: "var(--accent-primary)" }}
@@ -413,6 +413,7 @@ export default function SettingsPage({}: SettingsPageProps) {
                 }}
               >
                 <button
+                  data-accent-el=""
                   className="settings-btn settings-btn-accent"
                   onClick={handleSave}
                   disabled={saving}
@@ -433,7 +434,7 @@ export default function SettingsPage({}: SettingsPageProps) {
 
       <SettingsCard>
         <div className="settings-card-header">
-          <div className="settings-icon-badge">
+          <div data-accent-el="" className="settings-icon-badge">
             <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
           </div>
           <div>
@@ -515,6 +516,7 @@ export default function SettingsPage({}: SettingsPageProps) {
               Update Script
             </div>
             <button
+              data-accent-el=""
               className="settings-btn settings-btn-accent"
               onClick={() => setEditScriptOpen(true)}
             >
@@ -531,6 +533,7 @@ export default function SettingsPage({}: SettingsPageProps) {
             }}
           >
             <button
+              data-accent-el=""
               className="settings-btn settings-btn-accent"
               onClick={handleSave}
               disabled={saving}
@@ -549,7 +552,7 @@ export default function SettingsPage({}: SettingsPageProps) {
 
       <SettingsCard>
         <div className="settings-card-header">
-          <div className="settings-icon-badge">
+          <div data-accent-el="" className="settings-icon-badge">
             <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />
           </div>
           <div>
@@ -621,6 +624,7 @@ export default function SettingsPage({}: SettingsPageProps) {
               Installed Version Command
             </div>
             <button
+              data-accent-el=""
               className="settings-btn settings-btn-accent"
               onClick={() => setEditLocalCmdOpen(true)}
             >
@@ -635,6 +639,7 @@ export default function SettingsPage({}: SettingsPageProps) {
               Latest Version Command
             </div>
             <button
+              data-accent-el=""
               className="settings-btn settings-btn-accent"
               onClick={() => setEditLatestCmdOpen(true)}
             >
@@ -735,6 +740,7 @@ export default function SettingsPage({}: SettingsPageProps) {
             style={{ display: "flex", justifyContent: "center", marginTop: 16 }}
           >
             <button
+              data-accent-el=""
               className="settings-btn settings-btn-accent"
               onClick={handleSaveDocSettings}
               style={{ padding: "10px 24px" }}

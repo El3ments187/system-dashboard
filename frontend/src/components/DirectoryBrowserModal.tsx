@@ -271,6 +271,7 @@ export default function DirectoryBrowserModal({
             Cancel
           </button>
           <button
+            data-accent-el=""
             onClick={() => {
               onSelect(currentPath);
               onClose();

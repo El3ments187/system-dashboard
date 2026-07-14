@@ -32,8 +32,10 @@ export default function MetricTile({
   const displayValue =
     value !== null && value !== undefined ? `${value}${unit}` : "\u2014";
 
-  const accentElVal =
-    accentEl !== undefined ? accentEl : accent ? "" : undefined;
+  let accentElVal: string | undefined;
+  if (accentEl !== undefined) accentElVal = accentEl;
+  else if (accent) accentElVal = "";
+  else accentElVal = undefined;
 
   return (
     <div

@@ -153,6 +153,7 @@ export default function OpenWebUICard() {
             </div>
             <div style={{ display: "flex", gap: 5 }}>
               <a
+                data-accent-el=""
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -241,6 +242,7 @@ export default function OpenWebUICard() {
                 }}
               />
               <button
+                data-accent-el=""
                 onClick={() => command.trim() && setRunCommand(command)}
                 style={{
                   padding: "6px 12px",
