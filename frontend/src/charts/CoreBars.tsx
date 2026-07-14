@@ -49,7 +49,7 @@ const CoreRow = ({
       style={{
         display: "grid",
         gridTemplateColumns: "24px minmax(0, 1fr) 32px",
-        alignItems: "center",
+        alignItems: "stretch",
         gap: 4,
         flex: 1,
         minHeight: 0,
@@ -63,6 +63,7 @@ const CoreRow = ({
           fontFamily: "'JetBrains Mono', monospace",
           textAlign: "right",
           flexShrink: 0,
+          alignSelf: "center",
         }}
       >
         C{index}
@@ -70,7 +71,9 @@ const CoreRow = ({
       <div
         style={{
           width: "100%",
-          height: 14,
+          height: "100%",
+          minHeight: 10,
+          margin: "2px 0",
           background: "var(--accent-tint-10)",
           borderRadius: 4,
           overflow: "hidden",
@@ -106,6 +109,7 @@ const CoreRow = ({
           textAlign: "right",
           flexShrink: 0,
           fontVariantNumeric: "tabular-nums",
+          alignSelf: "center",
         }}
       >
         {Math.round(util)}%
@@ -120,7 +124,6 @@ export default function CoreBars({ cores }: CoreBarProps) {
   const [themeTick, setThemeTick] = useState(0);
   useAccentSync(() => setThemeTick((t) => t + 1));
 
-  const textMuted = readCssVar("--text-muted") || "#8b95a5";
   const borderColor = readCssVar("--border-color") || "#2a3143";
 
   const indexedCores = useMemo(
@@ -179,7 +182,9 @@ export default function CoreBars({ cores }: CoreBarProps) {
         .core-row:hover { background: rgba(255,255,255,0.03); border-radius: 4px; }
       `}</style>
 
-      <div style={{ flex: 1, minHeight: 0, padding: "0 1px" }}>
+      <div
+        style={{ flex: 1, minHeight: 0, padding: "0 1px", overflowY: "auto" }}
+      >
         <div
           style={{
             display: "grid",
@@ -212,21 +217,6 @@ export default function CoreBars({ cores }: CoreBarProps) {
             </div>
           ))}
         </div>
-      </div>
-
-      <div
-        style={{ height: 1, background: borderColor, margin: "6px 2px 0" }}
-      />
-      <div
-        style={{
-          fontSize: 9,
-          color: textMuted,
-          padding: "4px 2px",
-          textAlign: "center",
-          letterSpacing: 0.5,
-        }}
-      >
-        {totalCores} logical threads
       </div>
     </Card>
   );
