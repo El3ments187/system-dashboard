@@ -93,7 +93,7 @@ const minimalProps = {
 } as const;
 
 describe("Glow slider bounds — deliberate scope lock", () => {
-  it("glow sliders render max=9; pulse=4; breathe=3; surge=3", () => {
+  it("glow sliders render max=9; pulse=9; breathe=3; surge=3", () => {
     const { container } = render(<ThemePage {...minimalProps} />);
 
     const get = (id: string) =>
@@ -101,7 +101,7 @@ describe("Glow slider bounds — deliberate scope lock", () => {
 
     expect(get("tp-glow-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
     expect(get("tp-inner-glow-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
-    expect(get("tp-pulse-intensity")?.max).toBe("4");
+    expect(get("tp-pulse-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
     expect(get("tp-breathe-intensity")?.max).toBe("3");
     expect(get("tp-surge-intensity")?.max).toBe("3");
   });

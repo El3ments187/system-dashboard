@@ -966,7 +966,7 @@ export default function ThemePage({
                               : "Pulse Intensity"
                           }
                           min={0.5}
-                          max={4}
+                          max={GLOW_INTENSITY_MAX}
                           step={0.1}
                           value={pulseIntensity}
                           display={pulseIntensity.toFixed(1)}
