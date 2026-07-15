@@ -52,8 +52,13 @@ pub struct TestConnectionResponse {
     pub error_message: Option<String>,
 }
 
+fn settings_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn test_connection(url: &str) -> TestConnectionResponse {
-    let client = reqwest::Client::new();
+    let client = settings_http_client();
 
     // Try health endpoint first (common pattern for OpenWebUI/OpenCode)
     let health_paths = ["/api/health", "/health"];

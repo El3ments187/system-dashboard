@@ -854,7 +854,8 @@ async fn wait_for_model_ready(script_path: &str) {
             // PID is dead — the bash wrapper may have exited after exec'ing the server.
             // Check if a live server is still bound to the expected port before failing.
             let still_on_port = port.is_some_and(|p| {
-                let sys = sysinfo::System::new_all();
+                let mut sys = sysinfo::System::new();
+                sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
                 find_llama_server_pid_by_port(&sys, p).is_some()
             });
             if !still_on_port {
@@ -1043,7 +1044,8 @@ pub fn update_profile_metrics(script_path: &str, metrics: ProfileState) {
 }
 
 pub fn find_llama_server_pid(script_path: &str) -> Option<u32> {
-    let system = sysinfo::System::new_all();
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     // Get the parent bash process PID from our state
     let state = get_state();
@@ -1207,7 +1209,8 @@ pub fn scan_profiles() -> ProfileResponse {
         let LauncherState {
             states, metadata, ..
         } = &mut *guard;
-        let liveness_system = sysinfo::System::new_all();
+        let mut liveness_system = sysinfo::System::new();
+        liveness_system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         for (script_path, state_entry) in states.iter_mut() {
             if state_entry.status == "running"
                 || state_entry.status == "loading"
@@ -1294,7 +1297,8 @@ pub fn scan_profiles() -> ProfileResponse {
     //
     // Multiple profiles may share the same port (all 8081 is common); only ONE is recovered
     // per port.  The known running_script is checked first so it takes priority.
-    let recovery_system = sysinfo::System::new_all();
+    let mut recovery_system = sysinfo::System::new();
+    recovery_system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     let running_script_clone = guard.running_script.clone();
     let mut recovery_candidates: Vec<&LaunchProfile> = profiles.iter().collect();
     recovery_candidates.sort_by_key(|p| {
@@ -1461,7 +1465,8 @@ fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
 
 async fn update_profile_metrics_for_script(script_path: &str) {
     let port = get_profile_parsed_args(script_path).and_then(|a| a.port);
-    let system = sysinfo::System::new_all();
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     // Scoped block: the RwLockReadGuard (and the &ProfileState borrowed from
     // it) must not be live across any `.await` point below, or the

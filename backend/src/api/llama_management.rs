@@ -3,7 +3,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use crate::models::ai::*;
@@ -225,7 +224,11 @@ pub fn run_version_cmd(dir: &str, cmd: &str) -> Option<String> {
         return None;
     }
     let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if result.is_empty() { None } else { Some(result) }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
 }
 
 pub fn get_repo_version(dir: &str) -> Option<String> {
@@ -313,7 +316,82 @@ pub struct TerminalSpawnResponse {
     pub pts_name: String,
 }
 
-const MAX_SCROLLBACK: usize = 8192;
+const MAX_SCROLLBACK_BYTES: usize = 4 * 1024 * 1024;
+
+pub struct Scrollback {
+    chunks: std::collections::VecDeque<(usize, String)>,
+    bytes: usize,
+    start: usize,
+    next: usize,
+}
+
+impl Default for Scrollback {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Scrollback {
+    pub fn new() -> Self {
+        Scrollback {
+            chunks: std::collections::VecDeque::new(),
+            bytes: 0,
+            start: 0,
+            next: 0,
+        }
+    }
+
+    pub fn push(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let abs_start = self.next;
+        self.next += text.len();
+        self.bytes += text.len();
+        self.chunks.push_back((abs_start, text.to_string()));
+        while self.bytes > MAX_SCROLLBACK_BYTES {
+            if let Some((_, chunk)) = self.chunks.pop_front() {
+                let len = chunk.len();
+                self.bytes -= len;
+                self.start += len;
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn read_from(&self, offset: usize) -> (String, usize) {
+        let next = self.next;
+        if offset >= next {
+            return (String::new(), next);
+        }
+        let effective = offset.max(self.start);
+        let mut result = String::new();
+        for (abs_start, chunk) in &self.chunks {
+            let chunk_end = abs_start + chunk.len();
+            if chunk_end <= effective {
+                continue;
+            }
+            if *abs_start >= effective {
+                result.push_str(chunk);
+            } else {
+                let rel = effective - abs_start;
+                if let Some(s) = chunk.get(rel..) {
+                    result.push_str(s);
+                }
+            }
+        }
+        (result, next)
+    }
+
+    pub fn start_offset(&self) -> usize {
+        self.start
+    }
+
+    pub fn history(&self) -> Vec<String> {
+        self.chunks.iter().map(|(_, s)| s.clone()).collect()
+    }
+}
 
 struct TerminalState {
     master_fd: std::os::unix::io::RawFd,
@@ -321,7 +399,6 @@ struct TerminalState {
     broadcast_tx: Option<tokio::sync::broadcast::Sender<String>>,
     _reader_handle: Option<std::thread::JoinHandle<()>>,
     scrollback: ScrollbackBuffer,
-    scrollback_start: std::sync::Arc<AtomicUsize>,
     /// When the terminal last had zero attached viewers. `None` while at least
     /// one viewer is connected. Used by the idle reaper to detect abandoned
     /// sessions (e.g. a tab closed via the browser's own X instead of the
@@ -329,7 +406,7 @@ struct TerminalState {
     zero_viewers_since: Option<std::time::Instant>,
 }
 
-type ScrollbackBuffer = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+type ScrollbackBuffer = std::sync::Arc<std::sync::Mutex<Scrollback>>;
 
 static TERMINALS: Mutex<Vec<(String, std::sync::Arc<std::sync::RwLock<TerminalState>>)>> =
     Mutex::new(Vec::new());
@@ -429,7 +506,7 @@ pub fn get_terminal_history(pts: &str) -> Result<Vec<String>, String> {
     Ok(state
         .scrollback
         .lock()
-        .map(|sb| sb.clone())
+        .map(|sb| sb.history())
         .unwrap_or_default())
 }
 
@@ -439,7 +516,6 @@ fn spawn_reader_thread(
     pid: i32,
     tx: tokio::sync::broadcast::Sender<String>,
     scrollback: ScrollbackBuffer,
-    scrollback_start: std::sync::Arc<AtomicUsize>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -450,11 +526,7 @@ fn spawn_reader_thread(
                         let text = String::from_utf8_lossy(&buf[..n as usize]).to_string();
                         let _ = tx.send(text.clone());
                         let mut sb = scrollback.lock().unwrap();
-                        sb.push(text);
-                        while sb.len() > MAX_SCROLLBACK {
-                            let removed = sb.remove(0);
-                            scrollback_start.fetch_add(removed.len(), Ordering::Relaxed);
-                        }
+                        sb.push(&text);
                     }
                     0 => {
                         // EOF — shell process exited cleanly
@@ -570,8 +642,7 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
 
                     // Shared scrollback buffer for history replay
                     let scrollback: ScrollbackBuffer =
-                        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-                    let scrollback_start = std::sync::Arc::new(AtomicUsize::new(0));
+                        std::sync::Arc::new(std::sync::Mutex::new(Scrollback::new()));
 
                     // Spawn background reader thread that broadcasts PTY output
                     let reader_handle = spawn_reader_thread(
@@ -580,7 +651,6 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                         child.as_raw(),
                         broadcast_tx.clone(),
                         scrollback.clone(),
-                        scrollback_start.clone(),
                     );
                     eprintln!(
                         "[Terminal] spawned {} pid={} dir={}",
@@ -596,7 +666,6 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                         broadcast_tx: Some(broadcast_tx),
                         _reader_handle: Some(reader_handle),
                         scrollback,
-                        scrollback_start,
                         zero_viewers_since: Some(std::time::Instant::now()),
                     };
                     let mut terminals = TERMINALS.lock().unwrap();
@@ -621,20 +690,8 @@ pub fn read_terminal_output(pts: &str, offset: i64) -> Result<(String, usize), S
     let guard = find_terminal(pts).ok_or("Terminal not found")?;
     let state = guard.read().unwrap();
     let sb = state.scrollback.lock().unwrap();
-    let start = state.scrollback_start.load(Ordering::Relaxed);
-
-    let joined = sb.join("");
-    let next_offset = start + joined.len();
-
     let abs_offset = if offset < 0 { 0usize } else { offset as usize };
-
-    if abs_offset <= start {
-        return Ok((joined, next_offset));
-    }
-
-    let rel = abs_offset - start;
-    let text = joined.get(rel..).unwrap_or("").to_string();
-    Ok((text, next_offset))
+    Ok(sb.read_from(abs_offset))
 }
 
 pub fn write_terminal_input(pts: &str, input: &str) -> Result<(), String> {
@@ -724,4 +781,126 @@ pub struct TerminalOutputQuery {
     pub pts: String,
     #[serde(default)]
     pub offset: Option<i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_from_empty_returns_empty_at_zero() {
+        let sb = Scrollback::new();
+        assert_eq!(sb.read_from(0), (String::new(), 0));
+    }
+
+    #[test]
+    fn push_two_chunks_read_all_from_zero() {
+        let mut sb = Scrollback::new();
+        sb.push("a");
+        sb.push("b");
+        let (text, next) = sb.read_from(0);
+        assert_eq!(text, "ab");
+        assert_eq!(next, 2);
+    }
+
+    #[test]
+    fn no_duplication_read_at_next_offset() {
+        let mut sb = Scrollback::new();
+        sb.push("a");
+        sb.push("b");
+        let (_, next) = sb.read_from(0);
+        let (text2, next2) = sb.read_from(next);
+        assert_eq!(text2, String::new());
+        assert_eq!(next2, next);
+    }
+
+    #[test]
+    fn delta_only_after_push() {
+        let mut sb = Scrollback::new();
+        sb.push("a");
+        sb.push("b");
+        let (_, prev_next) = sb.read_from(0);
+        sb.push("c");
+        let (text, next) = sb.read_from(prev_next);
+        assert_eq!(text, "c");
+        assert_eq!(next, 3);
+    }
+
+    #[test]
+    fn byte_cap_trim_and_start_offset_advances_exactly() {
+        let mut sb = Scrollback::new();
+        let chunk = "x".repeat(1024 * 1024); // 1 MB
+        for _ in 0..5 {
+            sb.push(&chunk);
+        }
+        assert!(sb.bytes <= MAX_SCROLLBACK_BYTES);
+        // start + retained bytes == total bytes ever written
+        assert_eq!(sb.start + sb.bytes, sb.next);
+        assert!(sb.start > 0, "oldest chunks should have been dropped");
+    }
+
+    #[test]
+    fn resync_below_floor_no_panic_and_monotonic() {
+        let mut sb = Scrollback::new();
+        let chunk = "x".repeat(1024 * 1024);
+        for _ in 0..5 {
+            sb.push(&chunk);
+        }
+        let floor = sb.start_offset();
+        assert!(floor > 0);
+        // Requesting from before the floor must not panic and must return data
+        let (text, next) = sb.read_from(0);
+        assert!(!text.is_empty());
+        // next_offset must be at least as large as floor
+        assert!(next >= floor);
+    }
+
+    #[test]
+    fn multibyte_utf8_no_panic_and_roundtrip() {
+        let mut sb = Scrollback::new();
+        let s = "héllo→";
+        sb.push(s);
+        let (text, next) = sb.read_from(0);
+        assert_eq!(text, s);
+        assert_eq!(next, s.len()); // byte length
+        let (empty, _) = sb.read_from(next);
+        assert_eq!(empty, String::new());
+    }
+
+    #[test]
+    fn monotonic_offsets_across_trim() {
+        let mut sb = Scrollback::new();
+        let chunk = "x".repeat(1024 * 1024);
+        let mut last_next = 0usize;
+        for _ in 0..6 {
+            sb.push(&chunk);
+            let (_, next) = sb.read_from(last_next);
+            assert!(next >= last_next, "next_offset went backwards");
+            last_next = next;
+        }
+    }
+
+    #[test]
+    fn history_returns_pushed_texts_in_order() {
+        let mut sb = Scrollback::new();
+        sb.push("alpha");
+        sb.push("beta");
+        sb.push("gamma");
+        assert_eq!(sb.history(), vec!["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn interleaved_push_read_concatenates_to_full_stream() {
+        let mut sb = Scrollback::new();
+        let chunks = ["chunk1", "chunk2", "chunk3", "chunk4"];
+        let mut offset = 0;
+        let mut full = String::new();
+        for chunk in &chunks {
+            sb.push(chunk);
+            let (delta, next) = sb.read_from(offset);
+            full.push_str(&delta);
+            offset = next;
+        }
+        assert_eq!(full, chunks.concat());
+    }
 }

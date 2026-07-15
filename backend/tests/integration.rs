@@ -775,12 +775,13 @@ mod system_metrics {
         let metrics = collect_system_metrics();
         if let Ok(content) = std::fs::read_to_string("/proc/uptime")
             && let Some(val) = content.split_whitespace().next()
-                && let Ok(proc_uptime) = val.parse::<f64>() {
-                    assert!(
-                        (metrics.uptime_seconds - proc_uptime).abs() < 2.0,
-                        "Uptime should match /proc/uptime within 2 seconds"
-                    );
-                }
+            && let Ok(proc_uptime) = val.parse::<f64>()
+        {
+            assert!(
+                (metrics.uptime_seconds - proc_uptime).abs() < 2.0,
+                "Uptime should match /proc/uptime within 2 seconds"
+            );
+        }
     }
 
     #[test]

@@ -156,6 +156,13 @@ struct AiHistoryEntry {
 
 static AI_HISTORY: LazyLock<Mutex<Vec<AiHistoryEntry>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
+static AI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .expect("failed to build AI HTTP client")
+});
+
 /// Parse Prometheus text-format metrics from llama-server /metrics endpoint.
 fn parse_prometheus_metrics(body: &str) -> LlamaMetrics {
     let mut m = LlamaMetrics::default();
@@ -291,10 +298,7 @@ async fn poll_llama_server(
     Option<Vec<crate::models::ai::LlamaSlot>>,
     Option<f64>,
 ) {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = &*AI_HTTP_CLIENT;
 
     // Check health endpoint with latency measurement
     let health_url = format!("{}/health", base_url);
@@ -553,10 +557,7 @@ struct AiDerivedMetrics {
 async fn poll_openwebui(
     base_url: &str,
 ) -> (AiServiceStatus, Option<usize>, Option<Vec<AiModelItem>>) {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = &*AI_HTTP_CLIENT;
 
     // Check health endpoint first
     let health_url = format!("{}/api/health", base_url);
@@ -628,10 +629,7 @@ async fn poll_openwebui(
 
 /// Poll ComfyUI for health check and workflow info.
 async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>) {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = &*AI_HTTP_CLIENT;
 
     // Check root endpoint (ComfyUI serves web UI at root)
     match client.get(base_url).send().await {
@@ -687,10 +685,7 @@ async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>
 
 /// Poll OpenCode for health check.
 async fn poll_opencode(base_url: &str) -> AiServiceStatus {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = &*AI_HTTP_CLIENT;
 
     // Try common health endpoints
     let urls = [

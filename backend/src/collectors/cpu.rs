@@ -287,9 +287,10 @@ pub fn parse_physical_cores(content: &str) -> usize {
 fn read_cpu_max_freq() -> f64 {
     if let Ok(content) =
         std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
-        && let Ok(khz) = content.trim().parse::<u64>() {
-            return khz as f64 / 1000.0;
-        }
+        && let Ok(khz) = content.trim().parse::<u64>()
+    {
+        return khz as f64 / 1000.0;
+    }
     0.0
 }
 
@@ -365,10 +366,7 @@ mod tests {
 
     #[test]
     fn leaves_model_without_processor_suffix_unchanged() {
-        assert_eq!(
-            normalize_cpu_model("Apple M2 Pro"),
-            "Apple M2 Pro"
-        );
+        assert_eq!(normalize_cpu_model("Apple M2 Pro"), "Apple M2 Pro");
     }
 
     #[test]

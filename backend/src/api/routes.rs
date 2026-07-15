@@ -113,7 +113,13 @@ async fn memory_handler() -> axum::response::Json<Value> {
 }
 
 async fn gpu_handler() -> axum::response::Json<Value> {
-    let (metrics, _status) = collect_gpu_metrics();
+    let (metrics, _status) = match tokio::task::spawn_blocking(collect_gpu_metrics).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[API] gpu collect task panicked: {}", e);
+            return Json(json!({ "error": "GPU collection failed" }));
+        }
+    };
     let json_data = safe_serialize(&metrics);
     Json(json!({
         "data": json_data,
@@ -122,7 +128,13 @@ async fn gpu_handler() -> axum::response::Json<Value> {
 }
 
 async fn storage_handler() -> axum::response::Json<Value> {
-    let (metrics, _status) = collect_storage_metrics();
+    let (metrics, _status) = match tokio::task::spawn_blocking(collect_storage_metrics).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[API] storage collect task panicked: {}", e);
+            return Json(json!({ "error": "Storage collection failed" }));
+        }
+    };
     let json_data = safe_serialize(&metrics);
     Json(json!({
         "data": json_data,
@@ -131,7 +143,13 @@ async fn storage_handler() -> axum::response::Json<Value> {
 }
 
 async fn storage_devices_handler() -> axum::response::Json<Value> {
-    let devices = collect_storage_by_device();
+    let devices = match tokio::task::spawn_blocking(collect_storage_by_device).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[API] storage devices collect task panicked: {}", e);
+            return Json(json!({ "error": "Storage devices collection failed" }));
+        }
+    };
     let json_data = safe_serialize(&devices);
     Json(json!({
         "data": json_data,
@@ -140,7 +158,13 @@ async fn storage_devices_handler() -> axum::response::Json<Value> {
 }
 
 async fn storage_history_handler() -> axum::response::Json<Value> {
-    let history = collect_storage_history();
+    let history = match tokio::task::spawn_blocking(collect_storage_history).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[API] storage history collect task panicked: {}", e);
+            return Json(json!({ "error": "Storage history collection failed" }));
+        }
+    };
     let json_data = safe_serialize(&history);
     Json(json!({
         "data": json_data,
@@ -175,8 +199,16 @@ async fn status_handler() -> axum::response::Json<Value> {
 async fn alerts_handler() -> axum::response::Json<AlertResponse> {
     let (_cpu, cpu_status) = collect_cpu_metrics().await;
     let (_mem, mem_status) = collect_memory_metrics();
-    let (gpus, gpu_status) = collect_gpu_metrics();
-    let (_storages, storages_status) = collect_storage_metrics();
+    let ((gpus, gpu_status), (_storages, storages_status)) =
+        match tokio::task::spawn_blocking(|| (collect_gpu_metrics(), collect_storage_metrics()))
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[API] alerts collect task panicked: {}", e);
+                return Json(AlertResponse { alerts: vec![] });
+            }
+        };
 
     let first_gpu = gpus.first();
 
@@ -226,7 +258,13 @@ async fn ai_metrics_handler() -> axum::response::Json<Value> {
     .await;
 
     // Enrich kv_cache_stats with real NVML VRAM data if available
-    let (gpus, _) = collect_gpu_metrics();
+    let (gpus, _) = match tokio::task::spawn_blocking(collect_gpu_metrics).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[API] gpu collect task panicked: {}", e);
+            return Json(json!({ "error": "GPU collection failed" }));
+        }
+    };
     if let Some(first_gpu) = gpus.first()
         && let Some(ref mut stats) = metrics.kv_cache_stats
     {
@@ -307,11 +345,23 @@ pub struct BrowseQuery {
 async fn directory_info_handler(
     query: axum::extract::Query<BrowseQuery>,
 ) -> axum::response::Json<Value> {
-    let path = &query.path;
-    let git_info = ai_mgmt::read_git_info(path);
-    let build_status = ai_mgmt::check_build_dir(&format!("{}/build", path));
-    let executables = ai_mgmt::detect_executables(&format!("{}/build/bin", path));
-    let validation = ai_mgmt::validate_directory(path);
+    let path = query.path.clone();
+    let (git_info, build_status, executables, validation) =
+        match tokio::task::spawn_blocking(move || {
+            let git_info = ai_mgmt::read_git_info(&path);
+            let build_status = ai_mgmt::check_build_dir(&format!("{}/build", path));
+            let executables = ai_mgmt::detect_executables(&format!("{}/build/bin", path));
+            let validation = ai_mgmt::validate_directory(&path);
+            (git_info, build_status, executables, validation)
+        })
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[API] directory info task panicked: {}", e);
+                return Json(json!({ "error": "Directory info collection failed" }));
+            }
+        };
     Json(json!({
         "data": {
             "git_info": git_info,
@@ -337,9 +387,13 @@ async fn repo_info_handler(
     let path = &query.path;
     let readme_url = ai_mgmt::get_repo_readme_url(path);
     let version = ai_mgmt::get_repo_version(path);
-    let local_build_tag = query.local_cmd.as_deref()
+    let local_build_tag = query
+        .local_cmd
+        .as_deref()
         .and_then(|cmd| ai_mgmt::run_version_cmd(path, cmd));
-    let latest_build_tag = query.latest_cmd.as_deref()
+    let latest_build_tag = query
+        .latest_cmd
+        .as_deref()
         .and_then(|cmd| ai_mgmt::run_version_cmd(path, cmd));
     Json(json!({
         "data": {
@@ -510,7 +564,7 @@ async fn handle_terminal_ws(socket: WebSocket, pts_name: String) {
     };
 
     // Replay scrollback history before streaming live output
-    let history: Vec<String> = scrollback.lock().map(|sb| sb.clone()).unwrap_or_default();
+    let history: Vec<String> = scrollback.lock().map(|sb| sb.history()).unwrap_or_default();
     for chunk in history.iter() {
         if sender
             .send(Message::Text(axum::extract::ws::Utf8Bytes::from(
@@ -846,7 +900,11 @@ fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value
             && let Some(pid_val) = pid
         {
             // Get process-level metrics from system
-            let system = sysinfo::System::new_all();
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(
+                sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from(pid_val as usize)]),
+                true,
+            );
             if let Some(proc) = system.process(sysinfo::Pid::from(pid_val as usize)) {
                 let cpu_percent = proc.cpu_usage();
                 let memory_kb = proc.memory();
