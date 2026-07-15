@@ -81,6 +81,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
   const updatePtsRef = useRef<string | null>(null);
   const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const outputAccRef = useRef("");
+  const updateOffsetRef = useRef(0);
 
   const showToast = useCallback((msg: string, type: "error" | "info") => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -190,6 +191,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     setUpdateProgress(0);
     setUpdateOutput("");
     outputAccRef.current = "";
+    updateOffsetRef.current = 0;
     try {
       const resp = await ptySpawnTerminal(dirPath);
       updatePtsRef.current = resp.pts_name;
@@ -204,8 +206,9 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         const pts = updatePtsRef.current;
         if (!pts) return;
         try {
-          const chunk = await ptyReadOutput(pts);
-          if (chunk) handlePollChunk(chunk, pts);
+          const { text, nextOffset } = await ptyReadOutput(pts, updateOffsetRef.current);
+          updateOffsetRef.current = nextOffset;
+          if (text) handlePollChunk(text, pts);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error("[LlamaCpp] Update poll error:", err);

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use crate::models::ai::*;
@@ -320,6 +321,7 @@ struct TerminalState {
     broadcast_tx: Option<tokio::sync::broadcast::Sender<String>>,
     _reader_handle: Option<std::thread::JoinHandle<()>>,
     scrollback: ScrollbackBuffer,
+    scrollback_start: std::sync::Arc<AtomicUsize>,
     /// When the terminal last had zero attached viewers. `None` while at least
     /// one viewer is connected. Used by the idle reaper to detect abandoned
     /// sessions (e.g. a tab closed via the browser's own X instead of the
@@ -437,6 +439,7 @@ fn spawn_reader_thread(
     pid: i32,
     tx: tokio::sync::broadcast::Sender<String>,
     scrollback: ScrollbackBuffer,
+    scrollback_start: std::sync::Arc<AtomicUsize>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -449,7 +452,8 @@ fn spawn_reader_thread(
                         let mut sb = scrollback.lock().unwrap();
                         sb.push(text);
                         while sb.len() > MAX_SCROLLBACK {
-                            sb.remove(0);
+                            let removed = sb.remove(0);
+                            scrollback_start.fetch_add(removed.len(), Ordering::Relaxed);
                         }
                     }
                     0 => {
@@ -567,6 +571,7 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                     // Shared scrollback buffer for history replay
                     let scrollback: ScrollbackBuffer =
                         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                    let scrollback_start = std::sync::Arc::new(AtomicUsize::new(0));
 
                     // Spawn background reader thread that broadcasts PTY output
                     let reader_handle = spawn_reader_thread(
@@ -575,6 +580,7 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                         child.as_raw(),
                         broadcast_tx.clone(),
                         scrollback.clone(),
+                        scrollback_start.clone(),
                     );
                     eprintln!(
                         "[Terminal] spawned {} pid={} dir={}",
@@ -590,6 +596,7 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                         broadcast_tx: Some(broadcast_tx),
                         _reader_handle: Some(reader_handle),
                         scrollback,
+                        scrollback_start,
                         zero_viewers_since: Some(std::time::Instant::now()),
                     };
                     let mut terminals = TERMINALS.lock().unwrap();
@@ -610,23 +617,24 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
     }
 }
 
-pub fn read_terminal_output(pts: &str, _offset: i64) -> Result<String, String> {
+pub fn read_terminal_output(pts: &str, offset: i64) -> Result<(String, usize), String> {
     let guard = find_terminal(pts).ok_or("Terminal not found")?;
     let state = guard.read().unwrap();
-    let fd = state.master_fd;
+    let sb = state.scrollback.lock().unwrap();
+    let start = state.scrollback_start.load(Ordering::Relaxed);
 
-    // Read all available data from PTY using libc::read (non-blocking via O_NONBLOCK)
-    let mut buf = [0u8; 4096];
-    unsafe {
-        match libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) {
-            n if n > 0 => {
-                // Convert to string, handling ANSI escape sequences
-                let text = String::from_utf8_lossy(&buf[..n as usize]).to_string();
-                Ok(text)
-            }
-            _ => Ok(String::new()),
-        }
+    let joined = sb.join("");
+    let next_offset = start + joined.len();
+
+    let abs_offset = if offset < 0 { 0usize } else { offset as usize };
+
+    if abs_offset <= start {
+        return Ok((joined, next_offset));
     }
+
+    let rel = abs_offset - start;
+    let text = joined.get(rel..).unwrap_or("").to_string();
+    Ok((text, next_offset))
 }
 
 pub fn write_terminal_input(pts: &str, input: &str) -> Result<(), String> {

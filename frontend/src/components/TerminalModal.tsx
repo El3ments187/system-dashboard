@@ -33,6 +33,7 @@ export default function TerminalModal({
   const outputTextRef = useRef("");
   const inputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const offsetRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,8 +44,9 @@ export default function TerminalModal({
         setError(null);
         setConnected(true);
         try {
-          const initialOutput = await ptyReadOutput(ptsName!);
+          const { text: initialOutput, nextOffset } = await ptyReadOutput(ptsName!);
           outputTextRef.current = initialOutput;
+          offsetRef.current = nextOffset;
           setOutput(initialOutput);
         } catch {
           /* ignore */
@@ -72,10 +74,11 @@ export default function TerminalModal({
     if (!ptsName || !connected || !isOpen) return;
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const newOutput = await ptyReadOutput(ptsName);
-        if (newOutput.length > outputTextRef.current.length) {
-          outputTextRef.current = newOutput;
-          setOutput(newOutput);
+        const { text: delta, nextOffset } = await ptyReadOutput(ptsName, offsetRef.current);
+        offsetRef.current = nextOffset;
+        if (delta) {
+          outputTextRef.current += delta;
+          setOutput(outputTextRef.current);
           setTimeout(() => {
             outputRef.current?.scrollTo({
               top: outputRef.current.scrollHeight,

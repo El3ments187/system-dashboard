@@ -451,7 +451,10 @@ async fn terminal_output_handler(
 ) -> axum::response::Json<Value> {
     let pts = query.pts.as_str();
     match ai_mgmt::read_terminal_output(pts, query.offset.unwrap_or(0)) {
-        Ok(resp) => Json(json!({ "data": safe_serialize(&resp), "success": true })),
+        Ok((text, next_offset)) => Json(json!({
+            "data": { "text": safe_serialize(&text), "next_offset": next_offset },
+            "success": true
+        })),
         Err(e) => Json(json!({ "error": e, "success": false })),
     }
 }

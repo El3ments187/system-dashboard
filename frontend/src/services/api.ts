@@ -187,12 +187,16 @@ export async function ptySpawnTerminal(
   return (await res.json()).data as TerminalSpawnResponse;
 }
 
-export async function ptyReadOutput(ptsName: string): Promise<string> {
+export async function ptyReadOutput(
+  ptsName: string,
+  offset = 0,
+): Promise<{ text: string; nextOffset: number }> {
   const res = await fetch(
-    `${BASE_URL}/llama/terminal/output?pts=${encodeURIComponent(ptsName)}`,
+    `${BASE_URL}/llama/terminal/output?pts=${encodeURIComponent(ptsName)}&offset=${offset}`,
   );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
-  return (await res.json()).data as string;
+  const data = (await res.json()).data as { text: string; next_offset: number };
+  return { text: data.text, nextOffset: data.next_offset };
 }
 
 export async function ptyWriteInput(
