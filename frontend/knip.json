@@ -17,8 +17,6 @@
     "puppeteer",
     "@testing-library/user-event",
     "depcheck",
-    "eslint-plugin-import",
-    "prettier"
   ],
   "ignoreBinaries": ["playwright"],
   "ignoreExportsUsedInFile": true
