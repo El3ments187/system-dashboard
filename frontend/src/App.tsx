@@ -147,12 +147,18 @@ export default function App() {
     }
     const path = getPathForPage(activePage);
     const search = activePage === "terminal" ? window.location.search : "";
+    const target = path + search;
+    const currentUrl = window.location.pathname + window.location.search;
     if (isInitialMount.current) {
       isInitialMount.current = false;
-      window.history.replaceState({ page: activePage }, "", path + search);
-    } else {
-      window.history.pushState({ page: activePage }, "", path + search);
+      window.history.replaceState({ page: activePage }, "", target);
+      return;
     }
+    if (target === currentUrl) {
+      window.history.replaceState({ page: activePage }, "", target);
+      return;
+    }
+    window.history.pushState({ page: activePage }, "", target);
   }, [activePage]);
 
   // Handle browser back/forward

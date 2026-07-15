@@ -153,7 +153,9 @@ function VerticalProgress({
         }}
       >
         <div
-          className={color === accent ? "accent-fill" : undefined}
+          className={
+            color === accent ? "accent-fill accent-glow-target" : undefined
+          }
           style={{
             position: "absolute",
             bottom: 0,
@@ -170,7 +172,10 @@ function VerticalProgress({
             borderRadius: 5,
             transition: "height 0.6s ease",
           }}
-        />
+        >
+          {color === accent && <span className="bright-breathe" />}
+          {color === accent && <span className="bright-surge" />}
+        </div>
         <div
           style={{
             position: "absolute",

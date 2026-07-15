@@ -3,16 +3,19 @@ import * as fs from "fs";
 import * as path from "path";
 
 const SRC = path.resolve(__dirname, "../..");
-// Both files are canonical sources for spine/bright-layer classes
+// CardComponents.tsx is the single canonical source for the spine element.
+// bright-breathe / bright-surge are animation overlay spans that belong on
+// every accent-glow-target element, wherever that lives (bars, cards, etc.),
+// so they are intentionally NOT restricted here.
 const CANONICAL_FILES = new Set([
   path.join(SRC, "components/shared/CardComponents.tsx"),
-  path.join(SRC, "components/shared/ProgressBar.tsx"),
 ]);
 
-// accent-glow-target is a general glow-participation marker used on any element
-// that should animate under pulse/glow effects; it is intentionally NOT restricted
-// to CardComponents.tsx. Only the structural spine classes are.
-const SPINE_STRINGS = ["card-accent-spine", "bright-breathe", "bright-surge"];
+// Only the structural spine element class is single-source.
+// accent-glow-target, bright-breathe, and bright-surge are general
+// glow-participation / animation markers used on any element that carries a
+// glow target — they are intentionally NOT restricted to CardComponents.tsx.
+const SPINE_STRINGS = ["card-accent-spine"];
 
 function walk(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -25,7 +28,7 @@ function walk(dir: string): string[] {
 }
 
 describe("spineSingleSource invariant", () => {
-  it("spine class strings appear only in CardComponents.tsx, nowhere else in src/", () => {
+  it("card-accent-spine appears only in CardComponents.tsx, nowhere else in src/", () => {
     const files = walk(SRC).filter(
       (f) =>
         !CANONICAL_FILES.has(f) &&

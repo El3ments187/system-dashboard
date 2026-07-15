@@ -5,6 +5,10 @@
   color: var(--accent-primary);
 }
 
+[data-glow="neon"] .accent-text-glow {
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+
 .accent-bg,
 .accent-fill {
   background: var(--accent-fill);
@@ -50,8 +54,16 @@
   transition: var(--transition-fast);
 }
 
-.btn-accent:hover {
+[data-glow="neon"] .btn-accent:hover {
   box-shadow: 0 0 16px var(--accent-glow);
+}
+
+[data-glow="neon"] .panel-retry-btn {
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+[data-glow="neon"] .panel-retry-btn:hover {
+  box-shadow: 0 0 20px var(--accent-glow);
 }
 
 /* Card hover effect */
@@ -97,6 +109,9 @@
 
 .color-swatch.active {
   border-color: white;
+}
+
+[data-glow="neon"] .color-swatch.active {
   box-shadow: 0 0 12px var(--accent-glow);
 }
 
@@ -1360,6 +1375,9 @@ main {
   background: var(--accent-fill);
   background-size: var(--accent-fill-size);
   color: #fff;
+}
+
+[data-glow="neon"] .settings-btn-accent:hover:not(:disabled) {
   box-shadow: 0 0 16px var(--accent-glow);
 }
 

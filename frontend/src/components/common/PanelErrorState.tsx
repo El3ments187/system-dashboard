@@ -248,6 +248,7 @@ export default function PanelErrorState({
       {/* Retry button */}
       <div style={{ display: "flex", justifyContent: "center", marginTop: 4 }}>
         <button
+          className="panel-retry-btn"
           onClick={onRetry}
           style={{
             background: `linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))`,
@@ -262,15 +263,12 @@ export default function PanelErrorState({
             alignItems: "center",
             gap: 6,
             transition: "var(--transition-fast)",
-            boxShadow: `0 0 12px var(--accent-glow)`,
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "scale(1.05)";
-            e.currentTarget.style.boxShadow = `0 0 20px var(--accent-glow)`;
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = "scale(1)";
-            e.currentTarget.style.boxShadow = `0 0 12px var(--accent-glow)`;
           }}
         >
           <RefreshCw size={14} />

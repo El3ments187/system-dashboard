@@ -424,6 +424,7 @@ export default function LlamaCppPage() {
             </div>
             {/* Accent line */}
             <div
+              className="accent-fill accent-glow-target"
               style={{
                 height: 2,
                 width: 36,
@@ -432,7 +433,10 @@ export default function LlamaCppPage() {
                 borderRadius: 2,
                 marginBottom: 6,
               }}
-            />
+            >
+              <span className="bright-breathe" />
+              <span className="bright-surge" />
+            </div>
             {/* Model name hero */}
             <div
               ref={modelNameRef}
@@ -453,10 +457,7 @@ export default function LlamaCppPage() {
                 <>
                   {middleTruncate(modelHead, 40)}
                   {modelQuant && (
-                    <span
-                      className="accent-text"
-                      style={{ textShadow: "0 0 18px var(--accent-glow)" }}
-                    >
+                    <span className="accent-text accent-text-glow">
                       {modelQuant}
                     </span>
                   )}
@@ -1418,6 +1419,7 @@ export default function LlamaCppPage() {
                       {behind} build{behind === 1 ? "" : "s"} behind
                     </span>
                     <button
+                      className="accent-glow-target"
                       data-accent-el=""
                       onClick={mgmt.runUpdate}
                       disabled={!hasDir || mgmt.updateState === "running"}
@@ -1443,6 +1445,8 @@ export default function LlamaCppPage() {
                         flexShrink: 0,
                       }}
                     >
+                      <span className="bright-breathe" />
+                      <span className="bright-surge" />
                       <RefreshCw
                         size={9}
                         className={

@@ -4,7 +4,7 @@
  * Full-wheel coverage: with enough elements, hues span the whole wheel.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { setAccentMode } from "../helpers/e2eThemeAssertions";
+import { setAccentMode } from "../../helpers/e2eThemeAssertions";
 
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";
 
@@ -25,7 +25,11 @@ async function waitForIndices(page: Page) {
 }
 
 /** Sample the hue (0–360) of the --accent-primary resolved at a given el-index. */
-async function sampleHueAtIndex(page: Page, index: number, total: number): Promise<number> {
+async function sampleHueAtIndex(
+  page: Page,
+  index: number,
+  total: number,
+): Promise<number> {
   return page.evaluate(
     ({ idx, tot }) => {
       const step = tot > 1 ? 360 / tot : 0;
@@ -44,15 +48,18 @@ async function sampleHueAtIndex(page: Page, index: number, total: number): Promi
       document.body.removeChild(probe);
       const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
       // RGB → hue
-      const rn = r / 255, gn = g / 255, bn = b / 255;
-      const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+      const rn = r / 255,
+        gn = g / 255,
+        bn = b / 255;
+      const max = Math.max(rn, gn, bn),
+        min = Math.min(rn, gn, bn);
       if (max === min) return 0;
       const d = max - min;
       let h = 0;
       if (max === rn) h = ((gn - bn) / d) % 6;
       else if (max === gn) h = (bn - rn) / d + 2;
       else h = (rn - gn) / d + 4;
-      return ((h * 60) + 360) % 360;
+      return (h * 60 + 360) % 360;
     },
     { idx: index, tot: total },
   );
@@ -72,7 +79,9 @@ for (const { name, path } of PAGES) {
       await waitForIndices(page);
     });
 
-    test(`${name}: adjacent elements separated by ~360÷N degrees (±5°)`, async ({ page }) => {
+    test(`${name}: adjacent elements separated by ~360÷N degrees (±5°)`, async ({
+      page,
+    }) => {
       const { total, accentCount } = await page.evaluate(() => {
         const els = Array.from(
           document.querySelectorAll<HTMLElement>("[data-accent-el]"),
@@ -101,14 +110,18 @@ for (const { name, path } of PAGES) {
       ).toBeCloseTo(expected, -1); // -1 = tolerance ±5°
     });
 
-    test(`${name}: --accent-count on <html> equals non-inherit element count`, async ({ page }) => {
+    test(`${name}: --accent-count on <html> equals non-inherit element count`, async ({
+      page,
+    }) => {
       const { accentCount, nonInheritCount } = await page.evaluate(() => {
         const accentCount = parseFloat(
           document.documentElement.style.getPropertyValue("--accent-count"),
         );
         const nonInheritCount = Array.from(
           document.querySelectorAll<HTMLElement>("[data-accent-el]"),
-        ).filter((el) => el.getAttribute("data-accent-el") !== "inherit").length;
+        ).filter(
+          (el) => el.getAttribute("data-accent-el") !== "inherit",
+        ).length;
         return { accentCount, nonInheritCount };
       });
       expect(accentCount).toBeGreaterThan(0);
@@ -117,15 +130,20 @@ for (const { name, path } of PAGES) {
   });
 }
 
-test("Spread slider does NOT change rainbow/spectrum hue step (REQ-AM-41)", async ({ page }) => {
+test("Spread slider does NOT change rainbow/spectrum hue step (REQ-AM-41)", async ({
+  page,
+}) => {
   await page.goto(`${BASE_URL}/`);
   await page.waitForSelector("[data-accent-el]", { timeout: 10000 });
   await setAccentMode(page, "spectrum");
   await waitForIndices(page);
 
   // Read the --accent-count (N)
-  const accentCount = await page.evaluate(() =>
-    parseFloat(document.documentElement.style.getPropertyValue("--accent-count")) || 12,
+  const accentCount = await page.evaluate(
+    () =>
+      parseFloat(
+        document.documentElement.style.getPropertyValue("--accent-count"),
+      ) || 12,
   );
   const expectedStep = 360 / accentCount;
 

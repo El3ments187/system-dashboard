@@ -84,7 +84,7 @@ const CoreRow = ({
           data-testid="per-core-bar"
           data-core-color={barColor}
           data-core-assigned-color={color}
-          className={isAccent ? "core-bar" : undefined}
+          className={isAccent ? "core-bar accent-glow-target" : undefined}
           style={{
             position: "absolute",
             left: 0,
@@ -99,7 +99,14 @@ const CoreRow = ({
             borderRadius: "inherit",
             transition: "width 0.3s ease, background 0.3s ease",
           }}
-        />
+        >
+          {isAccent && (
+            <>
+              <span className="bright-breathe" aria-hidden />
+              <span className="bright-surge" aria-hidden />
+            </>
+          )}
+        </div>
       </div>
       <span
         style={{
