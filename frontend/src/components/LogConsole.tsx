@@ -238,7 +238,7 @@ function ToolbarBtn({
 }) {
   return (
     <button
-      data-accent-el="inherit" /* grouped toolbar — uniform page hue */
+      data-accent-el=""
       onClick={onClick}
       title={title}
       style={{
@@ -277,7 +277,7 @@ function FilterChip({
 }) {
   return (
     <button
-      data-accent-el="inherit" /* grouped filter chips — uniform page hue */
+      data-accent-el=""
       onClick={onClick}
       aria-pressed={active}
       style={{
@@ -904,7 +904,7 @@ export function LogConsole({
             }}
           >
             <button
-              data-accent-el="inherit"
+              data-accent-el=""
               data-testid="jump-to-latest"
               onClick={() => {
                 isAtBottomRef.current = true;

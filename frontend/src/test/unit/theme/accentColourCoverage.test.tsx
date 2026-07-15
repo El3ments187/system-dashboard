@@ -75,10 +75,8 @@ describe("Accent colour coverage — source floor", () => {
     expect(ownTagCount("pages/LlamaCppPage.tsx")).toBeGreaterThanOrEqual(10);
   });
 
-  it("LogConsole toolbar buttons opted out (≥3 inherit tags)", () => {
-    expect(inheritTagCount("components/LogConsole.tsx")).toBeGreaterThanOrEqual(
-      3,
-    );
+  it("LogConsole controls have own hue — no inherit opt-outs remain", () => {
+    expect(inheritTagCount("components/LogConsole.tsx")).toBe(0);
   });
 
   it("ChartFrame uses inherit so charts echo their containing card's hue", () => {

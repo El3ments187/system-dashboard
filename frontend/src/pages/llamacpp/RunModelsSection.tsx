@@ -312,7 +312,8 @@ export function RunModelsSection() {
           style={{
             fontSize: 10,
             fontWeight: 600,
-            color: "var(--text-muted)",
+            color:
+              "color-mix(in srgb, var(--accent-primary) 65%, var(--text-muted))",
             textTransform: "uppercase",
           }}
         >
@@ -354,7 +355,7 @@ export function RunModelsSection() {
                 fontWeight: 600,
                 color: isActiveSort
                   ? "var(--accent-primary)"
-                  : "var(--text-muted)",
+                  : "color-mix(in srgb, var(--accent-primary) 65%, var(--text-muted))",
                 textTransform: "uppercase",
                 textAlign: align,
                 background: "none",
@@ -371,7 +372,7 @@ export function RunModelsSection() {
               onMouseLeave={(e) => {
                 e.currentTarget.style.color = isActiveSort
                   ? "var(--accent-primary)"
-                  : "var(--text-muted)";
+                  : "color-mix(in srgb, var(--accent-primary) 65%, var(--text-muted))";
               }}
             >
               {label}
@@ -473,7 +474,11 @@ export function RunModelsSection() {
             const rowBg = rowBackground(running, idx);
             const modelNameStyle: React.CSSProperties = running
               ? { fontWeight: 700, color: "var(--accent-primary)" }
-              : { fontWeight: 600, color: "var(--text-primary)" };
+              : {
+                  fontWeight: 600,
+                  color:
+                    "color-mix(in srgb, var(--accent-primary) 80%, var(--text-primary))",
+                };
 
             return (
               <div
@@ -498,7 +503,8 @@ export function RunModelsSection() {
                 <span
                   style={{
                     fontSize: 10,
-                    color: "var(--text-muted)",
+                    color:
+                      "color-mix(in srgb, var(--accent-primary) 65%, var(--text-muted))",
                     textAlign: "center",
                   }}
                 >
@@ -544,7 +550,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 600,
-                    color: "var(--warning)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                     overflow: "hidden",
@@ -559,7 +565,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 600,
-                    color: "var(--text-muted)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
@@ -570,8 +576,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 700,
-                    color:
-                      vram != null ? "var(--metric-vram)" : "var(--text-muted)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
@@ -582,8 +587,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 700,
-                    color:
-                      ram != null ? "var(--metric-ram)" : "var(--text-muted)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
@@ -594,9 +598,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 600,
-                    color: specType
-                      ? "var(--text-primary)"
-                      : "var(--text-muted)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                     overflow: "hidden",
@@ -611,7 +613,7 @@ export function RunModelsSection() {
                   style={{
                     fontSize: 10,
                     fontWeight: 700,
-                    color: running ? "var(--success)" : "var(--text-muted)",
+                    color: "var(--accent-primary)",
                     textAlign: "center",
                     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                   }}
