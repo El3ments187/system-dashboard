@@ -1,28 +1,28 @@
 //! Comprehensive backend tests covering collectors, models, history, and calculations.
 
-use system_dashboard::api::launcher::{
+use model_deck::api::launcher::{
     capture_metrics_into_metadata, extract_filename_metadata, parse_script_args,
 };
-use system_dashboard::collectors::alerts::{
+use model_deck::collectors::alerts::{
     Alert, AlertResponse, AlertSeverity, CollectorStatus, check_all_alerts,
     check_cpu_collector_status, check_gpu_backend_status, check_gpu_collector_status,
     check_memory_collector_status, check_storage_collector_status, clear_alert_tracking,
 };
-use system_dashboard::collectors::cpu::{
+use model_deck::collectors::cpu::{
     CoreStat, ProcStat, compute_cpu_utilization, normalize_cpu_model, parse_physical_cores,
     parse_proc_stat,
 };
-use system_dashboard::collectors::gpu::{extract_tag, extract_tag_float, parse_smi_xml};
-use system_dashboard::collectors::storage::{
+use model_deck::collectors::gpu::{extract_tag, extract_tag_float, parse_smi_xml};
+use model_deck::collectors::storage::{
     StorageHistoryPoint, base_device, collect_storage_by_device, collect_storage_history,
     collect_storage_metrics, is_loop_device, is_nvme_device, is_partition_device,
     nvme_controller_name,
 };
-use system_dashboard::models::ai::{ProfileMetadata, ProfileState};
-use system_dashboard::models::metrics::{
+use model_deck::models::ai::{ProfileMetadata, ProfileState};
+use model_deck::models::metrics::{
     CpuCoreInfo, CpuMetrics, GpuMetrics, MemoryMetrics, SystemMetrics,
 };
-use system_dashboard::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
+use model_deck::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
 
 // ============================================================================
 // Storage helper function tests
@@ -756,7 +756,7 @@ mod history_buffer {
 
 #[cfg(test)]
 mod system_metrics {
-    use system_dashboard::collectors::system::{
+    use model_deck::collectors::system::{
         collect_system_metrics, get_collector_health_state,
     };
 
@@ -1312,10 +1312,10 @@ mod memory_edge_cases {
 
     #[test]
     fn test_memory_metrics_collection() {
-        let (metrics, status) = system_dashboard::collectors::memory::collect_memory_metrics();
+        let (metrics, status) = model_deck::collectors::memory::collect_memory_metrics();
         assert_eq!(
             status,
-            system_dashboard::collectors::alerts::CollectorStatus::Ok
+            model_deck::collectors::alerts::CollectorStatus::Ok
         );
         assert!(metrics.total_gb > 0.0);
         assert!(metrics.used_gb >= 0.0);
@@ -1482,7 +1482,7 @@ mod api_serialization {
 
 #[cfg(test)]
 mod ai_model_serialization {
-    use system_dashboard::models::ai::{
+    use model_deck::models::ai::{
         AiHistoryPoint, AiKvCacheStats, AiMetrics, AiModelItem, AiOpenWebuiHealth,
         AiOpencodeHealth, AiServiceStatus, AiTokenUsage,
     };
@@ -1789,14 +1789,14 @@ mod ai_alerts {
     fn test_ai_collector_status_ok_no_alerts() {
         clear_alert_tracking();
         let alerts =
-            system_dashboard::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
+            model_deck::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
     #[test]
     fn test_ai_collector_status_error_generates_alert() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_ai_collector_status(
+        let alerts = model_deck::collectors::alerts::check_ai_collector_status(
             CollectorStatus::Error("llama-server down".to_string()),
         );
         assert_eq!(alerts.len(), 1);
@@ -1807,7 +1807,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_collector_status_partial_generates_warning() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_ai_collector_status(
+        let alerts = model_deck::collectors::alerts::check_ai_collector_status(
             CollectorStatus::Partial("All AI services unavailable".to_string()),
         );
         assert_eq!(alerts.len(), 1);
@@ -1818,7 +1818,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_service_availability_checks() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+        let alerts = model_deck::collectors::alerts::check_ai_service_availability(
             false, // llama available
             false, // openwebui available
             false, // opencode available
@@ -1831,7 +1831,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_service_availability_with_one_available() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+        let alerts = model_deck::collectors::alerts::check_ai_service_availability(
             true,  // llama available
             false, // openwebui unavailable
             false, // opencode unavailable
@@ -1843,13 +1843,13 @@ mod ai_alerts {
     #[test]
     fn test_ai_alert_deduplication() {
         clear_alert_tracking();
-        let alerts1 = system_dashboard::collectors::alerts::check_ai_collector_status(
+        let alerts1 = model_deck::collectors::alerts::check_ai_collector_status(
             CollectorStatus::Error("same error".to_string()),
         );
         assert_eq!(alerts1.len(), 1);
 
         clear_alert_tracking();
-        let alerts2 = system_dashboard::collectors::alerts::check_ai_collector_status(
+        let alerts2 = model_deck::collectors::alerts::check_ai_collector_status(
             CollectorStatus::Error("same error".to_string()),
         );
         assert_eq!(alerts2.len(), 1);
@@ -1858,7 +1858,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_check_all_alerts_with_ai_error() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_all_alerts(
+        let alerts = model_deck::collectors::alerts::check_all_alerts(
             CollectorStatus::Ok,
             CollectorStatus::Ok,
             None,
@@ -1878,7 +1878,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_check_all_alerts_with_all_services_unavailable() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_all_alerts(
+        let alerts = model_deck::collectors::alerts::check_all_alerts(
             CollectorStatus::Ok,
             CollectorStatus::Ok,
             None,
@@ -1897,7 +1897,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_alert_ids_are_unique() {
         clear_alert_tracking();
-        let alerts = system_dashboard::collectors::alerts::check_ai_service_availability(
+        let alerts = model_deck::collectors::alerts::check_ai_service_availability(
             false, // llama unavailable
             false, // openwebui unavailable
             false, // opencode unavailable

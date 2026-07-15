@@ -90,7 +90,7 @@ pub fn create_router() -> axum::Router {
 async fn health_handler() -> axum::response::Json<Value> {
     Json(json!({
         "status": "ok",
-        "message": "System Dashboard API is running",
+        "message": "Model Deck API is running",
     }))
 }
 

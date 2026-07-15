@@ -2,7 +2,7 @@
 
 ## Overview
 
-This audit identifies performance issues in the System Dashboard codebase, categorized by severity.
+This audit identifies performance issues in the Model Deck codebase, categorized by severity.
 
 ## Critical Issues
 

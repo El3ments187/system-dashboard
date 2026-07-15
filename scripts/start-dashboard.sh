@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start-dashboard.sh — Start the System Dashboard application stack.
+# start-dashboard.sh — Start the Model Deck application stack.
 #
 # Startup order:
 #   1. Backend (Rust/Axum on port 3001)

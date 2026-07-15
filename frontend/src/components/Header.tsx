@@ -155,7 +155,7 @@ export default function Header({
             <path d="M3.34 19a10 10 0 1 1 17.32 0" />
           </svg>
         </div>
-        <span className="header-title">System Dashboard</span>
+        <span className="header-title">Model Deck</span>
         <nav className="dash-nav">
           {pages.map((page) => (
             <button

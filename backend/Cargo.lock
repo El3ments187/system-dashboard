@@ -732,6 +732,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "model-deck"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures-util",
+ "libc",
+ "nix",
+ "nvml-wrapper",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sysinfo",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "nix"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1326,25 +1345,6 @@ dependencies = [
  "objc2-io-kit",
  "objc2-open-directory",
  "windows",
-]
-
-[[package]]
-name = "system-dashboard"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "futures-util",
- "libc",
- "nix",
- "nvml-wrapper",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "sysinfo",
- "tokio",
- "walkdir",
 ]
 
 [[package]]

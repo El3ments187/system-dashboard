@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document identifies technical debt in the System Dashboard codebase, categorized by severity and area.
+This document identifies technical debt in the Model Deck codebase, categorized by severity and area.
 
 ## Critical Debt
 

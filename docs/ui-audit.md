@@ -2,7 +2,7 @@
 
 ## Overview
 
-This audit identifies UI inconsistencies, accessibility issues, and UX improvements in the System Dashboard frontend.
+This audit identifies UI inconsistencies, accessibility issues, and UX improvements in the Model Deck frontend.
 
 ## Critical Issues
 

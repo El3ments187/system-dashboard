@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides prioritized recommendations for the System Dashboard project, organized by severity and area of impact.
+This document provides prioritized recommendations for the Model Deck project, organized by severity and area of impact.
 
 ## Priority 1: Critical Fixes
 
@@ -297,7 +297,7 @@ export function ThemePanel({ open, onClose, ... }: Props) {
 # openapi.yaml
 openapi: 3.0.0
 info:
-  title: System Dashboard API
+  title: Model Deck API
   version: 1.0.0
 paths:
   /api/health:
@@ -525,7 +525,7 @@ HOST=0.0.0.0
 **Recommendation**: Add README.md with setup instructions.
 
 ```markdown
-# System Dashboard
+# Model Deck
 
 Real-time system metrics monitoring dashboard.
 

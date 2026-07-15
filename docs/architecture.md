@@ -2,7 +2,7 @@
 
 ## Overview
 
-System Dashboard is a full-stack real-time metrics monitoring application consisting of:
+Model Deck is a full-stack real-time metrics monitoring application consisting of:
 
 - **Backend**: Rust (Axum) API server on port 3001
 - **Frontend**: React 18 + Vite + Recharts on port 5173

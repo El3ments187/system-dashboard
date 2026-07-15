@@ -1,8 +1,8 @@
 [package]
-name = "system-dashboard"
+name = "model-deck"
 version = "0.1.0"
 edition = "2024"
-description = "Real-time system monitoring dashboard backend"
+description = "Real-time system monitoring Model Deck backend"
 
 [dependencies]
 axum = { version = "^0.8", features = ["query", "ws", "macros"] }

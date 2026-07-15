@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stop-dashboard.sh — Stop the System Dashboard application stack.
+# stop-dashboard.sh — Stop the Model Deck application stack.
 #
 # Shutdown order:
 #   1. Frontend (stop first)
@@ -123,7 +123,7 @@ verify_pid() {
             fi
             ;;
         "Backend")
-            if [[ "$cmdline" != *"cargo"* && "$cmdline" != *"system-dashboard"* && "$cmdline" != *"rust"* ]]; then
+            if [[ "$cmdline" != *"cargo"* && "$cmdline" != *"model-deck"* && "$cmdline" != *"rust"* ]]; then
                 log_warn "PID $pid does not appear to be the backend process"
                 log_warn "  cmdline: $cmdline"
                 return 1

@@ -1,4 +1,4 @@
-//! System Dashboard backend library.
+//! Model Deck backend library.
 //!
 //! Provides system metrics collection, API routing, and data models.
 
