@@ -171,6 +171,40 @@ test("Invariant 13: Glow Intensity slider updates --glow-intensity CSS var and p
   expect(parseFloat(restored)).toBeCloseTo(2, 0);
 });
 
+// ── Invariant 13b: Glow Intensity slider reaches new ceiling of 9 ─────────────
+
+test("Invariant 13b: Glow Intensity slider reaches max 9 and persists across reload", async ({
+  page,
+}) => {
+  await goToTheme(page);
+
+  const glowRow = page.locator(".mode-row", { hasText: /neon glow/i }).first();
+  const glowActive = await glowRow.evaluate((el) =>
+    el.classList.contains("active"),
+  );
+  if (!glowActive) await glowRow.click();
+  await page.waitForTimeout(200);
+
+  const glowIntensitySlider = page
+    .locator(".effect-row-group")
+    .filter({ hasText: /glow intensity/i })
+    .locator('input[type="range"]')
+    .first();
+
+  if ((await glowIntensitySlider.count()) === 0) return;
+
+  await glowIntensitySlider.fill("9");
+  await page.waitForTimeout(200);
+
+  const cssVal = await getCssVar(page, "--glow-intensity");
+  expect(parseFloat(cssVal)).toBeCloseTo(9, 0);
+
+  await page.reload();
+  await page.waitForSelector(".theme-page", { timeout: 8000 });
+  const restored = await getCssVar(page, "--glow-intensity");
+  expect(parseFloat(restored)).toBeCloseTo(9, 0);
+});
+
 // ── Invariant 14: glow sub-controls only appear when glow is active ───────────
 
 test("Invariant 14: Glow intensity slider hidden when glow is off", async ({

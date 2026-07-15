@@ -8,6 +8,8 @@ import {
   PRESETS,
   BG_PRESETS,
   ACCENT_THEMES,
+  GLOW_INTENSITY_MIN,
+  GLOW_INTENSITY_MAX,
 } from "../hooks/useTheme";
 
 function ToggleSwitch({ on }: { on: boolean }) {
@@ -796,12 +798,12 @@ export default function ThemePage({
                   </div>
                   {glow && onGlowIntensityChange && (
                     <div style={{ paddingLeft: 20, paddingTop: 6 }}>
-                      <SliderRow
-                        id="tp-glow-intensity"
-                        label="Intensity"
-                        min={0.25}
-                        max={3}
-                        step={0.05}
+                       <SliderRow
+                         id="tp-glow-intensity"
+                         label="Intensity"
+                         min={GLOW_INTENSITY_MIN}
+                         max={GLOW_INTENSITY_MAX}
+                         step={0.05}
                         value={glowIntensity}
                         display={glowIntensity.toFixed(2)}
                         onChange={(v) => {
@@ -1007,12 +1009,12 @@ export default function ThemePage({
                   </div>
                   {innerGlow && onInnerGlowIntensityChange && (
                     <div style={{ paddingLeft: 20, paddingTop: 6 }}>
-                      <SliderRow
-                        id="tp-inner-glow-intensity"
-                        label="Inner Glow Intensity"
-                        min={0.25}
-                        max={3}
-                        step={0.05}
+                       <SliderRow
+                         id="tp-inner-glow-intensity"
+                         label="Inner Glow Intensity"
+                         min={GLOW_INTENSITY_MIN}
+                         max={GLOW_INTENSITY_MAX}
+                         step={0.05}
                         value={innerGlowIntensity}
                         display={innerGlowIntensity.toFixed(2)}
                         onChange={(v) => {

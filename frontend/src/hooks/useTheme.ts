@@ -1,6 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { isBadGpuStack } from "../utils/gpuHeuristic";
 
+/* ---- glow intensity constants ---- */
+
+export const GLOW_INTENSITY_MIN = 0.25;
+export const GLOW_INTENSITY_MAX = 9;
+export const GLOW_INTENSITY_DEFAULT = 1.4;
+
+export function readIntensity(key: string): number {
+  const raw = parseFloat(localStorage.getItem(key) ?? "");
+  return Number.isFinite(raw)
+    ? Math.min(GLOW_INTENSITY_MAX, Math.max(GLOW_INTENSITY_MIN, raw))
+    : GLOW_INTENSITY_DEFAULT;
+}
+
 /* ---- color utilities ---- */
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -270,11 +283,9 @@ export function useTheme() {
     return parseFloat(localStorage.getItem("dashboard-fx-depth") || "30");
   });
 
-  const [glowIntensity, setGlowIntensity] = useState<number>(() => {
-    return parseFloat(
-      localStorage.getItem("dashboard-glow-intensity") || "1.4",
-    );
-  });
+  const [glowIntensity, setGlowIntensity] = useState<number>(() =>
+    readIntensity("dashboard-glow-intensity"),
+  );
 
   const [pulse, setPulse] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-pulse") === "on";
@@ -294,11 +305,9 @@ export function useTheme() {
     return localStorage.getItem("dashboard-inner-glow") === "on";
   });
 
-  const [innerGlowIntensity, setInnerGlowIntensity] = useState<number>(() => {
-    return parseFloat(
-      localStorage.getItem("dashboard-inner-glow-intensity") || "1.4",
-    );
-  });
+  const [innerGlowIntensity, setInnerGlowIntensity] = useState<number>(() =>
+    readIntensity("dashboard-inner-glow-intensity"),
+  );
 
   const [gradientBorder, setGradientBorder] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-gradient-border") === "on";
