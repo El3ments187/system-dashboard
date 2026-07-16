@@ -120,8 +120,8 @@
    ======================================== */
 [data-glow="neon"] {
   --card-glow:
-    0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(20px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    0 0 calc(4px  + 3px  * var(--glow-intensity, 1.4)) calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(14px + 10px * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
   --border-color: var(--accent-tint-40, var(--border-color));
 }
 
@@ -1065,23 +1065,22 @@
 [data-glow="neon"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-glow="neon"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-glow:
-    0 0 calc(6px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(20px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    0 0 calc(4px  + 3px  * var(--glow-intensity, 1.4)) calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(14px + 10px * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
 }
 
 [data-inner-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-inner-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --accent-inner-glow:
-    inset 0 0 calc(6px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
+    inset 0 0 calc(4px  + 3px * var(--inner-glow-intensity, 1.4)) calc(0.5px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(12px + 5px * var(--inner-glow-intensity, 1.4)) calc(1px   * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
 [data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-halo:
-    0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px * var(--glow-intensity, 1.4))
-      rgba(var(--accent-primary-rgb), 0.12);
+    0 0 calc(8px  + 8px  * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--glow-intensity, 1.4)) rgba(var(--accent-primary-rgb), 0.12);
 }
 
 @keyframes accent-fill-pan {
@@ -1191,8 +1190,8 @@
    ======================================== */
 [data-inner-glow="on"] {
   --accent-inner-glow:
-    inset 0 0 calc(6px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(14px * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
+    inset 0 0 calc(4px  + 3px * var(--inner-glow-intensity, 1.4)) calc(0.5px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
+    inset 0 0 calc(12px + 5px * var(--inner-glow-intensity, 1.4)) calc(1px   * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
 /* ========================================
@@ -1202,9 +1201,8 @@
    ======================================== */
 [data-card-glow="on"] {
   --card-halo:
-    0 0 calc(14px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px * var(--glow-intensity, 1.4))
-      rgba(var(--accent-primary-rgb), 0.12);
+    0 0 calc(8px  + 8px  * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--glow-intensity, 1.4)) rgba(var(--accent-primary-rgb), 0.12);
 }
 
 /* Apply card-halo to card containers (not spines/bars) that carry data-accent-el. */
@@ -1212,7 +1210,7 @@
   [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
     .accent-glow-target
   ) {
-  box-shadow: var(--shadow-card), var(--card-halo);
+  box-shadow: var(--shadow-card), var(--card-glow), var(--card-halo);
 }
 
 /* ========================================
