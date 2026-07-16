@@ -106,16 +106,31 @@ test.describe("Effects disabled — no accent glows", () => {
       }
 
       // 2. Glow CSS tokens resolve to the transparent placeholder
-      for (const varName of [
-        "--card-glow",
-        "--card-halo",
-        "--accent-inner-glow",
-      ]) {
+      for (const varName of ["--card-glow", "--card-halo"]) {
         const val = await getCssVariable(page, varName);
         expect(
           val,
           `${varName} should be transparent when effects are off`,
         ).toContain(TRANSPARENT_SHADOW);
+      }
+
+      // --accent-inner-glow no longer exists: Inner Glow now sets background-image
+      // directly on card elements (not a CSS variable). The equivalent guard: with
+      // all effects off, .ov-card's computed backgroundImage must be "none" — Inner
+      // Glow is not painting a gradient wash. Previously this was tested by asserting
+      // the --accent-inner-glow variable resolved to the transparent placeholder.
+      if (targetPath === "/overview") {
+        const ovCards = page.locator(".ov-card");
+        const cardCount = await ovCards.count();
+        for (let ci = 0; ci < cardCount; ci++) {
+          const bg = await ovCards
+            .nth(ci)
+            .evaluate((el) => getComputedStyle(el).backgroundImage);
+          expect(
+            bg,
+            ".ov-card backgroundImage must be none with all effects off",
+          ).toBe("none");
+        }
       }
 
       // 3. No accent-coloured text-shadow on any element

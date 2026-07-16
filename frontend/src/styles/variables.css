@@ -98,7 +98,6 @@
   --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.18);
   --card-glow: 0 0 0 rgba(0, 0, 0, 0);
   --card-halo: 0 0 0 rgba(0, 0, 0, 0);
-  --accent-inner-glow: 0 0 0 rgba(0, 0, 0, 0);
   --glow-intensity: 1.4;
   --inner-glow-intensity: 1.4;
   --pulse-speed: 4s;
@@ -134,7 +133,7 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow: var(--card-glow), var(--accent-inner-glow);
+  box-shadow: var(--card-glow);
   opacity: 1;
 }
 
@@ -1059,21 +1058,14 @@
 
 /* Per-element re-declarations of derived glow tokens.
    Chrome evaluates var() chains at the declaring element and inherits already-substituted
-   values, so --card-glow / --accent-inner-glow / --card-halo set on <html> always resolve
-   with el-index=0's hue. Re-declaring here forces re-evaluation at each element's own scope,
-   so every spine/bar glows in its own per-element hue in spectrum and rainbow-wave modes. */
+   values, so --card-glow / --card-halo set on <html> always resolve with el-index=0's hue.
+   Re-declaring here forces re-evaluation at each element's own scope, so every spine/bar
+   glows in its own per-element hue in spectrum and rainbow-wave modes. */
 [data-glow="neon"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-glow="neon"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-glow:
     0 0 calc(4px  + 3px  * var(--glow-intensity, 1.4)) calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
     0 0 calc(14px + 10px * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
-}
-
-[data-inner-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
-[data-inner-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
-  --accent-inner-glow:
-    inset 0 0 calc(4px  + 3px * var(--inner-glow-intensity, 1.4)) calc(0.5px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(12px + 5px * var(--inner-glow-intensity, 1.4)) calc(1px   * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
 }
 
 [data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
@@ -1185,13 +1177,17 @@
 
 /* ========================================
    Inner Glow Effect
-   Inset box-shadow on glow targets (spines/bars).
-   Stacks with Neon Glow's outer card-glow.
+   Accent light washing in from the card's spine, fading across the card.
+   A background-image (not a shadow): sits under the card's content and over its
+   background-color, so it has real contrast against --bg-card.
    ======================================== */
-[data-inner-glow="on"] {
-  --accent-inner-glow:
-    inset 0 0 calc(4px  + 3px * var(--inner-glow-intensity, 1.4)) calc(0.5px * var(--inner-glow-intensity, 1.4)) var(--accent-glow),
-    inset 0 0 calc(12px + 5px * var(--inner-glow-intensity, 1.4)) calc(1px   * var(--inner-glow-intensity, 1.4)) var(--accent-glow);
+[data-inner-glow="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target) {
+  background-image: linear-gradient(
+    90deg,
+    oklch(from var(--accent-primary) l c h / min(0.6, calc(0.07 * var(--inner-glow-intensity, 1.4)))),
+    transparent calc(120px + 60px * var(--inner-glow-intensity, 1.4))
+  );
 }
 
 /* ========================================

@@ -180,7 +180,7 @@ export function CardShell({ children }: { children: React.ReactNode }) {
         position: "relative",
         display: "flex",
         flexDirection: "column",
-        background: "var(--bg-card)",
+        backgroundColor: "var(--bg-card)",
         borderRadius: "var(--radius-md)",
         border: "1px solid var(--border-color)",
         overflow: "visible",

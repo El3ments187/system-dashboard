@@ -112,34 +112,40 @@ test.describe("Glow Paint: Neon Glow ::after rendering", () => {
   });
 });
 
-// ── Inner Glow: inset ::after on bar targets ──────────────────────────────
-// Test 2c.2 — FAILS today (no bar is a glow target). Passes after Phase 1.
+// ── Inner Glow: background-image wash on card containers ──────────────────
+// Inner Glow was changed from an inset box-shadow on .accent-glow-target::after
+// to a linear-gradient background-image on card containers. The old inset painted
+// accent onto accent elements (already that colour), providing no visible contrast.
+// The new rule targets [data-accent-el]:not(.accent-spine):not(.accent-fill):not
+// (.accent-glow-target), so card containers receive the wash while bars/spines do not.
 
 test.describe("Glow Paint: Inner Glow on bars (::after inset)", () => {
   test.beforeEach(async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
   });
 
-  test("CPU: Inner Glow ON — some bar target ::after has inset shadow", async ({
+  test("CPU: Inner Glow ON — card containers have linear-gradient backgroundImage", async ({
     page,
   }) => {
+    // Previously asserted inset shadow on bar targets; that mechanism was removed.
+    // Inner Glow now applies a background-image gradient to card containers only.
     await waitForAppReady(page, "/cpu");
     await enableInnerGlow(page);
 
-    const hasInset = await page.evaluate(() => {
-      const barTargets = Array.from(
+    const hasGradient = await page.evaluate(() => {
+      const cards = Array.from(
         document.querySelectorAll(
-          '.card-progress-bar.accent-glow-target, .accent-fill.accent-glow-target:not(.card-accent-spine)',
+          "[data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target)",
         ),
       );
-      return barTargets.some((el) =>
-        window.getComputedStyle(el, "::after").boxShadow.includes("inset"),
+      return cards.some((el) =>
+        getComputedStyle(el).backgroundImage.includes("linear-gradient"),
       );
     });
 
     expect(
-      hasInset,
-      "Inner Glow ON: no bar .accent-glow-target showed an inset ::after box-shadow — are bars tagged?",
+      hasGradient,
+      "Inner Glow ON: no card container showed a linear-gradient backgroundImage",
     ).toBe(true);
   });
 

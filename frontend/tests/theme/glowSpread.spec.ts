@@ -12,9 +12,8 @@
  *       indices 0-3: tight card-glow  (spread at [3])
  *       indices 4-7: wide card-glow   (spread at [7], blur at [6])
  *       indices 8-11: transparent inner-glow (all 0)
- *   - With Neon ON + Inner Glow ON: 4 layers → 16 px tokens.
- *       additional indices 12-15: wide inner-glow  (spread at [15])
- *       indices 8-11: tight inner-glow              (spread at [11])
+ *   - With Neon ON + Inner Glow ON: still 2 layers on ::after (inner glow now uses
+ *       background-image on card containers, not inset box-shadow on ::after).
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -145,11 +144,13 @@ test.describe("Glow spread + affine blur", () => {
     expect(px[6]).toBeCloseTo(28, 0); // ±0.5px tolerance
   });
 
-  test("3: Inner Glow ON — ::after contains inset AND non-zero spread", async ({
+  test("3: Inner Glow ON — ::after has only card-glow layers (no inset); card container has gradient wash", async ({
     page,
   }) => {
-    // BEFORE fix: inset layers have no spread (0px).
-    // AFTER  fix: inset spread = calc(0.5px × I) > 0.
+    // Inner Glow was changed from an inset box-shadow on ::after to a
+    // background-image gradient on card containers. The old assertion checked for
+    // inset spread on the spine's ::after — that mechanism no longer exists.
+    // New assertions: ::after has no inset, and a card container has the gradient.
     await waitForTheme(page);
     await setAttrs(page, {
       "data-glow": "neon",
@@ -157,21 +158,31 @@ test.describe("Glow spread + affine blur", () => {
     });
     await setCssVar(page, "--inner-glow-intensity", "1.4");
 
-    // With neon ON + inner-glow ON: 4 layers.  Inner-glow tight spread at index 11.
     const shadow = await page.evaluate((sel) => {
       const el = document.querySelector(sel);
       return el ? window.getComputedStyle(el, "::after").boxShadow : "";
     }, GLOW_TARGET_SEL);
 
     expect(shadow, "::after not found").not.toBe("");
-    expect(shadow).toContain("inset");
+    expect(
+      shadow,
+      "::after must not contain inset — Inner Glow now uses background-image, not inset box-shadow",
+    ).not.toContain("inset");
 
-    const px = [...shadow.matchAll(/(-?\d+(?:\.\d+)?)px/g)].map((m) =>
-      parseFloat(m[1]),
-    );
-    // 4 layers × 4 px tokens = 16 tokens; inner-glow tight spread at index 11.
-    expect(px.length, "expected 4 shadow layers (16 px tokens)").toBeGreaterThanOrEqual(12);
-    expect(px[11], "inner-glow tight spread should be > 0").toBeGreaterThan(0);
+    const cardHasGradient = await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "[data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target)",
+        ),
+      );
+      return cards.some((el) =>
+        getComputedStyle(el).backgroundImage.includes("linear-gradient"),
+      );
+    });
+    expect(
+      cardHasGradient,
+      "Inner Glow ON: a card container must have linear-gradient backgroundImage",
+    ).toBe(true);
   });
 });
 
