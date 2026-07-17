@@ -344,7 +344,7 @@ function BreatheEffectRow({
         <div className="mode-text">
           <span className="mode-name">Breathe</span>
           <span className="mode-desc">
-            All accent elements brighten in perfect unison
+            Accent fills and glows brighten in unison
           </span>
         </div>
         <ToggleSwitch on={!!breathe} />
@@ -926,7 +926,7 @@ export default function ThemePage({
                     <div className="mode-text">
                       <span className="mode-name">Pulse</span>
                       <span className="mode-desc">
-                        Breathing glow on accent elements
+                        White shine sweeping across accent fills
                       </span>
                     </div>
                     <ToggleSwitch on={!!pulse} />

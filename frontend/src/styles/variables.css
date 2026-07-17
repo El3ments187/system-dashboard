@@ -1213,8 +1213,9 @@
 
 /* ========================================
    Pulse Effect
-   Animates ::after pseudo-element opacity so glow breathes
+   Animates a white gradient shine on ::before so accent fills pulse
    without fading card content (text, values).
+   ::after belongs to Neon Glow; .bright-breathe/.bright-surge spans to Breathe/Surge.
    ======================================== */
 @keyframes accent-pulse {
   0%,
@@ -1426,6 +1427,13 @@
 [data-breathe="on"] .accent-glow-target::after {
   animation: fx-breathe-glow var(--breathe-speed, 4s) ease-in-out infinite;
   animation-delay: 0s;
+}
+
+/* Warning/critical bars encode threshold data — excluded from pulse, mirroring breathe.
+   Only reachable via an explicit barClassName="accent-glow-target" on a non-normal bar. */
+[data-pulse="on"] .accent-fill.accent-glow-target[data-state="warning"]::before,
+[data-pulse="on"] .accent-fill.accent-glow-target[data-state="critical"]::before {
+  animation: none;
 }
 
 /* Warning/critical bars encode threshold data — excluded from breathe; normal bars animate freely */

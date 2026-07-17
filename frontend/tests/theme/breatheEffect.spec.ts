@@ -190,3 +190,117 @@ test.describe("Breathe — normal bars animate, warning/critical excluded (REQ-F
     expect(animName, "critical-state bar bright-breathe must NOT animate").toBe("none");
   });
 });
+
+// ── Pulse — normal bars animate, warning/critical excluded ────────────────────
+// Mirrors the Breathe describe above. Pulse animates .accent-glow-target::before
+// (a white gradient shine), not a child span. No ::after half needed — Pulse does
+// not touch ::after (that belongs to Neon Glow).
+
+test.describe("Pulse — normal bars animate, warning/critical excluded (REQ-FX-70/80)", () => {
+  test("3 (positive control): normal-state accent-fill bar runs accent-pulse on ::before when data-pulse=on", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/theme`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(400);
+
+    await page.evaluate(() => {
+      const d = document.documentElement;
+      d.removeAttribute("data-fx-safe"); // prevent FX Safe Mode from zeroing animation
+      d.setAttribute("data-pulse", "on");
+      d.style.setProperty("--pulse-speed", "1s");
+    });
+
+    // Confirm prefers-reduced-motion is not active — if it is, Tests 1-2 are meaningless
+    const reducedMotion = await page.evaluate(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    expect(
+      reducedMotion,
+      "prefers-reduced-motion must be false — if true all animations are suppressed and tests 1-2 are meaningless",
+    ).toBe(false);
+
+    // Inject a synthetic normal-state bar to read ::before without React interference
+    await page.evaluate(() => {
+      const bar = document.createElement("div");
+      bar.className = "accent-fill accent-glow-target";
+      bar.setAttribute("data-state", "normal");
+      bar.style.cssText = "position:fixed;top:-20px;width:10px;height:4px";
+      document.body.appendChild(bar);
+    });
+
+    const animName = await page.evaluate(() => {
+      const bar = document.querySelector<HTMLElement>(
+        '.accent-fill.accent-glow-target[data-state="normal"]',
+      );
+      return bar ? getComputedStyle(bar, "::before").animationName : null;
+    });
+
+    expect(
+      animName,
+      "normal-state bar ::before MUST run accent-pulse with Pulse ON",
+    ).toBe("accent-pulse");
+  });
+
+  test("1: warning-state accent-fill bar has animation:none on ::before when data-pulse=on", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/theme`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(400);
+
+    await page.evaluate(() => {
+      const d = document.documentElement;
+      d.removeAttribute("data-fx-safe");
+      d.setAttribute("data-pulse", "on");
+      const bar = document.createElement("div");
+      bar.className = "accent-fill accent-glow-target";
+      bar.setAttribute("data-state", "warning");
+      bar.style.cssText = "position:fixed;top:-20px;width:10px;height:4px";
+      document.body.appendChild(bar);
+    });
+
+    const animName = await page.evaluate(() => {
+      const bar = document.querySelector<HTMLElement>(
+        '.accent-fill.accent-glow-target[data-state="warning"]',
+      );
+      return bar ? getComputedStyle(bar, "::before").animationName : null;
+    });
+
+    expect(
+      animName,
+      "warning-state bar ::before must NOT animate with Pulse ON",
+    ).toBe("none");
+  });
+
+  test("2: critical-state accent-fill bar has animation:none on ::before when data-pulse=on", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/theme`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(400);
+
+    await page.evaluate(() => {
+      const d = document.documentElement;
+      d.removeAttribute("data-fx-safe");
+      d.setAttribute("data-pulse", "on");
+      const bar = document.createElement("div");
+      bar.className = "accent-fill accent-glow-target";
+      bar.setAttribute("data-state", "critical");
+      bar.style.cssText = "position:fixed;top:-20px;width:10px;height:4px";
+      document.body.appendChild(bar);
+    });
+
+    const animName = await page.evaluate(() => {
+      const bar = document.querySelector<HTMLElement>(
+        '.accent-fill.accent-glow-target[data-state="critical"]',
+      );
+      return bar ? getComputedStyle(bar, "::before").animationName : null;
+    });
+
+    expect(
+      animName,
+      "critical-state bar ::before must NOT animate with Pulse ON",
+    ).toBe("none");
+  });
+});
