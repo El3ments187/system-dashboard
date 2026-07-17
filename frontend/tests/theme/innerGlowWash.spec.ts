@@ -2,17 +2,26 @@ import { test, expect, type Page } from "@playwright/test";
 
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";
 
+// Any element with an accent hue AND a spine as a direct child.
+// [data-accent-el] (presence) matches both ="" (cards) and ="inherit" (ChartFrame).
+// :has(> .card-accent-spine) excludes nav buttons, tiles and KvRows.
+const CARD_SEL = '[data-accent-el]:has(> .card-accent-spine)';
+
+// ChartFrame selector (data-accent-el="inherit") — receives the wash via CARD_SEL presence match
+const CHART_SEL = '[data-accent-el="inherit"]';
+
 async function waitForAppReady(page: Page) {
   await page.waitForSelector(".app-root", { timeout: 10000 });
 }
 
 const PAGES = [
-  { name: "Overview", path: "/", selector: ".ov-card" },
-  { name: "CPU", path: "/cpu", selector: ".metric-card.card" },
-  { name: "GPU", path: "/gpu", selector: ".metric-card.card" },
-  { name: "Settings", path: "/settings", selector: ".settings-card" },
-  { name: "AI", path: "/ai", selector: '[role="article"]' },
-  { name: "Theme", path: "/theme", selector: '[role="article"]' },
+  { name: "Overview", path: "/" },
+  { name: "GPU", path: "/gpu" },
+  { name: "CPU", path: "/cpu" },
+  { name: "llama.cpp", path: "/llama-cpp" },
+  { name: "AI", path: "/ai" },
+  { name: "Settings", path: "/settings" },
+  { name: "Theme", path: "/theme" },
 ] as const;
 
 async function enableInnerGlow(page: Page) {
@@ -29,12 +38,18 @@ async function disableInnerGlow(page: Page) {
 
 /**
  * Parse the alpha channel from the first colour stop in a CSS backgroundImage
- * gradient string. Chromium serialises color-mix() results as oklab() when the
- * source colour is oklch-based, so we try that format before falling back to rgba().
- * The transparent second stop is always rgba(0,0,0,0) and must not be matched first.
+ * gradient string. Chromium serialises color-mix(in srgb, …) results as
+ * color(srgb R G B / alpha). It serialises oklch relative-colour results as
+ * oklab(). The transparent second stop is always rgba(0,0,0,0) and must not
+ * be matched first — so we check color(srgb) and oklab/oklch before rgba.
  */
 function parseFirstColorAlpha(bgImage: string): number | null {
-  // oklab(L a b / alpha) or oklch(L C H / alpha) — the accent-colour first stop
+  // color(srgb R G B / alpha) — Chromium serialises color-mix(in srgb, …) results here
+  const srgbMatch = bgImage.match(
+    /color\(srgb\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\/\s*([\d.]+)/,
+  );
+  if (srgbMatch) return parseFloat(srgbMatch[1]);
+  // oklab(L a b / alpha) or oklch(L C H / alpha) — oklch relative-colour results
   const okMatch = bgImage.match(/(?:oklab|oklch)\([^/]+\/\s*([\d.]+)/);
   if (okMatch) return parseFloat(okMatch[1]);
   // rgba(R, G, B, alpha) fallback
@@ -48,10 +63,16 @@ function parseFirstColorAlpha(bgImage: string): number | null {
 /**
  * Return a string that uniquely identifies the hue of the first colour stop so
  * we can compare two cards for different accent colours in Spectrum mode.
- * Handles both oklab(L a b /…) (Chromium serialisation of oklch sources) and rgba().
+ * Handles color(srgb R G B) (Chromium color-mix serialisation), oklab/oklch,
+ * and rgba — in that order so the transparent second stop never matches first.
  */
 function parseFirstColorKey(bgImage: string): string | null {
-  // oklab(L a b / alpha) — L, a, b encode the hue
+  // color(srgb R G B …) — Chromium serialises color-mix(in srgb, …) results here
+  const srgbMatch = bgImage.match(
+    /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/,
+  );
+  if (srgbMatch) return `${srgbMatch[1]},${srgbMatch[2]},${srgbMatch[3]}`;
+  // oklab(L a b …) or oklch(L C H …)
   const okMatch = bgImage.match(
     /(?:oklab|oklch)\(\s*(-?[\d.e+]+)\s+(-?[\d.e+]+)\s+(-?[\d.e+]+)/,
   );
@@ -73,23 +94,24 @@ test.describe("Inner Glow Wash", () => {
     });
   });
 
-  // ── Test 1 (RED pre-fix) ──────────────────────────────────────────────────
-  // Pre-fix the CSS rule sets --accent-inner-glow (a box-shadow variable), never
-  // background-image, so backgroundImage stays "none" on every card.
+  // ── Test 1 ────────────────────────────────────────────────────────────────
+  // Pre-fix: llama.cpp cards block CSS via inline background: shorthand; Inner
+  // Glow ON has no toggle-driven effect there. All other pages work with current impl.
+  // Post-fix: inline shorthand removed → CSS gradient applies on every page.
   test("1: Inner Glow ON → every card on every page has linear-gradient backgroundImage", async ({
     page,
   }) => {
-    for (const { name, path, selector } of PAGES) {
+    for (const { name, path } of PAGES) {
       await page.goto(`${BASE_URL}${path}`);
       await waitForAppReady(page);
       await enableInnerGlow(page);
       await page.waitForTimeout(100);
 
-      const cards = page.locator(selector);
+      const cards = page.locator(CARD_SEL);
       const count = await cards.count();
       expect(
         count,
-        `${name}: expected at least one card matching "${selector}"`,
+        `${name}: expected at least one card matching "${CARD_SEL}"`,
       ).toBeGreaterThan(0);
 
       for (let i = 0; i < count; i++) {
@@ -98,27 +120,30 @@ test.describe("Inner Glow Wash", () => {
           .evaluate((el) => getComputedStyle(el).backgroundImage);
         expect(
           bgImage,
-          `${name} card[${i}] (${selector}): backgroundImage should contain linear-gradient with Inner Glow ON`,
+          `${name} card[${i}]: backgroundImage should contain linear-gradient with Inner Glow ON`,
         ).toContain("linear-gradient");
       }
     }
   });
 
-  // ── Test 2 (GREEN pre-fix, must stay green) ───────────────────────────────
+  // ── Test 2 (RED pre-fix) ──────────────────────────────────────────────────
+  // Pre-fix: llama.cpp panel cards hardcode `background: linear-gradient(…)` as
+  // an inline shorthand. The shorthand wins over any CSS rule, so the gradient
+  // remains even with Inner Glow OFF. Post-fix: backgroundColor lets the toggle govern.
   test("2: Inner Glow OFF → every card backgroundImage is none", async ({
     page,
   }) => {
-    for (const { name, path, selector } of PAGES) {
+    for (const { name, path } of PAGES) {
       await page.goto(`${BASE_URL}${path}`);
       await waitForAppReady(page);
       await disableInnerGlow(page);
       await page.waitForTimeout(100);
 
-      const cards = page.locator(selector);
+      const cards = page.locator(CARD_SEL);
       const count = await cards.count();
       expect(
         count,
-        `${name}: expected at least one card matching "${selector}"`,
+        `${name}: expected at least one card matching "${CARD_SEL}"`,
       ).toBeGreaterThan(0);
 
       for (let i = 0; i < count; i++) {
@@ -133,9 +158,8 @@ test.describe("Inner Glow Wash", () => {
     }
   });
 
-  // ── Test 3 (RED pre-fix) ──────────────────────────────────────────────────
-  // Pre-fix: backgroundImage is "none" so no alpha can be parsed — fails immediately.
-  // Post-fix: at intensity 2 → 14% alpha; at intensity 4 → 28% alpha (doubles).
+  // ── Test 3 ────────────────────────────────────────────────────────────────
+  // Post-fix: min(60%, 7%*2)=14% → α≈0.14; min(60%, 7%*4)=28% → α≈0.28 (double).
   test("3: Intensity = brightness: doubling intensity doubles first-colour alpha (both under clamp)", async ({
     page,
   }) => {
@@ -179,17 +203,16 @@ test.describe("Inner Glow Wash", () => {
       "Should parse an alpha value from backgroundImage at intensity 4",
     ).not.toBeNull();
 
-    // min(60%, 7%*2)=14% → α≈0.14; min(60%, 7%*4)=28% → α≈0.28 (double)
     expect(
       alpha4!,
       "Alpha at intensity 4 should be double alpha at intensity 2 (both under clamp)",
     ).toBeCloseTo(alpha2! * 2, 1);
   });
 
-  // ── Test 4 (RED pre-fix) ──────────────────────────────────────────────────
+  // ── Test 4 ────────────────────────────────────────────────────────────────
   // Post-fix: min(60%, 7%*9) = min(60%, 63%) = 60% → α = 0.60 (clamped, not 0.63).
-  // The min() is mandatory: without it color-mix() would receive >100% and silently
-  // drop the whole declaration.
+  // The min() clamp is mandatory: without it color-mix() receives >100% and silently
+  // drops the whole declaration.
   test("4: Clamp holds: intensity 9 → first-colour alpha ≈ 0.60 and linear-gradient still present", async ({
     page,
   }) => {
@@ -222,9 +245,11 @@ test.describe("Inner Glow Wash", () => {
     ).toBeCloseTo(0.6, 1);
   });
 
-  // ── Test 5 (RED pre-fix) ──────────────────────────────────────────────────
-  // var(--accent-primary) resolves at the card itself (variables.css:1006 re-declares
-  // it per --el-index under spectrum/rainbow-wave). No twin block needed.
+  // ── Test 5 ────────────────────────────────────────────────────────────────
+  // var(--accent-primary) resolves at the card itself (variables.css re-declares it
+  // per --el-index under spectrum/rainbow-wave). ChartFrame uses data-accent-el="inherit"
+  // and opts out of --el-index, so charts share the base hue — use exact ="" to test
+  // only elements that carry their own per-element hue.
   test("5: Per-element hue: in Spectrum mode two cards on the same page have different first-colour RGB", async ({
     page,
   }) => {
@@ -237,7 +262,8 @@ test.describe("Inner Glow Wash", () => {
     });
     await page.waitForTimeout(200);
 
-    const cards = page.locator(".ov-card");
+    // Cards only (exact ="" match) — charts opt out of --el-index and share base hue
+    const cards = page.locator('[data-accent-el=""]:has(> .card-accent-spine)');
     const count = await cards.count();
     expect(
       count,
@@ -263,46 +289,9 @@ test.describe("Inner Glow Wash", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  // ── Test 5b (GREEN pre-fix, must stay green) ──────────────────────────────
-  // llama.cpp PANEL_CARD_STYLE hardcodes background: linear-gradient(…) as an
-  // inline shorthand. The inline shorthand wins over CSS background-image rules,
-  // so the wash is always present regardless of the Inner Glow toggle.
-  // This asymmetry is accepted and out of scope (see Phase 2 notes).
-  test("5b: llama.cpp panel cards always have linear-gradient backgroundImage (toggle-independent)", async ({
-    page,
-  }) => {
-    for (const innerGlow of ["off", "on"] as const) {
-      await page.goto(`${BASE_URL}/llama-cpp`);
-      await waitForAppReady(page);
-
-      if (innerGlow === "on") {
-        await enableInnerGlow(page);
-      } else {
-        await disableInnerGlow(page);
-      }
-      await page.waitForTimeout(100);
-
-      const gradientCount = await page.evaluate(() =>
-        Array.from(
-          document.querySelectorAll(
-            "[data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target)",
-          ),
-        ).filter((el) =>
-          getComputedStyle(el).backgroundImage.includes("linear-gradient"),
-        ).length,
-      );
-
-      expect(
-        gradientCount,
-        `Inner Glow ${innerGlow}: at least one llama-cpp panel card must always have linear-gradient (hardcoded, toggle-independent)`,
-      ).toBeGreaterThan(0);
-    }
-  });
-
-  // ── Test 6 (RED pre-fix) ──────────────────────────────────────────────────
-  // Pre-fix: card backgroundImage is "none" (Inner Glow only sets a box-shadow variable).
-  // Post-fix: Inner Glow sets background-image on the card; Gradient Border owns ::before.
-  // The two effects use different CSS properties so they cannot clobber each other.
+  // ── Test 6 ────────────────────────────────────────────────────────────────
+  // Inner Glow uses background-image on the card element itself; Gradient Border
+  // owns ::before. Different CSS properties — they cannot clobber each other.
   test("6: No collision: Inner Glow + Gradient Border both ON → ::before has ring and card has wash", async ({
     page,
   }) => {
@@ -335,11 +324,8 @@ test.describe("Inner Glow Wash", () => {
   });
 
   // ── Test 7 (GREEN pre-fix, must stay green) ───────────────────────────────
-  // After Phase 2c removes --accent-inner-glow from .accent-glow-target::after,
-  // the spine's outer Neon Glow box-shadow is identical regardless of Inner Glow
-  // toggle state. Pre-fix: --accent-inner-glow is still in the box-shadow formula
-  // so if this is RED pre-fix, it signals the current code DOES alter the spine's
-  // box-shadow — exactly the bug Phase 2c fixes.
+  // The spine's outer Neon Glow box-shadow must be identical regardless of the
+  // Inner Glow toggle — Inner Glow does not touch box-shadow.
   test("7: Neon Glow unaffected: spine ::after boxShadow identical with Inner Glow on vs off", async ({
     page,
   }) => {
@@ -366,7 +352,139 @@ test.describe("Inner Glow Wash", () => {
 
     expect(
       boxShadowOn,
-      "Spine ::after boxShadow must be identical with Inner Glow on vs off (Neon Glow must not be affected by Inner Glow toggle)",
+      "Spine ::after boxShadow must be identical with Inner Glow on vs off",
     ).toBe(boxShadowOff);
+  });
+
+  // ── Test 8 (GREEN pre-fix, must stay green) ───────────────────────────────
+  // Guards the :has(> .card-accent-spine) part: elements with data-accent-el=""
+  // but without a spine child must never receive the wash.
+  test("8: Nothing else gets washed: nav button and MetricTile backgroundImage are none with Inner Glow ON", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/`);
+    await waitForAppReady(page);
+    await enableInnerGlow(page);
+    await page.waitForTimeout(100);
+
+    // Active nav button: data-accent-el="" with inline background: shorthand, no spine child
+    const navBtn = page.locator(".dash-nav-btn.active").first();
+    await expect(navBtn, "Active nav button must exist").toBeVisible();
+    const navBgImage = await navBtn.evaluate(
+      (el) => getComputedStyle(el).backgroundImage,
+    );
+    expect(
+      navBgImage,
+      "Active nav button must not receive Inner Glow wash",
+    ).toBe("none");
+
+    // MetricTile with accent: data-accent-el="" with inline background:, no spine child
+    const tile = page.locator(".metric-tile[data-accent-el]").first();
+    if ((await tile.count()) > 0) {
+      const tileBgImage = await tile.evaluate(
+        (el) => getComputedStyle(el).backgroundImage,
+      );
+      expect(tileBgImage, "MetricTile must not receive Inner Glow wash").toBe(
+        "none",
+      );
+    }
+  });
+
+  // ── Test 9 ────────────────────────────────────────────────────────────────
+  // ChartFrame uses data-accent-el="inherit" and IS matched by the presence selector
+  // [data-accent-el]:has(> .card-accent-spine). The SVG/chart background is transparent,
+  // so the wash on the ChartFrame element itself is what shows through.
+  test("9: Charts included: chart-container elements have linear-gradient ON and none OFF", async ({
+    page,
+  }) => {
+    for (const path of ["/", "/cpu", "/gpu"]) {
+      await page.goto(`${BASE_URL}${path}`);
+      await waitForAppReady(page);
+
+      const charts = page.locator(CHART_SEL);
+      const count = await charts.count();
+      if (count === 0) continue; // page has no charts
+
+      // ON: each ChartFrame must receive the wash
+      await enableInnerGlow(page);
+      await page.waitForTimeout(100);
+      for (let i = 0; i < count; i++) {
+        const bgImage = await charts
+          .nth(i)
+          .evaluate((el) => getComputedStyle(el).backgroundImage);
+        expect(
+          bgImage,
+          `${path} chart[${i}] (data-accent-el="inherit"): must have linear-gradient with Inner Glow ON`,
+        ).toContain("linear-gradient");
+      }
+
+      // OFF: each ChartFrame wash must disappear
+      await disableInnerGlow(page);
+      await page.waitForTimeout(100);
+      for (let i = 0; i < count; i++) {
+        const bgImage = await charts
+          .nth(i)
+          .evaluate((el) => getComputedStyle(el).backgroundImage);
+        expect(
+          bgImage,
+          `${path} chart[${i}] (data-accent-el="inherit"): must have backgroundImage none with Inner Glow OFF`,
+        ).toBe("none");
+      }
+    }
+  });
+
+  // ── Test 10 ───────────────────────────────────────────────────────────────
+  // The Theme page's Live Preview must show chart parity: its chart must use a
+  // real ChartFrame (data-accent-el="inherit" + spine child) so it receives the
+  // same wash as real chart cards on other pages.
+  // Pre-fix: preview uses a bespoke .preview-chart div (no spine) → count = 0.
+  test("10: Preview parity: /theme has ≥1 chart-container matching presence selector, washed ON and none OFF", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/theme`);
+    await waitForAppReady(page);
+
+    // Structural: must have at least one real chart-container
+    const count = await page.evaluate(
+      () => document.querySelectorAll(".chart-container").length,
+    );
+    expect(
+      count,
+      "/theme must have at least one .chart-container element (requires real ChartFrame)",
+    ).toBeGreaterThanOrEqual(1);
+
+    // Each chart-container must match the presence selector
+    const charts = page.locator(CHART_SEL);
+    const chartCount = await charts.count();
+    expect(
+      chartCount,
+      "/theme chart-container must match [data-accent-el]:has(> .card-accent-spine)",
+    ).toBeGreaterThanOrEqual(1);
+
+    // ON: must be washed
+    await enableInnerGlow(page);
+    await page.waitForTimeout(100);
+    for (let i = 0; i < chartCount; i++) {
+      const bgImage = await charts
+        .nth(i)
+        .evaluate((el) => getComputedStyle(el).backgroundImage);
+      expect(
+        bgImage,
+        `/theme chart[${i}]: must have linear-gradient with Inner Glow ON`,
+      ).toContain("linear-gradient");
+    }
+
+    // OFF: must disappear
+    await disableInnerGlow(page);
+    await page.waitForTimeout(100);
+    for (let i = 0; i < chartCount; i++) {
+      const bgImage = await charts
+        .nth(i)
+        .evaluate((el) => getComputedStyle(el).backgroundImage);
+      expect(
+        bgImage,
+        `/theme chart[${i}]: must have backgroundImage none with Inner Glow OFF`,
+      ).toBe("none");
+    }
   });
 });

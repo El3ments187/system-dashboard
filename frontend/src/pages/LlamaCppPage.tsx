@@ -167,7 +167,7 @@ function KvRow({
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   position: "relative",
-  background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
+  backgroundColor: "var(--bg-card)",
   border: "1px solid var(--border-light, var(--border-color))",
   borderRadius: "var(--radius-md)",
   overflow: "hidden",
@@ -1665,7 +1665,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
+                backgroundColor: "var(--bg-card)",
               }}
             >
               <AccentSpine />
@@ -1684,7 +1684,7 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                background: `linear-gradient(90deg, var(--accent-tint-10), transparent 200px), var(--bg-card)`,
+                backgroundColor: "var(--bg-card)",
               }}
             >
               <AccentSpine />

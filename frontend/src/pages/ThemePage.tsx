@@ -1,5 +1,5 @@
 import { Monitor, Cpu, HardDrive } from "lucide-react";
-import { CardShell, CardHeader } from "../components/shared/CardComponents";
+import { CardShell, CardHeader, ChartFrame } from "../components/shared/CardComponents";
 import ProgressBar from "../components/shared/ProgressBar";
 import Sparkline from "../components/shared/Sparkline";
 import type { MetricHistoryPoint } from "../types/metrics";
@@ -190,10 +190,7 @@ function ThemePreview() {
       </div>
 
       {/* History chart — per-element series, each data-accent-el gets its own hue */}
-      <div
-        className="preview-chart"
-        style={{ position: "relative", height: 56 }}
-      >
+      <ChartFrame style={{ height: 56, flex: "none" }}>
         {CHART_SERIES.map((series, i) => (
           <div
             key={i}
@@ -203,7 +200,7 @@ function ThemePreview() {
             <Sparkline data={series} width="100%" height={56} />
           </div>
         ))}
-      </div>
+      </ChartFrame>
 
       {/* Horizontal meter bars */}
       <div className="preview-meters">

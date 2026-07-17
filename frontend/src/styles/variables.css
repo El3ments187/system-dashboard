@@ -1180,12 +1180,14 @@
    Accent light washing in from the card's spine, fading across the card.
    A background-image (not a shadow): sits under the card's content and over its
    background-color, so it has real contrast against --bg-card.
+   A "card" is an element that renders a spine — hence :has(> .card-accent-spine),
+   which excludes nav buttons and tiles that also carry data-accent-el.
    ======================================== */
-[data-inner-glow="on"]
-  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target) {
+[data-inner-glow="on"] [data-accent-el]:has(> .card-accent-spine) {
   background-image: linear-gradient(
     90deg,
-    oklch(from var(--accent-primary) l c h / min(0.6, calc(0.07 * var(--inner-glow-intensity, 1.4)))),
+    color-mix(in srgb, var(--accent-primary)
+      min(60%, calc(7% * var(--inner-glow-intensity, 1.4))), transparent),
     transparent calc(120px + 60px * var(--inner-glow-intensity, 1.4))
   );
 }
