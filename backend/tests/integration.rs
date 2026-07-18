@@ -129,7 +129,10 @@ mod storage_helpers {
         assert!(status == CollectorStatus::Ok);
         for m in &metrics {
             assert!(m.utilization_percent >= 0.0 && m.utilization_percent <= 100.0);
-            assert_eq!(m.total_bytes, m.used_bytes + m.free_bytes);
+            // free_bytes is now f_bavail (user-available), not f_bfree.
+            // used + avail ≤ total because the root-reserved blocks sit in the gap.
+            // The old assert_eq!(total, used + free) was correct only when free used f_bfree.
+            assert!(m.used_bytes + m.free_bytes <= m.total_bytes);
         }
     }
 

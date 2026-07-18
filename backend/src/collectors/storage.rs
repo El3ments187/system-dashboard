@@ -521,16 +521,13 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
             continue;
         }
 
-        let total = sv.f_blocks * sv.f_bsize;
-        if total == 0 {
+        let Some((total, used, avail, util)) = usage_from_statvfs(
+            sv.f_blocks,
+            sv.f_bfree,
+            sv.f_bavail,
+            sv.f_bsize,
+        ) else {
             continue;
-        }
-        let free = sv.f_bfree * sv.f_bsize;
-        let used = total.saturating_sub(free);
-        let util = if total > 0 {
-            (used as f64 / total as f64) * 100.0
-        } else {
-            0.0
         };
 
         result.push(StorageMetrics {
@@ -539,7 +536,7 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
             filesystem: mount.fs_type,
             total_bytes: total,
             used_bytes: used,
-            free_bytes: free,
+            free_bytes: avail,
             utilization_percent: (util * 100.0).round() / 100.0,
         });
     }
@@ -617,16 +614,13 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
             continue;
         }
 
-        let total = sv.f_blocks * sv.f_bsize;
-        if total == 0 {
+        let Some((total, used, avail, util)) = usage_from_statvfs(
+            sv.f_blocks,
+            sv.f_bfree,
+            sv.f_bavail,
+            sv.f_bsize,
+        ) else {
             continue;
-        }
-        let free = sv.f_bfree * sv.f_bsize;
-        let used = total.saturating_sub(free);
-        let util = if total > 0 {
-            (used as f64 / total as f64) * 100.0
-        } else {
-            0.0
         };
 
         let dev = base_device(&mount.device);
@@ -636,7 +630,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
             filesystem: mount.fs_type,
             total_bytes: total,
             used_bytes: used,
-            free_bytes: free,
+            free_bytes: avail,
             utilization_percent: (util * 100.0).round() / 100.0,
         };
 
@@ -827,4 +821,88 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     }
 
     result
+}
+
+/// Compute (total, used, avail, util_pct) from raw statvfs fields, matching `df`.
+///
+/// df defines:
+///   used  = f_blocks − f_bfree  (reserve counts as used, not free)
+///   avail = f_bavail            (user-visible free, excluding reserve)
+///   Use%  = used / (used + avail)  — denominator excludes reserve so columns
+///                                    don't sum to 100; this matches `df -B1`.
+///
+/// Returns None when total == 0 (caller should skip the mount).
+///
+/// Cross-check on the real machine: `df -B1 /` "Avail" must equal the
+/// reported free_bytes within rounding, and "Use%" must match util_pct
+/// within 1 point. A mismatch here (>1 point) means f_bfree was used
+/// somewhere instead of f_bavail.
+fn usage_from_statvfs(
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_bsize: u64,
+) -> Option<(u64, u64, u64, f64)> {
+    let total = f_blocks * f_bsize;
+    if total == 0 {
+        return None;
+    }
+    let avail = f_bavail * f_bsize;
+    let used = total.saturating_sub(f_bfree * f_bsize);
+    let util = {
+        let denom = used + avail;
+        if denom > 0 {
+            (used as f64 / denom as f64) * 100.0
+        } else {
+            0.0
+        }
+    };
+    Some((total, used, avail, util))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::usage_from_statvfs;
+
+    #[test]
+    fn test_usage_typical_with_reserve() {
+        // f_blocks=100, f_bfree=10, f_bavail=5, f_bsize=1
+        // avail=5, used=90, util=90/(90+5)≈94.7%
+        let (total, used, avail, util) = usage_from_statvfs(100, 10, 5, 1).unwrap();
+        assert_eq!(total, 100);
+        assert_eq!(used, 90);
+        assert_eq!(avail, 5);
+        let expected_util = 90.0_f64 / 95.0_f64 * 100.0;
+        assert!((util - expected_util).abs() < 0.01, "util={util} expected≈{expected_util}");
+    }
+
+    #[test]
+    fn test_reserve_not_counted_as_free() {
+        // f_bfree=10, f_bavail=5 — reported avail must be 5, never 10
+        let (_total, _used, avail, _util) = usage_from_statvfs(100, 10, 5, 1).unwrap();
+        assert_eq!(avail, 5, "avail must use f_bavail, not f_bfree");
+    }
+
+    #[test]
+    fn test_full_for_users() {
+        // f_bfree=5 (reserved blocks remain), f_bavail=0 → avail=0, util=100%
+        let (_total, used, avail, util) = usage_from_statvfs(100, 5, 0, 1).unwrap();
+        assert_eq!(avail, 0);
+        assert_eq!(used, 95);
+        assert!((util - 100.0).abs() < 0.01, "util must be 100% when avail=0");
+    }
+
+    #[test]
+    fn test_bsize_scaling() {
+        // f_bsize=4096: all byte counts must scale
+        let (total, used, avail, _util) = usage_from_statvfs(100, 10, 5, 4096).unwrap();
+        assert_eq!(total, 100 * 4096);
+        assert_eq!(used, 90 * 4096);
+        assert_eq!(avail, 5 * 4096);
+    }
+
+    #[test]
+    fn test_zero_blocks_returns_none() {
+        assert!(usage_from_statvfs(0, 0, 0, 4096).is_none());
+    }
 }
