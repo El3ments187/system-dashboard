@@ -60,6 +60,7 @@ function CpuVerticalProgress({
   value,
   label,
   type = "percent",
+  min = 0,
   max = 100,
   accent,
   danger,
@@ -68,12 +69,14 @@ function CpuVerticalProgress({
   value: number;
   label: string;
   type?: "percent" | "temp";
+  min?: number;
   max?: number;
   accent: string;
   danger: string;
   warning: string;
 }) {
-  const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
+  const span = max - min;
+  const pct = span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
@@ -426,7 +429,8 @@ function CpuSummaryCard({}: { accent: { color: string; glow: string } }) {
           value={temp}
           label="TEMP"
           type="temp"
-          max={100}
+          min={20}
+          max={120}
           accent={barColor}
           danger={danger}
           warning={warning}
@@ -489,8 +493,8 @@ function CpuContent({ accent }: CpuPageProps) {
             yDomain={[0, 100]}
             yAxisTickValues={[0, 25, 50, 75, 100]}
             unit="%"
-            dualYDomain={[0, 120]}
-            dualYAxisTickValues={[0, 30, 60, 90, 120]}
+            dualYDomain={[20, 120]}
+            dualYAxisTickValues={[20, 40, 60, 80, 100, 120]}
             dualUnit="°C"
             primaryLabel="CPU Utilization"
             secondaryLabel="CPU Temperature"

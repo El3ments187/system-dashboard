@@ -18,7 +18,7 @@ export const mockMetricsContext = (
     {
       name: "NVIDIA GeForce RTX 4090",
       utilization_percent: 65,
-      temperature_celsius: 72,
+      temperature_celsius: 65,
       vram_used_gb: 8.5,
       vram_total_gb: 24,
       power_usage_watts: 250,

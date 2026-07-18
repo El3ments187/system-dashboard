@@ -86,6 +86,7 @@ function VerticalProgress({
   value,
   label,
   type = "percent",
+  min = 0,
   max = 100,
   limit,
   accent,
@@ -95,13 +96,15 @@ function VerticalProgress({
   value: number;
   label: string;
   type?: "percent" | "temp" | "power";
+  min?: number;
   max?: number;
   limit?: number;
   accent: string;
   danger: string;
   warning: string;
 }) {
-  const pct = max > 0 ? Math.min(Math.max((value / max) * 100, 0), 100) : 0;
+  const span = max - min;
+  const pct = span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
@@ -453,6 +456,7 @@ function GpuSummaryCard({
           value={gpu.temperature_celsius}
           label="TEMP"
           type="temp"
+          min={20}
           max={120}
           accent={barColor}
           danger={danger}
@@ -532,6 +536,9 @@ function GpuRow({
                 title="GPU Temperature History"
                 data={gpuTemperatureHistory}
                 timeFrame={GPU_HISTORY_LABEL}
+                yDomain={[20, 120]}
+                yAxisTickValues={[20, 40, 60, 80, 100, 120]}
+                unit="°C"
               />
             </>
           )}

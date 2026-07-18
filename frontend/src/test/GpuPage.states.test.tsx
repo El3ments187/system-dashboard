@@ -109,7 +109,7 @@ describe("GpuPage - accent mode does not leak across renders", () => {
         {
           name: "Test GPU",
           utilization_percent: 50,
-          temperature_celsius: 85,
+          temperature_celsius: 75,
           vram_used_gb: 4.0,
           vram_total_gb: 8,
           power_usage_watts: 100,

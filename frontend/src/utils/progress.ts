@@ -5,8 +5,8 @@ export const CRITICAL_THRESHOLD = 90;
 
 // CPU/GPU temperatures run on a different scale than utilization percentages,
 // so they get their own thresholds rather than reusing WARNING/CRITICAL_THRESHOLD.
-export const TEMP_WARNING_THRESHOLD = 80;
-export const TEMP_CRITICAL_THRESHOLD = 90;
+export const TEMP_WARNING_THRESHOLD = 70;
+export const TEMP_CRITICAL_THRESHOLD = 80;
 
 // Storage device temperatures run cooler than CPU/GPU dies, hence separate thresholds.
 export const STORAGE_TEMP_WARNING_THRESHOLD = 50;

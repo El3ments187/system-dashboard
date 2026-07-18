@@ -89,7 +89,7 @@ describe("GpuPage - accent application", () => {
     expect(
       screen.getByText(
         (_text, node) =>
-          node?.textContent === "72°C" &&
+          node?.textContent === "65°C" &&
           node?.className === "card-detail-value",
       ),
     ).toBeInTheDocument();

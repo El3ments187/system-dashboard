@@ -26,12 +26,12 @@ describe("Threshold Constants", () => {
     expect(CRITICAL_THRESHOLD).toBe(90);
   });
 
-  it("defines TEMP_WARNING_THRESHOLD at 80°C", () => {
-    expect(TEMP_WARNING_THRESHOLD).toBe(80);
+  it("defines TEMP_WARNING_THRESHOLD at 70°C", () => {
+    expect(TEMP_WARNING_THRESHOLD).toBe(70);
   });
 
-  it("defines TEMP_CRITICAL_THRESHOLD at 90°C", () => {
-    expect(TEMP_CRITICAL_THRESHOLD).toBe(90);
+  it("defines TEMP_CRITICAL_THRESHOLD at 80°C", () => {
+    expect(TEMP_CRITICAL_THRESHOLD).toBe(80);
   });
 
   it("defines STORAGE_TEMP_WARNING_THRESHOLD at 50°C", () => {
@@ -142,28 +142,60 @@ describe("getProgressColor", () => {
 
 describe("getTempState", () => {
   describe("threshold boundaries", () => {
-    it("returns normal below TEMP_WARNING_THRESHOLD (80)", () => {
-      expect(getTempState(70)).toBe("normal");
-      expect(getTempState(79.99)).toBe("normal");
+    it("returns normal below TEMP_WARNING_THRESHOLD (70)", () => {
+      expect(getTempState(69)).toBe("normal");
+      expect(getTempState(69.99)).toBe("normal");
     });
 
-    it("returns warning at exactly TEMP_WARNING_THRESHOLD (80)", () => {
-      expect(getTempState(80)).toBe("warning");
+    it("returns warning at exactly TEMP_WARNING_THRESHOLD (70)", () => {
+      expect(getTempState(70)).toBe("warning");
     });
 
     it("returns warning between WARNING and CRITICAL", () => {
-      expect(getTempState(85)).toBe("warning");
-      expect(getTempState(89.99)).toBe("warning");
+      expect(getTempState(75)).toBe("warning");
+      expect(getTempState(79)).toBe("warning");
     });
 
-    it("returns critical at exactly TEMP_CRITICAL_THRESHOLD (90)", () => {
-      expect(getTempState(90)).toBe("critical");
+    it("returns critical at exactly TEMP_CRITICAL_THRESHOLD (80)", () => {
+      expect(getTempState(80)).toBe("critical");
     });
 
     it("returns critical above TEMP_CRITICAL_THRESHOLD", () => {
-      expect(getTempState(95)).toBe("critical");
+      expect(getTempState(81)).toBe("critical");
       expect(getTempState(100)).toBe("critical");
     });
+  });
+});
+
+describe("vertical bar range (min prop)", () => {
+  // Formula: clamp(((value - min) / (max - min)) * 100, 0, 100)
+  function barPct(value: number, min: number, max: number): number {
+    const span = max - min;
+    return span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
+  }
+
+  it("20°C on a 20-120 scale = 0% (floor, not 17%)", () => {
+    expect(barPct(20, 20, 120)).toBe(0);
+  });
+
+  it("70°C on a 20-120 scale = 50%", () => {
+    expect(barPct(70, 20, 120)).toBe(50);
+  });
+
+  it("120°C on a 20-120 scale = 100%", () => {
+    expect(barPct(120, 20, 120)).toBe(100);
+  });
+
+  it("10°C (below min) on a 20-120 scale = 0% (clamped)", () => {
+    expect(barPct(10, 20, 120)).toBe(0);
+  });
+
+  it("130°C (above max) on a 20-120 scale = 100% (clamped)", () => {
+    expect(barPct(130, 20, 120)).toBe(100);
+  });
+
+  it("50 on a 0-100 scale = 50% (default min=0, non-temp bars unchanged)", () => {
+    expect(barPct(50, 0, 100)).toBe(50);
   });
 });
 
@@ -173,11 +205,11 @@ describe("getTempColor", () => {
   });
 
   it("returns warning color at TEMP_WARNING_THRESHOLD", () => {
-    expect(getTempColor(80)).toBe("var(--warning)");
+    expect(getTempColor(70)).toBe("var(--warning)");
   });
 
   it("returns danger color at TEMP_CRITICAL_THRESHOLD", () => {
-    expect(getTempColor(90)).toBe("var(--danger)");
+    expect(getTempColor(80)).toBe("var(--danger)");
   });
 });
 
