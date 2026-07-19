@@ -20,6 +20,15 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       ...sonarjs.configs.recommended.rules,
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXAttribute[name.name='ticks'] > JSXExpressionContainer > CallExpression[callee.property.name='map']",
+          message:
+            "Do not render one axis tick per data point (ticks={data.map(...)}). This detaches SVG <tspan> nodes every poll and leaks memory. Use tickCount={N} instead. See fix-chart-tspan-leak.",
+        },
+      ],
       "no-console": "warn",
       "no-unused-vars": "off",
       "unused-imports/no-unused-imports": "error",

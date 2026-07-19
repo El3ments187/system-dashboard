@@ -1,4 +1,11 @@
-import { useMemo, useState, useEffect, useRef, useId } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useId,
+  useCallback,
+} from "react";
 import { MetricHistoryPoint } from "../types/metrics";
 import ChartTooltip from "../components/common/ChartTooltip";
 import {
@@ -35,6 +42,8 @@ interface ChartProps {
   primaryLabel?: string;
   secondaryLabel?: string;
 }
+
+const AXIS_TICK = { fontSize: 10, fill: "var(--text-muted)" };
 
 function getSeriesColors(contextEl?: Element | null): string[] {
   return resolveAccentColors(2, false, contextEl);
@@ -184,6 +193,14 @@ export default function MetricChart({
     }));
     return result;
   }, [data, dataKeys, dualData]);
+
+  const tickFormatter = useCallback(
+    (tickVal: number) => {
+      const pt = chartData[Math.round(tickVal)];
+      return pt ? pt.timeLabel : "";
+    },
+    [chartData],
+  );
 
   const seriesLabels: Record<string, string> = {
     memory: "Memory Utilization (%)",
@@ -559,21 +576,17 @@ export default function MetricChart({
                   dataKey="x"
                   type="number"
                   domain={[0, dataMaxX]}
-                  ticks={chartData.map((_, i) => i)}
-                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                  tickCount={6}
+                  tick={AXIS_TICK}
                   axisLine={{ stroke: chartColors.axis }}
-                  tickFormatter={(tickVal: number) => {
-                    const pt = chartData[Math.round(tickVal)];
-                    return pt ? pt.timeLabel : "";
-                  }}
-                  interval="equidistantPreserveStart"
+                  tickFormatter={tickFormatter}
                 />
                 <YAxis
                   width={28}
                   type="number"
                   domain={yDomain || [0, 100]}
                   tickValues={yAxisTickValues}
-                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                  tick={AXIS_TICK}
                   axisLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
@@ -612,14 +625,10 @@ export default function MetricChart({
                   dataKey="x"
                   type="number"
                   domain={[0, dataMaxX]}
-                  ticks={chartData.map((_, i) => i)}
-                  tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                  tickCount={6}
+                  tick={AXIS_TICK}
                   axisLine={{ stroke: chartColors.axis }}
-                  tickFormatter={(tickVal: number) => {
-                    const pt = chartData[Math.round(tickVal)];
-                    return pt ? pt.timeLabel : "";
-                  }}
-                  interval="equidistantPreserveStart"
+                  tickFormatter={tickFormatter}
                 />
                 {dualData && dualData.length > 0 ? (
                   <>
@@ -629,7 +638,7 @@ export default function MetricChart({
                       type="number"
                       domain={yDomain || [0, 100]}
                       tickValues={yAxisTickValues}
-                      tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                      tick={AXIS_TICK}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                     <YAxis
@@ -639,7 +648,7 @@ export default function MetricChart({
                       orientation="right"
                       domain={dualYDomain || [0, 100]}
                       tickValues={dualYAxisTickValues}
-                      tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                      tick={AXIS_TICK}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                   </>
@@ -649,7 +658,7 @@ export default function MetricChart({
                     type="number"
                     domain={yDomain || [0, 100]}
                     tickValues={yAxisTickValues}
-                    tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+                    tick={AXIS_TICK}
                     axisLine={{ stroke: chartColors.axis }}
                   />
                 )}

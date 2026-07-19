@@ -1,4 +1,11 @@
-import { useMemo, useState, useEffect, useRef, useId } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useId,
+  useCallback,
+} from "react";
 import type * as RechartsTypes from "recharts";
 import { StorageHistoryPoint } from "../../types/metrics";
 import { useAccentSync } from "../../utils/accentColors";
@@ -10,6 +17,8 @@ interface Props {
 }
 
 const BUFFER_SIZE = 120;
+
+const AXIS_TICK = { fontSize: 10, fill: "var(--text-muted)" };
 
 function fmtBps(bps: number): string {
   if (bps <= 0) return "0 B/s";
@@ -32,9 +41,7 @@ export default function OverviewStorageChart({ data }: Props) {
   } | null>(null);
 
   useEffect(() => {
-    import("recharts")
-      .then((r) => setRecharts(r))
-      .catch(() => {});
+    import("recharts").then((r) => setRecharts(r)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -86,6 +93,11 @@ export default function OverviewStorageChart({ data }: Props) {
     return Array.from(slotMap.values()).sort((a, b) => a.x - b.x);
   }, [data]);
 
+  const tickFormatter = useCallback(
+    (v: number) => chartData[Math.round(v)]?.timeLabel ?? "",
+    [chartData],
+  );
+
   if (!recharts) {
     return (
       <ChartFrame>
@@ -126,19 +138,16 @@ export default function OverviewStorageChart({ data }: Props) {
               dataKey="x"
               type="number"
               domain={[0, BUFFER_SIZE - 1]}
-              ticks={chartData.map((_, i) => i)}
-              tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+              tickCount={6}
+              tick={AXIS_TICK}
               axisLine={{ stroke: chartColors.axis }}
-              tickFormatter={(v: number) =>
-                chartData[Math.round(v)]?.timeLabel ?? ""
-              }
-              interval="equidistantPreserveStart"
+              tickFormatter={tickFormatter}
             />
             <YAxis
               width={36}
               type="number"
               domain={[0, (dataMax: number) => Math.max(dataMax, 1024)]}
-              tick={{ fontSize: 10, fill: "var(--text-muted)" }}
+              tick={AXIS_TICK}
               axisLine={{ stroke: chartColors.axis }}
               tickFormatter={(v: number) => fmtBps(v)}
             />
