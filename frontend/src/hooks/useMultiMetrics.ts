@@ -77,11 +77,24 @@ export function useMetrics<T>(
   }, [bufferSize]);
 
   useEffect(() => {
-    fetchData();
+    // Poll only while the tab is visible: rAF pauses in background tabs but
+    // setInterval does not, so without this gate the app keeps fetching and
+    // re-rendering every recharts tree while completely invisible. On return
+    // to visibility, fetch immediately so charts refresh without waiting a
+    // full interval.
+    const tick = () => {
+      if (!document.hidden) fetchData();
+    };
+    tick();
+    document.addEventListener("visibilitychange", tick);
     if (!isPaused) {
-      const interval = setInterval(fetchData, intervalMs);
-      return () => clearInterval(interval);
+      const interval = setInterval(tick, intervalMs);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", tick);
+      };
     }
+    return () => document.removeEventListener("visibilitychange", tick);
   }, [fetchData, intervalMs, isPaused]);
 
   return { currentValue, history, loading, error };
@@ -215,11 +228,24 @@ export function useMultiMetrics<T>(
   }, [fetchData]);
 
   useEffect(() => {
-    fetchData();
+    // Poll only while the tab is visible: rAF pauses in background tabs but
+    // setInterval does not, so without this gate the app keeps fetching and
+    // re-rendering every recharts tree while completely invisible. On return
+    // to visibility, fetch immediately so charts refresh without waiting a
+    // full interval.
+    const tick = () => {
+      if (!document.hidden) fetchData();
+    };
+    tick();
+    document.addEventListener("visibilitychange", tick);
     if (!isPaused) {
-      const interval = setInterval(fetchData, intervalMs);
-      return () => clearInterval(interval);
+      const interval = setInterval(tick, intervalMs);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", tick);
+      };
     }
+    return () => document.removeEventListener("visibilitychange", tick);
   }, [fetchData, intervalMs, isPaused]);
 
   return { currentValues, histories, rawData, loading, error, retry };

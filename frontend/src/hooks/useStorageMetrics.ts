@@ -106,12 +106,25 @@ export function useStorageMetrics(isPaused?: boolean): {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchStorage();
+    // Visibility-gated poll: rAF pauses in background tabs but setInterval
+    // does not — this 500ms storage poll is the hottest loop in the app and
+    // must not fetch or churn state while the tab is hidden. On return to
+    // visibility, tick immediately so charts refresh without waiting.
+    const tick = () => {
+      if (!document.hidden) {
+        fetchStorage();
+      }
+    };
+    tick();
+    document.addEventListener("visibilitychange", tick);
     if (!isPaused) {
-      const interval = setInterval(fetchStorage, 500);
-      return () => clearInterval(interval);
+      const interval = setInterval(tick, 500);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", tick);
+      };
     }
+    return () => document.removeEventListener("visibilitychange", tick);
   }, [fetchStorage, isPaused]);
 
   const retry = useCallback(() => {
