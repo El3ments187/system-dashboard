@@ -3,6 +3,7 @@ import OverviewStorageChart from "../components/overview/OverviewStorageChart";
 import type { StorageHistoryPoint } from "../types/metrics";
 
 const capturedXAxis: any[] = [];
+const capturedYAxis: any[] = [];
 
 vi.mock("recharts", () => ({
   AreaChart: ({ children }: any) => <svg>{children}</svg>,
@@ -11,7 +12,10 @@ vi.mock("recharts", () => ({
     capturedXAxis.push(props);
     return null;
   },
-  YAxis: () => null,
+  YAxis: (props: any) => {
+    capturedYAxis.push(props);
+    return null;
+  },
   CartesianGrid: () => null,
   Tooltip: () => null,
 }));
@@ -53,6 +57,7 @@ describe("OverviewStorageChart XAxis — axis leak guards (Tier 2)", () => {
 
   beforeEach(() => {
     capturedXAxis.length = 0;
+    capturedYAxis.length = 0;
   });
 
   it("does not render one tick per data point (ticks prop absent or sparse)", async () => {
@@ -79,18 +84,29 @@ describe("OverviewStorageChart XAxis — axis leak guards (Tier 2)", () => {
     expect(last.tickCount).toBeLessThanOrEqual(10);
   });
 
-  it("tick prop is referentially stable (module const AXIS_TICK, not inline object)", async () => {
+  it("tick prop is referentially stable (AxisTick function, not inline object)", async () => {
     const data = makeMockStorage();
     render(<OverviewStorageChart data={data} />);
     await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
 
     // All XAxis captures in this render must share the same tick reference
     const tick = capturedXAxis[0].tick;
-    expect(tick).toBeDefined();
-    expect(tick.fontSize).toBe(10);
-    expect(tick.fill).toBe("var(--text-muted)");
+    expect(typeof tick).toBe("function");
     for (const props of capturedXAxis) {
       expect(props.tick).toBe(tick);
+    }
+  });
+
+  it("every axis (XAxis and YAxis) uses the AxisTick renderer (function tick)", async () => {
+    render(<OverviewStorageChart data={makeMockStorage()} />);
+    await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
+
+    const allAxes = [...capturedXAxis, ...capturedYAxis];
+    for (const props of allAxes) {
+      expect(
+        typeof props.tick,
+        "every axis must use the AxisTick renderer",
+      ).toBe("function");
     }
   });
 

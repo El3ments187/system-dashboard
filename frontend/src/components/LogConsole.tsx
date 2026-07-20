@@ -24,6 +24,7 @@ import type {
   LaunchProfile,
   ProfileState,
 } from "../types/metrics";
+import { appendPending } from "../utils/logBuffer";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -416,7 +417,11 @@ export function LogConsole({
             setLogs(msg.lines ?? []);
             if (msg.exited) setStatus("exited");
           } else if (msg.type === "log" && msg.line) {
-            pendingLogsRef.current.push(msg.line);
+            pendingLogsRef.current = appendPending(
+              pendingLogsRef.current,
+              msg.line,
+              5000,
+            );
             if (rafRef.current === null) {
               rafRef.current = requestAnimationFrame(flushPending);
             }

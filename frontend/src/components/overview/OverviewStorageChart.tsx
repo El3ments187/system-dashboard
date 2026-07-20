@@ -12,14 +12,13 @@ import { StorageHistoryPoint } from "../../types/metrics";
 import { useAccentSync } from "../../utils/accentColors";
 import { ChartFrame } from "../shared/CardComponents";
 import { getChartChromeColors } from "../../utils/chartColors";
+import { AxisTick } from "../../charts/AxisTick";
 
 interface Props {
   data: StorageHistoryPoint[];
 }
 
 const BUFFER_SIZE = 120;
-
-const AXIS_TICK = { fontSize: 10, fill: "var(--text-muted)" };
 
 function fmtBps(bps: number): string {
   if (bps <= 0) return "0 B/s";
@@ -140,7 +139,7 @@ function OverviewStorageChart({ data }: Props) {
               type="number"
               domain={[0, BUFFER_SIZE - 1]}
               tickCount={6}
-              tick={AXIS_TICK}
+              tick={AxisTick}
               axisLine={{ stroke: chartColors.axis }}
               tickFormatter={tickFormatter}
             />
@@ -148,7 +147,7 @@ function OverviewStorageChart({ data }: Props) {
               width={36}
               type="number"
               domain={[0, (dataMax: number) => Math.max(dataMax, 1024)]}
-              tick={AXIS_TICK}
+              tick={AxisTick}
               axisLine={{ stroke: chartColors.axis }}
               tickFormatter={fmtBps}
             />

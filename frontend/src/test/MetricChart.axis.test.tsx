@@ -125,6 +125,20 @@ describe("MetricChart XAxis — axis leak guards (Tier 2)", () => {
     expect(fmtAfter).toBe(fmtBefore);
   });
 
+  it("every XAxis uses the AxisTick renderer (function tick)", async () => {
+    render(
+      <MetricChart accent={ACCENT} title="Test" data={makeMockHistory()} />,
+    );
+    await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
+
+    for (const props of capturedXAxis) {
+      expect(
+        typeof props.tick,
+        "every axis must use the AxisTick renderer",
+      ).toBe("function");
+    }
+  });
+
   it("skips re-render when data content is unchanged (React.memo)", async () => {
     const data = makeMockHistory();
     const { rerender } = render(

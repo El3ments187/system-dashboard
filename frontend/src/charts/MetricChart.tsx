@@ -17,6 +17,7 @@ import {
 } from "../utils/accentColors";
 import { ChartFrame } from "../components/shared/CardComponents";
 import { getChartChromeColors } from "../utils/chartColors";
+import { AxisTick } from "./AxisTick";
 
 function fillOpacityFor(isSecondary: boolean, i: number): number {
   if (!isSecondary) return 0.12;
@@ -44,14 +45,14 @@ interface ChartProps {
   secondaryLabel?: string;
 }
 
-const AXIS_TICK = { fontSize: 10, fill: "var(--text-muted)" };
-
 function getSeriesColors(contextEl?: Element | null): string[] {
   return resolveAccentColors(2, false, contextEl);
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString("en-US", {
+export function formatTime(date: Date | string): string {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
@@ -59,9 +60,14 @@ function formatTime(date: Date): string {
   });
 }
 
-function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
+export function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
   if (!p) return 0;
-  return p.timestamp.getTime();
+  const t = p.timestamp;
+  const ms =
+    t instanceof Date
+      ? t.getTime()
+      : new Date(t as unknown as string).getTime();
+  return isNaN(ms) ? 0 : ms;
 }
 
 function MetricChart({
@@ -578,7 +584,7 @@ function MetricChart({
                   type="number"
                   domain={[0, dataMaxX]}
                   tickCount={6}
-                  tick={AXIS_TICK}
+                  tick={AxisTick}
                   axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={tickFormatter}
                 />
@@ -587,7 +593,7 @@ function MetricChart({
                   type="number"
                   domain={yDomain || [0, 100]}
                   tickValues={yAxisTickValues}
-                  tick={AXIS_TICK}
+                  tick={AxisTick}
                   axisLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
@@ -627,7 +633,7 @@ function MetricChart({
                   type="number"
                   domain={[0, dataMaxX]}
                   tickCount={6}
-                  tick={AXIS_TICK}
+                  tick={AxisTick}
                   axisLine={{ stroke: chartColors.axis }}
                   tickFormatter={tickFormatter}
                 />
@@ -639,7 +645,7 @@ function MetricChart({
                       type="number"
                       domain={yDomain || [0, 100]}
                       tickValues={yAxisTickValues}
-                      tick={AXIS_TICK}
+                      tick={AxisTick}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                     <YAxis
@@ -649,7 +655,7 @@ function MetricChart({
                       orientation="right"
                       domain={dualYDomain || [0, 100]}
                       tickValues={dualYAxisTickValues}
-                      tick={AXIS_TICK}
+                      tick={AxisTick}
                       axisLine={{ stroke: chartColors.axis }}
                     />
                   </>
@@ -659,7 +665,7 @@ function MetricChart({
                     type="number"
                     domain={yDomain || [0, 100]}
                     tickValues={yAxisTickValues}
-                    tick={AXIS_TICK}
+                    tick={AxisTick}
                     axisLine={{ stroke: chartColors.axis }}
                   />
                 )}
@@ -692,12 +698,15 @@ function lastSig(
   return `${a.length}:${JSON.stringify(a[a.length - 1])}`;
 }
 
-export default memo(
-  MetricChart,
-  (p, n) =>
+export function arePropsEqual(p: ChartProps, n: ChartProps): boolean {
+  return (
     lastSig(p.data) === lastSig(n.data) &&
     lastSig(p.dualData) === lastSig(n.dualData) &&
-    p.accent === n.accent &&
+    p.accent.color === n.accent.color &&
+    p.accent.glow === n.accent.glow &&
     p.title === n.title &&
-    p.timeFrame === n.timeFrame,
-);
+    p.timeFrame === n.timeFrame
+  );
+}
+
+export default memo(MetricChart, arePropsEqual);
