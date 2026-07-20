@@ -1,4 +1,5 @@
 import {
+  memo,
   useMemo,
   useState,
   useEffect,
@@ -30,7 +31,7 @@ function fmtBps(bps: number): string {
   return (bps / Math.pow(1024, i)).toFixed(1) + " " + units[i];
 }
 
-export default function OverviewStorageChart({ data }: Props) {
+function OverviewStorageChart({ data }: Props) {
   const [recharts, setRecharts] = useState<typeof RechartsTypes | null>(null);
   const [chartColors, setChartColors] = useState(() => getChartChromeColors());
   const chartRef = useRef<HTMLDivElement>(null);
@@ -149,7 +150,7 @@ export default function OverviewStorageChart({ data }: Props) {
               domain={[0, (dataMax: number) => Math.max(dataMax, 1024)]}
               tick={AXIS_TICK}
               axisLine={{ stroke: chartColors.axis }}
-              tickFormatter={(v: number) => fmtBps(v)}
+              tickFormatter={fmtBps}
             />
             <Tooltip
               isAnimationActive={false}
@@ -311,3 +312,13 @@ export default function OverviewStorageChart({ data }: Props) {
     </ChartFrame>
   );
 }
+
+function lastSig(a?: StorageHistoryPoint[]): string {
+  if (!a || a.length === 0) return "0";
+  return `${a.length}:${JSON.stringify(a[a.length - 1])}`;
+}
+
+export default memo(
+  OverviewStorageChart,
+  (p, n) => lastSig(p.data) === lastSig(n.data),
+);

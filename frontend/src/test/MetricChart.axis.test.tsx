@@ -87,14 +87,18 @@ describe("MetricChart XAxis — axis leak guards (Tier 2)", () => {
   it("tick prop is referentially stable across re-renders (module const, not inline object)", async () => {
     const data = makeMockHistory();
     const { rerender } = render(
-      <MetricChart accent={ACCENT} title="Test" data={data} />,
+      <MetricChart accent={ACCENT} title="Test" data={data} timeFrame="1m" />,
     );
     await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
 
     const tickBefore = capturedXAxis[capturedXAxis.length - 1].tick;
     capturedXAxis.length = 0;
 
-    rerender(<MetricChart accent={ACCENT} title="Test" data={data} />);
+    // Change timeFrame to force a re-render while data stays the same;
+    // AXIS_TICK is a module const so its reference must be identical.
+    rerender(
+      <MetricChart accent={ACCENT} title="Test" data={data} timeFrame="2m" />,
+    );
     await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
 
     const tickAfter = capturedXAxis[capturedXAxis.length - 1].tick;
@@ -104,17 +108,38 @@ describe("MetricChart XAxis — axis leak guards (Tier 2)", () => {
   it("tickFormatter is stable when data is unchanged", async () => {
     const data = makeMockHistory();
     const { rerender } = render(
-      <MetricChart accent={ACCENT} title="Test" data={data} />,
+      <MetricChart accent={ACCENT} title="Test" data={data} timeFrame="1m" />,
     );
     await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
 
     const fmtBefore = capturedXAxis[capturedXAxis.length - 1].tickFormatter;
     capturedXAxis.length = 0;
 
-    rerender(<MetricChart accent={ACCENT} title="Test" data={data} />);
+    // Change timeFrame to force re-render; data is same so useCallback keeps the same ref.
+    rerender(
+      <MetricChart accent={ACCENT} title="Test" data={data} timeFrame="2m" />,
+    );
     await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
 
     const fmtAfter = capturedXAxis[capturedXAxis.length - 1].tickFormatter;
     expect(fmtAfter).toBe(fmtBefore);
+  });
+
+  it("skips re-render when data content is unchanged (React.memo)", async () => {
+    const data = makeMockHistory();
+    const { rerender } = render(
+      <MetricChart accent={ACCENT} title="Test" data={data} />,
+    );
+    await waitFor(() => expect(capturedXAxis.length).toBeGreaterThan(0));
+    capturedXAxis.length = 0;
+
+    // New array reference, same content — memo comparator must skip re-render
+    rerender(<MetricChart accent={ACCENT} title="Test" data={[...data]} />);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(
+      capturedXAxis.length,
+      "MetricChart re-rendered despite content-equal data (React.memo missing or comparator wrong)",
+    ).toBe(0);
   });
 });

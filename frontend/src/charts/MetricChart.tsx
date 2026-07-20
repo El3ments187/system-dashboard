@@ -1,4 +1,5 @@
 import {
+  memo,
   useMemo,
   useState,
   useEffect,
@@ -63,7 +64,7 @@ function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
   return p.timestamp.getTime();
 }
 
-export default function MetricChart({
+function MetricChart({
   title,
   data,
   color: _color,
@@ -683,3 +684,20 @@ export default function MetricChart({
     </ChartFrame>
   );
 }
+
+function lastSig(
+  a?: (MetricHistoryPoint | Record<string, number | null>)[],
+): string {
+  if (!a || a.length === 0) return "0";
+  return `${a.length}:${JSON.stringify(a[a.length - 1])}`;
+}
+
+export default memo(
+  MetricChart,
+  (p, n) =>
+    lastSig(p.data) === lastSig(n.data) &&
+    lastSig(p.dualData) === lastSig(n.dualData) &&
+    p.accent === n.accent &&
+    p.title === n.title &&
+    p.timeFrame === n.timeFrame,
+);
