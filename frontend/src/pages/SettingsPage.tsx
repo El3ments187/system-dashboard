@@ -25,6 +25,7 @@ import {
 import DirectoryBrowserModal from "../components/DirectoryBrowserModal";
 import EditUpdateScriptModal from "../components/EditUpdateScriptModal";
 import { SettingsCard } from "../components/shared/CardComponents";
+import { GpuBackendStatus } from "../components/settings/GpuBackendStatus";
 
 const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
@@ -795,6 +796,7 @@ export default function SettingsPage({}: SettingsPageProps) {
         title="Edit Latest Version Command"
         description="Shell command run in the working directory. Output is used as the latest available version tag."
       />
+      <GpuBackendStatus />
     </main>
   );
 }

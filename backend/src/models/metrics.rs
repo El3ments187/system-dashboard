@@ -32,7 +32,7 @@ pub struct MemoryMetrics {
     pub swap_used_gb: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GpuMetrics {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]

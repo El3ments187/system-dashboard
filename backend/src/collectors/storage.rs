@@ -4,7 +4,7 @@ use super::alerts::CollectorStatus;
 use crate::models::storage::{DeviceStorageInfo, DiskIOStats, StorageMetrics};
 use libc::statvfs as c_statvfs;
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 // History buffer size for storage metrics
 const STORAGE_HISTORY_SIZE: usize = 120;
@@ -100,6 +100,34 @@ fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
         }
     }
     None
+}
+
+/// Device temperatures change on the order of minutes, but the frontend polls
+/// /api/metrics/storage/devices every 500ms — and reading a temperature spawns
+/// `nvme smart-log` (or falls back to `smartctl`) as a blocking subprocess and
+/// issues an admin command to the drive. Uncached, that was 2 subprocess spawns
+/// per device per second, forever. A short TTL turns 2 Hz device interrogation
+/// into one read per device per TTL window; sysfs fallbacks are cheap but the
+/// cache keeps behavior uniform across paths.
+const TEMPERATURE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+
+static TEMPERATURE_CACHE: LazyLock<
+    Mutex<std::collections::HashMap<String, (std::time::Instant, Option<f64>)>>,
+> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+fn collect_device_temperature_cached(device_name: &str) -> Option<f64> {
+    let now = std::time::Instant::now();
+    if let Ok(cache) = TEMPERATURE_CACHE.lock()
+        && let Some((at, value)) = cache.get(device_name)
+        && now.duration_since(*at) < TEMPERATURE_TTL
+    {
+        return *value;
+    }
+    let value = collect_device_temperature(device_name);
+    if let Ok(mut cache) = TEMPERATURE_CACHE.lock() {
+        cache.insert(device_name.to_string(), (now, value));
+    }
+    value
 }
 
 fn collect_device_temperature(device_name: &str) -> Option<f64> {
@@ -648,7 +676,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
         .map(|(device, mounts)| {
             let io = io_map.get(&device).cloned();
             let dev_name = device.trim_start_matches("/dev/");
-            let temperature = collect_device_temperature(dev_name);
+            let temperature = collect_device_temperature_cached(dev_name);
             DeviceStorageInfo {
                 device,
                 mounts,

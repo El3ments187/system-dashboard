@@ -6,6 +6,36 @@ use std::sync::{LazyLock, Mutex};
 
 static NVML: LazyLock<Mutex<Option<nvml_wrapper::Nvml>>> = LazyLock::new(|| Mutex::new(None));
 
+/// When NVML init fails (e.g. a broken driver), don't retry a full library
+/// init on every 500ms poll — Nvml::init() loads the library and touches the
+/// driver, which is exactly what's unhealthy in that state. Retry with a
+/// backoff instead.
+const NVML_INIT_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+static NVML_LAST_INIT_ATTEMPT: LazyLock<Mutex<Option<std::time::Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// The nvidia-smi fallback spawns a subprocess (`nvidia-smi -q -x`, 30-200ms,
+/// wakes the GPU). At the frontend's 2 Hz poll that meant 2 spawns/sec forever
+/// while NVML is down. Serve cached results inside this TTL instead.
+const SMI_TTL: std::time::Duration = std::time::Duration::from_millis(1500);
+static SMI_CACHE: LazyLock<Mutex<Option<(std::time::Instant, Vec<GpuMetrics>)>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Driver version and per-device name / enforced power limit are constants for
+/// the life of the process; querying the driver for them twice a second is
+/// pure waste. Cached on first successful read.
+static DRIVER_VERSION: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+static GPU_STATIC_INFO: LazyLock<
+    Mutex<std::collections::HashMap<u32, (String, Option<f64>)>>,
+> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Rate-limit hot-path logging: at 2 Hz an eprintln per poll floods stderr and
+/// journald (real disk writes). Log each condition once, re-arm on recovery.
+static LOGGED_NVML_UNAVAILABLE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static LOGGED_DEVICE_ERROR: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 static NVIDIA_SMI_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
     std::process::Command::new("nvidia-smi")
         .arg("--query-gpu=name")
@@ -31,19 +61,30 @@ pub fn get_gpu_backend_info() -> (String, bool) {
 
 pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
     let mut guard = NVML.lock().unwrap();
-    let is_nvml = guard.is_some();
-    if !is_nvml {
-        *guard = nvml_wrapper::Nvml::init().ok();
+    if guard.is_none() {
+        // Only re-attempt a full NVML init after the backoff window.
+        let mut last = NVML_LAST_INIT_ATTEMPT.lock().unwrap();
+        let due = last.map(|at| at.elapsed() >= NVML_INIT_RETRY).unwrap_or(true);
+        if due {
+            *last = Some(std::time::Instant::now());
+            *guard = nvml_wrapper::Nvml::init().ok();
+        }
     }
     match guard.as_ref() {
         Some(nvml) => {
+            LOGGED_NVML_UNAVAILABLE.store(false, std::sync::atomic::Ordering::Relaxed);
             let metrics = gpu_from_nvml(nvml);
             (metrics, CollectorStatus::Ok)
         }
         None => {
             drop(guard);
-            eprintln!("[GPU] NVML unavailable. Falling back to nvidia-smi.");
-            let metrics = smi_from_all();
+            if !LOGGED_NVML_UNAVAILABLE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[GPU] NVML unavailable. Falling back to nvidia-smi (logged once; retrying init every {}s).",
+                    NVML_INIT_RETRY.as_secs()
+                );
+            }
+            let metrics = smi_from_all_cached();
             (
                 metrics,
                 CollectorStatus::Partial("NVML unavailable, using fallback".to_string()),
@@ -52,17 +93,43 @@ pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
     }
 }
 
+/// TTL wrapper: at most one nvidia-smi subprocess per SMI_TTL window.
+fn smi_from_all_cached() -> Vec<GpuMetrics> {
+    let now = std::time::Instant::now();
+    if let Ok(cache) = SMI_CACHE.lock()
+        && let Some((at, metrics)) = cache.as_ref()
+        && now.duration_since(*at) < SMI_TTL
+    {
+        return metrics.clone();
+    }
+    let metrics = smi_from_all();
+    if let Ok(mut cache) = SMI_CACHE.lock() {
+        *cache = Some((now, metrics.clone()));
+    }
+    metrics
+}
+
 fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
-    let driver_version = nvml.sys_driver_version().ok();
+    let driver_version = DRIVER_VERSION
+        .get_or_init(|| nvml.sys_driver_version().ok())
+        .clone();
 
     match nvml.device_count() {
         Ok(count) if count > 0 => {
             let mut metrics = Vec::new();
             for i in 0..count {
                 match nvml.device_by_index(i) {
-                    Ok(device) => metrics.push(one_gpu(&device, driver_version.as_deref())),
+                    Ok(device) => {
+                        LOGGED_DEVICE_ERROR
+                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                        metrics.push(one_gpu(i, &device, driver_version.as_deref()));
+                    }
                     Err(e) => {
-                        eprintln!("[GPU] device_by_index({i}): {e}");
+                        if !LOGGED_DEVICE_ERROR
+                            .swap(true, std::sync::atomic::Ordering::Relaxed)
+                        {
+                            eprintln!("[GPU] device_by_index({i}): {e} (logged once)");
+                        }
                     }
                 }
             }
@@ -80,8 +147,21 @@ fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
     }
 }
 
-fn one_gpu(device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMetrics {
-    let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
+fn one_gpu(index: u32, device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMetrics {
+    // name and enforced power limit are constant per device; read them from the
+    // driver once instead of twice a second.
+    let (name, cached_limit) = {
+        let mut cache = GPU_STATIC_INFO.lock().unwrap();
+        match cache.get(&index) {
+            Some(v) => v.clone(),
+            None => {
+                let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
+                let limit = device.enforced_power_limit().ok().map(|pl| pl as f64 / 1000.0);
+                cache.insert(index, (name.clone(), limit));
+                (name, limit)
+            }
+        }
+    };
 
     let temp = device
         .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
@@ -105,16 +185,7 @@ fn one_gpu(device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMe
     let power = device
         .power_usage()
         .ok()
-        .map(|p| {
-            (
-                p as f64 / 1000.0,
-                device
-                    .enforced_power_limit()
-                    .ok()
-                    .map(|pl| pl as f64 / 1000.0)
-                    .unwrap_or(0.0),
-            )
-        })
+        .map(|p| (p as f64 / 1000.0, cached_limit.unwrap_or(0.0)))
         .unwrap_or((0.0, 0.0));
 
     let fan = device

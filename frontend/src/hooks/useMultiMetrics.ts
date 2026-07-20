@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { slideWindow } from "../utils/slideWindow";
 import { MetricHistoryPoint } from "../types/metrics";
-
-function reindexSlots(points: MetricHistoryPoint[]): MetricHistoryPoint[] {
-  return points.map((p, idx) => ({ ...p, slot: idx }));
-}
 
 /**
  * Hook for polling metrics from the backend API.
@@ -55,26 +52,15 @@ export function useMetrics<T>(
       const timestamp = new Date();
 
       setCurrentValue(value);
-      setHistory((prev) => {
-        const next = [
-          ...prev.slice(1),
-          { slot: bufferSize - 1, timestamp, value },
-        ].map((p, idx) => ({ ...p, slot: idx }));
-        return next;
-      });
+      setHistory((prev) => slideWindow(prev, value, timestamp));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-      setHistory((prev) => {
-        return [
-          ...prev.slice(1),
-          { slot: bufferSize - 1, timestamp: new Date(), value: null },
-        ].map((p, idx) => ({ ...p, slot: idx }));
-      });
+      setHistory((prev) => slideWindow(prev, null, new Date()));
     } finally {
       setLoading(false);
     }
-  }, [bufferSize]);
+  }, []);
 
   useEffect(() => {
     // Poll only while the tab is visible: rAF pauses in background tabs but
@@ -199,10 +185,7 @@ export function useMultiMetrics<T>(
           const newValue = values[i];
 
           // Shift buffer: drop oldest, append new value with correct slot indices
-          return reindexSlots([
-            ...h.slice(1),
-            { slot: bufferSize - 1, timestamp: new Date(), value: newValue },
-          ]);
+          return slideWindow(h, newValue, new Date());
         }),
       );
 
@@ -212,16 +195,13 @@ export function useMultiMetrics<T>(
       setHistories((prev) =>
         prev.map((h, i) => {
           if (!h || !trackHistoryRef.current?.[i]) return h;
-          return reindexSlots([
-            ...h.slice(1),
-            { slot: bufferSize - 1, timestamp: new Date(), value: null },
-          ]);
+          return slideWindow(h, null, new Date());
         }),
       );
     } finally {
       setLoading(false);
     }
-  }, [bufferSize]);
+  }, []);
 
   const retry = useCallback(() => {
     fetchData();

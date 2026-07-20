@@ -133,13 +133,41 @@ pub fn compute_cpu_utilization(
     (avg_util.clamp(0.0, 100.0), cores)
 }
 
+/// Previous /proc/stat snapshot: utilization is the delta between the last
+/// request's snapshot and now, so the poll cadence itself provides the
+/// measurement window. The old implementation slept 500ms INSIDE every
+/// request to take two snapshots, which (a) added 500ms latency to every
+/// /cpu response and (b) with the frontend polling at 500ms meant a request
+/// was permanently in flight. Only the very first request (no previous
+/// snapshot) or a too-small window (<50ms, delta would be noise) briefly
+/// sleeps to bootstrap a window.
+static PREV_PROC_STAT: LazyLock<Mutex<Option<(ProcStat, std::time::Instant)>>> =
+    LazyLock::new(|| Mutex::new(None));
+
 async fn read_cpu_utilization() -> UtilStatus {
-    let stat1 = read_all_proc_stats();
+    let now = std::time::Instant::now();
+    let prev = PREV_PROC_STAT
+        .lock()
+        .unwrap()
+        .take_if(|(_, at)| now.duration_since(*at).as_millis() >= 50);
+
+    let stat1 = match prev {
+        Some((s, _)) => Some(s),
+        None => {
+            let s = read_all_proc_stats();
+            if s.is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            s
+        }
+    };
+
     if stat1.is_some() {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let stat2 = read_all_proc_stats();
         if let (Some(s1), Some(s2)) = (stat1, stat2) {
             let (avg_util, cores) = compute_cpu_utilization(&s1, &s2);
+            *PREV_PROC_STAT.lock().unwrap() =
+                Some((s2, std::time::Instant::now()));
             return UtilStatus {
                 avg_util,
                 cores,

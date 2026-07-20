@@ -1,4 +1,5 @@
 import { useMultiMetrics } from "../hooks/useMultiMetrics";
+import { slideWindow } from "../utils/slideWindow";
 import { useStorageMetrics } from "../hooks/useStorageMetrics";
 import { useLlamaCppMetrics } from "../hooks/useLlamaCppMetrics";
 import { useLiveDataControlsContext } from "./LiveDataControlsContext";
@@ -12,10 +13,6 @@ function makeCoreHistorySlots(numSlots: number): MetricHistoryPoint[] {
     timestamp: new Date(now.getTime() - (numSlots - j) * 500),
     value: 0,
   }));
-}
-
-function reindexSlots(points: MetricHistoryPoint[]): MetricHistoryPoint[] {
-  return points.map((p, idx) => ({ ...p, slot: idx }));
 }
 
 // Module-level extractor arrays so their references are stable across renders
@@ -100,10 +97,7 @@ function usePerCoreHistory(
       return prev.map((h, i) => {
         if (!h) return null;
         const newValue = cores[i]?.utilization_percent ?? 0;
-        return reindexSlots([
-          ...h.slice(1),
-          { slot: 119, timestamp: new Date(), value: newValue },
-        ]);
+        return slideWindow(h, newValue, new Date());
       });
     });
   }, [rawData?.cores]);
@@ -141,14 +135,7 @@ function buildGpuHistoryUpdate(
         : prev;
     return base.map((h, i) => {
       if (!h) return null;
-      return reindexSlots([
-        ...h.slice(1),
-        {
-          slot: GPU_BUFFER_SIZE - 1,
-          timestamp: new Date(),
-          value: getValue(gpus[i]),
-        },
-      ]);
+      return slideWindow(h, getValue(gpus[i]), new Date());
     });
   };
 }

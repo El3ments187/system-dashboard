@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { mergeMemSwap } from "../utils/mergeMemSwap";
 import { useMetricsContext } from "../context/MetricsContext";
 import MetricChart from "../charts/MetricChart";
 import RadialGauge from "../components/overview/RadialGauge";
@@ -358,25 +359,9 @@ export default function OverviewPage({ accent }: Props) {
   const swapTotal = memoryCurrentValues[4];
 
   // Merged memory+swap data for the chart
-  const memChartData = useMemo(() => {
+  const memChartData = useMemo<any[]>(() => {
     if (!memoryHistory || !swapHistory) return [];
-    const result: any[] = [];
-    const allSlots = new Set([
-      ...memoryHistory.map((p: any) => p.slot),
-      ...swapHistory.map((p: any) => p.slot),
-    ]);
-    for (const slot of allSlots) {
-      const memPt = memoryHistory.find((p: any) => p.slot === slot);
-      const swpPt = swapHistory.find((p: any) => p.slot === slot);
-      const ts = memPt?.timestamp ? new Date(memPt.timestamp) : new Date();
-      result.push({
-        slot,
-        timestamp: ts,
-        memory: memPt?.value != null ? Math.round(memPt.value * 10) / 10 : null,
-        swap: swpPt?.value != null ? Math.round(swpPt.value * 10) / 10 : null,
-      });
-    }
-    return result.sort((a, b) => a.slot - b.slot);
+    return mergeMemSwap(memoryHistory, swapHistory);
   }, [memoryHistory, swapHistory]);
 
   return (

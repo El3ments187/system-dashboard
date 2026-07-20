@@ -7,6 +7,7 @@ import {
   type SetStateAction,
 } from "react";
 import { AiMetrics, MetricHistoryPoint } from "../types/metrics";
+import { slideWindow } from "../utils/slideWindow";
 
 type HistorySetter = Dispatch<SetStateAction<MetricHistoryPoint[] | null>>;
 
@@ -27,10 +28,7 @@ function appendHistory(
         { slot: prev?.length ?? 0, timestamp: ts, value },
       ];
     }
-    return [
-      ...prev.slice(1),
-      { slot: bufferSize - 1, timestamp: ts, value },
-    ].map((p, idx) => ({ ...p, slot: idx }));
+    return slideWindow(prev, value, ts);
   });
 }
 
@@ -42,10 +40,7 @@ function appendNull(setter: HistorySetter, bufferSize: number) {
         ...(prev ?? []),
         { slot: prev?.length ?? 0, timestamp: ts, value: null },
       ];
-    return [
-      ...prev.slice(1),
-      { slot: bufferSize - 1, timestamp: ts, value: null },
-    ].map((p, idx) => ({ ...p, slot: idx }));
+    return slideWindow(prev, null, ts);
   });
 }
 

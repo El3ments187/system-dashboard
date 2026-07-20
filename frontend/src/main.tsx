@@ -8,7 +8,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 0,
-      refetchInterval: 1000,
+      // No global refetchInterval: every polling query declares its own.
+      // A 1s default here silently turns any future useQuery into a 1 Hz
+      // network + render loop.
       retry: 1,
     },
   },
