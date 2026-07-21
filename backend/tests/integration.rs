@@ -759,9 +759,7 @@ mod history_buffer {
 
 #[cfg(test)]
 mod system_metrics {
-    use model_deck::collectors::system::{
-        collect_system_metrics, get_collector_health_state,
-    };
+    use model_deck::collectors::system::{collect_system_metrics, get_collector_health_state};
 
     #[test]
     fn test_collect_system_metrics_returns_valid_data() {
@@ -1316,10 +1314,7 @@ mod memory_edge_cases {
     #[test]
     fn test_memory_metrics_collection() {
         let (metrics, status) = model_deck::collectors::memory::collect_memory_metrics();
-        assert_eq!(
-            status,
-            model_deck::collectors::alerts::CollectorStatus::Ok
-        );
+        assert_eq!(status, model_deck::collectors::alerts::CollectorStatus::Ok);
         assert!(metrics.total_gb > 0.0);
         assert!(metrics.used_gb >= 0.0);
         assert!(metrics.utilization_percent >= 0.0 && metrics.utilization_percent <= 100.0);
@@ -1791,8 +1786,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_collector_status_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts =
-            model_deck::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
+        let alerts = model_deck::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 

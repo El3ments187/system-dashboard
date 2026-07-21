@@ -25,9 +25,8 @@ static SMI_CACHE: LazyLock<Mutex<Option<(std::time::Instant, Vec<GpuMetrics>)>>>
 /// the life of the process; querying the driver for them twice a second is
 /// pure waste. Cached on first successful read.
 static DRIVER_VERSION: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-static GPU_STATIC_INFO: LazyLock<
-    Mutex<std::collections::HashMap<u32, (String, Option<f64>)>>,
-> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+static GPU_STATIC_INFO: LazyLock<Mutex<std::collections::HashMap<u32, (String, Option<f64>)>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 /// Rate-limit hot-path logging: at 2 Hz an eprintln per poll floods stderr and
 /// journald (real disk writes). Log each condition once, re-arm on recovery.
@@ -64,7 +63,9 @@ pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
     if guard.is_none() {
         // Only re-attempt a full NVML init after the backoff window.
         let mut last = NVML_LAST_INIT_ATTEMPT.lock().unwrap();
-        let due = last.map(|at| at.elapsed() >= NVML_INIT_RETRY).unwrap_or(true);
+        let due = last
+            .map(|at| at.elapsed() >= NVML_INIT_RETRY)
+            .unwrap_or(true);
         if due {
             *last = Some(std::time::Instant::now());
             *guard = nvml_wrapper::Nvml::init().ok();
@@ -120,14 +121,11 @@ fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
             for i in 0..count {
                 match nvml.device_by_index(i) {
                     Ok(device) => {
-                        LOGGED_DEVICE_ERROR
-                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                        LOGGED_DEVICE_ERROR.store(false, std::sync::atomic::Ordering::Relaxed);
                         metrics.push(one_gpu(i, &device, driver_version.as_deref()));
                     }
                     Err(e) => {
-                        if !LOGGED_DEVICE_ERROR
-                            .swap(true, std::sync::atomic::Ordering::Relaxed)
-                        {
+                        if !LOGGED_DEVICE_ERROR.swap(true, std::sync::atomic::Ordering::Relaxed) {
                             eprintln!("[GPU] device_by_index({i}): {e} (logged once)");
                         }
                     }
@@ -156,7 +154,10 @@ fn one_gpu(index: u32, device: &nvml_wrapper::Device, driver_version: Option<&st
             Some(v) => v.clone(),
             None => {
                 let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
-                let limit = device.enforced_power_limit().ok().map(|pl| pl as f64 / 1000.0);
+                let limit = device
+                    .enforced_power_limit()
+                    .ok()
+                    .map(|pl| pl as f64 / 1000.0);
                 cache.insert(index, (name.clone(), limit));
                 (name, limit)
             }

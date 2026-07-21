@@ -549,12 +549,9 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
             continue;
         }
 
-        let Some((total, used, avail, util)) = usage_from_statvfs(
-            sv.f_blocks,
-            sv.f_bfree,
-            sv.f_bavail,
-            sv.f_bsize,
-        ) else {
+        let Some((total, used, avail, util)) =
+            usage_from_statvfs(sv.f_blocks, sv.f_bfree, sv.f_bavail, sv.f_bsize)
+        else {
             continue;
         };
 
@@ -642,12 +639,9 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
             continue;
         }
 
-        let Some((total, used, avail, util)) = usage_from_statvfs(
-            sv.f_blocks,
-            sv.f_bfree,
-            sv.f_bavail,
-            sv.f_bsize,
-        ) else {
+        let Some((total, used, avail, util)) =
+            usage_from_statvfs(sv.f_blocks, sv.f_bfree, sv.f_bavail, sv.f_bsize)
+        else {
             continue;
         };
 
@@ -890,7 +884,7 @@ fn usage_from_statvfs(
 
 #[cfg(test)]
 mod tests {
-    use super::{usage_from_statvfs, TEMPERATURE_TTL};
+    use super::{TEMPERATURE_TTL, usage_from_statvfs};
 
     #[test]
     fn test_usage_typical_with_reserve() {
@@ -901,7 +895,10 @@ mod tests {
         assert_eq!(used, 90);
         assert_eq!(avail, 5);
         let expected_util = 90.0_f64 / 95.0_f64 * 100.0;
-        assert!((util - expected_util).abs() < 0.01, "util={util} expected≈{expected_util}");
+        assert!(
+            (util - expected_util).abs() < 0.01,
+            "util={util} expected≈{expected_util}"
+        );
     }
 
     #[test]
@@ -917,7 +914,10 @@ mod tests {
         let (_total, used, avail, util) = usage_from_statvfs(100, 5, 0, 1).unwrap();
         assert_eq!(avail, 0);
         assert_eq!(used, 95);
-        assert!((util - 100.0).abs() < 0.01, "util must be 100% when avail=0");
+        assert!(
+            (util - 100.0).abs() < 0.01,
+            "util must be 100% when avail=0"
+        );
     }
 
     #[test]

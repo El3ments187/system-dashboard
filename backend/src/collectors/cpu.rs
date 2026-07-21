@@ -166,8 +166,7 @@ async fn read_cpu_utilization() -> UtilStatus {
         let stat2 = read_all_proc_stats();
         if let (Some(s1), Some(s2)) = (stat1, stat2) {
             let (avg_util, cores) = compute_cpu_utilization(&s1, &s2);
-            *PREV_PROC_STAT.lock().unwrap() =
-                Some((s2, std::time::Instant::now()));
+            *PREV_PROC_STAT.lock().unwrap() = Some((s2, std::time::Instant::now()));
             return UtilStatus {
                 avg_util,
                 cores,

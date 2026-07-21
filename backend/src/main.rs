@@ -4,8 +4,8 @@
 // for real-time system metrics polling.
 
 use axum::serve;
-use std::net::Ipv4Addr;
 use model_deck::api::routes::create_router;
+use std::net::Ipv4Addr;
 
 #[tokio::main]
 async fn main() {
