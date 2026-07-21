@@ -434,3 +434,14 @@ describe("useAccentIndexer", () => {
     expect(plain.style.getPropertyValue("--el-index")).toBe("");
   });
 });
+
+describe("ThemePage FX Safe Mode copy", () => {
+  it("shows the updated FX Safe description (no retracted driver-crash framing)", () => {
+    render(<ThemePage {...makeProps({ onFxSafeChange: vi.fn() })} />);
+    const row = screen.getByText("FX Safe Mode").closest(".mode-row")!;
+    expect(row.textContent).toContain(
+      "reduces CPU/GPU load; auto-enabled under software rendering",
+    );
+    expect(row.textContent).not.toContain("driver crashes");
+  });
+});

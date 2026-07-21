@@ -1,5 +1,9 @@
 import { Monitor, Cpu, HardDrive } from "lucide-react";
-import { CardShell, CardHeader, ChartFrame } from "../components/shared/CardComponents";
+import {
+  CardShell,
+  CardHeader,
+  ChartFrame,
+} from "../components/shared/CardComponents";
 import ProgressBar from "../components/shared/ProgressBar";
 import Sparkline from "../components/shared/Sparkline";
 import type { MetricHistoryPoint } from "../types/metrics";
@@ -795,12 +799,12 @@ export default function ThemePage({
                   </div>
                   {glow && onGlowIntensityChange && (
                     <div style={{ paddingLeft: 20, paddingTop: 6 }}>
-                       <SliderRow
-                         id="tp-glow-intensity"
-                         label="Intensity"
-                         min={GLOW_INTENSITY_MIN}
-                         max={GLOW_INTENSITY_MAX}
-                         step={0.05}
+                      <SliderRow
+                        id="tp-glow-intensity"
+                        label="Intensity"
+                        min={GLOW_INTENSITY_MIN}
+                        max={GLOW_INTENSITY_MAX}
+                        step={0.05}
                         value={glowIntensity}
                         display={glowIntensity.toFixed(2)}
                         onChange={(v) => {
@@ -1006,12 +1010,12 @@ export default function ThemePage({
                   </div>
                   {innerGlow && onInnerGlowIntensityChange && (
                     <div style={{ paddingLeft: 20, paddingTop: 6 }}>
-                       <SliderRow
-                         id="tp-inner-glow-intensity"
-                         label="Inner Glow Intensity"
-                         min={GLOW_INTENSITY_MIN}
-                         max={GLOW_INTENSITY_MAX}
-                         step={0.05}
+                      <SliderRow
+                        id="tp-inner-glow-intensity"
+                        label="Inner Glow Intensity"
+                        min={GLOW_INTENSITY_MIN}
+                        max={GLOW_INTENSITY_MAX}
+                        step={0.05}
                         value={innerGlowIntensity}
                         display={innerGlowIntensity.toFixed(2)}
                         onChange={(v) => {
@@ -1132,7 +1136,8 @@ export default function ThemePage({
                     <span className="mode-name">FX Safe Mode</span>
                     <span className="mode-desc">
                       Freezes animated paint (hue-spin, sheen, border glow) —
-                      use if the GPU driver crashes under animated themes
+                      reduces CPU/GPU load; auto-enabled under software
+                      rendering.
                     </span>
                   </div>
                   <ToggleSwitch on={!!fxSafe} />

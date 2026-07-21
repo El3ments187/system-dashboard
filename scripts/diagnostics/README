@@ -1,0 +1,3 @@
+d1-live-pause.mjs  — measures RSS growth rate while live vs paused; needs display + dev server (port 5173).
+d3-prod-memtest.mjs — measures RSS growth in a production build; distinguishes dev-tooling leaks from real leaks; needs display + prod server (port 4173).
+Both scripts use Playwright and require: npx playwright install chromium

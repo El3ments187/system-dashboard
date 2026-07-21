@@ -20,7 +20,10 @@ const queryClient = new QueryClient({
 // every component render (~1200/s on this page). Entries accumulate in
 // Blink's native C++ Performance Timeline — not V8 heap — causing ~327 MB/min
 // RSS growth. Periodic clear keeps the buffer small; production is unaffected
-// (enableSchedulingProfiler is stripped from prod builds).
+// (enableSchedulingProfiler is stripped from prod builds). Side effect: this
+// also clears any performance.mark()/measure() a developer adds for their own
+// profiling, every 10 s — disable this block temporarily if you need user
+// timings in dev.
 if (import.meta.env.DEV) {
   setInterval(() => {
     performance.clearMarks();
