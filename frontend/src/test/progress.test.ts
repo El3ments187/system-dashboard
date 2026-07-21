@@ -171,7 +171,9 @@ describe("vertical bar range (min prop)", () => {
   // Formula: clamp(((value - min) / (max - min)) * 100, 0, 100)
   function barPct(value: number, min: number, max: number): number {
     const span = max - min;
-    return span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
+    return span > 0
+      ? Math.min(Math.max(((value - min) / span) * 100, 0), 100)
+      : 0;
   }
 
   it("20°C on a 20-120 scale = 0% (floor, not 17%)", () => {

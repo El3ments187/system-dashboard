@@ -206,7 +206,10 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         const pts = updatePtsRef.current;
         if (!pts) return;
         try {
-          const { text, nextOffset } = await ptyReadOutput(pts, updateOffsetRef.current);
+          const { text, nextOffset } = await ptyReadOutput(
+            pts,
+            updateOffsetRef.current,
+          );
           updateOffsetRef.current = nextOffset;
           if (text) handlePollChunk(text, pts);
         } catch (err) {

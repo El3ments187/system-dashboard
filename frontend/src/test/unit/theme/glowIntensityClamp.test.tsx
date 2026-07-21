@@ -100,7 +100,9 @@ describe("Glow slider bounds — deliberate scope lock", () => {
       container.querySelector(`#${id}`) as HTMLInputElement | null;
 
     expect(get("tp-glow-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
-    expect(get("tp-inner-glow-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
+    expect(get("tp-inner-glow-intensity")?.max).toBe(
+      String(GLOW_INTENSITY_MAX),
+    );
     expect(get("tp-pulse-intensity")?.max).toBe(String(GLOW_INTENSITY_MAX));
     expect(get("tp-breathe-intensity")?.max).toBe("3");
     expect(get("tp-surge-intensity")?.max).toBe("3");
@@ -111,6 +113,8 @@ describe("Glow slider bounds — deliberate scope lock", () => {
     const get = (id: string) =>
       container.querySelector(`#${id}`) as HTMLInputElement | null;
     expect(get("tp-glow-intensity")?.min).toBe(String(GLOW_INTENSITY_MIN));
-    expect(get("tp-inner-glow-intensity")?.min).toBe(String(GLOW_INTENSITY_MIN));
+    expect(get("tp-inner-glow-intensity")?.min).toBe(
+      String(GLOW_INTENSITY_MIN),
+    );
   });
 });

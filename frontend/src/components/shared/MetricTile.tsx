@@ -73,9 +73,7 @@ export default function MetricTile({
         }}
       >
         {icon && (
-          <span
-            style={{ display: "flex", alignItems: "center", opacity: 0.7 }}
-          >
+          <span style={{ display: "flex", alignItems: "center", opacity: 0.7 }}>
             {icon}
           </span>
         )}

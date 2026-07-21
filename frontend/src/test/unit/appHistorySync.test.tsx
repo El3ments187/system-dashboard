@@ -75,7 +75,11 @@ function UrlSyncHarness({ initialPage }: { initialPage?: ActivePage }) {
       {(
         ["overview", "gpu", "cpu", "llama-cpp", "terminal"] as ActivePage[]
       ).map((p) => (
-        <button key={p} data-testid={`nav-${p}`} onClick={() => setActivePage(p)}>
+        <button
+          key={p}
+          data-testid={`nav-${p}`}
+          onClick={() => setActivePage(p)}
+        >
           {p}
         </button>
       ))}

@@ -119,8 +119,10 @@
    ======================================== */
 [data-glow="neon"] {
   --card-glow:
-    0 0 calc(4px  + 3px  * var(--glow-intensity, 1.4)) calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(14px + 10px * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    0 0 calc(4px + 3px * var(--glow-intensity, 1.4))
+      calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(14px + 10px * var(--glow-intensity, 1.4))
+      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
   --border-color: var(--accent-tint-40, var(--border-color));
 }
 
@@ -1064,15 +1066,19 @@
 [data-glow="neon"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-glow="neon"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-glow:
-    0 0 calc(4px  + 3px  * var(--glow-intensity, 1.4)) calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(14px + 10px * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
+    0 0 calc(4px + 3px * var(--glow-intensity, 1.4))
+      calc(1px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(14px + 10px * var(--glow-intensity, 1.4))
+      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow);
 }
 
 [data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-halo:
-    0 0 calc(8px  + 8px  * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--glow-intensity, 1.4)) rgba(var(--accent-primary-rgb), 0.12);
+    0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
+      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
+      rgba(var(--accent-primary-rgb), 0.12);
 }
 
 @keyframes accent-fill-pan {
@@ -1186,8 +1192,12 @@
 [data-inner-glow="on"] [data-accent-el]:has(> .card-accent-spine) {
   background-image: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--accent-primary)
-      min(60%, calc(7% * var(--inner-glow-intensity, 1.4))), transparent),
+    color-mix(
+      in srgb,
+      var(--accent-primary)
+        min(60%, calc(7% * var(--inner-glow-intensity, 1.4))),
+      transparent
+    ),
     transparent calc(120px + 60px * var(--inner-glow-intensity, 1.4))
   );
 }
@@ -1199,8 +1209,10 @@
    ======================================== */
 [data-card-glow="on"] {
   --card-halo:
-    0 0 calc(8px  + 8px  * var(--glow-intensity, 1.4)) calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--glow-intensity, 1.4)) rgba(var(--accent-primary-rgb), 0.12);
+    0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
+      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
+      rgba(var(--accent-primary-rgb), 0.12);
 }
 
 /* Apply card-halo to card containers (not spines/bars) that carry data-accent-el. */
@@ -1432,7 +1444,8 @@
 /* Warning/critical bars encode threshold data — excluded from pulse, mirroring breathe.
    Only reachable via an explicit barClassName="accent-glow-target" on a non-normal bar. */
 [data-pulse="on"] .accent-fill.accent-glow-target[data-state="warning"]::before,
-[data-pulse="on"] .accent-fill.accent-glow-target[data-state="critical"]::before {
+[data-pulse="on"]
+  .accent-fill.accent-glow-target[data-state="critical"]::before {
   animation: none;
 }
 

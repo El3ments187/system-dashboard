@@ -80,7 +80,10 @@ export function useFitText(
   return ref;
 }
 
-export function rowBackground(running: boolean, idx: number): string | undefined {
+export function rowBackground(
+  running: boolean,
+  idx: number,
+): string | undefined {
   if (running)
     return "color-mix(in srgb, var(--accent-primary) 9%, var(--bg-card))";
   if (idx % 2 === 1) return "rgba(255,255,255,0.015)";

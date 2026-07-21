@@ -2,7 +2,10 @@ import { mergeMemSwap } from "../utils/mergeMemSwap";
 import type { MetricHistoryPoint } from "../types/metrics";
 
 // Reference: the exact O(n^2) algorithm being replaced (from OverviewPage).
-function reference(memoryHistory: MetricHistoryPoint[], swapHistory: MetricHistoryPoint[]) {
+function reference(
+  memoryHistory: MetricHistoryPoint[],
+  swapHistory: MetricHistoryPoint[],
+) {
   const result: any[] = [];
   const allSlots = new Set([
     ...memoryHistory.map((p: any) => p.slot),
@@ -22,7 +25,11 @@ function reference(memoryHistory: MetricHistoryPoint[], swapHistory: MetricHisto
   return result.sort((a, b) => a.slot - b.slot);
 }
 
-const mk = (n: number, base: number, holes: number[] = []): MetricHistoryPoint[] =>
+const mk = (
+  n: number,
+  base: number,
+  holes: number[] = [],
+): MetricHistoryPoint[] =>
   Array.from({ length: n }, (_, i) => ({
     slot: i,
     timestamp: new Date(1000 + i * 500),
@@ -31,7 +38,8 @@ const mk = (n: number, base: number, holes: number[] = []): MetricHistoryPoint[]
 
 describe("mergeMemSwap (O(n) join)", () => {
   it("matches the O(n^2) reference on aligned buffers", () => {
-    const mem = mk(120, 10), swp = mk(120, 3, [5, 17]);
+    const mem = mk(120, 10),
+      swp = mk(120, 3, [5, 17]);
     expect(mergeMemSwap(mem, swp)).toEqual(reference(mem, swp));
   });
 

@@ -41,7 +41,10 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     vi.mocked(ptyReadOutput)
       .mockResolvedValueOnce({ text: "line1\n", nextOffset: 6 })
       .mockResolvedValueOnce({ text: "line2\n", nextOffset: 12 })
-      .mockResolvedValueOnce({ text: "__LLAMA_UPDATE_DONE__\n", nextOffset: 33 });
+      .mockResolvedValueOnce({
+        text: "__LLAMA_UPDATE_DONE__\n",
+        nextOffset: 33,
+      });
 
     const { result } = renderHook(() => useLlamaCppManagement());
 
@@ -62,7 +65,9 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     await act(async () => {
       vi.advanceTimersByTime(400);
     });
-    expect(result.current.updateOutput).toBe("line1\nline2\n__LLAMA_UPDATE_DONE__\n");
+    expect(result.current.updateOutput).toBe(
+      "line1\nline2\n__LLAMA_UPDATE_DONE__\n",
+    );
     expect(result.current.updateState).toBe("done");
     expect(result.current.updateProgress).toBe(100);
   });
@@ -71,7 +76,10 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     vi.mocked(ptyReadOutput)
       .mockResolvedValueOnce({ text: "a", nextOffset: 100 })
       .mockResolvedValueOnce({ text: "b", nextOffset: 200 })
-      .mockResolvedValueOnce({ text: "__LLAMA_UPDATE_DONE__\n", nextOffset: 222 });
+      .mockResolvedValueOnce({
+        text: "__LLAMA_UPDATE_DONE__\n",
+        nextOffset: 222,
+      });
 
     const { result } = renderHook(() => useLlamaCppManagement());
 
@@ -97,7 +105,10 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     vi.mocked(ptyReadOutput)
       .mockResolvedValueOnce({ text: "", nextOffset: 0 })
       .mockResolvedValueOnce({ text: "content\n", nextOffset: 8 })
-      .mockResolvedValueOnce({ text: "__LLAMA_UPDATE_DONE__\n", nextOffset: 29 });
+      .mockResolvedValueOnce({
+        text: "__LLAMA_UPDATE_DONE__\n",
+        nextOffset: 29,
+      });
 
     const { result } = renderHook(() => useLlamaCppManagement());
 
@@ -117,14 +128,19 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     await act(async () => {
       vi.advanceTimersByTime(400);
     });
-    expect(result.current.updateOutput).toBe("content\n__LLAMA_UPDATE_DONE__\n");
+    expect(result.current.updateOutput).toBe(
+      "content\n__LLAMA_UPDATE_DONE__\n",
+    );
   });
 
   it("advances progress from extractLatestPercent before completing at 100", async () => {
     vi.mocked(extractLatestPercent).mockReturnValueOnce(42);
     vi.mocked(ptyReadOutput)
       .mockResolvedValueOnce({ text: "Building... 42%\n", nextOffset: 17 })
-      .mockResolvedValueOnce({ text: "__LLAMA_UPDATE_DONE__\n", nextOffset: 38 });
+      .mockResolvedValueOnce({
+        text: "__LLAMA_UPDATE_DONE__\n",
+        nextOffset: 38,
+      });
 
     const { result } = renderHook(() => useLlamaCppManagement());
 

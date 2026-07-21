@@ -44,7 +44,9 @@ export default function TerminalModal({
         setError(null);
         setConnected(true);
         try {
-          const { text: initialOutput, nextOffset } = await ptyReadOutput(ptsName!);
+          const { text: initialOutput, nextOffset } = await ptyReadOutput(
+            ptsName!,
+          );
           outputTextRef.current = initialOutput;
           offsetRef.current = nextOffset;
           setOutput(initialOutput);
@@ -74,7 +76,10 @@ export default function TerminalModal({
     if (!ptsName || !connected || !isOpen) return;
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const { text: delta, nextOffset } = await ptyReadOutput(ptsName, offsetRef.current);
+        const { text: delta, nextOffset } = await ptyReadOutput(
+          ptsName,
+          offsetRef.current,
+        );
         offsetRef.current = nextOffset;
         if (delta) {
           outputTextRef.current += delta;
