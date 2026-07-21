@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { fetchWithTimeout } from "../services/api";
 import { DeviceStorageInfo, StorageHistoryPoint } from "../types/metrics";
 
 // Fixed rolling buffer size for 60s window at 500ms polling
@@ -67,8 +68,8 @@ export function useStorageMetrics(isPaused?: boolean): {
   const fetchStorage = useCallback(async () => {
     try {
       const [devicesRes, historyRes] = await Promise.all([
-        fetch("/api/metrics/storage/devices"),
-        fetch("/api/metrics/storage/history"),
+        fetchWithTimeout("/api/metrics/storage/devices", 1500),
+        fetchWithTimeout("/api/metrics/storage/history", 1500),
       ]);
 
       if (!devicesRes.ok) {

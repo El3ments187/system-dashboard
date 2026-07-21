@@ -6,6 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { fetchWithTimeout } from "../services/api";
 import { AiMetrics, MetricHistoryPoint } from "../types/metrics";
 import { slideWindow } from "../utils/slideWindow";
 
@@ -81,7 +82,7 @@ export function useLlamaCppMetrics(isPaused?: boolean): {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     try {
-      const response = await fetch("/api/ai/metrics");
+      const response = await fetchWithTimeout("/api/ai/metrics", 1500);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { fetchWithTimeout } from "../services/api";
 import { slideWindow } from "../utils/slideWindow";
 import { MetricHistoryPoint } from "../types/metrics";
 
@@ -43,7 +44,10 @@ export function useMetrics<T>(
 
   const fetchData = useCallback(async () => {
     try {
-      const response = await fetch(`/api/metrics${endpointRef.current}`);
+      const response = await fetchWithTimeout(
+        `/api/metrics${endpointRef.current}`,
+        1500,
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -167,7 +171,10 @@ export function useMultiMetrics<T>(
 
   const fetchData = useCallback(async () => {
     try {
-      const response = await fetch(`/api/metrics${endpointRef.current}`);
+      const response = await fetchWithTimeout(
+        `/api/metrics${endpointRef.current}`,
+        1500,
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }

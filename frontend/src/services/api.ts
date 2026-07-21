@@ -19,8 +19,26 @@ import {
 
 const BASE_URL = "/api";
 
+/**
+ * fetch with a hard deadline. Mirrors the backend HTTP client's stall
+ * protection (2s reqwest timeout): without a deadline, a stalled backend
+ * stacks 2Hz polls behind the browser's per-host connection limit without
+ * bound. Hot-path polls use 1500ms; one-shot calls use 8000ms.
+ */
+export function fetchWithTimeout(
+  input: RequestInfo,
+  ms: number,
+  init?: RequestInit,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 async function fetchMetrics<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${endpoint}`);
+  const res = await fetchWithTimeout(`${BASE_URL}${endpoint}`, 8000);
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${res.statusText}`);
   }
@@ -53,7 +71,7 @@ export async function getSystemMetrics(): Promise<SystemMetrics> {
 }
 
 export async function checkHealth(): Promise<boolean> {
-  const res = await fetch(`${BASE_URL}/health`);
+  const res = await fetchWithTimeout(`${BASE_URL}/health`, 8000);
   return res.ok;
 }
 
@@ -66,7 +84,7 @@ export async function getAiHistory(): Promise<AiHistoryEntry[]> {
 }
 
 export async function getAiSettings(): Promise<AiSettings> {
-  const res = await fetch(`${BASE_URL}/ai/settings`);
+  const res = await fetchWithTimeout(`${BASE_URL}/ai/settings`, 8000);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()) as AiSettings;
 }
@@ -74,7 +92,7 @@ export async function getAiSettings(): Promise<AiSettings> {
 export async function updateAiSettings(
   settings: AiSettings,
 ): Promise<AiSettings> {
-  const res = await fetch(`${BASE_URL}/ai/settings`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/ai/settings`, 8000, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
@@ -86,7 +104,7 @@ export async function updateAiSettings(
 export async function testConnection(
   url: string,
 ): Promise<TestConnectionResult> {
-  const res = await fetch(`${BASE_URL}/ai/test-connection`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/ai/test-connection`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
@@ -96,16 +114,18 @@ export async function testConnection(
 }
 
 export async function browseDirectory(path: string): Promise<DirectoryEntry[]> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${BASE_URL}/llama/browse?path=${encodeURIComponent(path)}`,
+    8000,
   );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as DirectoryEntry[];
 }
 
 export async function getDirectoryInfo(path: string): Promise<DirectoryInfo> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${BASE_URL}/llama/directory-info?path=${encodeURIComponent(path)}`,
+    8000,
   );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as DirectoryInfo;
@@ -119,7 +139,10 @@ export async function getRepoInfo(
   const params = new URLSearchParams({ path });
   if (localCmd) params.set("local_cmd", localCmd);
   if (latestCmd) params.set("latest_cmd", latestCmd);
-  const res = await fetch(`${BASE_URL}/llama/repo-info?${params.toString()}`);
+  const res = await fetchWithTimeout(
+    `${BASE_URL}/llama/repo-info?${params.toString()}`,
+    8000,
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as RepoInfo;
 }
@@ -127,7 +150,7 @@ export async function getRepoInfo(
 export async function spawnTerminal(
   dir: string,
 ): Promise<TerminalSpawnResponse> {
-  const res = await fetch(`${BASE_URL}/llama/terminal`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/terminal`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dir }),
@@ -137,7 +160,7 @@ export async function spawnTerminal(
 }
 
 export async function listCommands(): Promise<SavedCommand[]> {
-  const res = await fetch(`${BASE_URL}/llama/commands`);
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/commands`, 8000);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as SavedCommand[];
 }
@@ -145,7 +168,7 @@ export async function listCommands(): Promise<SavedCommand[]> {
 export async function createCommand(
   cmd: Omit<SavedCommand, "id">,
 ): Promise<SavedCommand> {
-  const res = await fetch(`${BASE_URL}/llama/commands`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/commands`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cmd),
@@ -155,7 +178,7 @@ export async function createCommand(
 }
 
 export async function updateCommand(cmd: SavedCommand): Promise<SavedCommand> {
-  const res = await fetch(`${BASE_URL}/llama/commands`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/commands`, 8000, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cmd),
@@ -165,7 +188,7 @@ export async function updateCommand(cmd: SavedCommand): Promise<SavedCommand> {
 }
 
 export async function deleteCommand(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/llama/commands`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/commands`, 8000, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
@@ -178,7 +201,7 @@ export async function deleteCommand(id: string): Promise<void> {
 export async function ptySpawnTerminal(
   dir: string,
 ): Promise<TerminalSpawnResponse> {
-  const res = await fetch(`${BASE_URL}/llama/terminal/spawn`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/terminal/spawn`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dir }),
@@ -191,8 +214,9 @@ export async function ptyReadOutput(
   ptsName: string,
   offset = 0,
 ): Promise<{ text: string; nextOffset: number }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${BASE_URL}/llama/terminal/output?pts=${encodeURIComponent(ptsName)}&offset=${offset}`,
+    8000,
   );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   const data = (await res.json()).data as { text: string; next_offset: number };
@@ -203,7 +227,7 @@ export async function ptyWriteInput(
   ptsName: string,
   input: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/llama/terminal/input`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/llama/terminal/input`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pts: ptsName, input }),
@@ -216,11 +240,15 @@ export async function ptyResizeTerminal(
   rows: number,
   cols: number,
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/llama/terminal/resize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pts: ptsName, rows, cols }),
-  });
+  const res = await fetchWithTimeout(
+    `${BASE_URL}/llama/terminal/resize`,
+    8000,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pts: ptsName, rows, cols }),
+    },
+  );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
 }
 
@@ -236,7 +264,7 @@ export function ptyKillTerminal(ptsName: string): void {
 // ─── Launcher API Methods ──────────────────────────────────────────
 
 export async function getLaunchProfiles(): Promise<ProfileResponse> {
-  const res = await fetch(`${BASE_URL}/launch/profiles`);
+  const res = await fetchWithTimeout(`${BASE_URL}/launch/profiles`, 8000);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as ProfileResponse;
 }
@@ -244,7 +272,7 @@ export async function getLaunchProfiles(): Promise<ProfileResponse> {
 export async function launchProfile(
   profileId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const res = await fetch(`${BASE_URL}/launch/launch`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/launch/launch`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile_id: profileId }),
@@ -256,7 +284,7 @@ export async function launchProfile(
 export async function stopProfile(
   profileId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const res = await fetch(`${BASE_URL}/launch/stop`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/launch/stop`, 8000, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile_id: profileId }),
@@ -275,8 +303,9 @@ export async function getLaunchMetrics(scriptPath: string): Promise<{
   model_path?: string | null;
   context_size?: number | null;
 }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${BASE_URL}/launch/metrics/${encodeURIComponent(scriptPath)}`,
+    8000,
   );
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data as any;
@@ -299,7 +328,7 @@ export async function getLaunchMetadata(): Promise<
     }
   >
 > {
-  const res = await fetch(`${BASE_URL}/launch/profiles`);
+  const res = await fetchWithTimeout(`${BASE_URL}/launch/profiles`, 8000);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
   return (await res.json()).data.metadata as any;
 }
