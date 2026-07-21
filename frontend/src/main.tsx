@@ -16,6 +16,18 @@ const queryClient = new QueryClient({
   },
 });
 
+// React 19 dev mode's scheduling profiler calls performance.measure() for
+// every component render (~1200/s on this page). Entries accumulate in
+// Blink's native C++ Performance Timeline — not V8 heap — causing ~327 MB/min
+// RSS growth. Periodic clear keeps the buffer small; production is unaffected
+// (enableSchedulingProfiler is stripped from prod builds).
+if (import.meta.env.DEV) {
+  setInterval(() => {
+    performance.clearMarks();
+    performance.clearMeasures();
+  }, 10_000);
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

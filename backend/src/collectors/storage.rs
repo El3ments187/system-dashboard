@@ -109,7 +109,7 @@ fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
 /// per device per second, forever. A short TTL turns 2 Hz device interrogation
 /// into one read per device per TTL window; sysfs fallbacks are cheap but the
 /// cache keeps behavior uniform across paths.
-const TEMPERATURE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+const TEMPERATURE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
 static TEMPERATURE_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, (std::time::Instant, Option<f64>)>>,
@@ -890,7 +890,7 @@ fn usage_from_statvfs(
 
 #[cfg(test)]
 mod tests {
-    use super::usage_from_statvfs;
+    use super::{usage_from_statvfs, TEMPERATURE_TTL};
 
     #[test]
     fn test_usage_typical_with_reserve() {
@@ -932,5 +932,15 @@ mod tests {
     #[test]
     fn test_zero_blocks_returns_none() {
         assert!(usage_from_statvfs(0, 0, 0, 4096).is_none());
+    }
+
+    #[test]
+    fn temperature_ttl_is_30s_per_user_decision() {
+        assert_eq!(
+            TEMPERATURE_TTL,
+            std::time::Duration::from_secs(30),
+            "TEMPERATURE_TTL must be 30 s (user decision 2026-07-21): \
+             reduces subprocess spawns from 2/s to once per 30 s per device"
+        );
     }
 }
