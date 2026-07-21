@@ -28,7 +28,10 @@ interface BackendDescription {
   dotColor: string;
 }
 
-function describeBackend(state: BackendState, backend: string): BackendDescription {
+function describeBackend(
+  state: BackendState,
+  backend: string,
+): BackendDescription {
   if (state === "loading") {
     return { label: "Checking…", detail: "", dotColor: "var(--text-muted)" };
   }
@@ -51,7 +54,8 @@ function describeBackend(state: BackendState, backend: string): BackendDescripti
   if (backend === "none") {
     return {
       label: "No GPU backend",
-      detail: "Neither NVML nor nvidia-smi is available. GPU metrics are placeholders.",
+      detail:
+        "Neither NVML nor nvidia-smi is available. GPU metrics are placeholders.",
       dotColor: "var(--danger)",
     };
   }

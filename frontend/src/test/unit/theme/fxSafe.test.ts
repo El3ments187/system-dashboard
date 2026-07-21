@@ -9,14 +9,18 @@ const css = readFileSync(
 
 describe("fx-safe kill-switch — CSS coverage", () => {
   it("disables rainbow-wave hue-spin animation", () => {
-    const idx = css.indexOf('[data-fx-safe="on"][data-accent-mode="rainbow-wave"]');
+    const idx = css.indexOf(
+      '[data-fx-safe="on"][data-accent-mode="rainbow-wave"]',
+    );
     expect(idx, "rainbow-wave fx-safe rule missing").not.toBe(-1);
     const block = css.slice(idx, idx + 150);
     expect(block).toContain("animation: none");
   });
 
   it("clears hue-rotate filter on rainbow-wave", () => {
-    const idx = css.indexOf('[data-fx-safe="on"][data-accent-mode="rainbow-wave"]');
+    const idx = css.indexOf(
+      '[data-fx-safe="on"][data-accent-mode="rainbow-wave"]',
+    );
     expect(idx).not.toBe(-1);
     const block = css.slice(idx, idx + 150);
     expect(block).toContain("filter: none");
@@ -43,11 +47,15 @@ describe("fx-safe kill-switch — CSS coverage", () => {
   });
 
   it("covers .bright-breathe", () => {
-    expect(css).toContain('[data-fx-safe="on"] .accent-glow-target .bright-breathe');
+    expect(css).toContain(
+      '[data-fx-safe="on"] .accent-glow-target .bright-breathe',
+    );
   });
 
   it("covers .bright-surge", () => {
-    expect(css).toContain('[data-fx-safe="on"] .accent-glow-target .bright-surge');
+    expect(css).toContain(
+      '[data-fx-safe="on"] .accent-glow-target .bright-surge',
+    );
   });
 
   it("covers [data-accent-el]::before (gradient-border-pan)", () => {
