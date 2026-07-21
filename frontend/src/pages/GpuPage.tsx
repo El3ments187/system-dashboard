@@ -104,7 +104,8 @@ function VerticalProgress({
   warning: string;
 }) {
   const span = max - min;
-  const pct = span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
+  const pct =
+    span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
@@ -520,18 +521,21 @@ function GpuRow({
           gpuTemperatureHistory && (
             <>
               <MetricChart
+                accentScope
                 accent={accent}
                 title="GPU Utilization History"
                 data={gpuHistory}
                 timeFrame={GPU_HISTORY_LABEL}
               />
               <MetricChart
+                accentScope
                 accent={accent}
                 title="VRAM Utilization History"
                 data={gpuVramUtilHistory}
                 timeFrame={GPU_HISTORY_LABEL}
               />
               <MetricChart
+                accentScope
                 accent={accent}
                 title="GPU Temperature History"
                 data={gpuTemperatureHistory}

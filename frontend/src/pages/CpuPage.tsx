@@ -76,7 +76,8 @@ function CpuVerticalProgress({
   warning: string;
 }) {
   const span = max - min;
-  const pct = span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
+  const pct =
+    span > 0 ? Math.min(Math.max(((value - min) / span) * 100, 0), 100) : 0;
   let color: string;
   let displayValue: string;
 
@@ -485,6 +486,7 @@ function CpuContent({ accent }: CpuPageProps) {
         {/* Combined CPU Utilization & Temperature History - reduced height */}
         {hasHistory && hasTempHistory && (
           <MetricChart
+            accentScope
             accent={accent}
             title="CPU UTILIZATION & TEMPERATURE HISTORY"
             data={cpuHistory}

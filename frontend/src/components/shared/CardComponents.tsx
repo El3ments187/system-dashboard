@@ -249,14 +249,24 @@ export function SettingsCard({ children }: { children: React.ReactNode }) {
 export function ChartFrame({
   children,
   style,
+  accentScope = false,
 }: {
   children: React.ReactNode;
   style?: React.CSSProperties;
+  /**
+   * By default the frame carries data-accent-el="inherit" — the accent
+   * indexer's explicit opt-out — so the chart takes its hue from the nearest
+   * page-provided scope (e.g. Overview's ov-card). Pages that render charts
+   * WITHOUT a scoped wrapper (GPU, CPU) pass accentScope so each chart is its
+   * own indexed element; otherwise every chart resolves the ROOT scope and,
+   * in spectrum/rainbow modes, shows the same hue cycling in the same phase.
+   */
+  accentScope?: boolean;
 }) {
   return (
     <div
       className="chart-container"
-      data-accent-el="inherit"
+      data-accent-el={accentScope ? "" : "inherit"}
       style={{ flex: 1, minHeight: 0, ...style }}
     >
       <AccentSpine />

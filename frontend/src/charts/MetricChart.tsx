@@ -25,6 +25,8 @@ function fillOpacityFor(isSecondary: boolean, i: number): number {
 }
 
 interface ChartProps {
+  /** See ChartFrame.accentScope — per-element hue scope for pages without card wrappers. */
+  accentScope?: boolean;
   accent: { color: string; glow: string };
   title: string;
   data: MetricHistoryPoint[] | Record<string, number | null>[];
@@ -71,6 +73,7 @@ export function resolveTimestampMs(p: MetricHistoryPoint | undefined): number {
 }
 
 function MetricChart({
+  accentScope,
   title,
   data,
   color: _color,
@@ -216,7 +219,7 @@ function MetricChart({
 
   if (!chartComponents) {
     return (
-      <ChartFrame style={style}>
+      <ChartFrame style={style} accentScope={accentScope}>
         <div
           className="chart-title"
           style={{
@@ -445,7 +448,7 @@ function MetricChart({
   };
 
   return (
-    <ChartFrame style={style}>
+    <ChartFrame style={style} accentScope={accentScope}>
       <div
         className="chart-title"
         style={{
@@ -705,6 +708,7 @@ export function arePropsEqual(p: ChartProps, n: ChartProps): boolean {
     p.accent.color === n.accent.color &&
     p.accent.glow === n.accent.glow &&
     p.title === n.title &&
+    p.accentScope === n.accentScope &&
     p.timeFrame === n.timeFrame
   );
 }
