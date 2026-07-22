@@ -1,10 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { getSystemMetrics } from "../services/api";
-import { SystemMetrics } from "../types/metrics";
 import { Bell, Trash2 } from "lucide-react";
 import { useLiveDataControlsContext } from "../context/LiveDataControlsContext";
 import { useAlertsContext, AlertSeverity } from "../context/AlertsContext";
 import { useFetchAlerts } from "../hooks/useFetchAlerts";
+import { useMetricsContext } from "../context/MetricsContext";
 import { useEffect, useRef, useState, useMemo } from "react";
 
 interface HeaderProps {
@@ -64,12 +62,7 @@ export default function Header({
     "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "settings" | "theme"
   > = ["overview", "gpu", "cpu", "llama-cpp", "ai", "settings", "theme"];
 
-  const { data: system } = useQuery<SystemMetrics>({
-    queryKey: ["metrics", "system"],
-    queryFn: getSystemMetrics,
-    staleTime: 5000,
-    refetchInterval: 10000,
-  });
+  const { systemMetrics: system } = useMetricsContext();
 
   const { isPaused, toggle: toggleLiveData } = useLiveDataControlsContext();
   const { addAlert, alerts: frontendAlerts, clearAlerts } = useAlertsContext();

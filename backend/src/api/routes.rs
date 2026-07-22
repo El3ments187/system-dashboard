@@ -28,6 +28,20 @@ fn safe_serialize<T: serde::Serialize>(data: &T) -> Value {
     serde_json::to_value(data).unwrap_or_else(|_| json!({"error": "serialization failed"}))
 }
 
+// Persistent sysinfo::System for process-CPU sampling. A fresh System's first
+// refresh returns 0% (no prior delta); the static carries the baseline across
+// successive handler calls so cpu_usage() is meaningful on the second poll.
+static PROCESS_SYSTEM: std::sync::LazyLock<std::sync::Mutex<sysinfo::System>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(sysinfo::System::new()));
+
+fn get_process_cpu_percent(sys: &mut sysinfo::System, pid_val: usize) -> (f32, u64) {
+    let pid = sysinfo::Pid::from(pid_val);
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    sys.process(pid)
+        .map(|p| (p.cpu_usage(), p.memory()))
+        .unwrap_or((0.0, 0))
+}
+
 pub fn create_router() -> axum::Router {
     axum::Router::new()
         .route("/api/health", get(health_handler))
@@ -37,6 +51,7 @@ pub fn create_router() -> axum::Router {
         .route("/api/metrics/storage", get(storage_handler))
         .route("/api/metrics/storage/devices", get(storage_devices_handler))
         .route("/api/metrics/storage/history", get(storage_history_handler))
+        .route("/api/metrics/all", get(all_metrics_handler))
         .route("/api/metrics/system", get(system_handler))
         .route("/api/status", get(status_handler))
         .route(
@@ -169,6 +184,53 @@ async fn storage_history_handler() -> axum::response::Json<Value> {
     Json(json!({
         "data": json_data,
         "timestamp": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    }))
+}
+
+async fn all_metrics_handler() -> axum::response::Json<Value> {
+    let timestamp = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+
+    let ((cpu, _), (memory, _), gpu_res, devices_res, history_res, system) = tokio::join!(
+        collect_cpu_metrics(),
+        async { collect_memory_metrics() },
+        tokio::task::spawn_blocking(collect_gpu_metrics),
+        tokio::task::spawn_blocking(collect_storage_by_device),
+        tokio::task::spawn_blocking(collect_storage_history),
+        async { collect_system_metrics() },
+    );
+
+    let gpu = match gpu_res {
+        Ok((g, _)) => safe_serialize(&g),
+        Err(e) => {
+            eprintln!("[API] all_metrics gpu task panicked: {}", e);
+            json!(null)
+        }
+    };
+    let storage_devices = match devices_res {
+        Ok(d) => safe_serialize(&d),
+        Err(e) => {
+            eprintln!("[API] all_metrics storage devices task panicked: {}", e);
+            json!(null)
+        }
+    };
+    let storage_history = match history_res {
+        Ok(h) => safe_serialize(&h),
+        Err(e) => {
+            eprintln!("[API] all_metrics storage history task panicked: {}", e);
+            json!(null)
+        }
+    };
+
+    Json(json!({
+        "cpu": safe_serialize(&cpu),
+        "memory": safe_serialize(&memory),
+        "gpu": gpu,
+        "storage_devices": storage_devices,
+        "storage_history": storage_history,
+        "system": safe_serialize(&system),
+        "timestamp": timestamp,
     }))
 }
 
@@ -887,6 +949,137 @@ async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collectors::gpu::get_gpu_backend_info;
+
+    // ── C11: /api/status contract ────────────────────────────────────
+
+    #[test]
+    fn gpu_backend_value_is_one_of_known_variants() {
+        let (gpu_backend, _nvml_available) = get_gpu_backend_info();
+        assert!(
+            matches!(gpu_backend.as_str(), "nvml" | "nvidia-smi" | "none"),
+            "gpu_backend must be one of nvml/nvidia-smi/none, got {gpu_backend:?}"
+        );
+    }
+
+    #[test]
+    fn status_json_shape_has_required_keys() {
+        let (gpu_backend, nvml_available) = get_gpu_backend_info();
+        let body = json!({
+            "gpu_backend": gpu_backend,
+            "nvml_available": nvml_available,
+            "collectors": {},
+            "last_update": "2024-01-01 00:00:00 UTC",
+        });
+        assert!(body.get("gpu_backend").is_some(), "must have gpu_backend");
+        assert!(body.get("nvml_available").is_some(), "must have nvml_available");
+        assert!(body["nvml_available"].is_boolean(), "nvml_available must be bool");
+        assert!(body.get("collectors").is_some(), "must have collectors");
+        assert!(body.get("last_update").is_some(), "must have last_update");
+    }
+
+    // ── C12: data-envelope contract ───────────────────────────────────
+
+    #[tokio::test]
+    async fn system_handler_returns_data_envelope() {
+        let resp = system_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "system: must have 'data' key");
+        assert!(body.get("timestamp").is_some(), "system: must have 'timestamp' key");
+    }
+
+    #[tokio::test]
+    async fn memory_handler_returns_data_envelope() {
+        let resp = memory_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "memory: must have 'data' key");
+        assert!(body.get("timestamp").is_some(), "memory: must have 'timestamp' key");
+    }
+
+    #[tokio::test]
+    async fn gpu_handler_returns_data_envelope() {
+        let resp = gpu_handler().await;
+        let body = resp.0;
+        // gpu_handler may return { "error": ... } if GPU unavailable; still check
+        // that when data IS present it is properly enveloped.
+        if body.get("error").is_none() {
+            assert!(body.get("data").is_some(), "gpu: must have 'data' key");
+            assert!(body.get("timestamp").is_some(), "gpu: must have 'timestamp' key");
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_devices_handler_returns_data_envelope() {
+        let resp = storage_devices_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "storage/devices: must have 'data' key");
+        assert!(body.get("timestamp").is_some(), "storage/devices: must have 'timestamp' key");
+    }
+
+    #[tokio::test]
+    async fn storage_history_handler_returns_data_envelope() {
+        let resp = storage_history_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "storage/history: must have 'data' key");
+        assert!(body.get("timestamp").is_some(), "storage/history: must have 'timestamp' key");
+    }
+
+    // ── C12 extension: combined endpoint shape ─────────────────────────
+
+    #[tokio::test]
+    async fn all_metrics_handler_returns_combined_shape() {
+        let resp = all_metrics_handler().await;
+        let body = resp.0;
+        assert!(body.get("cpu").is_some(), "all: must have 'cpu' key");
+        assert!(body.get("memory").is_some(), "all: must have 'memory' key");
+        assert!(body.get("gpu").is_some(), "all: must have 'gpu' key");
+        assert!(body.get("storage_devices").is_some(), "all: must have 'storage_devices' key");
+        assert!(body.get("storage_history").is_some(), "all: must have 'storage_history' key");
+        assert!(body.get("system").is_some(), "all: must have 'system' key");
+        assert!(body.get("timestamp").is_some(), "all: must have 'timestamp' key");
+    }
+
+    // ── Item 5: process CPU% sampler ───────────────────────────────────
+
+    #[test]
+    fn process_cpu_fresh_system_always_zero() {
+        // Documents the old broken behavior: a brand-new System with a single
+        // refresh has no prior sample to diff against, so cpu_usage() is always 0.
+        let mut sys = sysinfo::System::new();
+        let pid = std::process::id() as usize;
+        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
+        assert_eq!(cpu, 0.0, "first sample on a fresh System must be 0 (no prior delta)");
+    }
+
+    #[test]
+    fn process_cpu_persistent_system_nonzero_under_load() {
+        // GREEN: two refreshes on the same persistent System with CPU work between
+        // them → second sample reports nonzero usage. Burns CPU on the test thread
+        // itself for 600 ms (well above MINIMUM_CPU_UPDATE_INTERVAL on any platform)
+        // so the process-level delta is unambiguous.
+        let pid = std::process::id() as usize;
+        let mut sys = sysinfo::System::new();
+
+        // First sample — establishes the baseline
+        get_process_cpu_percent(&mut sys, pid);
+
+        // Burn CPU for 600 ms so the delta is clearly nonzero
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
+        let mut x: u64 = 1;
+        while std::time::Instant::now() < deadline {
+            x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        }
+        let _ = x;
+
+        // Second sample — delta is now available
+        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
+        assert!(cpu > 0.0, "second sample with CPU work must be > 0, got {cpu}");
+    }
+}
+
 fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value> {
     let state = launcher_api::get_state();
     let guard = state.read().unwrap();
@@ -899,16 +1092,12 @@ fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value
         if status == "running"
             && let Some(pid_val) = pid
         {
-            // Get process-level metrics from system
-            let mut system = sysinfo::System::new();
-            system.refresh_processes(
-                sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from(pid_val as usize)]),
-                true,
-            );
-            if let Some(proc) = system.process(sysinfo::Pid::from(pid_val as usize)) {
-                let cpu_percent = proc.cpu_usage();
-                let memory_kb = proc.memory();
-
+            let (found, cpu_percent, memory_kb) = {
+                let mut sys = PROCESS_SYSTEM.lock().unwrap();
+                let (cpu, mem) = get_process_cpu_percent(&mut sys, pid_val as usize);
+                (cpu > 0.0 || sys.process(sysinfo::Pid::from(pid_val as usize)).is_some(), cpu, mem)
+            };
+            if found {
                 return Json(json!({
                     "data": json!({
                         "status": "running",

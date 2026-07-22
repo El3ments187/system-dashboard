@@ -433,6 +433,7 @@ export default function LlamaCppPage() {
                 marginBottom: 6,
               }}
             >
+              <span className="sheen-flow-overlay" aria-hidden />
               <span className="bright-breathe" />
               <span className="bright-surge" />
             </div>
@@ -1444,6 +1445,7 @@ export default function LlamaCppPage() {
                         flexShrink: 0,
                       }}
                     >
+                      <span className="sheen-flow-overlay" aria-hidden />
                       <span className="bright-breathe" />
                       <span className="bright-surge" />
                       <RefreshCw

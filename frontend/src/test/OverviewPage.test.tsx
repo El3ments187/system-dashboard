@@ -50,6 +50,55 @@ function createMockFetch(overrides?: { storageDevices?: any[] }) {
         ok: true,
         json: () => Promise.resolve({ status: "ok" }),
       });
+    if (url.includes("/api/metrics/all"))
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            cpu: {
+              model: "AMD Ryzen 9 7950X",
+              utilization_percent: 45,
+              temperature_celsius: 62,
+              physical_cores: 4,
+              threads: 8,
+              load_1m: 1.0,
+              load_5m: 0.8,
+              load_15m: 0.6,
+              frequency_mhz: 3000,
+              freq_max_mhz: 5000,
+              cores: [
+                { core_id: 0, utilization_percent: 45 },
+                { core_id: 1, utilization_percent: 52 },
+                { core_id: 2, utilization_percent: 38 },
+                { core_id: 3, utilization_percent: 70 },
+              ],
+            },
+            memory: {
+              total_gb: 32,
+              used_gb: 23.2,
+              swap_total_gb: 4.0,
+              swap_used_gb: 1.2,
+              utilization_percent: 72.5,
+            },
+            gpu: [
+              {
+                name: "NVIDIA GeForce RTX 4090",
+                utilization_percent: 65,
+                temperature_celsius: 72,
+                vram_used_gb: 8.5,
+                vram_total_gb: 24,
+                power_usage_watts: 250,
+                power_limit_watts: 300,
+                fan_speed_rpm: 1200,
+                clock_speed_mhz: 2500,
+                memory_clock_mhz: 1000,
+              },
+            ],
+            storage_devices: storageDevices,
+            storage_history: [],
+            timestamp: new Date().toISOString(),
+          }),
+      });
     if (url === "/api/metrics/cpu")
       return Promise.resolve({
         ok: true,

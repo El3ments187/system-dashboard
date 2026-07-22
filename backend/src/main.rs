@@ -9,6 +9,10 @@ use std::net::Ipv4Addr;
 
 #[tokio::main]
 async fn main() {
+    // Eager GPU backend init: one NVML init at boot (not on first poll),
+    // and the selected backend goes in the startup log.
+    let _ = model_deck::collectors::gpu::init_gpu_backend();
+
     // Initialize launcher state and start metrics updater
     let _profiles = model_deck::api::launcher::scan_profiles();
     model_deck::api::launcher::start_metrics_updater();

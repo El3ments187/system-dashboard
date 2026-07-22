@@ -200,6 +200,29 @@ async fn read_cpu_utilization() -> UtilStatus {
     }
 }
 
+/// Decision produced by `choose_stat_source`.
+pub enum StatSource {
+    /// Use the supplied previous snapshot as stat1 for a delta measurement.
+    Delta(ProcStat),
+    /// No usable previous snapshot; read two snapshots with a sleep in between.
+    Bootstrap,
+}
+
+/// Pure function: decides whether to compute a delta from `prev` or to
+/// bootstrap by reading two fresh snapshots.
+///
+/// Rules:
+/// - `prev` is `None`   → Bootstrap (first call, no history)
+/// - elapsed < 50 ms    → Bootstrap (burst poll; delta would be noise)
+/// - elapsed >= 50 ms   → Delta(stat) (normal steady-state poll)
+pub fn choose_stat_source(prev: Option<(ProcStat, std::time::Instant)>, now: std::time::Instant) -> StatSource {
+    match prev {
+        Some((stat, at)) if now.duration_since(at).as_millis() >= 50 => StatSource::Delta(stat),
+        _ => StatSource::Bootstrap,
+    }
+}
+
+#[derive(Clone)]
 pub struct CoreStat {
     pub _core_id: u64,
     pub user: u64,
@@ -209,6 +232,7 @@ pub struct CoreStat {
     pub iowait: u64,
 }
 
+#[derive(Clone)]
 pub struct ProcStat {
     pub user: u64,
     pub nice: u64,
@@ -373,7 +397,48 @@ fn read_cpu_temperature() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_cpu_model;
+    use super::{choose_stat_source, normalize_cpu_model, CoreStat, ProcStat, StatSource};
+
+    fn empty_proc_stat() -> ProcStat {
+        ProcStat { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, cores: vec![] }
+    }
+
+    fn core_stat() -> CoreStat {
+        CoreStat { _core_id: 0, user: 0, nice: 0, system: 0, idle: 0, iowait: 0 }
+    }
+
+    // ── C10: CPU stateful-delta decision ─────────────────────────────
+
+    #[test]
+    fn first_call_no_prev_gives_bootstrap() {
+        let now = std::time::Instant::now();
+        assert!(matches!(choose_stat_source(None, now), StatSource::Bootstrap));
+    }
+
+    #[test]
+    fn burst_under_50ms_gives_bootstrap() {
+        let t0 = std::time::Instant::now();
+        let now = t0 + std::time::Duration::from_millis(10);
+        let result = choose_stat_source(Some((empty_proc_stat(), t0)), now);
+        assert!(matches!(result, StatSource::Bootstrap));
+    }
+
+    #[test]
+    fn normal_poll_at_50ms_gives_delta() {
+        let t0 = std::time::Instant::now();
+        let now = t0 + std::time::Duration::from_millis(50);
+        let result = choose_stat_source(Some((empty_proc_stat(), t0)), now);
+        assert!(matches!(result, StatSource::Delta(_)));
+    }
+
+    #[test]
+    fn normal_poll_above_50ms_gives_delta() {
+        let t0 = std::time::Instant::now();
+        let now = t0 + std::time::Duration::from_millis(500);
+        let _ = core_stat(); // ensure CoreStat is tested too
+        let result = choose_stat_source(Some((empty_proc_stat(), t0)), now);
+        assert!(matches!(result, StatSource::Delta(_)));
+    }
 
     #[test]
     fn strips_trailing_processor() {

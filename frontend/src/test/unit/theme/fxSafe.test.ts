@@ -73,11 +73,11 @@ describe("fx-safe kill-switch — CSS coverage", () => {
     expect(block).toContain("animation: none !important");
   });
 
-  it("sheen mode sweeps are stopped", () => {
-    expect(css).toContain('[data-fx-safe="on"][data-accent-mode="sheen"]');
-  });
-
-  it("flow mode sweeps are stopped", () => {
-    expect(css).toContain('[data-fx-safe="on"][data-accent-mode="flow"]');
+  it("sheen/flow sweep overlay is stopped (compositor rewrite: overlay ::before, not host)", () => {
+    // Old assertion was '[data-fx-safe="on"][data-accent-mode="sheen"]' — mode-specific kill of
+    // the fx-pan animation on host elements. That animation was removed in the compositor rewrite
+    // (Item 4): sweep now lives on .sheen-flow-overlay::before via transform. Guard moved to the
+    // comprehensive block that already covers all .sheen-flow-overlay::before targets.
+    expect(css).toContain('[data-fx-safe="on"] .sheen-flow-overlay::before');
   });
 });

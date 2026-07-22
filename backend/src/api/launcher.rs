@@ -1579,3 +1579,43 @@ async fn update_profile_metrics_for_script(script_path: &str) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{graceful_shutdown, wait_for_exit};
+    use std::os::unix::process::CommandExt;
+    use std::time::Duration;
+
+    // ── C13: kill-escalation ─────────────────────────────────────────
+
+    fn spawn_isolated(secs: &str) -> std::process::Child {
+        // process_group(0) puts the child in its own process group so that
+        // graceful_shutdown's group-targeted signals (kill -pgid) don't reach
+        // the test binary itself.
+        std::process::Command::new("sleep")
+            .arg(secs)
+            .process_group(0)
+            .spawn()
+            .expect("failed to spawn sleep")
+    }
+
+    #[test]
+    fn wait_for_exit_returns_true_after_process_dies() {
+        let mut child = spawn_isolated("100");
+        let pid = child.id();
+        unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+        let _ = child.wait();
+        let exited = wait_for_exit(pid, Duration::from_secs(3));
+        assert!(exited, "wait_for_exit must return true after process exits");
+    }
+
+    #[test]
+    fn graceful_shutdown_terminates_process() {
+        let mut child = spawn_isolated("100");
+        let pid = child.id();
+        graceful_shutdown(pid).expect("graceful_shutdown must not error");
+        // try_wait reaps the zombie; returns Some once process has exited.
+        let status = child.try_wait().expect("try_wait failed");
+        assert!(status.is_some(), "process must have exited after graceful_shutdown");
+    }
+}

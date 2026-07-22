@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { LogConsole, lineMatchesFilters } from "../components/LogConsole";
 import type { LogLine } from "../types/metrics";
+import * as logBuffer from "../utils/logBuffer";
 
 // ─── WebSocket mock ────────────────────────────────────────────────────
 
@@ -590,5 +591,42 @@ describe("LogConsole preset chip filtering", () => {
     expect(cacheChip).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(cacheChip); // deactivate
     expect(cacheChip).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+// ─── Hidden-tab pending buffer integration (B5) ────────────────────────────
+
+describe("LogConsole hidden-tab pending buffer", () => {
+  it("pending buffer stays <=5000 when rAF is suppressed (hidden tab)", async () => {
+    // Spy on appendPending to verify: (a) LogConsole calls it for "log" WS
+    // frames, and (b) it passes the cap of 5000. The cap behaviour itself is
+    // proven by logBuffer.test.ts; this is the integration wire-in test.
+    const spy = vi.spyOn(logBuffer, "appendPending");
+
+    // Stub rAF so the pending buffer is never flushed — simulates hidden tab.
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0 as any);
+
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+
+    // Send 10 "log" messages while rAF is suppressed.
+    for (let i = 0; i < 10; i++) {
+      ws.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "log", line: makeLine(`line-${i}`) }),
+        }),
+      );
+    }
+
+    // appendPending must have been called with the 5000 cap every time.
+    expect(spy.mock.calls.length).toBeGreaterThan(0);
+    for (const call of spy.mock.calls) {
+      expect(call[2], "appendPending must be called with cap=5000").toBe(5000);
+    }
+
+    vi.restoreAllMocks();
   });
 });

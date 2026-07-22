@@ -102,6 +102,7 @@ const CoreRow = ({
         >
           {isAccent && (
             <>
+              <span className="sheen-flow-overlay" aria-hidden />
               <span className="bright-breathe" aria-hidden />
               <span className="bright-surge" aria-hidden />
             </>

@@ -58,12 +58,10 @@ pub fn get_gpu_backend_info() -> (String, bool) {
     }
 }
 
-/// Guarded NVML init honoring the retry backoff. Shared by the eager
-/// startup path and the per-poll safety net so there is exactly one init
-/// policy. No-op when the handle already exists — after a successful init
-/// this never touches the driver again for the life of the process.
-fn ensure_nvml_initialized(guard: &mut Option<nvml_wrapper::Nvml>) {
+pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
+    let mut guard = NVML.lock().unwrap();
     if guard.is_none() {
+        // Only re-attempt a full NVML init after the backoff window.
         let mut last = NVML_LAST_INIT_ATTEMPT.lock().unwrap();
         let due = last
             .map(|at| at.elapsed() >= NVML_INIT_RETRY)
@@ -73,26 +71,6 @@ fn ensure_nvml_initialized(guard: &mut Option<nvml_wrapper::Nvml>) {
             *guard = nvml_wrapper::Nvml::init().ok();
         }
     }
-}
-
-/// Eager one-time initialization, called from main() at startup so (a) the
-/// first /gpu poll doesn't pay the init cost and (b) the selected backend is
-/// visible in the boot log instead of only in /api/status. The per-poll
-/// ensure_* call remains as a safety net and as the 30s recovery path when
-/// init fails here (e.g. driver fixed mid-session without a restart).
-pub fn init_gpu_backend() -> (String, bool) {
-    {
-        let mut guard = NVML.lock().unwrap();
-        ensure_nvml_initialized(&mut guard);
-    }
-    let (backend, available) = get_gpu_backend_info();
-    println!("  GPU backend: {backend}{}", if available { " (NVML active)" } else { "" });
-    (backend, available)
-}
-
-pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
-    let mut guard = NVML.lock().unwrap();
-    ensure_nvml_initialized(&mut guard);
     match guard.as_ref() {
         Some(nvml) => {
             LOGGED_NVML_UNAVAILABLE.store(false, std::sync::atomic::Ordering::Relaxed);

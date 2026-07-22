@@ -1092,13 +1092,73 @@
 
 /* Right-to-left sweep: --fx-pan-x is consumed by the animated selector as
    calc(var(--fx-pan-x) * 100%) so gradient stops stay static between frames
-   and the GPU driver does not re-evaluate oklch() on each tick. */
+   and the GPU driver does not re-evaluate oklch() on each tick.
+   Retained for reference; the active animation now uses fx-slide-* keyframes
+   on .sheen-flow-overlay::before (compositor-only transform, no repaint). */
 @keyframes fx-pan {
   from {
     --fx-pan-x: 1;
   }
   to {
     --fx-pan-x: 0;
+  }
+}
+
+/* ─── Compositor-friendly sheen/flow overlay ─────────────────────────────────
+   .sheen-flow-overlay is a child span injected inside every accent-glow-target
+   that participates in sheen/flow mode animation. Its ::before carries the
+   gradient ONCE (no per-frame property change) and sweeps via transform
+   translateX — compositor-only, zero Recalculate Style / Paint cost on host.
+   ──────────────────────────────────────────────────────────────────────────── */
+.sheen-flow-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+[data-accent-mode="sheen"] .sheen-flow-overlay::before,
+[data-accent-mode="flow"] .sheen-flow-overlay::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--accent-fill);
+  background-size: 100% 100%;
+}
+
+/* Sheen: --accent-fill-size is 400% wide → overlay ::before is 4× the span */
+[data-accent-mode="sheen"] .sheen-flow-overlay::before {
+  left: -300%;
+  width: 400%;
+}
+
+/* Flow: --accent-fill-size is 300% wide → overlay ::before is 3× the span */
+[data-accent-mode="flow"] .sheen-flow-overlay::before {
+  left: -200%;
+  width: 300%;
+}
+
+/* translateX(75%) shifts the 4× overlay so the left quarter becomes visible
+   (equivalent to background-position sweeping 0%→100% on a 400% background) */
+@keyframes fx-slide-4x {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(75%);
+  }
+}
+
+/* translateX(66.6667%) for the 3× overlay used by flow mode */
+@keyframes fx-slide-3x {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(66.6667%);
   }
 }
 
@@ -1109,38 +1169,19 @@
   }
 
   /* Staggered per-element delay ripples the highlight across the page:
-     negative delay starts elements mid-animation so there's no startup gap. */
-  [data-accent-mode="sheen"] .accent-fill,
-  [data-accent-mode="sheen"] .accent-bg,
-  [data-accent-mode="sheen"] .accent-spine,
-  [data-accent-mode="sheen"] .card-accent-spine,
-  [data-accent-mode="sheen"] .btn-accent,
-  [data-accent-mode="sheen"] .progress-accent,
-  [data-accent-mode="sheen"] .card-progress-bar,
-  [data-accent-mode="sheen"] .core-bar,
-  [data-accent-mode="sheen"] .ov-spine,
-  [data-accent-mode="sheen"] .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="sheen"] .theme-preview-swatch.gradient,
-  [data-accent-mode="sheen"] .theme-live-preview-bar,
-  [data-accent-mode="sheen"] .mode-row.active .mode-radio::after,
-  [data-accent-mode="sheen"] [data-accent-el],
-  [data-accent-mode="flow"] .accent-fill,
-  [data-accent-mode="flow"] .accent-bg,
-  [data-accent-mode="flow"] .accent-spine,
-  [data-accent-mode="flow"] .card-accent-spine,
-  [data-accent-mode="flow"] .btn-accent,
-  [data-accent-mode="flow"] .progress-accent,
-  [data-accent-mode="flow"] .card-progress-bar,
-  [data-accent-mode="flow"] .core-bar,
-  [data-accent-mode="flow"] .ov-spine,
-  [data-accent-mode="flow"] .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="flow"] .theme-preview-swatch.gradient,
-  [data-accent-mode="flow"] .theme-live-preview-bar,
-  [data-accent-mode="flow"] .mode-row.active .mode-radio::after,
-  [data-accent-mode="flow"] [data-accent-el] {
-    animation: fx-pan var(--fx-speed) linear infinite;
+     negative delay starts elements mid-animation so there's no startup gap.
+     Overlay ::before carries a static gradient and sweeps via transform
+     (compositor-only — no per-frame style-recalc or repaint on host elements). */
+  [data-accent-mode="sheen"] .sheen-flow-overlay::before {
+    animation: fx-slide-4x var(--fx-speed) linear infinite;
     animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
-    background-position: calc(var(--fx-pan-x, 1) * 100%) 0;
+    will-change: transform;
+  }
+
+  [data-accent-mode="flow"] .sheen-flow-overlay::before {
+    animation: fx-slide-3x var(--fx-speed) linear infinite;
+    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
+    will-change: transform;
   }
 }
 
@@ -1149,34 +1190,8 @@
     animation: none;
   }
 
-  [data-accent-mode="sheen"] .accent-fill,
-  [data-accent-mode="sheen"] .accent-bg,
-  [data-accent-mode="sheen"] .accent-spine,
-  [data-accent-mode="sheen"] .card-accent-spine,
-  [data-accent-mode="sheen"] .btn-accent,
-  [data-accent-mode="sheen"] .progress-accent,
-  [data-accent-mode="sheen"] .card-progress-bar,
-  [data-accent-mode="sheen"] .core-bar,
-  [data-accent-mode="sheen"] .ov-spine,
-  [data-accent-mode="sheen"] .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="sheen"] .theme-preview-swatch.gradient,
-  [data-accent-mode="sheen"] .theme-live-preview-bar,
-  [data-accent-mode="sheen"] .mode-row.active .mode-radio::after,
-  [data-accent-mode="sheen"] [data-accent-el],
-  [data-accent-mode="flow"] .accent-fill,
-  [data-accent-mode="flow"] .accent-bg,
-  [data-accent-mode="flow"] .accent-spine,
-  [data-accent-mode="flow"] .card-accent-spine,
-  [data-accent-mode="flow"] .btn-accent,
-  [data-accent-mode="flow"] .progress-accent,
-  [data-accent-mode="flow"] .card-progress-bar,
-  [data-accent-mode="flow"] .core-bar,
-  [data-accent-mode="flow"] .ov-spine,
-  [data-accent-mode="flow"] .settings-btn-accent:hover:not(:disabled),
-  [data-accent-mode="flow"] .theme-preview-swatch.gradient,
-  [data-accent-mode="flow"] .theme-live-preview-bar,
-  [data-accent-mode="flow"] .mode-row.active .mode-radio::after,
-  [data-accent-mode="flow"] [data-accent-el] {
+  [data-accent-mode="sheen"] .sheen-flow-overlay::before,
+  [data-accent-mode="flow"] .sheen-flow-overlay::before {
     animation: none;
   }
 }
@@ -1522,49 +1537,11 @@
 [data-fx-safe="on"] .accent-glow-target::after,
 [data-fx-safe="on"] .accent-glow-target .bright-breathe,
 [data-fx-safe="on"] .accent-glow-target .bright-surge,
+[data-fx-safe="on"] .sheen-flow-overlay::before,
 [data-fx-safe="on"] .accent-spine,
 [data-fx-safe="on"] .card-accent-spine,
 [data-fx-safe="on"] .ov-spine,
 [data-fx-safe="on"] [data-accent-el]::before,
 [data-fx-safe="on"] [data-accent-el]::after {
   animation: none !important;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-fill,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-bg,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .accent-spine,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .card-accent-spine,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .btn-accent,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .progress-accent,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .card-progress-bar,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .core-bar,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .ov-spine,
-  [data-fx-safe="on"][data-accent-mode="sheen"]
-    .settings-btn-accent:hover:not(:disabled),
-  [data-fx-safe="on"][data-accent-mode="sheen"] .theme-preview-swatch.gradient,
-  [data-fx-safe="on"][data-accent-mode="sheen"] .theme-live-preview-bar,
-  [data-fx-safe="on"][data-accent-mode="sheen"]
-    .mode-row.active
-    .mode-radio::after,
-  [data-fx-safe="on"][data-accent-mode="sheen"] [data-accent-el],
-  [data-fx-safe="on"][data-accent-mode="flow"] .accent-fill,
-  [data-fx-safe="on"][data-accent-mode="flow"] .accent-bg,
-  [data-fx-safe="on"][data-accent-mode="flow"] .accent-spine,
-  [data-fx-safe="on"][data-accent-mode="flow"] .card-accent-spine,
-  [data-fx-safe="on"][data-accent-mode="flow"] .btn-accent,
-  [data-fx-safe="on"][data-accent-mode="flow"] .progress-accent,
-  [data-fx-safe="on"][data-accent-mode="flow"] .card-progress-bar,
-  [data-fx-safe="on"][data-accent-mode="flow"] .core-bar,
-  [data-fx-safe="on"][data-accent-mode="flow"] .ov-spine,
-  [data-fx-safe="on"][data-accent-mode="flow"]
-    .settings-btn-accent:hover:not(:disabled),
-  [data-fx-safe="on"][data-accent-mode="flow"] .theme-preview-swatch.gradient,
-  [data-fx-safe="on"][data-accent-mode="flow"] .theme-live-preview-bar,
-  [data-fx-safe="on"][data-accent-mode="flow"]
-    .mode-row.active
-    .mode-radio::after,
-  [data-fx-safe="on"][data-accent-mode="flow"] [data-accent-el] {
-    animation: none;
-  }
 }

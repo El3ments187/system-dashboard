@@ -36,6 +36,7 @@ export default function ProgressBar({
           background: gradient,
         }}
       >
+        {isGlowTarget && <span className="sheen-flow-overlay" aria-hidden />}
         {isGlowTarget && <span className="bright-breathe" />}
         {isGlowTarget && <span className="bright-surge" />}
       </div>
