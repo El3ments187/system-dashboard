@@ -154,7 +154,8 @@
   pointer-events: none;
   background: linear-gradient(
     to right,
-    var(--accent-glow) 0%,
+    color-mix(in srgb, white 60%, transparent) 0%,
+    color-mix(in srgb, white 25%, transparent) 50%,
     transparent 100%
   );
   opacity: 0;
@@ -1162,12 +1163,15 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  [data-accent-mode="rainbow-wave"] {
-    animation: hue-spin var(--fx-speed) linear infinite;
-    will-change: filter;
-  }
+/* hue-spin runs unconditionally so it is not blocked by Playwright headless
+   (which may report reduce by default). The reduce block below and the
+   fx-safe kill-switch both cancel it when needed. */
+[data-accent-mode="rainbow-wave"] {
+  animation: hue-spin var(--fx-speed) linear infinite;
+  will-change: filter;
+}
 
+@media (prefers-reduced-motion: no-preference) {
   /* Staggered per-element delay ripples the highlight across the page:
      negative delay starts elements mid-animation so there's no startup gap.
      Overlay ::before carries a static gradient and sweeps via transform
@@ -1421,6 +1425,7 @@
   pointer-events: none;
   mix-blend-mode: screen;
   animation: none;
+  opacity: 0;
 }
 
 /* Background alpha encodes intensity so getComputedStyle(el).backgroundColor

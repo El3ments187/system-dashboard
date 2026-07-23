@@ -57,14 +57,33 @@ describe("Mechanism A CSS — rainbow-wave --el-off must not include --accent-sp
     expect(elOffDecl).not.toContain("--accent-spin");
   });
 
-  it("prefers-reduced-motion:no-preference block uses hue-spin, not accent-spin-rotate", () => {
-    const noPreferIdx = variablesCss.indexOf(
-      "prefers-reduced-motion: no-preference",
+  it("hue-spin is applied unconditionally on rainbow-wave (not gated by no-preference media query)", () => {
+    // Old assertion: hue-spin was inside @media (prefers-reduced-motion: no-preference).
+    // Changed: hue-spin is now unconditional so Playwright headless (software renderer
+    // → fx-safe auto-on) can test suppression correctly. The animation is still
+    // cancelled by both @media (prefers-reduced-motion: reduce) { animation: none }
+    // and [data-fx-safe="on"][data-accent-mode="rainbow-wave"] { animation: none }.
+    // hue-spin must appear as an animation value outside any media query
+    const huespinIdx = variablesCss.indexOf("animation: hue-spin");
+    expect(huespinIdx, "unconditional 'animation: hue-spin' declaration not found").not.toBe(-1);
+    // Confirm it is NOT inside a @media block (search backwards from the declaration)
+    const before = variablesCss.slice(0, huespinIdx);
+    const lastMedia = before.lastIndexOf("@media");
+    const lastCloseBrace = before.lastIndexOf("}");
+    // If the last @media comes before the last closing brace, we are outside any media block
+    expect(
+      lastMedia < lastCloseBrace,
+      "hue-spin must be in an unconditional rule, not inside a @media block",
+    ).toBe(true);
+    expect(variablesCss).not.toContain("accent-spin-rotate");
+    // The reduce cancel for rainbow-wave must exist (animation: none for hue-spin)
+    const rainbowReduceIdx = variablesCss.indexOf(
+      '[data-accent-mode="rainbow-wave"] {\n    animation: none',
     );
-    expect(noPreferIdx, "no-preference media block not found").not.toBe(-1);
-    const mediaBlock = variablesCss.slice(noPreferIdx, noPreferIdx + 300);
-    expect(mediaBlock).not.toContain("accent-spin-rotate");
-    expect(mediaBlock).toContain("hue-spin");
+    expect(
+      rainbowReduceIdx,
+      "reduce-motion cancel for rainbow-wave animation: none not found",
+    ).not.toBe(-1);
   });
 
   it("@keyframes hue-spin exists and uses filter: hue-rotate", () => {
