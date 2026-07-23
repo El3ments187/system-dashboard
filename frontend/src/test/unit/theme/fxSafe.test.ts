@@ -69,7 +69,7 @@ describe("fx-safe kill-switch — CSS coverage", () => {
   it("comprehensive rule uses animation: none !important", () => {
     const idx = css.indexOf('[data-fx-safe="on"] .accent-glow-target,');
     expect(idx, "comprehensive fx-safe rule missing").not.toBe(-1);
-    const block = css.slice(idx, idx + 600);
+    const block = css.slice(idx, idx + 1000);
     expect(block).toContain("animation: none !important");
   });
 

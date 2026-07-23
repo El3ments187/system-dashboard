@@ -95,3 +95,73 @@ test("fx-safe ON: hue-spin is suppressed (the freeze is intentional and detectab
   );
   expect(running, "fx-safe must stop hue-spin — and this pins the OTHER direction of the freeze").toBe(false);
 });
+
+test("surge ON: fx-surge is genuinely RUNNING on a span", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await boot({ "dashboard-surge": "on", "dashboard-fx-safe": "off" })(page);
+  await page.goto("/");
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.getAttribute("data-surge"))).toBe("on");
+  await page.waitForSelector(".accent-glow-target .bright-surge", { timeout: 30_000 });
+  const running = await page.evaluate(() =>
+    Array.from(document.querySelectorAll(".accent-glow-target .bright-surge")).slice(0, 8)
+      .some((el) => el.getAnimations().some((a: any) =>
+        a.animationName === "fx-surge" && a.playState === "running")));
+  expect(running, "surge-on must run fx-surge on at least one span").toBe(true);
+});
+
+test("breathe + inner-glow: the existing inner glow breathes on its own layer", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await boot({ "dashboard-breathe": "on", "dashboard-inner-glow": "on", "dashboard-fx-safe": "off" })(page);
+  await page.goto("/");
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.getAttribute("data-breathe"))).toBe("on");
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.getAttribute("data-inner-glow"))).toBe("on");
+  // Cards render after first SSE data arrives — wait for the spine to be present.
+  await page.waitForSelector(".card-accent-spine", { timeout: 30_000 });
+  const r = await page.evaluate(() => {
+    const card = document.querySelector('[data-accent-el]:has(> .card-accent-spine)') as HTMLElement | null;
+    const layer = card?.querySelector(":scope > .inner-glow-breathe") as HTMLElement | null;
+    if (!card) return { missing: "card" };
+    if (!layer) return { missing: "layer" };
+    return {
+      cardBg: getComputedStyle(card).backgroundImage,
+      layerBg: getComputedStyle(layer).backgroundImage,
+      anim: layer.getAnimations().some((a: any) =>
+        a.animationName === "fx-breathe-glow" && a.playState === "running"),
+    };
+  });
+  expect((r as any).missing, "layer must exist as the card's direct child").toBeUndefined();
+  expect((r as any).cardBg, "card hands off its static gradient while breathing").toBe("none");
+  expect((r as any).layerBg, "layer carries the SAME inner-glow gradient").toContain("linear-gradient");
+  expect((r as any).anim, "layer breathes on fx-breathe-glow").toBe(true);
+});
+
+test("breathe + card-glow: the card's outer bloom breathes", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await boot({ "dashboard-breathe": "on", "dashboard-card-glow": "on", "dashboard-fx-safe": "off" })(page);
+  await page.goto("/");
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.getAttribute("data-breathe"))).toBe("on");
+  await expect.poll(async () => page.evaluate(() =>
+    document.documentElement.getAttribute("data-card-glow"))).toBe("on");
+  // Cards render after first SSE data arrives — wait for the spine to be present.
+  await page.waitForSelector(".card-accent-spine", { timeout: 30_000 });
+  const r = await page.evaluate(() => {
+    const card = document.querySelector(
+      '[data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target)') as HTMLElement | null;
+    if (!card) return { missing: "card" };
+    const mult = parseFloat(getComputedStyle(card).getPropertyValue("--breathe-halo-mult") || "NaN");
+    return {
+      anim: card.getAnimations().some((a: any) =>
+        a.animationName === "fx-breathe-halo" && a.playState === "running"),
+      mult,
+    };
+  });
+  expect((r as any).missing, "a bloom-carrying card must exist").toBeUndefined();
+  expect((r as any).anim, "the card must run fx-breathe-halo").toBe(true);
+  expect((r as any).mult, "multiplier mid-animation stays in the halo's range")
+    .toBeGreaterThanOrEqual(0.35);
+  expect((r as any).mult).toBeLessThanOrEqual(1.01);
+});

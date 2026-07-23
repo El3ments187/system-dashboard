@@ -163,11 +163,14 @@ export function CardHeader({
 /* ─── canonical accent spine (absolute-positioned, used inside position:relative cards) ─── */
 export function AccentSpine() {
   return (
-    <span className="card-accent-spine accent-glow-target" aria-hidden>
-      <span className="sheen-flow-overlay" aria-hidden />
-      <span className="bright-breathe" aria-hidden />
-      <span className="bright-surge" aria-hidden />
-    </span>
+    <>
+      <span className="card-accent-spine accent-glow-target" aria-hidden>
+        <span className="sheen-flow-overlay" aria-hidden />
+        <span className="bright-breathe" aria-hidden />
+        <span className="bright-surge" aria-hidden />
+      </span>
+      <span className="inner-glow-breathe" aria-hidden />
+    </>
   );
 }
 
