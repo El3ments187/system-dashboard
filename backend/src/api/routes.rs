@@ -1078,6 +1078,34 @@ mod tests {
         let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
         assert!(cpu > 0.0, "second sample with CPU work must be > 0, got {cpu}");
     }
+
+    // ── C15: ProcessMetrics serialization contract ────────────────────
+    // Consumed by: RUNTIME card (llama_server_process in AiMetrics) and the
+    // G2 footer source swap. vram_mb + gpu_util_percent must be PRESENT in
+    // JSON even when None (null) so the frontend can distinguish "no GPU" from
+    // "field missing".
+
+    #[test]
+    fn process_metrics_serializes_all_six_keys() {
+        use crate::models::ai::ProcessMetrics;
+        let pm = ProcessMetrics {
+            pid: 1,
+            cpu_percent: 0.0,
+            memory_kb: 0,
+            uptime_seconds: 0.0,
+            vram_mb: None,
+            gpu_util_percent: None,
+        };
+        let json = serde_json::to_value(&pm).unwrap();
+        assert!(json.get("pid").is_some(), "pid must be present");
+        assert!(json.get("cpu_percent").is_some(), "cpu_percent must be present");
+        assert!(json.get("memory_kb").is_some(), "memory_kb must be present");
+        assert!(json.get("uptime_seconds").is_some(), "uptime_seconds must be present");
+        assert!(json.get("vram_mb").is_some(),
+            "vram_mb must be present (null when no GPU — RUNTIME card + G2 footer)");
+        assert!(json.get("gpu_util_percent").is_some(),
+            "gpu_util_percent must be present (null when no GPU — RUNTIME card + G2 footer)");
+    }
 }
 
 fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value> {

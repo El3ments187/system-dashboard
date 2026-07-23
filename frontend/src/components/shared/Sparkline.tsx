@@ -5,6 +5,7 @@ interface SparklineProps {
   color?: string;
   width?: number | string;
   height?: number;
+  stretch?: boolean;
 }
 
 export default function Sparkline({
@@ -12,12 +13,15 @@ export default function Sparkline({
   color = "var(--accent-primary)",
   width = 60,
   height = 18,
+  stretch = false,
 }: SparklineProps) {
+  const resolvedWidth = stretch ? "100%" : width;
+
   const values = (data ?? [])
     .map((p) => p.value)
     .filter((v): v is number => v != null);
   if (values.length < 2) {
-    return <svg width={width} height={height} />;
+    return <svg width={resolvedWidth} height={stretch ? "100%" : height} />;
   }
 
   const min = Math.min(...values);
@@ -26,7 +30,7 @@ export default function Sparkline({
 
   // When width is a string (e.g. "100%"), use a fixed coordinate space and
   // let the SVG viewBox + CSS handle responsive scaling.
-  const coordW = typeof width === "number" ? width : 100;
+  const coordW = typeof resolvedWidth === "number" ? resolvedWidth : 100;
 
   const coords = values.map((v, i) => {
     const x = (i / (values.length - 1)) * coordW;
@@ -37,15 +41,19 @@ export default function Sparkline({
   const areaPoints = `0,${height} ${points} ${coordW},${height}`;
 
   const viewBox =
-    typeof width === "string" ? `0 0 ${coordW} ${height}` : undefined;
+    typeof resolvedWidth === "string" ? `0 0 ${coordW} ${height}` : undefined;
 
   return (
     <svg
-      width={width}
-      height={height}
+      width={resolvedWidth}
+      height={stretch ? "100%" : height}
       viewBox={viewBox}
       preserveAspectRatio={viewBox ? "none" : undefined}
-      style={{ display: "block" }}
+      style={
+        stretch
+          ? { display: "block", width: "100%", height: "100%" }
+          : { display: "block" }
+      }
     >
       <polygon
         points={areaPoints}
@@ -60,6 +68,7 @@ export default function Sparkline({
         strokeWidth={1.5}
         strokeLinejoin="round"
         strokeLinecap="round"
+        vectorEffect={stretch ? "non-scaling-stroke" : undefined}
       />
     </svg>
   );

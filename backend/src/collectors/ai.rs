@@ -115,11 +115,15 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         0.0
     };
 
+    let (vram_mb, gpu_util_percent) = crate::collectors::gpu::query_process_gpu_stats(pid);
+
     Some(ProcessMetrics {
         pid,
         cpu_percent: (cpu_percent * 10.0).round() / 10.0,
         memory_kb: vmem_rss_kb as u64,
         uptime_seconds: process_uptime.round(),
+        vram_mb,
+        gpu_util_percent,
     })
 }
 

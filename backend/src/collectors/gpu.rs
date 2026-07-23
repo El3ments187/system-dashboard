@@ -365,11 +365,92 @@ pub fn extract_tag_float(xml: &str, tag: &str) -> Option<f64> {
     })
 }
 
+/// Plain data entry for a single process's VRAM allocation, sourced from
+/// NVML running_compute_processes. Kept separate from NVML types so the
+/// resolver below is testable without a GPU.
+pub(crate) struct GpuProcessEntry {
+    pub pid: u32,
+    pub vram_bytes: Option<u64>,
+}
+
+/// Plain data entry for a single process's GPU SM utilization, sourced from
+/// NVML process_utilization_stats. Kept separate from NVML types so the
+/// resolver below is testable without a GPU.
+pub(crate) struct GpuUtilEntry {
+    pub pid: u32,
+    pub sm_util: u32,
+}
+
+/// Pure, testable seam (C9 pattern): resolve per-process VRAM (MiB) and GPU
+/// utilization (%) from pre-fetched NVML data without touching the driver.
+/// Returns (vram_mb, gpu_util_percent). Either may be None independently:
+/// vram_bytes=None means the driver reported Unavailable; an empty util list
+/// means process_utilization_stats is unsupported on this driver — that is
+/// None, not a failure.
+pub(crate) fn process_gpu_stats_from(
+    procs: &[GpuProcessEntry],
+    util_samples: &[GpuUtilEntry],
+    pid: u32,
+) -> (Option<f64>, Option<f64>) {
+    let vram = procs
+        .iter()
+        .find(|e| e.pid == pid)
+        .and_then(|e| e.vram_bytes)
+        .map(|b| b as f64 / (1024.0 * 1024.0));
+    let util = util_samples
+        .iter()
+        .filter(|e| e.pid == pid)
+        .map(|e| e.sm_util)
+        .max()
+        .map(|u| u as f64);
+    (vram, util)
+}
+
+/// Query per-process VRAM and GPU utilization for `pid` using the existing
+/// NVML handle (no new init — the handle is owned by this module). Returns
+/// (None, None) when NVML is unavailable or the device cannot be queried.
+pub fn query_process_gpu_stats(pid: u32) -> (Option<f64>, Option<f64>) {
+    let guard = NVML.lock().unwrap();
+    let nvml = match guard.as_ref() {
+        Some(n) => n,
+        None => return (None, None),
+    };
+    let device = match nvml.device_by_index(0) {
+        Ok(d) => d,
+        Err(_) => return (None, None),
+    };
+    let procs: Vec<GpuProcessEntry> = device
+        .running_compute_processes()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| {
+            use nvml_wrapper::enums::device::UsedGpuMemory;
+            GpuProcessEntry {
+                pid: p.pid,
+                vram_bytes: match p.used_gpu_memory {
+                    UsedGpuMemory::Used(b) => Some(b),
+                    UsedGpuMemory::Unavailable => None,
+                },
+            }
+        })
+        .collect();
+    // process_utilization_stats may error on consumer drivers — that is the
+    // None path, not a failure.
+    let util_samples: Vec<GpuUtilEntry> = device
+        .process_utilization_stats(None)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| GpuUtilEntry { pid: s.pid, sm_util: s.sm_util })
+        .collect();
+    process_gpu_stats_from(&procs, &util_samples, pid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        NVML_INIT_RETRY, SMI_CACHE, SMI_TTL, extract_tag, extract_tag_float,
-        parse_smi_xml, smi_from_all_cached_inner,
+        GpuProcessEntry, GpuUtilEntry, NVML_INIT_RETRY, SMI_CACHE, SMI_TTL,
+        extract_tag, extract_tag_float, parse_smi_xml, process_gpu_stats_from,
+        smi_from_all_cached_inner,
     };
     use crate::models::metrics::GpuMetrics;
 
@@ -479,5 +560,32 @@ mod tests {
         let gpus = parse_smi_xml("");
         assert_eq!(gpus.len(), 1);
         assert_eq!(gpus[0].name, "No GPU detected");
+    }
+
+    // ── C14: per-process GPU stats seam ─────────────────────────────
+
+    #[test]
+    fn process_gpu_stats_found_pid_has_vram_and_util() {
+        let procs = vec![GpuProcessEntry { pid: 42, vram_bytes: Some(2 * 1024 * 1024 * 1024) }];
+        let util = vec![GpuUtilEntry { pid: 42, sm_util: 87 }];
+        let (vram, gpu) = process_gpu_stats_from(&procs, &util, 42);
+        assert!((vram.unwrap() - 2048.0).abs() < 0.1, "2 GiB → 2048 MiB, got {vram:?}");
+        assert_eq!(gpu, Some(87.0));
+    }
+
+    #[test]
+    fn process_gpu_stats_absent_pid_returns_none_none() {
+        let (vram, gpu) = process_gpu_stats_from(&[], &[], 99);
+        assert_eq!((vram, gpu), (None, None));
+    }
+
+    #[test]
+    fn process_gpu_stats_util_unsupported_returns_vram_none() {
+        // Consumer drivers often refuse process_utilization_stats → empty util list.
+        // Correct behavior: return vram from running_compute_processes, None for util.
+        let procs = vec![GpuProcessEntry { pid: 7, vram_bytes: Some(512 * 1024 * 1024) }];
+        let (vram, gpu) = process_gpu_stats_from(&procs, &[], 7);
+        assert!((vram.unwrap() - 512.0).abs() < 0.1, "512 MiB, got {vram:?}");
+        assert_eq!(gpu, None, "util unsupported must be None, not a failure");
     }
 }

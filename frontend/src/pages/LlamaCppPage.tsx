@@ -1711,6 +1711,7 @@ export default function LlamaCppPage() {
         gpuHistory={gpuHistory}
         gpuVramUtilHistory={gpuVramUtilHistory}
         gpuTempHistory={gpuTemperatureHistory ?? []}
+        processMetrics={m?.llama_server_process}
       />
 
       <UpdateOutputModal

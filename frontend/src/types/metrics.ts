@@ -130,6 +130,8 @@ export interface ProcessMetrics {
   cpu_percent: number;
   memory_kb: number;
   uptime_seconds: number;
+  vram_mb: number | null;
+  gpu_util_percent: number | null;
 }
 
 export type ServiceStatus = "online" | "offline";

@@ -230,6 +230,8 @@ pub struct ProcessMetrics {
     pub cpu_percent: f64,
     pub memory_kb: u64,
     pub uptime_seconds: f64,
+    pub vram_mb: Option<f64>,
+    pub gpu_util_percent: Option<f64>,
 }
 
 /// Parsed Prometheus metrics from llama-server /metrics endpoint
