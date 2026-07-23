@@ -454,11 +454,24 @@ pub fn extract_filename_metadata(filename: &str) -> Option<FilenameMetadata> {
         }
     }
 
-    // Look for parameter indicators (e.g., "27B", "35B", "9b")
-    for part in &parts {
-        if part.contains('B') || part.contains("b") {
+    // Look for parameter indicators (e.g., "27B", "35B", "9b", "700M", "A3B").
+    // Two-pass: plain size tokens first; A-prefix MoE tokens (A3B) only as fallback.
+    let mut params_idx: Option<usize> = None;
+    for (i, part) in parts.iter().enumerate() {
+        let upper = part.to_ascii_uppercase();
+        if is_params_token(part) && !upper.starts_with('A') {
             params = Some(part.to_string());
+            params_idx = Some(i);
             break;
+        }
+    }
+    if params.is_none() {
+        for (i, part) in parts.iter().enumerate() {
+            if is_params_token(part) {
+                params = Some(part.to_string());
+                params_idx = Some(i);
+                break;
+            }
         }
     }
 
@@ -475,12 +488,12 @@ pub fn extract_filename_metadata(filename: &str) -> Option<FilenameMetadata> {
     }
 
     // Remaining parts are variant indicators (e.g., "MTP", "NEO", "REAM-Compact"),
-    // excluding whichever part was already classified as the quant token.
+    // excluding whichever parts were already classified as params or quant tokens.
     let remaining: Vec<&str> = parts
         .iter()
         .enumerate()
         .skip(2)
-        .filter(|(i, _)| quant_idx != Some(*i))
+        .filter(|(i, _)| quant_idx != Some(*i) && params_idx != Some(*i))
         .map(|(_, p)| *p)
         .collect();
 
@@ -529,6 +542,19 @@ fn is_quant_token(token: &str) -> bool {
             && after_digits[1..]
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_'))
+}
+
+/// A params token is a SIZE SHAPE — optional MoE 'A' prefix, digits,
+/// optional decimal, then B or M: 27B, 1.5B, 700M, 9b, A3B. Never a mere
+/// B-containing word (the "Bonsai" bug).
+fn is_params_token(s: &str) -> bool {
+    let core = s.strip_prefix(['A', 'a']).unwrap_or(s);
+    let Some(last) = core.chars().last() else { return false; };
+    if !matches!(last, 'B' | 'b' | 'M' | 'm') { return false; }
+    let digits = &core[..core.len() - 1];
+    !digits.is_empty()
+        && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && digits.chars().any(|c| c.is_ascii_digit())
 }
 
 // ─── Process Manager ────────────────────────────────────────────────
@@ -1582,9 +1608,39 @@ async fn update_profile_metrics_for_script(script_path: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{graceful_shutdown, wait_for_exit};
+    use super::{extract_filename_metadata, graceful_shutdown, wait_for_exit};
     use std::os::unix::process::CommandExt;
     use std::time::Duration;
+
+    // ── H: params shape matcher ──────────────────────────────────────
+
+    #[test]
+    fn params_is_matched_by_shape_not_letter() {
+        let m = extract_filename_metadata("Ternary-Bonsai-27B-Q2_0.sh").unwrap();
+        assert_eq!(
+            m.params.as_deref(),
+            Some("27B"),
+            "params must match a size shape (27B/1.5B/700M), not any B-word"
+        );
+        assert_eq!(m.quant.as_deref(), Some("Q2_0"));
+        assert_ne!(
+            m.variant.as_deref(),
+            Some("27B"),
+            "the params token must not leak into variant"
+        );
+    }
+
+    #[test]
+    fn params_absent_yields_none_not_a_word() {
+        let m = extract_filename_metadata("Behemoth-Instruct-Q4_K_M.sh").unwrap();
+        assert_eq!(m.params, None, "no size token present -> None, never a guess");
+    }
+
+    #[test]
+    fn moe_active_token_is_fallback_only() {
+        let m = extract_filename_metadata("Qwen3.6-35B-A3B-REAM-Q3_K_L.sh").unwrap();
+        assert_eq!(m.params.as_deref(), Some("35B"));
+    }
 
     // ── C13: kill-escalation ─────────────────────────────────────────
 
