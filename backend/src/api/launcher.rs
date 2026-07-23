@@ -14,7 +14,15 @@ use walkdir::WalkDir;
 
 // ─── Configuration ──────────────────────────────────────────────────
 
-const DEFAULT_SCAN_DIR: &str = "/home/gamer/Documents/AI/Start_Scripts";
+/// Default profile-scan dir: env override, else $HOME-derived. Never a
+/// literal user path — the app must work on any machine unchanged.
+fn default_scan_dir() -> PathBuf {
+    if let Ok(d) = std::env::var("MODEL_DECK_SCAN_DIR") {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    PathBuf::from(home).join("Documents/AI/Start_Scripts")
+}
 const METADATA_FILE: &str = ".opencode/profile_metadata.json";
 
 fn metadata_file_path() -> PathBuf {
@@ -48,7 +56,7 @@ pub fn get_state() -> std::sync::Arc<RwLock<LauncherState>> {
         profiles: Vec::new(),
         states: HashMap::new(),
         metadata: HashMap::new(),
-        scan_dir: DEFAULT_SCAN_DIR.to_string(),
+        scan_dir: default_scan_dir().to_string_lossy().into_owned(),
         running_script: None,
     };
     let arc = std::sync::Arc::new(RwLock::new(state));
@@ -1608,9 +1616,37 @@ async fn update_profile_metrics_for_script(script_path: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_filename_metadata, graceful_shutdown, wait_for_exit};
+    use super::{default_scan_dir, extract_filename_metadata, graceful_shutdown, wait_for_exit};
     use std::os::unix::process::CommandExt;
     use std::time::Duration;
+
+    // ── J1: default_scan_dir derives from env, never a literal user path ─
+
+    #[test]
+    fn default_scan_dir_respects_override_env_var() {
+        // SAFETY: single-threaded test; no other thread reads MODEL_DECK_SCAN_DIR concurrently.
+        unsafe { std::env::set_var("MODEL_DECK_SCAN_DIR", "/custom/models"); }
+        let dir = default_scan_dir();
+        unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
+        assert_eq!(dir, std::path::PathBuf::from("/custom/models"),
+            "MODEL_DECK_SCAN_DIR must be returned verbatim when set");
+    }
+
+    #[test]
+    fn default_scan_dir_derives_from_home_when_no_override() {
+        // SAFETY: single-threaded test; no other thread reads HOME or MODEL_DECK_SCAN_DIR concurrently.
+        unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
+        let orig_home = std::env::var("HOME").unwrap_or_default();
+        unsafe { std::env::set_var("HOME", "/tmp/probe"); }
+        let dir = default_scan_dir();
+        if !orig_home.is_empty() {
+            unsafe { std::env::set_var("HOME", orig_home); }
+        } else {
+            unsafe { std::env::remove_var("HOME"); }
+        }
+        assert_eq!(dir, std::path::PathBuf::from("/tmp/probe/Documents/AI/Start_Scripts"),
+            "scan-dir must derive from $HOME, never a hardcoded user path");
+    }
 
     // ── H: params shape matcher ──────────────────────────────────────
 

@@ -30,6 +30,9 @@ vi.mock("../services/api", () => ({
   updateAiSettings: vi.fn().mockResolvedValue({}),
   testConnection: vi.fn().mockResolvedValue({ available: true }),
   getRepoInfo: vi.fn().mockResolvedValue(null),
+  getSettingsLocation: vi
+    .fn()
+    .mockResolvedValue({ path: "/home/user/.config/model-deck/settings.json", exists: false }),
 }));
 
 vi.mock("../components/LogConsole", () => ({ LogConsole: () => null }));

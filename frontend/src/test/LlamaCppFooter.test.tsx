@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { vi, describe, it, expect, afterEach } from "vitest";
 import {
   LlamaCppHardwareFooter,
+  updateRing,
+  EMPTY_RING,
 } from "../pages/llamacpp/FooterStat";
 import type { ProcessMetrics } from "../types/metrics";
 
@@ -103,6 +105,33 @@ describe("LlamaCppHardwareFooter — process source", () => {
   });
 });
 
+// ── I-2: ring ingests the displayed value, not the raw process field ──
+
+describe("updateRing — ring ingests display value", () => {
+  it("pushes device gpuPct when process gpu_util_percent is null", () => {
+    const pm: ProcessMetrics = { ...PROCESS_METRICS, gpu_util_percent: null };
+    const ring = updateRing(EMPTY_RING, pm, { gpuPct: 64, vramUsedGb: null, memTotal: 32, vramTotal: 24 });
+    expect(ring.gpu[ring.gpu.length - 1]!.value).toBe(64);
+  });
+
+  it("pushes device vram as percent of vramTotal when process vram_mb is null", () => {
+    const pm: ProcessMetrics = { ...PROCESS_METRICS, vram_mb: null };
+    const ring = updateRing(EMPTY_RING, pm, { gpuPct: null, vramUsedGb: 20, memTotal: 32, vramTotal: 24 });
+    // 20 GB used / 24 GB total = 83.33...% — ring stores percent, not raw GB
+    const pct = ring.vram[ring.vram.length - 1]!.value;
+    expect(Math.abs(pct - (20 / 24) * 100)).toBeLessThan(0.1);
+  });
+
+  it("ring.mem stores percent of memTotal, not raw GB (I-4 unit unification)", () => {
+    // 8.3 GB of a 30.5 GB total → ~27.2%
+    const memKb = 8.3 * 1024 * 1024;
+    const pm: ProcessMetrics = { ...PROCESS_METRICS, memory_kb: memKb };
+    const ring = updateRing(EMPTY_RING, pm, { gpuPct: null, vramUsedGb: null, memTotal: 30.5, vramTotal: 24 });
+    const pct = ring.mem[ring.mem.length - 1]!.value;
+    expect(Math.abs(pct - (8.3 / 30.5) * 100)).toBeLessThan(0.1);
+  });
+});
+
 // ── G2b: sparkline stretch + 30s window ──────────────────────────────
 
 describe("LlamaCppHardwareFooter — sparkline stretch and 30s window", () => {
@@ -148,10 +177,10 @@ describe("LlamaCppHardwareFooter — sparkline stretch and 30s window", () => {
     // The CPU sparkline is in the tile labelled "CPU"
     const cpuLabel = screen.getByText("CPU");
     const cpuTile = cpuLabel.closest("[data-accent-el]") as HTMLElement;
-    const polyline = cpuTile?.querySelector("polyline");
-    expect(polyline, "CPU tile must have a sparkline polyline").toBeTruthy();
-    // polyline points: "x1,y1 x2,y2 ..." — N space-separated pairs for N data points
-    const pts = polyline!.getAttribute("points")?.trim().split(/\s+/) ?? [];
-    expect(pts.length, `expected 30 points (last 30s), got ${pts.length}`).toBe(30);
+    const linePath = cpuTile?.querySelector("path[fill='none']");
+    expect(linePath, "CPU tile must have a sparkline path").toBeTruthy();
+    // path d: "Mx,y Lx,y ..." — one M/L command per data point
+    const ptCount = ([...linePath!.getAttribute("d")!.matchAll(/[ML]/g)]).length;
+    expect(ptCount, `expected 30 points (last 30s), got ${ptCount}`).toBe(30);
   });
 });

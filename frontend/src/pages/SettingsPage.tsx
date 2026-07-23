@@ -4,6 +4,7 @@ import {
   updateAiSettings,
   testConnection,
   getRepoInfo,
+  getSettingsLocation,
 } from "../services/api";
 import { AiSettings, TestConnectionResult, RepoInfo } from "../types/metrics";
 import {
@@ -21,11 +22,87 @@ import {
   FileText,
   ExternalLink,
   Terminal,
+  Copy,
+  HardDrive,
 } from "lucide-react";
 import DirectoryBrowserModal from "../components/DirectoryBrowserModal";
 import EditUpdateScriptModal from "../components/EditUpdateScriptModal";
 import { SettingsCard } from "../components/shared/CardComponents";
 import { GpuBackendStatus } from "../components/settings/GpuBackendStatus";
+
+function SettingsFileLocationCard({
+  location,
+}: {
+  location: { path: string; exists: boolean } | null;
+}) {
+  return (
+    <SettingsCard>
+      <div className="settings-card-header">
+        <div data-accent-el="" className="settings-icon-badge">
+          <HardDrive size={16} style={{ color: "var(--accent-primary)" }} />
+        </div>
+        <div>
+          <div className="settings-card-title">Settings File Location</div>
+          <div className="settings-card-subtitle">
+            Where AI service settings are persisted on disk
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-card-body">
+        {location == null ? (
+          <div style={{ padding: 12, fontSize: 12, color: "var(--text-muted)" }}>
+            Loading location…
+          </div>
+        ) : (
+          <div className="settings-field">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "2px 7px",
+                  borderRadius: 4,
+                  background: location.exists
+                    ? "color-mix(in srgb, var(--success) 15%, transparent)"
+                    : "color-mix(in srgb, var(--warning) 15%, transparent)",
+                  color: location.exists ? "var(--success)" : "var(--warning)",
+                  border: `1px solid ${location.exists ? "color-mix(in srgb, var(--success) 30%, transparent)" : "color-mix(in srgb, var(--warning) 30%, transparent)"}`,
+                }}
+              >
+                {location.exists ? "EXISTS" : "NOT YET CREATED"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="text"
+                className="settings-input"
+                value={location.path}
+                readOnly
+                style={{
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                  fontSize: 11,
+                }}
+              />
+              <button
+                className="settings-btn"
+                title="Copy path"
+                onClick={() => navigator.clipboard.writeText(location.path)}
+              >
+                <Copy size={13} />
+              </button>
+            </div>
+            {!location.exists && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                File will be created when you save settings.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </SettingsCard>
+  );
+}
 
 const DEFAULT_UPDATE_SCRIPT =
   "git pull\ncmake --build build --config Release -j$(nproc)";
@@ -69,6 +146,11 @@ export default function SettingsPage({}: SettingsPageProps) {
     () =>
       localStorage.getItem("llama_cpp_update_script") ?? DEFAULT_UPDATE_SCRIPT,
   );
+  const [settingsLocation, setSettingsLocation] = useState<{
+    path: string;
+    exists: boolean;
+  } | null>(null);
+
   const [browserOpen, setBrowserOpen] = useState(false);
   const [scanBrowserOpen, setScanBrowserOpen] = useState(false);
   const [editScriptOpen, setEditScriptOpen] = useState(false);
@@ -231,6 +313,12 @@ export default function SettingsPage({}: SettingsPageProps) {
         });
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    getSettingsLocation()
+      .then(setSettingsLocation)
+      .catch(() => setSettingsLocation(null));
   }, []);
 
   const handleTest = async (field: string, url: string) => {
@@ -796,6 +884,8 @@ export default function SettingsPage({}: SettingsPageProps) {
         title="Edit Latest Version Command"
         description="Shell command run in the working directory. Output is used as the latest available version tag."
       />
+      <SettingsFileLocationCard location={settingsLocation} />
+
       <GpuBackendStatus />
     </main>
   );

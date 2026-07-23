@@ -11,7 +11,8 @@ use crate::api::launcher as launcher_api;
 use crate::api::llama_management as ai_mgmt;
 use crate::api::log_manager;
 use crate::api::settings::{
-    AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, test_connection,
+    AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, settings_location,
+    test_connection,
 };
 use crate::collectors::ai::{collect_ai_history, collect_ai_metrics};
 use crate::collectors::alerts::{AlertResponse, check_all_alerts, clear_alert_tracking};
@@ -65,6 +66,7 @@ pub fn create_router() -> axum::Router {
             get(get_settings_handler).put(update_settings_handler),
         )
         .route("/api/ai/test-connection", post(test_connection_handler))
+        .route("/api/settings/location", get(settings_location_handler))
         .route("/api/llama/directory-info", get(directory_info_handler))
         .route("/api/llama/repo-info", get(repo_info_handler))
         .route("/api/llama/browse", get(browse_directory_handler))
@@ -354,6 +356,14 @@ async fn ai_history_handler() -> axum::response::Json<Value> {
 
 async fn get_settings_handler() -> axum::response::Json<AiSettings> {
     Json(get_ai_settings())
+}
+
+async fn settings_location_handler() -> axum::response::Json<Value> {
+    let (path, exists) = settings_location();
+    Json(json!({
+        "path": path.to_string_lossy(),
+        "exists": exists,
+    }))
 }
 
 #[derive(Deserialize)]

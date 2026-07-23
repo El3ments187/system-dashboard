@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { useLlamaCppManagement } from "../hooks/useLlamaCppManagement";
+import { useLlamaCppManagement, composeUpdateCommand, FAIL_MARKER } from "../hooks/useLlamaCppManagement";
 
 vi.mock("../services/api", () => ({
   ptySpawnTerminal: vi.fn(),
@@ -133,6 +133,23 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
     );
   });
 
+  it("(b-K) pty stream emitting FAIL_MARKER routes to error state, not done", async () => {
+    vi.mocked(ptyReadOutput).mockResolvedValueOnce({
+      text: `${FAIL_MARKER}\n`,
+      nextOffset: FAIL_MARKER.length + 1,
+    });
+
+    const { result } = renderHook(() => useLlamaCppManagement());
+
+    await act(async () => {
+      await result.current.runUpdate();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(result.current.updateState).toBe("error");
+  });
+
   it("advances progress from extractLatestPercent before completing at 100", async () => {
     vi.mocked(extractLatestPercent).mockReturnValueOnce(42);
     vi.mocked(ptyReadOutput)
@@ -156,5 +173,36 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
       vi.advanceTimersByTime(400);
     });
     expect(result.current.updateProgress).toBe(100);
+  });
+});
+
+describe("composeUpdateCommand — line-continuation folding (K)", () => {
+  it("(a) folds the user's exact confirmed-working script: no stray \\\\ &&, no dangling backslash", () => {
+    const userScript =
+      "cd ~/Documents/AI/llama.cpp/git/llama.cpp\n" +
+      "git pull && \\\n" +
+      "rm -rf build && \\\n" +
+      "cmake -B build \\\n" +
+      "  -DGGML_CUDA=ON \\\n" +
+      "  -DCMAKE_BUILD_TYPE=Release \\\n" +
+      "  -DCMAKE_CUDA_ARCHITECTURES=120 && \\\n" +
+      'cmake --build build --config Release --parallel "$(nproc)"';
+    const out = composeUpdateCommand(userScript);
+    expect(out, "stray \\ && must not appear").not.toMatch(/\\\s*&&/);
+    expect(out, "no dangling backslash").not.toMatch(/\\[^n]/);
+    expect(out).toContain(
+      "cd ~/Documents/AI/llama.cpp/git/llama.cpp && git pull && rm -rf build && cmake -B build"
+    );
+  });
+
+  it("(c) pin: plain two-line DEFAULT_UPDATE_SCRIPT composes with && and both sentinel markers", () => {
+    const defaultScript =
+      "git pull\ncmake --build build --config Release -j$(nproc)";
+    const out = composeUpdateCommand(defaultScript);
+    expect(out).toContain(
+      "git pull && cmake --build build --config Release -j$(nproc)"
+    );
+    expect(out).toContain('echo "__LLAMA_UPDATE_DONE__"');
+    expect(out).toContain(`echo "${FAIL_MARKER}"`);
   });
 });

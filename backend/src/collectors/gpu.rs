@@ -453,6 +453,13 @@ mod tests {
         smi_from_all_cached_inner,
     };
     use crate::models::metrics::GpuMetrics;
+    use std::sync::{Mutex, OnceLock};
+
+    // Serializes tests that mutate the global SMI_CACHE so they cannot race.
+    static SMI_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    fn smi_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        SMI_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     // ── C8: constant pins ────────────────────────────────────────────
 
@@ -486,6 +493,7 @@ mod tests {
 
     #[test]
     fn smi_cache_serves_hit_within_ttl() {
+        let _guard = smi_test_guard();
         *SMI_CACHE.lock().unwrap() = None;
         let t0 = std::time::Instant::now();
         let mut call_count = 0u32;
@@ -496,6 +504,7 @@ mod tests {
 
     #[test]
     fn smi_cache_refetches_after_ttl() {
+        let _guard = smi_test_guard();
         *SMI_CACHE.lock().unwrap() = None;
         let t0 = std::time::Instant::now();
         let mut call_count = 0u32;

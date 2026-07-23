@@ -101,6 +101,15 @@ export async function updateAiSettings(
   return (await res.json()) as AiSettings;
 }
 
+export async function getSettingsLocation(): Promise<{
+  path: string;
+  exists: boolean;
+}> {
+  const res = await fetchWithTimeout(`${BASE_URL}/settings/location`, 8000);
+  if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+  return (await res.json()) as { path: string; exists: boolean };
+}
+
 export async function testConnection(
   url: string,
 ): Promise<TestConnectionResult> {

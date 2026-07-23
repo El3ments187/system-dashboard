@@ -62,11 +62,20 @@ type ProcRing = {
   vram: MetricHistoryPoint[];
 };
 
-const EMPTY_RING: ProcRing = { cpu: [], mem: [], gpu: [], vram: [] };
+export const EMPTY_RING: ProcRing = { cpu: [], mem: [], gpu: [], vram: [] };
 
-function updateRing(ring: ProcRing, pm: ProcessMetrics): ProcRing {
+type SysFallback = {
+  gpuPct: number | null | undefined;
+  vramUsedGb: number | null | undefined;
+  memTotal: number | null | undefined;
+  vramTotal: number | null | undefined;
+};
+
+export function updateRing(ring: ProcRing, pm: ProcessMetrics, sys: SysFallback): ProcRing {
   const now = Date.now();
   const cutoff = now - FOOTER_WINDOW_MS;
+  const memTotal = sys.memTotal ?? 1;
+  const vramTotal = sys.vramTotal ?? 1;
   const evict = (arr: MetricHistoryPoint[]) =>
     arr.filter((p) => p.timestamp instanceof Date && p.timestamp.getTime() > cutoff);
   const pt = (val: number): MetricHistoryPoint => ({
@@ -76,9 +85,13 @@ function updateRing(ring: ProcRing, pm: ProcessMetrics): ProcRing {
   });
   return {
     cpu: [...evict(ring.cpu), pt(pm.cpu_percent)],
-    mem: [...evict(ring.mem), pt(pm.memory_kb / (1024 * 1024))],
-    gpu: [...evict(ring.gpu), pt(pm.gpu_util_percent ?? 0)],
-    vram: [...evict(ring.vram), pt((pm.vram_mb ?? 0) / 1024)],
+    mem: [...evict(ring.mem), pt((pm.memory_kb / (1024 * 1024)) / memTotal * 100)],
+    gpu: [...evict(ring.gpu), pt(pm.gpu_util_percent ?? sys.gpuPct ?? 0)],
+    vram: [...evict(ring.vram), pt(
+      pm.vram_mb != null
+        ? (pm.vram_mb / 1024) / vramTotal * 100
+        : (sys.vramUsedGb ?? 0) / vramTotal * 100
+    )],
   };
 }
 
@@ -88,12 +101,14 @@ export function FooterStat({
   value,
   color,
   history,
+  domain,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   color: string;
   history?: MetricHistoryPoint[];
+  domain?: [number, number];
 }) {
   return (
     <div
@@ -154,7 +169,7 @@ export function FooterStat({
       </div>
       {history && (
         <div style={{ flex: 1, minWidth: 0, height: 32 }}>
-          <Sparkline data={history} color={color} stretch height={32} />
+          <Sparkline data={history} color={color} stretch height={32} windowMs={FOOTER_WINDOW_MS} domain={domain ?? [0, 100]} />
         </div>
       )}
     </div>
@@ -207,7 +222,7 @@ export function LlamaCppHardwareFooter({
     if (wasProcess !== (processMetrics != null)) {
       setRing(EMPTY_RING);
     } else if (processMetrics != null) {
-      setRing((prev) => updateRing(prev, processMetrics));
+      setRing((prev) => updateRing(prev, processMetrics, { gpuPct, vramUsedGb: vramUsed, memTotal, vramTotal }));
     }
   }
 
@@ -276,6 +291,7 @@ export function LlamaCppHardwareFooter({
         value={gpuTemp != null ? `${gpuTemp.toFixed(0)}°C` : "—"}
         color="var(--metric-temp)"
         history={tempHist}
+        domain={[20, 120]}
       />
     </div>
   );

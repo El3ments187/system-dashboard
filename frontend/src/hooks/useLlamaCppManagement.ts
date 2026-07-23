@@ -17,6 +17,19 @@ const DEFAULT_LOCAL_VERSION_CMD =
 const DEFAULT_LATEST_VERSION_CMD =
   "git ls-remote --tags --sort=-version:refname origin 'refs/tags/b*' | head -1 | sed 's|.*refs/tags/||'";
 const DONE_MARKER = "__LLAMA_UPDATE_DONE__";
+export const FAIL_MARKER = "__LLAMA_UPDATE_FAILED__";
+
+/**
+ * Folds line-continuation backslashes FIRST (a trailing backslash continues
+ * the logical line), then joins complete commands with " && ", and appends
+ * dual sentinels: success echoes DONE_MARKER, failure echoes FAIL_MARKER.
+ * "finished" in the UI must mean the commands actually finished.
+ */
+export function composeUpdateCommand(script: string): string {
+  const logical = script.replace(/\s*\\\s*\n\s*/g, " ");
+  const lines = logical.split("\n").map((s) => s.trim()).filter(Boolean);
+  return `${lines.join(" && ")} && echo "${DONE_MARKER}" || echo "${FAIL_MARKER}"\n`;
+}
 
 export type UpdateState = "idle" | "running" | "done" | "error";
 
@@ -168,6 +181,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
       if (pct != null) setUpdateProgress(pct);
       setUpdateOutput(next);
       const donePattern = new RegExp(`(^|\\n)${DONE_MARKER}(\\r|\\n|$)`);
+      const failPattern = new RegExp(`(^|\\n)${FAIL_MARKER}(\\r|\\n|$)`);
       if (donePattern.test(next)) {
         setUpdateProgress(100);
         setUpdateState("done");
@@ -175,6 +189,11 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         ptyKillTerminal(pts);
         updatePtsRef.current = null;
         idleTimerRef.current = setTimeout(() => setUpdateState("idle"), 2000);
+      } else if (failPattern.test(next)) {
+        setUpdateState("error");
+        stopPolling();
+        ptyKillTerminal(pts);
+        updatePtsRef.current = null;
       }
     },
     [stopPolling],
@@ -195,11 +214,7 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     try {
       const resp = await ptySpawnTerminal(dirPath);
       updatePtsRef.current = resp.pts_name;
-      const lines = updateScript
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const composite = `${lines.join(" && ")} ; echo "${DONE_MARKER}"\n`;
+      const composite = composeUpdateCommand(updateScript);
       await ptyWriteInput(resp.pts_name, composite);
 
       updatePollRef.current = setInterval(async () => {

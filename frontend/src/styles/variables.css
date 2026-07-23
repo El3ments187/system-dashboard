@@ -1348,6 +1348,18 @@
 }
 
 [data-pulse="on"] .accent-glow-target::before {
+  /* The effect's description promises a WHITE shine, and the comment above
+     the disk-bar rule explains why: an accent-colored gradient over
+     accent-colored fills is invisible. That fix was only ever applied to
+     .ov-disk-fill — every other pulse target kept the accent-on-accent
+     gradient and pulsed imperceptibly. Override to the same white shine
+     here. Safe: glow/breathe use ::after; ::before is the shine role. */
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, white 60%, transparent) 0%,
+    color-mix(in srgb, white 25%, transparent) 50%,
+    transparent 100%
+  );
   animation: accent-pulse var(--pulse-speed, 4s) ease-in-out infinite;
 }
 
@@ -1512,6 +1524,12 @@
 [data-pulse="on"]
   .accent-fill.accent-glow-target[data-state="critical"]::before {
   animation: none;
+  /* Base MUST be invisible: without this, the 15%-white screen-blend
+     background below is permanently visible with the effects OFF (a faint
+     wash on every card/bar), and turning Surge/Breathe ON — whose keyframes
+     start at opacity 0 — makes those areas DARKER on average than the
+     off state. The on-state keyframes own all visibility. */
+  opacity: 0;
 }
 
 /* Warning/critical bars encode threshold data — excluded from breathe; normal bars animate freely */

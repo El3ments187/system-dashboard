@@ -89,7 +89,7 @@ export default function DirectoryBrowserModal({
   onSelect,
   initialPath,
 }: DirectoryBrowserModalProps) {
-  const [currentPath, setCurrentPath] = useState(initialPath || "/home/gamer");
+  const [currentPath, setCurrentPath] = useState(initialPath || "/");
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
