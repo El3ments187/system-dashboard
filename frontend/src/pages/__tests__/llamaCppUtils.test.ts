@@ -173,8 +173,9 @@ describe("specLabel", () => {
     expect(specLabel("")).toBe("None");
   });
 
-  it('returns "Other" for unknown spec type', () => {
-    expect(specLabel("unknown-spec")).toBe("Other");
+  it("renders unknown spec types dynamically (no more Other bucket)", () => {
+    expect(specLabel("unknown-spec")).toBe("UNKNOWN-SPEC");
+    expect(specLabel("draft-dspark")).toBe("DSPARK");
   });
 });
 

@@ -89,8 +89,21 @@ describe("specLabel", () => {
     expect(specLabel("eagle3")).toBe("EAGLE-3");
   });
 
-  it('returns "Other" for an unrecognized value', () => {
-    expect(specLabel("some-unknown-method")).toBe("Other");
+  // REWRITTEN red-first (ground rule 3): the old test pinned an information-
+  // destroying "Other" bucket. User ruling: report ANY spec type dynamically.
+  it("renders ANY unknown spec type dynamically, in the table's own idiom", () => {
+    // Real case (user): --spec-type draft-dspark. The family convention is
+    // draft-<technique>; the table's own entries (draft-mtp→MTP, eagle→EAGLE)
+    // strip the prefix and uppercase the technique — unknowns follow suit.
+    expect(specLabel("draft-dspark")).toBe("DSPARK");
+    expect(specLabel("draft-some-future-method")).toBe("SOME-FUTURE-METHOD");
+    expect(specLabel("ternary")).toBe("TERNARY");   // non-draft-family too
+    expect(specLabel("SSM-2p")).toBe("SSM-2p");     // authored mixed case respected
+  });
+
+  it("matches the known table case-insensitively", () => {
+    expect(specLabel("Draft")).toBe("Draft");
+    expect(specLabel("DRAFT-MTP")).toBe("MTP");
   });
 
   it('returns "None" when no spec_type is present', () => {

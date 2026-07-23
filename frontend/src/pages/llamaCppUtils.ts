@@ -39,7 +39,14 @@ export function formatTps(tps?: number | null): string {
 
 export function specLabel(specType?: string | null): string {
   if (!specType) return "None";
-  return SPEC_LABELS[specType] ?? "Other";
+  const known = SPEC_LABELS[specType.toLowerCase()];
+  if (known) return known;
+  // Dynamic passthrough (user ruling: --spec-type values like draft-dspark,
+  // with more to come, must display without table maintenance). Follows the
+  // table's own idiom (draft-mtp→MTP, eagle→EAGLE): strip the draft-family
+  // prefix, uppercase the technique. Authored mixed case is respected.
+  if (/[A-Z]/.test(specType)) return specType;
+  return specType.replace(/^draft-/, "").toUpperCase();
 }
 
 export function fmtUptime(sec: number | null | undefined): string {
