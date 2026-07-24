@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, screen } from "@testing-library/react";
 import SettingsPage from "../pages/SettingsPage";
 
 vi.mock("../services/api", () => ({
@@ -71,5 +71,35 @@ describe("SettingsPage card spine parity", () => {
     spines.forEach((spine) => {
       expect(spine.style.opacity).toBe("");
     });
+  });
+});
+
+describe("SettingsPage N — layout + truncation (Step N)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("shows a full-value tooltip on the Working Directory path field", async () => {
+    const longPath =
+      "/home/user/very/long/path/to/llama/cpp/working/directory/that/exceeds/field/width";
+    localStorage.setItem("llama_cpp_dir", longPath);
+    const { container } = render(<SettingsPage accent={accent} />);
+    await waitFor(() => {
+      const input = container.querySelector('input[name="llama-working-dir"]');
+      expect(input).toBeTruthy();
+    });
+    const input = container.querySelector(
+      'input[name="llama-working-dir"]',
+    ) as HTMLInputElement;
+    expect(input).toHaveAttribute("title", longPath);
+  });
+
+  it("groups cards under Connections, Documentation, and Diagnostics section labels", async () => {
+    render(<SettingsPage accent={accent} />);
+    await waitFor(() => {
+      expect(screen.getByText("Connections")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Documentation")).toBeInTheDocument();
+    expect(screen.getByText("Diagnostics")).toBeInTheDocument();
   });
 });
