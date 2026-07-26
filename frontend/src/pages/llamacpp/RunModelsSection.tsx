@@ -8,6 +8,8 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Search,
+  X,
 } from "lucide-react";
 import type {
   ProfileResponse,
@@ -50,11 +52,50 @@ function cycleSortDirection(
   return "none";
 }
 
+const EMPTY_STATE_STYLE: React.CSSProperties = {
+  padding: "16px 12px",
+  textAlign: "center",
+  color: "var(--text-muted)",
+  fontSize: 11,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 8,
+};
+
+// Extracted to avoid a nested ternary in the render (this file's own
+// established pattern — see computeX/splitSegments in Sparkline.tsx for
+// the same reasoning). Returns null when the table should render normally.
+function renderEmptyState(
+  totalCount: number,
+  filteredCount: number,
+  searchQuery: string,
+): React.ReactNode | null {
+  if (totalCount === 0) {
+    return (
+      <div style={EMPTY_STATE_STYLE}>
+        <FolderOpen size={24} style={{ opacity: 0.35 }} />
+        No profiles found in scan directory.
+      </div>
+    );
+  }
+  if (filteredCount === 0) {
+    return (
+      <div style={EMPTY_STATE_STYLE}>
+        <Search size={24} style={{ opacity: 0.35 }} />
+        No models match &quot;{searchQuery}&quot;.
+      </div>
+    );
+  }
+  return null;
+}
+
 export function RunModelsSection() {
   const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
   const [states, setStates] = useState<Record<string, ProfileState>>({});
   const [metadata, setMetadata] = useState<Record<string, ProfileMetadata>>({});
   const [scanDir, setScanDir] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -102,12 +143,23 @@ export function RunModelsSection() {
     });
   }, []);
 
+  const getFilteredProfiles = useCallback((): LaunchProfile[] => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q === "") return profiles;
+    // Match on the model's display name — the same string the MODEL
+    // column renders, so "finding a model" means exactly what the user
+    // sees on screen. Substring, not fuzzy: predictable and fast for a
+    // list of scripts a person named themselves.
+    return profiles.filter((p) => p.name.toLowerCase().includes(q));
+  }, [profiles, searchQuery]);
+
   const getSortedProfiles = useCallback((): LaunchProfile[] => {
+    const filtered = getFilteredProfiles();
     if (sortConfig.column === null || sortConfig.direction === "none") {
-      return profiles;
+      return filtered;
     }
-    return sortProfiles(profiles, states, metadata, sortConfig);
-  }, [profiles, states, metadata, sortConfig]);
+    return sortProfiles(filtered, states, metadata, sortConfig);
+  }, [getFilteredProfiles, states, metadata, sortConfig]);
 
   useEffect(() => {
     const timer = setInterval(() => loadProfiles(false), 30000);
@@ -272,7 +324,55 @@ export function RunModelsSection() {
             </div>
           )}
         </div>
-        <button
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: 6,
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+            }}
+          >
+            <Search size={10} style={{ color: "var(--text-muted)" }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search models…"
+              aria-label="Search models"
+              style={{
+                border: "none",
+                background: "transparent",
+                outline: "none",
+                fontSize: 10,
+                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                color: "var(--text-primary)",
+                width: 130,
+              }}
+            />
+            {searchQuery !== "" && (
+              <button
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+              title="Clear search"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+                color: "var(--text-muted)",
+              }}
+            >
+              <X size={10} />
+              </button>
+            )}
+          </div>
+          <button
           data-accent-el=""
           onClick={() => loadProfiles()}
           disabled={loading}
@@ -293,7 +393,8 @@ export function RunModelsSection() {
         >
           <RefreshCw size={10} className={loading ? "spin" : undefined} />
           Refresh
-        </button>
+          </button>
+        </div>
       </div>
 
       {/* Column Headers */}
@@ -423,23 +524,7 @@ export function RunModelsSection() {
       )}
 
       {/* Profile Rows */}
-      {profiles.length === 0 ? (
-        <div
-          style={{
-            padding: "16px 12px",
-            textAlign: "center",
-            color: "var(--text-muted)",
-            fontSize: 11,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <FolderOpen size={24} style={{ opacity: 0.35 }} />
-          No profiles found in scan directory.
-        </div>
-      ) : (
+      {renderEmptyState(profiles.length, getFilteredProfiles().length, searchQuery) ?? (
         <div
           style={
             {

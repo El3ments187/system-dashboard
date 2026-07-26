@@ -1620,11 +1620,15 @@ mod tests {
     use std::os::unix::process::CommandExt;
     use std::time::Duration;
 
+    // Serializes tests that mutate process-global env vars to prevent races
+    // when cargo runs tests in parallel threads within the same binary.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // ── J1: default_scan_dir derives from env, never a literal user path ─
 
     #[test]
     fn default_scan_dir_respects_override_env_var() {
-        // SAFETY: single-threaded test; no other thread reads MODEL_DECK_SCAN_DIR concurrently.
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::set_var("MODEL_DECK_SCAN_DIR", "/custom/models"); }
         let dir = default_scan_dir();
         unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
@@ -1634,7 +1638,7 @@ mod tests {
 
     #[test]
     fn default_scan_dir_derives_from_home_when_no_override() {
-        // SAFETY: single-threaded test; no other thread reads HOME or MODEL_DECK_SCAN_DIR concurrently.
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
         let orig_home = std::env::var("HOME").unwrap_or_default();
         unsafe { std::env::set_var("HOME", "/tmp/probe"); }

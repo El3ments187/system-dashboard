@@ -45,6 +45,62 @@ describe("Sparkline — fixed domain prop (I-4)", () => {
   });
 });
 
+describe("Sparkline — timestamp robustness across producer types (P3)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("(a) a string timestamp positions correctly, not collapsed to the right edge", () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    // Two points (not one) — a lone point takes a SEPARATE dot-rendering
+    // special case that never calls computeX, so this must use 2+ points
+    // to actually exercise the line being fixed. Simulates a point that
+    // crossed a JSON boundary (ISO string, not a live Date instance) —
+    // exactly what MetricsContext's `any`-typed cpuHistory could hand a
+    // producer that forgot to convert it back.
+    const data = [
+      { slot: 0, timestamp: new Date(now - 25_000).toISOString(), value: 30 },
+      { slot: 1, timestamp: new Date(now - 5_000).toISOString(), value: 50 },
+    ] as unknown as MetricHistoryPoint[];
+    const { container } = render(
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+    );
+    const path = container.querySelector("path[fill='none']");
+    const d = path!.getAttribute("d") ?? "";
+    // Extract the two x-coordinates from the path command(s).
+    const xs = [...d.matchAll(/[ML]\s*([\d.]+)/g)].map((m) => Number(m[1]));
+    expect(xs.length, `expected 2 coordinates in path, got d="${d}"`).toBe(2);
+    // Old (buggy) code: both points fall back to `now`, so tie at x=200
+    // (the full right edge). Fixed code: the two points sit ~25s and ~5s
+    // into a 30s window — roughly 17% and 83% across — clearly apart and
+    // clearly not both pinned to the edge.
+    expect(
+      Math.abs(xs[0] - xs[1]),
+      `both points collapsed to the same x (both defaulted to 'now'), xs=${xs}`
+    ).toBeGreaterThan(20);
+  });
+
+  it("(b) gap-honesty still splits segments when timestamps are strings", () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    const data = [
+      { slot: 0, timestamp: new Date(now - 15_000).toISOString(), value: 40 },
+      { slot: 1, timestamp: new Date(now - 5_000).toISOString(), value: 60 },
+    ] as unknown as MetricHistoryPoint[];
+    const { container } = render(
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+    );
+    const path = container.querySelector("path[fill='none']");
+    const d = path!.getAttribute("d") ?? "";
+    const mCount = (d.match(/M/g) ?? []).length;
+    // Old code: both string timestamps fall back to `now`, tCurr-tPrev=0,
+    // gap NEVER detected regardless of real elapsed time — 1 M, not 2.
+    expect(mCount, `gap-honesty silently disabled for string timestamps, d="${d}"`)
+      .toBe(2);
+  });
+});
+
 describe("Sparkline — gap honesty (I-5)", () => {
   afterEach(() => {
     vi.useRealTimers();

@@ -1198,6 +1198,8 @@ main {
   width: 100%;
   align-items: start;
   animation: fadeIn 400ms ease;
+  overflow-y: auto;
+  align-content: start;
 }
 
 /* Grouped sections (Connections / Documentation / Diagnostics) — replaces

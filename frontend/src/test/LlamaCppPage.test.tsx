@@ -928,7 +928,7 @@ describe("LlamaCppPage generation progress slot fields", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByText(/Remaining\s+384/)).toBeInTheDocument();
+    expect(screen.getByText(/Gen\. remaining\s+384/)).toBeInTheDocument();
   });
 
   it("shows unbounded format (no Remaining) when slot has no n_predict", async () => {
@@ -964,7 +964,7 @@ describe("LlamaCppPage generation progress slot fields", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByText(/Remaining\s+0/)).toBeInTheDocument();
+    expect(screen.getByText(/Gen\. remaining\s+0/)).toBeInTheDocument();
   });
 
   it("shows unbounded format when n_predict is 0 (mapped from -1)", async () => {
@@ -1010,7 +1010,7 @@ describe("LlamaCppPage generation progress slot fields", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByText(/470/)).toBeInTheDocument();
     expect(screen.getByText(/8,192/)).toBeInTheDocument();
-    expect(screen.getByText(/Remaining\s+7,722/)).toBeInTheDocument();
+    expect(screen.getByText(/Gen\. remaining\s+7,722/)).toBeInTheDocument();
   });
 });
 
@@ -1942,5 +1942,109 @@ describe("LlamaCppPage PanelCard structural integrity", () => {
     // Verify the main layout panels are present by checking for known section labels
     expect(screen.getAllByText("Throughput").length).toBeGreaterThan(0);
     expect(screen.getByTestId("log-console")).toBeInTheDocument();
+  });
+});
+
+describe("LlamaCppPage throughput sparklines fill their tile (not half-width)", () => {
+  it("Generation Speed and Prompt Speed sparklines use stretch, never a hardcoded width", async () => {
+    // A full-page DOM render proved unreliable for this check (the
+    // Throughput card's mocked render path didn't reliably expose these
+    // svgs under test) — a direct source assertion is the deterministic,
+    // zero-flake way to guard this regression: the bug IS the presence of
+    // ANY hardcoded pixel width on a Sparkline meant to fill its tile via
+    // `stretch`. User-reported: Generation Speed and Prompt Speed bars
+    // visibly filled only half their card (a literal width={200} was the
+    // instance found, but the guard below catches any width value someone
+    // might reintroduce, not just that one number).
+    const fs = await import("fs");
+    const path = await import("path");
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
+      "utf-8"
+    );
+
+    const genBlockStart = src.indexOf("data={aiGenTpsHistory");
+    const genBlockEnd = src.indexOf("/>", genBlockStart);
+    const genBlock = src.slice(genBlockStart, genBlockEnd);
+    expect(genBlockStart, "Generation Speed sparkline not found in source").toBeGreaterThan(-1);
+    expect(genBlock, "Generation Speed sparkline must use stretch").toContain("stretch");
+    expect(
+      /width\s*=\s*\{/.test(genBlock),
+      `Generation Speed sparkline must not hardcode ANY pixel width — found one in: ${genBlock}`
+    ).toBe(false);
+
+    const promptBlockStart = src.indexOf("data={aiPromptTpsHistory");
+    const promptBlockEnd = src.indexOf("/>", promptBlockStart);
+    const promptBlock = src.slice(promptBlockStart, promptBlockEnd);
+    expect(promptBlockStart, "Prompt Speed sparkline not found in source").toBeGreaterThan(-1);
+    expect(promptBlock, "Prompt Speed sparkline must use stretch").toContain("stretch");
+    expect(
+      /width\s*=\s*\{/.test(promptBlock),
+      `Prompt Speed sparkline must not hardcode ANY pixel width — found one in: ${promptBlock}`
+    ).toBe(false);
+  });
+});
+
+describe("LlamaCppPage: generation-length cap is distinguishable from context window (n_predict vs n_ctx)", () => {
+  it("source labels n_predict distinctly from context, not a bare 'Remaining'", async () => {
+    // User-reported: CONTEXT card showed MAX: 34,048 (n_ctx) directly above
+    // a bottom bar reading "32,434 / 64,000 token, Remaining 31,566" (n_predict)
+    // — two different ceilings, both called "Remaining", in the same card.
+    // Source check (same technique as the Q sparkline-width guard, for the
+    // same reason: this is fundamentally about literal label text, not
+    // runtime DOM structure under mocked context).
+    const fs = await import("fs");
+    const path = await import("path");
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
+      "utf-8"
+    );
+    const blockStart = src.indexOf("const nr = slot0.n_remain");
+    const blockEnd = src.indexOf("})()", blockStart);
+    const block = src.slice(blockStart, blockEnd);
+    expect(blockStart, "n_predict progress block not found").toBeGreaterThan(-1);
+    // The old bare "Remaining {nr...}" (matching the context card's own
+    // "REMAINING" field name with nothing to distinguish them) must be gone.
+    expect(
+      />\s*Remaining\s*\{/.test(block),
+      "bare 'Remaining' label reintroduced — indistinguishable from the context window's own Remaining field"
+    ).toBe(false);
+    expect(block, "must clearly label this as the generation cap, not context").toContain("Gen. remaining");
+    expect(block, "must explain n_predict is separate from n_ctx via tooltip").toContain("n_predict");
+    expect(block, "tooltip must reference the context window for contrast").toContain("context window");
+  });
+});
+
+describe("LlamaCppPage throughput row height stays bounded (Step Q side-effect fix)", () => {
+  it("sparkline containers use a fixed height, not open-ended flex:1", async () => {
+    // Step Q's `stretch` fix ties the svg's HEIGHT to 100% of its
+    // container, not just width. The container was `flex: 1, minHeight:
+    // 28` — no ceiling — so the bar grew to fill whatever vertical space
+    // the row allowed, visibly inflating the whole top row (user-reported,
+    // caught via before/after screenshot comparison). A bounded `height`
+    // restores the original size while keeping stretch's width fill.
+    const fs = await import("fs");
+    const path = await import("path");
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
+      "utf-8"
+    );
+    const genBlockStart = src.indexOf("data={aiGenTpsHistory");
+    const genContainerStart = src.lastIndexOf("<div", genBlockStart);
+    const genContainer = src.slice(genContainerStart, genBlockStart);
+    expect(
+      genContainer,
+      "Generation Speed's sparkline container must not use open-ended flex:1/minHeight"
+    ).not.toMatch(/flex:\s*1,\s*minHeight/);
+    expect(genContainer).toMatch(/height:\s*28/);
+
+    const promptBlockStart = src.indexOf("data={aiPromptTpsHistory");
+    const promptContainerStart = src.lastIndexOf("<div", promptBlockStart);
+    const promptContainer = src.slice(promptContainerStart, promptBlockStart);
+    expect(
+      promptContainer,
+      "Prompt Speed's sparkline container must not use open-ended flex:1/minHeight"
+    ).not.toMatch(/flex:\s*1,\s*minHeight/);
+    expect(promptContainer).toMatch(/height:\s*28/);
   });
 });

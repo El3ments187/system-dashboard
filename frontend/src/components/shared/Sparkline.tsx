@@ -2,6 +2,25 @@ import { MetricHistoryPoint } from "../../types/metrics";
 
 const GAP_MS = 3_000;
 
+// Robustly extract a point's real time regardless of how the producer
+// serialized it. `instanceof Date` alone is a landmine: nothing guarantees
+// every producer supplies a live Date (MetricsContext.tsx types cpuHistory
+// as `any`; any future JSON round-trip turns timestamps into ISO strings,
+// which are NOT `instanceof Date`). A silent fallback to `now` here would
+// collapse every point to the right edge (x-jumping) AND, in splitSegments,
+// make tCurr - tPrev always equal 0 — silently disabling gap-honesty too,
+// since a real stall would then show zero elapsed time between points.
+function pointTimeMs(ts: unknown, now: number): number {
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === "number") return ts;
+  if (typeof ts === "string") {
+    const parsed = Date.parse(ts);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return now; // last-resort only; unreachable for any correctly-serialized
+              // Date, epoch number, or ISO string.
+}
+
 function windowAnchorNow(windowMs: number | undefined): number {
   return windowMs != null ? Date.now() : 0;
 }
@@ -15,7 +34,7 @@ function computeX(
   coordW: number
 ): number {
   if (windowMs != null) {
-    const t = p.timestamp instanceof Date ? p.timestamp.getTime() : now;
+    const t = pointTimeMs(p.timestamp, now);
     return Math.max(0, Math.min(1, (t - (now - windowMs)) / windowMs)) * coordW;
   }
   return (i / Math.max(total - 1, 1)) * coordW;
@@ -48,14 +67,8 @@ function splitSegments(
   let seg: [number, number][] = [coords[0]];
   for (let i = 1; i < filtered.length; i++) {
     if (windowMs != null) {
-      const tCurr =
-        filtered[i].timestamp instanceof Date
-          ? (filtered[i].timestamp as Date).getTime()
-          : now;
-      const tPrev =
-        filtered[i - 1].timestamp instanceof Date
-          ? (filtered[i - 1].timestamp as Date).getTime()
-          : now;
+      const tCurr = pointTimeMs(filtered[i].timestamp, now);
+      const tPrev = pointTimeMs(filtered[i - 1].timestamp, now);
       if (tCurr - tPrev > GAP_MS) {
         segments.push(seg);
         seg = [];

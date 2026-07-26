@@ -26,7 +26,7 @@ export const FAIL_MARKER = "__LLAMA_UPDATE_FAILED__";
  * "finished" in the UI must mean the commands actually finished.
  */
 export function composeUpdateCommand(script: string): string {
-  const logical = script.replace(/\s*\\\s*\n\s*/g, " ");
+  const logical = script.split(/\\\n/).map((s) => s.trim()).join(" ");
   const lines = logical.split("\n").map((s) => s.trim()).filter(Boolean);
   return `${lines.join(" && ")} && echo "${DONE_MARKER}" || echo "${FAIL_MARKER}"\n`;
 }

@@ -2,7 +2,9 @@
 
 use crate::collectors::alerts::CollectorStatus;
 use crate::models::ai::*;
+use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
 
 const HISTORY_RETENTION_SECONDS: u64 = 120;
 
@@ -45,6 +47,26 @@ fn find_process_pids(name_pattern: &str) -> Vec<u32> {
         }
     }
     pids
+}
+
+static PREV_CPU_SAMPLE: LazyLock<Mutex<HashMap<u32, (u64, u64, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Pure CPU% from two consecutive tick samples of the same process and system.
+/// Delta-based — the only correct way to get "current" usage from cumulative /proc counters.
+pub fn cpu_percent_from_deltas(
+    prev_proc_ticks: u64,
+    curr_proc_ticks: u64,
+    prev_sys_ticks: u64,
+    curr_sys_ticks: u64,
+    num_cpus: f64,
+) -> f64 {
+    let proc_delta = curr_proc_ticks.saturating_sub(prev_proc_ticks) as f64;
+    let sys_delta = curr_sys_ticks.saturating_sub(prev_sys_ticks) as f64;
+    if sys_delta <= 0.0 || num_cpus <= 0.0 {
+        return 0.0;
+    }
+    ((proc_delta / (sys_delta / num_cpus)) * 100.0).max(0.0)
 }
 
 /// Read CPU and memory usage for a given PID from /proc/[pid]/stat and /proc/[pid]/status
@@ -96,12 +118,31 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         .count()
         .max(1) as f64;
 
-    // Calculate CPU utilization (instantaneous based on total time since process start)
-    // We use a simple approach: total_time / (total_sys_time / num_cpus) * 100
-    let cpu_percent = if total_sys_time > 0.0 && num_cpus > 0.0 {
-        (total_time / (total_sys_time / num_cpus)) * 100.0
-    } else {
-        0.0
+    // Delta-based CPU%: diff this poll's ticks against the previous poll's ticks for the
+    // same pid. A single point-in-time read of cumulative /proc counters yields a lifetime
+    // average against system uptime, not instantaneous usage.
+    let curr_proc_ticks = total_time as u64;
+    let curr_sys_ticks = total_sys_time as u64;
+    let cpu_percent = {
+        let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
+        // Evict dead pids to bound HashMap growth across many model start/stop cycles.
+        cache.retain(|&cached_pid, _| {
+            std::path::Path::new(&format!("/proc/{}", cached_pid)).exists()
+        });
+        let pct = if let Some((prev_proc, prev_sys, ts)) = cache.get(&pid) {
+            let prev_proc = *prev_proc;
+            let prev_sys = *prev_sys;
+            // Skip divisions on very fast consecutive polls to avoid noisy near-zero deltas.
+            if ts.elapsed().as_secs_f64() >= 0.2 {
+                cpu_percent_from_deltas(prev_proc, curr_proc_ticks, prev_sys, curr_sys_ticks, num_cpus)
+            } else {
+                0.0
+            }
+        } else {
+            0.0 // First poll for this pid — no prior sample to delta against.
+        };
+        cache.insert(pid, (curr_proc_ticks, curr_sys_ticks, Instant::now()));
+        pct
     };
 
     // Get process start time and calculate uptime
@@ -1126,5 +1167,75 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
         });
         let slot = parse_slot_value(&json, 0).unwrap();
         assert_eq!(slot.n_predict, Some(0));
+    }
+
+    // ── cpu_percent_from_deltas (Step O) ─────────────────────────────────────
+
+    #[test]
+    fn cpu_percent_from_deltas_saturated_core() {
+        // 1 proc tick across 16 sys ticks with 16 cpus → one full core = 100%
+        let pct = cpu_percent_from_deltas(100, 101, 1000, 1016, 16.0);
+        assert!(
+            (pct - 100.0).abs() < 0.001,
+            "expected 100.0, got {pct}"
+        );
+    }
+
+    #[test]
+    fn cpu_percent_from_deltas_zero_proc() {
+        // Zero process delta → 0% regardless of system delta
+        let pct = cpu_percent_from_deltas(100, 100, 1000, 1016, 16.0);
+        assert_eq!(pct, 0.0, "zero proc delta must yield 0.0");
+    }
+
+    #[test]
+    fn cpu_percent_from_deltas_zero_sys() {
+        // Zero system delta → guard returns 0.0 (avoids division by zero)
+        let pct = cpu_percent_from_deltas(100, 101, 1000, 1000, 16.0);
+        assert_eq!(pct, 0.0, "zero sys delta must yield 0.0");
+    }
+
+    #[test]
+    fn cpu_percent_delta_cache_integration() {
+        use std::time::{Duration, Instant};
+        // Synthetic pid well above kernel's pid_max — won't collide with real /proc entries
+        // or other tests, and retain() won't evict it (the path won't exist, but we clean up
+        // manually after to leave the cache tidy).
+        let synthetic_pid: u32 = u32::MAX - 42;
+
+        // Pre-seed the cache as if a poll ran 5 seconds ago.
+        {
+            let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
+            let fake_past = Instant::now() - Duration::from_secs(5);
+            cache.insert(synthetic_pid, (100u64, 1000u64, fake_past));
+        }
+
+        // Simulate reading curr ticks: proc=101, sys=1016, 16 cpus → expected 100%.
+        let curr_proc = 101u64;
+        let curr_sys = 1016u64;
+        let num_cpus = 16.0f64;
+
+        let pct = {
+            let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
+            let result = if let Some((prev_proc, prev_sys, ts)) = cache.get(&synthetic_pid) {
+                let prev_proc = *prev_proc;
+                let prev_sys = *prev_sys;
+                if ts.elapsed().as_secs_f64() >= 0.2 {
+                    cpu_percent_from_deltas(prev_proc, curr_proc, prev_sys, curr_sys, num_cpus)
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+            cache.insert(synthetic_pid, (curr_proc, curr_sys, Instant::now()));
+            cache.remove(&synthetic_pid); // cleanup
+            result
+        };
+
+        assert!(
+            (pct - 100.0).abs() < 0.001,
+            "second poll with 5s elapsed and known ticks delta must yield ~100%, got {pct}"
+        );
     }
 }

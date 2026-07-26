@@ -763,8 +763,15 @@ export default function LlamaCppPage() {
                 <div
                   style={{
                     marginTop: 6,
-                    flex: 1,
-                    minHeight: 28,
+                    // Bounded height, not flex:1/minHeight (the pre-Q
+                    // container). `stretch` ties the svg's height to 100%
+                    // of THIS box, not just its width — an open-ended
+                    // flex:1 with no ceiling let the bar balloon to fill
+                    // whatever space the row allowed (user-reported: the
+                    // whole top row grew taller). Fixed height restores
+                    // the original visual size; stretch still fills WIDTH
+                    // edge-to-edge, which was the actual Q fix.
+                    height: 28,
                     display: "flex",
                     alignItems: "flex-end",
                   }}
@@ -772,7 +779,7 @@ export default function LlamaCppPage() {
                   <Sparkline
                     data={aiGenTpsHistory ?? []}
                     color="var(--accent-primary)"
-                    width={200}
+                    stretch
                     height={28}
                   />
                 </div>
@@ -827,8 +834,15 @@ export default function LlamaCppPage() {
                 <div
                   style={{
                     marginTop: 6,
-                    flex: 1,
-                    minHeight: 28,
+                    // Bounded height, not flex:1/minHeight (the pre-Q
+                    // container). `stretch` ties the svg's height to 100%
+                    // of THIS box, not just its width — an open-ended
+                    // flex:1 with no ceiling let the bar balloon to fill
+                    // whatever space the row allowed (user-reported: the
+                    // whole top row grew taller). Fixed height restores
+                    // the original visual size; stretch still fills WIDTH
+                    // edge-to-edge, which was the actual Q fix.
+                    height: 28,
                     display: "flex",
                     alignItems: "flex-end",
                   }}
@@ -836,7 +850,7 @@ export default function LlamaCppPage() {
                   <Sparkline
                     data={aiPromptTpsHistory ?? []}
                     color="var(--accent-primary)"
-                    width={200}
+                    stretch
                     height={28}
                   />
                 </div>
@@ -1139,18 +1153,29 @@ export default function LlamaCppPage() {
                       const np = slot0.n_predict;
                       const nr = slot0.n_remain;
                       const unbounded = np == null || np <= 0;
+                      // np (n_predict) is this REQUEST's generation-length cap
+                      // — a separate limit from the model's context window
+                      // (n_ctx, shown above as MAX). They can legitimately
+                      // differ a lot (a launch script can set n_predict far
+                      // higher than n_ctx). Both numbers being unlabeled in
+                      // the same "CONTEXT" card, both using the word
+                      // "Remaining", made them look like one contradictory
+                      // metric — user-reported. Labels below make the two
+                      // ceilings unambiguous without changing either value.
                       return unbounded ? (
-                        <span>
+                        <span title="Tokens generated so far, unbounded request">
                           {nd != null ? nd.toLocaleString() : "—"} token
                         </span>
                       ) : (
                         <>
-                          <span>
+                          <span
+                            title="Generation length cap for this request (n_predict) — separate from the model's context window shown above"
+                          >
                             {nd != null ? nd.toLocaleString() : "—"} /{" "}
-                            {np.toLocaleString()} token
+                            {np.toLocaleString()} gen. limit
                           </span>
-                          <span>
-                            Remaining {nr != null ? nr.toLocaleString() : "—"}
+                          <span title="Tokens remaining before hitting the generation-length cap, not the context window">
+                            Gen. remaining {nr != null ? nr.toLocaleString() : "—"}
                           </span>
                         </>
                       );

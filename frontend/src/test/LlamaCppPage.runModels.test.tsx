@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { RunModelsSection } from "../pages/LlamaCppPage";
 import {
   formatCtx,
@@ -488,5 +488,126 @@ describe("STATUS column", () => {
       expect(screen.getByText("test-model")).toBeInTheDocument(),
     );
     expect(screen.getByText("Run")).toBeInTheDocument();
+  });
+});
+
+describe("RunModelsSection search", () => {
+  function twoProfiles() {
+    return profilesResponse({
+      profiles: [
+        {
+          id: "p1",
+          name: "Qwen3.6-35B-A3B-REAM-192-heretic-APEX-ICompact-Q3_K_L",
+          script_path: "/a.sh",
+          file_hash: "abc",
+          parsed_args: null,
+          filename_meta: null,
+          warning: null,
+        },
+        {
+          id: "p2",
+          name: "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL",
+          script_path: "/b.sh",
+          file_hash: "def",
+          parsed_args: null,
+          filename_meta: null,
+          warning: null,
+        },
+      ],
+      states: {},
+      metadata: {},
+    });
+  }
+
+  it("has a search input for finding models", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+    expect(screen.getByPlaceholderText("Search models…")).toBeInTheDocument();
+  });
+
+  it("filters the table to matching models as the user types", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+    expect(screen.getByText(/gemma-4-26B/)).toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText("Search models…");
+    fireEvent.change(input, { target: { value: "gemma" } });
+
+    expect(screen.getByText(/gemma-4-26B/)).toBeInTheDocument();
+    expect(screen.queryByText(/Qwen3\.6-35B/)).not.toBeInTheDocument();
+  });
+
+  it("search is case-insensitive", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+
+    const input = screen.getByPlaceholderText("Search models…");
+    fireEvent.change(input, { target: { value: "GEMMA" } });
+
+    expect(screen.getByText(/gemma-4-26B/)).toBeInTheDocument();
+  });
+
+  it("shows a distinct empty state when the search matches nothing", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+
+    const input = screen.getByPlaceholderText("Search models…");
+    fireEvent.change(input, { target: { value: "nonexistent-xyz" } });
+
+    expect(screen.queryByText(/Qwen3\.6-35B/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/gemma-4-26B/)).not.toBeInTheDocument();
+    // Must NOT reuse the "No profiles found in scan directory" message —
+    // that would falsely imply the scan directory itself is empty, when
+    // profiles exist and simply don't match the search.
+    expect(
+      screen.queryByText("No profiles found in scan directory.")
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/No models match/)).toBeInTheDocument();
+    expect(screen.getByText(/nonexistent-xyz/)).toBeInTheDocument();
+  });
+
+  it("the clear button resets the search and restores the full list", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search models…"
+    ) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "gemma" } });
+    expect(screen.queryByText(/Qwen3\.6-35B/)).not.toBeInTheDocument();
+
+    const clearButton = screen.getByLabelText("Clear search");
+    fireEvent.click(clearButton);
+
+    expect(input.value).toBe("");
+    expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument();
+    expect(screen.getByText(/gemma-4-26B/)).toBeInTheDocument();
+  });
+
+  it("clear button is absent when the search box is empty", async () => {
+    global.fetch = mockFetchOnce(twoProfiles());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+    );
+    // Anti-vacuity: this must fail if the search feature doesn't exist at
+    // all, not just pass because neither the input nor the button exist.
+    expect(screen.getByPlaceholderText("Search models…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Clear search")).not.toBeInTheDocument();
   });
 });
