@@ -1233,14 +1233,37 @@
   pointer-events: none;
   opacity: 0;
 }
-[data-breathe="on"][data-inner-glow="on"] [data-accent-el]:has(> .card-accent-spine) {
+[data-breathe="on"][data-inner-glow="on"]
+  [data-accent-el]:has(> .card-accent-spine) {
   background-image: none;
 }
-[data-breathe="on"][data-inner-glow="on"] [data-accent-el]:has(> .card-accent-spine) > .inner-glow-breathe {
+[data-breathe="on"][data-inner-glow="on"]
+  [data-accent-el]:has(> .card-accent-spine)
+  > .inner-glow-breathe {
+  /* User-reported (screenshots, Overview + llama.cpp pages): at high
+     --inner-glow-intensity this gradient flooded several hundred px of
+     accent color across card CONTENT — washing out chart y-axis labels
+     and the console's log area. The opacity already had a min() cap but
+     the DEPTH was uncapped (120px + 60px * intensity grows without
+     bound), and the opacity ceiling (60%) was high enough to obscure
+     text underneath. Both are now capped so the effect reads as an EDGE
+     glow at any slider setting: depth never exceeds 220px, peak opacity
+     never exceeds 28%. At the default intensity (1.4) both caps are
+     above the computed values (204px / 9.8%), so nothing changes for
+     default settings or for the existing e2e specs (which test at 1.4).
+     Note the :has() above matches even where the spine is display:none
+     (Overview chart cards hide theirs) — hidden-but-present still
+     matches, which is why those cards showed the wash too. */
   background-image: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--accent-primary) min(60%, calc(7% * var(--inner-glow-intensity, 1.4))), transparent),
-    transparent calc(120px + 60px * var(--inner-glow-intensity, 1.4))
+    color-mix(
+      in srgb,
+      var(--accent-primary)
+        min(28%, calc(7% * var(--inner-glow-intensity, 1.4))),
+      transparent
+    ),
+    transparent
+      min(220px, calc(120px + 60px * var(--inner-glow-intensity, 1.4)))
   );
   animation: fx-breathe-glow var(--breathe-speed, 4s) ease-in-out infinite;
 }
@@ -1271,17 +1294,32 @@
    halo colors folded with a registered number property. This is a scoped
    per-frame-paint exception (~6 cards); killed by fx-safe like every heavy
    paint path. */
-@property --breathe-halo-mult { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --breathe-halo-mult {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
 @keyframes fx-breathe-halo {
-  0%, 100% { --breathe-halo-mult: 0.4; }
-  50% { --breathe-halo-mult: 1; }
+  0%,
+  100% {
+    --breathe-halo-mult: 0.4;
+  }
+  50% {
+    --breathe-halo-mult: 1;
+  }
 }
 [data-breathe="on"][data-card-glow="on"]
-  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target) {
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  ) {
   --card-halo:
     0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
       calc(2px * var(--glow-intensity, 1.4))
-      color-mix(in srgb, var(--accent-glow) calc(var(--breathe-halo-mult, 1) * 100%), transparent),
+      color-mix(
+        in srgb,
+        var(--accent-glow) calc(var(--breathe-halo-mult, 1) * 100%),
+        transparent
+      ),
     0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
       rgba(var(--accent-primary-rgb), calc(0.12 * var(--breathe-halo-mult, 1)));
   animation: fx-breathe-halo var(--breathe-speed, 4s) ease-in-out infinite;
@@ -1569,9 +1607,13 @@
   [data-breathe="on"] .accent-glow-target .bright-breathe,
   [data-breathe="on"] .accent-glow-target::after,
   [data-surge="on"] .accent-glow-target .bright-surge,
-  [data-breathe="on"][data-inner-glow="on"] [data-accent-el]:has(> .card-accent-spine) > .inner-glow-breathe,
+  [data-breathe="on"][data-inner-glow="on"]
+    [data-accent-el]:has(> .card-accent-spine)
+    > .inner-glow-breathe,
   [data-breathe="on"][data-card-glow="on"]
-    [data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target) {
+    [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+      .accent-glow-target
+    ) {
     animation: none;
     will-change: auto;
   }
@@ -1610,7 +1652,10 @@
 [data-fx-safe="on"] .accent-glow-target .bright-surge,
 [data-fx-safe="on"] .sheen-flow-overlay::before,
 [data-fx-safe="on"] .inner-glow-breathe,
-[data-fx-safe="on"] [data-accent-el]:not(.accent-spine):not(.accent-fill):not(.accent-glow-target),
+[data-fx-safe="on"]
+  [data-accent-el]:not(.accent-spine):not(.accent-fill):not(
+    .accent-glow-target
+  ),
 [data-fx-safe="on"] .accent-spine,
 [data-fx-safe="on"] .card-accent-spine,
 [data-fx-safe="on"] .ov-spine,

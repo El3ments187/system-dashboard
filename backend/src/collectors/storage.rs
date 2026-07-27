@@ -228,6 +228,17 @@ fn is_pseudo(fs: &str) -> bool {
     PSEUDO_FS.contains(&fs)
 }
 
+/// System/boot partitions that aren't user storage and shouldn't appear in
+/// the dashboard's mount lists (user-reported: the ~200MB EFI system
+/// partition showing up on the Overview page's Storage card adds noise
+/// with zero monitoring value — its usage never meaningfully changes and
+/// it isn't somewhere the user stores anything). Matched by exact mount
+/// point, not substring, so a user mount that merely CONTAINS "boot"
+/// (e.g. /mnt/bootlegs) is never accidentally hidden.
+fn is_system_boot_mount(mount_point: &str) -> bool {
+    matches!(mount_point, "/boot" | "/boot/efi" | "/efi")
+}
+
 pub fn is_loop_device(name: &str) -> bool {
     name.starts_with("loop")
 }
@@ -538,7 +549,7 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
     let mut result = Vec::new();
 
     for mount in mounts {
-        if is_pseudo(&mount.fs_type) {
+        if is_pseudo(&mount.fs_type) || is_system_boot_mount(&mount.mount_point) {
             continue;
         }
 
@@ -628,7 +639,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
     }
 
     for mount in mounts {
-        if is_pseudo(&mount.fs_type) {
+        if is_pseudo(&mount.fs_type) || is_system_boot_mount(&mount.mount_point) {
             continue;
         }
 

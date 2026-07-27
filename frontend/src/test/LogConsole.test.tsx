@@ -740,3 +740,27 @@ describe("LogConsole active-profile detection debounces a stop", () => {
     expect(screen.getByText("persistent log")).toBeInTheDocument();
   });
 });
+
+// ─── Recovered-process console message ────────────────────────────────
+
+describe("LogConsole recovered-process message", () => {
+  it("shows recovered-process message when profile is active but history is empty, and hides 'Start a model' hint", async () => {
+    // TDD guard: model IS running (recovered by backend after restart) but
+    // log pipe was never established — sendHistory([]) simulates the WS
+    // delivering an empty history for a process that has no stdout capture.
+    // The old "Start a model" hint is actively wrong in this state (the
+    // model IS started). The new message is honest about the limitation.
+    setupRunning();
+    render(<LogConsole />);
+    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([]);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/started before the current backend session/),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Start a model to view/)).not.toBeInTheDocument();
+  });
+});

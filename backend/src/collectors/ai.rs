@@ -42,7 +42,21 @@ fn cpu_percent_from_deltas(
     if sys_delta <= 0.0 || num_cpus <= 0.0 {
         return 0.0;
     }
-    ((proc_delta / (sys_delta / num_cpus)) * 100.0).max(0.0)
+    // CONVENTION: percent of TOTAL MACHINE capacity (0–100), not top-style
+    // per-core percent (where each saturated thread adds 100%). The
+    // original delta fix used top convention — mathematically correct,
+    // but llama-server with `-t 14` then reads a rock-steady ~1400.8%
+    // (14 saturated threads x 100%), which (a) looks broken to anyone
+    // not thinking in top's units, (b) blows out the footer sparkline's
+    // fixed 0–100 domain, and (c) is inconsistent with how this same
+    // footer shows RAM (percent of machine total, user-ruled). sys_delta
+    // is already the sum across ALL cpus for the interval, so the plain
+    // ratio proc/sys IS the fraction of the whole machine — num_cpus is
+    // no longer needed as a factor, only retained as a guard against a
+    // nonsensical zero-cpu input. 14 busy threads of 32 now reads ~43.8%,
+    // matching System Monitor's divided-by-cpu-count mode (the 40.73%
+    // the user compared against).
+    ((proc_delta / sys_delta) * 100.0).max(0.0)
 }
 
 /// Find PIDs of processes matching a name pattern by scanning /proc.
@@ -1295,22 +1309,26 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
     // which touch the filesystem and need a live PID to exercise for real.
 
     #[test]
-    fn one_fully_saturated_core_is_100_percent() {
-        // 16 cpus, process accumulates 100 ticks while the system-wide
-        // total (summed across all 16 cores) accumulates 1600 ticks —
-        // i.e. system average per-core = 100 ticks, exactly what one
-        // fully-busy core looks like against an otherwise-idle machine.
-        // 100 / (1600/16) * 100 = 100 / 100 * 100 = 100.0
+    fn one_fully_saturated_core_of_16_is_6_25_percent_of_machine() {
+        // CONVENTION: percent of TOTAL machine (0-100), not top-style
+        // per-core. 16 cpus; process accumulates 100 ticks while the
+        // system-wide total (summed across all 16 cores) accumulates
+        // 1600 ticks — one fully-busy core on an otherwise-idle machine.
+        // 100 / 1600 * 100 = 6.25% of the whole machine.
         let pct = cpu_percent_from_deltas(0, 100, 0, 1600, 16.0);
-        assert!((pct - 100.0).abs() < 0.001, "expected 100.0, got {pct}");
+        assert!((pct - 6.25).abs() < 0.001, "expected 6.25, got {pct}");
     }
 
     #[test]
-    fn half_a_core_is_50_percent() {
-        // Same setup, process only accumulates 50 ticks against the same
-        // 1600-tick system delta -> half a core's worth.
-        let pct = cpu_percent_from_deltas(0, 50, 0, 1600, 16.0);
-        assert!((pct - 50.0).abs() < 0.001, "expected 50.0, got {pct}");
+    fn fourteen_saturated_threads_of_32_is_43_75_percent() {
+        // The exact real-world case that motivated the convention change:
+        // llama-server launched with `-t 14` on a 32-thread machine,
+        // all 14 threads saturated for the interval. Old top-convention
+        // read a "broken-looking" 1400%; correct machine-fraction is
+        // 14/32 = 43.75% — matching System Monitor's divided mode
+        // (the ~40.73% the user compared against live).
+        let pct = cpu_percent_from_deltas(0, 1400, 0, 3200, 32.0);
+        assert!((pct - 43.75).abs() < 0.001, "expected 43.75, got {pct}");
     }
 
     #[test]
@@ -1352,9 +1370,10 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
             50_001_600,  // curr sys ticks (+1600 this interval, 16 cpus)
             16.0,
         );
-        // Same +100 proc / +1600 sys shape as the 100% case above — the
-        // huge absolute sys_ticks magnitude must NOT affect the result,
-        // only the delta does.
-        assert!((pct - 100.0).abs() < 0.001, "expected 100.0, got {pct}");
+        // Same +100 proc / +1600 sys shape as the one-core case above —
+        // the huge absolute sys_ticks magnitude must NOT affect the
+        // result, only the delta does. (6.25% of machine under the
+        // machine-fraction convention.)
+        assert!((pct - 6.25).abs() < 0.001, "expected 6.25, got {pct}");
     }
 }

@@ -308,6 +308,39 @@ function FilterChip({
   );
 }
 
+function EmptyStateContent({
+  hasNoMatches,
+  activeProfileId,
+  status,
+}: {
+  hasNoMatches: boolean;
+  activeProfileId: string | null;
+  status: ConsoleStatus;
+}) {
+  if (hasNoMatches) {
+    return <span style={{ fontSize: 11 }}>No matching log lines.</span>;
+  }
+  if (activeProfileId != null) {
+    return (
+      <span style={{ fontSize: 10 }}>
+        Logs unavailable for this session — this model was started before the
+        current backend session, so its output isn&apos;t being captured.
+        Restart the model to stream logs.
+      </span>
+    );
+  }
+  return (
+    <>
+      <span style={{ fontSize: 11 }}>No logs available.</span>
+      {status === "no_logs" && (
+        <span style={{ fontSize: 10 }}>
+          Start a model to view llama.cpp output.
+        </span>
+      )}
+    </>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export function LogConsole({
@@ -936,18 +969,11 @@ export function LogConsole({
               textAlign: "center",
             }}
           >
-            {hasNoMatches ? (
-              <span style={{ fontSize: 11 }}>No matching log lines.</span>
-            ) : (
-              <>
-                <span style={{ fontSize: 11 }}>No logs available.</span>
-                {status === "no_logs" && (
-                  <span style={{ fontSize: 10 }}>
-                    Start a model to view llama.cpp output.
-                  </span>
-                )}
-              </>
-            )}
+            <EmptyStateContent
+              hasNoMatches={hasNoMatches}
+              activeProfileId={activeProfileId}
+              status={status}
+            />
           </div>
         ) : (
           <div style={wrap ? undefined : { minWidth: "max-content" }}>
