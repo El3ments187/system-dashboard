@@ -1583,11 +1583,19 @@ async fn update_profile_metrics_for_script(script_path: &str) {
     let found_llama_pid = port.and_then(|p| find_llama_server_pid_by_port(&system, p));
 
     if let Some(llama_pid) = found_llama_pid
-        && let Some(proc) = system.process(sysinfo::Pid::from(llama_pid as usize))
+        && let Some(_proc) = system.process(sysinfo::Pid::from(llama_pid as usize))
     {
-        // sysinfo reports memory in bytes.
-        let memory_bytes = proc.memory();
-        let peak_ram_mb = (memory_bytes as f64 / (1024.0 * 1024.0)).ceil();
+        // RssAnon semantics via the shared parser — NOT sysinfo's
+        // proc.memory() (raw RSS). Keeps this table's RAM column on the
+        // same definition as the footer/RUNTIME card, which switched to
+        // private-resident (System Monitor's "Memory") after the user
+        // caught raw RSS overstating a CUDA process by ~6 GB of driver
+        // mappings. Same page, same word "RAM", same number.
+        let peak_ram_mb = (crate::collectors::ai::process_mem_kb_from_status(
+            &std::fs::read_to_string(format!("/proc/{}/status", llama_pid))
+                .unwrap_or_default(),
+        ) / 1024.0)
+            .ceil();
 
         let mut current_tps: Option<f64> = None;
 

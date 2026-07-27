@@ -164,6 +164,31 @@ fn find_llama_pid_by_port(port: u16) -> Option<u32> {
     None
 }
 
+/// Process memory in kB from a /proc/[pid]/status document, using the same
+/// semantics GNOME System Monitor's "Memory" column uses: PRIVATE resident
+/// memory (RssAnon), not raw VmRSS.
+///
+/// User-reported: the footer showed 13.11 GB while System Monitor showed
+/// 7.1 GB for the same llama-server at the same moment. Both numbers are
+/// "real" — VmRSS = RssAnon + RssFile + RssShmem, and for a CUDA process
+/// the file/shared components include ~6 GB of driver and device mappings
+/// that aren't memory the process meaningfully owns (System Monitor
+/// subtracts them: resident − shared). Reporting RssAnon makes the
+/// dashboard agree with the tool the user checks against, and better
+/// answers the question the tile is actually asking ("how much RAM is
+/// this model using"). Falls back to VmRSS only if RssAnon is absent
+/// (pre-4.5 kernels — not this project's machines, but free robustness).
+pub(crate) fn process_mem_kb_from_status(status_content: &str) -> f64 {
+    let field = |name: &str| -> Option<f64> {
+        status_content
+            .lines()
+            .find(|l| l.starts_with(name))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|v| v.parse::<f64>().ok())
+    };
+    field("RssAnon:").or_else(|| field("VmRSS:")).unwrap_or(0.0)
+}
+
 /// Read CPU and memory usage for a given PID from /proc/[pid]/stat and /proc/[pid]/status
 fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     // Read /proc/[pid]/stat
@@ -179,15 +204,13 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     let stime: f64 = fields[14].parse().ok()?;
     let total_time = utime + stime;
 
-    // Read /proc/[pid]/status for VmRSS (memory)
+    // Read /proc/[pid]/status for process memory — RssAnon semantics, see
+    // process_mem_kb_from_status's doc comment for why (matches System
+    // Monitor; raw VmRSS overstated a CUDA process by ~6 GB of driver
+    // mappings).
     let status_path = format!("/proc/{}/status", pid);
     let status_content = std::fs::read_to_string(&status_path).ok()?;
-    let vmem_rss_kb: f64 = status_content
-        .lines()
-        .find(|l| l.starts_with("VmRSS:"))
-        .and_then(|l| l.split_whitespace().nth(1))
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(0.0);
+    let vmem_rss_kb: f64 = process_mem_kb_from_status(&status_content);
 
     // Get total system CPU time from /proc/stat for utilization calculation
     let sys_stat = std::fs::read_to_string("/proc/stat").ok()?;
@@ -1375,5 +1398,26 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
         // result, only the delta does. (6.25% of machine under the
         // machine-fraction convention.)
         assert!((pct - 6.25).abs() < 0.001, "expected 6.25, got {pct}");
+    }
+
+    #[test]
+    fn process_mem_prefers_rss_anon_over_vmrss() {
+        // The exact user-reported shape: VmRSS 13.11 GB, but ~6 GB of it
+        // is file/shared driver mappings; RssAnon (7.1 GB-ish) is what
+        // System Monitor's Memory column shows and what we now report.
+        let status = "Name:\tllama-server\nVmRSS:\t13744128 kB\nRssAnon:\t7444480 kB\nRssFile:\t6299648 kB\n";
+        let kb = process_mem_kb_from_status(status);
+        assert!((kb - 7_444_480.0).abs() < 0.5, "expected RssAnon, got {kb}");
+    }
+
+    #[test]
+    fn process_mem_falls_back_to_vmrss_when_rss_anon_absent() {
+        let status = "Name:\tx\nVmRSS:\t1024 kB\n";
+        assert!((process_mem_kb_from_status(status) - 1024.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn process_mem_is_zero_when_neither_field_exists() {
+        assert_eq!(process_mem_kb_from_status("Name:\tx\n"), 0.0);
     }
 }

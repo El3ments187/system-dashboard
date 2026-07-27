@@ -308,6 +308,9 @@ export function useTheme() {
   const [innerGlowIntensity, setInnerGlowIntensity] = useState<number>(() =>
     readIntensity("dashboard-inner-glow-intensity"),
   );
+  const [cardGlowIntensity, setCardGlowIntensity] = useState<number>(() =>
+    readIntensity("dashboard-card-glow-intensity"),
+  );
 
   const [gradientBorder, setGradientBorder] = useState<boolean>(() => {
     return localStorage.getItem("dashboard-gradient-border") === "on";
@@ -382,6 +385,7 @@ export function useTheme() {
     setPulseIntensity(1.5);
     setInnerGlow(false);
     setInnerGlowIntensity(1.4);
+    setCardGlowIntensity(1.4);
     setGradientBorder(false);
     setGradientBorderSpeed(3);
     setCardGlow(false);
@@ -500,6 +504,17 @@ export function useTheme() {
       String(innerGlowIntensity),
     );
   }, [innerGlowIntensity]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--card-glow-intensity",
+      String(cardGlowIntensity),
+    );
+    localStorage.setItem(
+      "dashboard-card-glow-intensity",
+      String(cardGlowIntensity),
+    );
+  }, [cardGlowIntensity]);
 
   useEffect(() => {
     if (gradientBorder) {
@@ -638,6 +653,8 @@ export function useTheme() {
     setGradientBorderSpeed,
     cardGlow,
     setCardGlow,
+    cardGlowIntensity,
+    setCardGlowIntensity,
     glowColor,
     setGlowColor,
     glowCustom,

@@ -292,6 +292,8 @@ export interface ThemePageProps {
   onInnerGlowChange?: (v: boolean) => void;
   innerGlowIntensity?: number;
   onInnerGlowIntensityChange?: (v: number) => void;
+  cardGlowIntensity?: number;
+  onCardGlowIntensityChange?: (v: number) => void;
   gradientBorder?: boolean;
   onGradientBorderChange?: (v: boolean) => void;
   gradientBorderSpeed?: number;
@@ -520,6 +522,8 @@ export default function ThemePage({
   onInnerGlowChange,
   innerGlowIntensity = 1.4,
   onInnerGlowIntensityChange,
+  cardGlowIntensity = 1.4,
+  onCardGlowIntensityChange,
   gradientBorder,
   onGradientBorderChange,
   gradientBorderSpeed = 3,
@@ -1096,6 +1100,26 @@ export default function ThemePage({
                     </div>
                     <ToggleSwitch on={!!cardGlow} />
                   </div>
+                  {cardGlow && onCardGlowIntensityChange && (
+                    <div style={{ paddingLeft: 20, paddingTop: 6 }}>
+                      <SliderRow
+                        id="tp-card-glow-intensity"
+                        label="Card Glow Intensity"
+                        min={GLOW_INTENSITY_MIN}
+                        max={GLOW_INTENSITY_MAX}
+                        step={0.05}
+                        value={cardGlowIntensity}
+                        display={cardGlowIntensity.toFixed(2)}
+                        onChange={(v) => {
+                          document.documentElement.style.setProperty(
+                            "--card-glow-intensity",
+                            String(v),
+                          );
+                          onCardGlowIntensityChange(v);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

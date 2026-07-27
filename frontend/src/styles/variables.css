@@ -1176,15 +1176,28 @@
      negative delay starts elements mid-animation so there's no startup gap.
      Overlay ::before carries a static gradient and sweeps via transform
      (compositor-only — no per-frame style-recalc or repaint on host elements). */
+  /* Stagger divisor: user-reported "sheen always looks fast on the pages
+     regardless of the Speed slider." Root cause was perceptual, not a
+     broken binding: each element's OWN sweep correctly takes --fx-speed,
+     but neighboring elements (consecutive --el-index — footer tiles,
+     table rows, KvRows) were offset by speed/24, so the DOMINANT visible
+     motion on dense pages is a highlight rippling element-to-element
+     every speed/24 (~1.2s even at the 28s max) — 24x faster than the
+     slider reads. The Theme page's preview has only ~3 elements, so the
+     ripple barely exists there and the setting looks fine where it's
+     adjusted. Divisor 24 -> 8: neighbor-to-neighbor ripple now spans
+     0.5s (slider min 4s) to 3.75s (max 30s) — the slider's effect is
+     actually perceptible where users look. Per-element sweep duration
+     unchanged. */
   [data-accent-mode="sheen"] .sheen-flow-overlay::before {
     animation: fx-slide-4x var(--fx-speed) linear infinite;
-    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
+    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -8);
     will-change: transform;
   }
 
   [data-accent-mode="flow"] .sheen-flow-overlay::before {
     animation: fx-slide-3x var(--fx-speed) linear infinite;
-    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -24);
+    animation-delay: calc(var(--el-index, 0) * var(--fx-speed) / -8);
     will-change: transform;
   }
 }
@@ -1439,7 +1452,19 @@
   )::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  /* inset: 0, NOT -1px — user-reported: "gradient border is not working
+     correctly on the llama.cpp page." That page's cards use an inline
+     style with overflow: hidden (PANEL_CARD_STYLE — needed there to
+     corner-clip the spine and children against the rounded card), which
+     CLIPPED the old outside-the-box ring (inset: -1px extends 1px beyond
+     the host; overflow: hidden cuts exactly that band off, leaving a
+     broken sliver whose pan animation is imperceptible). Overview's
+     .metric-card has no overflow: hidden, so the same ring rendered fine
+     there — the discrepancy that exposed this. Drawing the ring just
+     INSIDE the edge instead (the padding + content-box mask below keeps
+     a 1px band) is immune to overflow clipping on every card everywhere,
+     and sits 1px inward — imperceptible. */
+  inset: 0;
   border-radius: inherit;
   padding: 1px;
   background: linear-gradient(
