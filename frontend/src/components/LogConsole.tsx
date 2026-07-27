@@ -81,6 +81,13 @@ const DEFAULT_FILTERS: LogFilter = {
 
 const FILTER_LEVELS: LogLevel[] = ["info", "warn", "error", "debug", "stats"];
 
+// See flushPending's error-preserving trim: the normal buffer caps at
+// 5000 lines by recency, but errors surviving beyond that window are
+// still capped here — separately, more generously — so a genuinely
+// error-spewing process can't grow the buffer unbounded just because
+// every dropped line happened to be an error.
+const MAX_ERROR_RETENTION = 500;
+
 type PresetConfig = { id: string; label: string; keywords: readonly string[] };
 
 const PRESETS: readonly PresetConfig[] = [
@@ -382,9 +389,34 @@ export function LogConsole({
     if (batch.length === 0) return;
     setLogs((prev) => {
       const combined = [...prev, ...batch];
-      return combined.length > 5000
-        ? combined.slice(combined.length - 5000)
-        : combined;
+      if (combined.length <= 5000) return combined;
+      const dropped = combined.slice(0, combined.length - 5000);
+      // Common case: nothing in the dropped portion is an error — behave
+      // exactly like a plain recency slice, no extra allocation. Same
+      // optimization as appendPending in utils/logBuffer.ts (which this
+      // mirrors) — only pay for the Set-based dedup check on the rare
+      // path where an error is actually about to be lost.
+      if (!dropped.some((l) => l.level === "error")) {
+        return combined.slice(combined.length - 5000);
+      }
+      // User-reported: "I can no longer see the errors" — a blind
+      // slice(-5000) drops whichever lines are oldest, error or not. An
+      // error that happened early in a long-running session (exactly when
+      // it's most valuable, since it explains why something later went
+      // wrong) would silently vanish the moment 5000 more lines printed
+      // after it. Preserve error lines beyond the normal recency window,
+      // up to a separate, smaller cap (MAX_ERROR_RETENTION) so a
+      // genuinely error-spewing process still can't grow this unbounded.
+      const recent = combined.slice(combined.length - 5000);
+      const recentSet = new Set(recent);
+      const droppedErrors = dropped.filter(
+        (l) => l.level === "error" && !recentSet.has(l),
+      );
+      if (droppedErrors.length === 0) return recent;
+      const preservedErrors = droppedErrors.slice(-MAX_ERROR_RETENTION);
+      // Keep chronological order: preserved old errors first, then the
+      // normal recency window.
+      return [...preservedErrors, ...recent];
     });
   }, []);
 
@@ -446,6 +478,22 @@ export function LogConsole({
   // reconnect the WebSocket whenever it changes.
   useEffect(() => {
     let cancelled = false;
+    // User-reported: "the console goes blank after a short period... I
+    // can no longer see the errors." Traced to this effect: ANY single
+    // poll reporting no active profile immediately cleared the logs and
+    // closed the websocket. If the backend's own status briefly reads
+    // something other than "running"/"loading"/"starting" for even ONE
+    // 3-second poll — a transient race, not the model actually stopping —
+    // this treated it as a real stop and wiped everything, including
+    // whatever error you were trying to read. Require CONSECUTIVE null
+    // polls before acting on a stop; a single flaky read now
+    // self-corrects on the next poll instead of blanking the console.
+    // Deliberately NOT debounced the other direction: switching TO an
+    // active profile (new model, or a different one) still connects
+    // instantly — you want to see that model's logs right away, not wait
+    // through a confirmation delay for something that's genuinely real.
+    let consecutiveNullPolls = 0;
+    const NULL_POLLS_TO_CONFIRM_STOP = 2;
 
     const checkActive = async () => {
       try {
@@ -466,18 +514,34 @@ export function LogConsole({
         });
 
         const newId = active?.id ?? null;
-        if (newId !== activeProfileIdRef.current) {
-          activeProfileIdRef.current = newId;
-          setActiveProfileId(newId);
-          setActiveProfileName(active?.name ?? null);
-          if (newId) {
-            connectWs(newId);
-          } else {
-            wsRef.current?.close();
-            wsRef.current = null;
-            setStatus("no_logs");
-            setLogs([]);
+
+        if (newId !== null) {
+          // A real, currently-active profile — reset the debounce
+          // immediately, whether or not it's the SAME id as before.
+          consecutiveNullPolls = 0;
+        }
+
+        if (newId === activeProfileIdRef.current) {
+          return;
+        }
+
+        if (newId === null) {
+          consecutiveNullPolls += 1;
+          if (consecutiveNullPolls < NULL_POLLS_TO_CONFIRM_STOP) {
+            return; // not confirmed yet — wait for the next poll
           }
+        }
+
+        activeProfileIdRef.current = newId;
+        setActiveProfileId(newId);
+        setActiveProfileName(active?.name ?? null);
+        if (newId) {
+          connectWs(newId);
+        } else {
+          wsRef.current?.close();
+          wsRef.current = null;
+          setStatus("no_logs");
+          setLogs([]);
         }
       } catch {
         // network errors ignored — next poll will retry

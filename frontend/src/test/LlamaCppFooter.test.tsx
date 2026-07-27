@@ -1,8 +1,9 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { vi, describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   LlamaCppHardwareFooter,
+  FooterStat,
   updateRing,
   EMPTY_RING,
 } from "../pages/llamacpp/FooterStat";
@@ -29,7 +30,7 @@ const PROCESS_METRICS: ProcessMetrics = {
   cpu_percent: 1.3,
   memory_kb: 6291456, // 6 GiB
   uptime_seconds: 3600,
-  vram_mb: 15300,     // ~14.9 GiB
+  vram_mb: 15300, // ~14.9 GiB
   gpu_util_percent: 87,
 };
 
@@ -38,7 +39,10 @@ const PROCESS_METRICS: ProcessMetrics = {
 describe("LlamaCppHardwareFooter — process source", () => {
   it("shows process CPU% when processMetrics provided", () => {
     render(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={PROCESS_METRICS} />
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
     );
     // Process CPU: 1.3%  (system would be 45.0%)
     expect(screen.getByText("1.3%")).toBeInTheDocument();
@@ -47,7 +51,10 @@ describe("LlamaCppHardwareFooter — process source", () => {
 
   it("shows process GPU% when processMetrics provided", () => {
     render(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={PROCESS_METRICS} />
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
     );
     // Process GPU: 87% (system would be 60%)
     expect(screen.getByText("87%")).toBeInTheDocument();
@@ -56,7 +63,10 @@ describe("LlamaCppHardwareFooter — process source", () => {
 
   it("shows process RAM when processMetrics provided", () => {
     render(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={PROCESS_METRICS} />
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
     );
     // 6291456 KB / 1024 / 1024 = 6.0 GB
     expect(screen.getByText(/6\.0 GB/)).toBeInTheDocument();
@@ -66,7 +76,10 @@ describe("LlamaCppHardwareFooter — process source", () => {
 
   it("shows process VRAM when processMetrics provided", () => {
     render(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={PROCESS_METRICS} />
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
     );
     // 15300 MB / 1024 ≈ 14.9 GB
     expect(screen.getByText(/14\.9 GB/)).toBeInTheDocument();
@@ -76,57 +89,170 @@ describe("LlamaCppHardwareFooter — process source", () => {
 
   it("GPU Temp tile is always device-wide (process has no per-process temp)", () => {
     render(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={PROCESS_METRICS} />
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
     );
     expect(screen.getByText("72°C")).toBeInTheDocument();
   });
 
-  it("idle footer (no processMetrics) shows system values unchanged", () => {
+  it("idle footer (no processMetrics) shows NO values — never system-wide numbers that could be mistaken for llama's own usage", () => {
+    // User ruling: either the value comes from the llama process, or there
+    // is no value at all. Previously this footer fell back to showing the
+    // whole MACHINE's CPU/RAM/GPU/VRAM when no model was running — with no
+    // visual distinction from process-mode, easily misread as "llama is
+    // using 45% CPU" when llama wasn't running at all. Now: em-dash for
+    // each value, and each sparkline gets zero points, which triggers its
+    // own existing "Currently Unavailable" empty state — the same
+    // mechanism already used by Generation/Prompt Speed when offline.
     render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
-    expect(screen.getByText("45.0%")).toBeInTheDocument();
-    expect(screen.getByText(/14\.0.*16\.0/)).toBeInTheDocument();
-    expect(screen.getByText("60%")).toBeInTheDocument();
-    expect(screen.getByText(/20\.0.*24\.0/)).toBeInTheDocument();
+    expect(screen.queryByText("45.0%")).not.toBeInTheDocument();
+    expect(screen.queryByText(/14\.0.*16\.0/)).not.toBeInTheDocument();
+    expect(screen.queryByText("60%")).not.toBeInTheDocument();
+    expect(screen.queryByText(/20\.0.*24\.0/)).not.toBeInTheDocument();
+    // CPU/RAM/GPU/VRAM all show the empty-value dash — 4 occurrences.
+    expect(screen.getAllByText("—")).toHaveLength(4);
+    // GPU Temp is the one deliberate exception — always a real, device-wide
+    // physical measurement, no "per-process" version exists to distinguish
+    // it from, so it's untouched by this ruling.
     expect(screen.getByText("72°C")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Currently Unavailable").length,
+    ).toBeGreaterThanOrEqual(4);
   });
 
-  it("falls back to device GPU% with 'sys' suffix when process gpu_util_percent is null", () => {
+  it("BEFORE and DURING: the SAME footer instance transitions correctly from no-model to model-running as processMetrics arrives", () => {
+    // The two tests above/below each check one state in isolation — a
+    // fresh render that happens to already have the right props. That
+    // doesn't prove a LIVE session behaves correctly: the real app renders
+    // ONE component instance that receives a NEW processMetrics prop on
+    // each poll once a model starts (idle -> running), and a bug in that
+    // TRANSITION (stale values lingering, a value failing to populate on
+    // its first real poll) wouldn't be caught by two independent
+    // snapshots. This test drives one instance through both states, in
+    // order, the way the real page actually does.
+
+    // BEFORE: model not running yet — must show nothing, not system values.
+    const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+    expect(screen.getAllByText("—")).toHaveLength(4);
+    expect(screen.queryByText("1.3%")).not.toBeInTheDocument();
+    expect(screen.queryByText(/6\.0 GB/)).not.toBeInTheDocument();
+    expect(screen.queryByText("87%")).not.toBeInTheDocument();
+    expect(screen.queryByText(/14\.9 GB/)).not.toBeInTheDocument();
+    // GPU Temp is real and present even before any model runs.
+    expect(screen.getByText("72°C")).toBeInTheDocument();
+
+    // DURING: the model just started — processMetrics arrives. Same
+    // component instance, new prop, matching a real poll transition.
+    rerender(
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={PROCESS_METRICS}
+      />,
+    );
+    // Values update INSTANTLY — they read processMetrics directly, no
+    // accumulation needed. This is the user's actual ask: real numbers
+    // must appear the moment a model is detected running.
+    expect(screen.getByText("1.3%")).toBeInTheDocument();
+    expect(screen.getByText(/6\.0 GB/)).toBeInTheDocument();
+    expect(screen.getByText("87%")).toBeInTheDocument();
+    expect(screen.getByText(/14\.9 GB/)).toBeInTheDocument();
+    // Confirms these are PROCESS values, not system fallbacks, by ruling
+    // out BASE_PROPS' system numbers appearing instead.
+    expect(screen.queryByText("45.0%")).not.toBeInTheDocument();
+    expect(screen.queryByText("60%")).not.toBeInTheDocument();
+    // The graphs are DIFFERENT from the values, honestly: the ring
+    // (drives the sparklines) resets to empty on this first
+    // no-process->process transition and only starts accumulating on the
+    // NEXT update while already in process mode (existing, correct
+    // behavior — same mechanism the "stretch mode wiring" test above
+    // works around with a second rerender). So immediately after this
+    // FIRST transition, the graphs may still show "Currently Unavailable"
+    // for one more poll cycle even though the numbers are already real —
+    // that's expected, not a bug, and not what this test is asserting.
+    // A second update (matching the NEXT real poll) is what proves the
+    // graphs catch up too:
+    rerender(
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
+    );
+    // Exactly ONE "Currently Unavailable" remains at this point: GPU
+    // Temp's own graph, which is unrelated to isProcess entirely (its
+    // history was never gated on it) — this fixture's gpuTempHistory is
+    // simply empty ([]), a pre-existing test-data gap that has nothing to
+    // do with this fix. The four PROCESS-gated tiles (CPU/RAM/GPU/VRAM)
+    // must have caught up and be showing real graphs by now.
+    expect(screen.getAllByText("Currently Unavailable")).toHaveLength(1);
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+    // GPU Temp stays real and unchanged across the whole transition — it
+    // was never gated on isProcess in the first place.
+    expect(screen.getAllByText("72°C").length).toBeGreaterThan(0);
+  });
+
+  it("shows em-dash (never a 'sys' suffix) when process gpu_util_percent is null", () => {
+    // User ruling: there must NEVER be a "sys" suffix anywhere in this
+    // footer, including this narrower per-metric case (a model IS
+    // running, but the driver doesn't report per-process GPU% for it).
+    // No silent substitution of the device-wide reading — just "—",
+    // consistent with the broader "llama's own value or nothing" rule.
     const pm: ProcessMetrics = { ...PROCESS_METRICS, gpu_util_percent: null };
     render(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={pm} />);
-    // System gpuPct=60, shown with sys suffix
-    expect(screen.getByText(/60.*sys/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sys/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/60/)).not.toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 
-  it("falls back to device VRAM with 'sys' suffix when process vram_mb is null", () => {
+  it("shows em-dash (never a 'sys' suffix) when process vram_mb is null", () => {
     const pm: ProcessMetrics = { ...PROCESS_METRICS, vram_mb: null };
     render(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={pm} />);
-    // System vramUsed=20, vramTotal=24, shown with sys suffix
-    expect(screen.getByText(/20\.0.*24\.0.*sys/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sys/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/20\.0.*24\.0/)).not.toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });
 
 // ── I-2: ring ingests the displayed value, not the raw process field ──
 
 describe("updateRing — ring ingests display value", () => {
-  it("pushes device gpuPct when process gpu_util_percent is null", () => {
+  it("does NOT push a device-fallback point when process gpu_util_percent is null", () => {
+    // The tile shows "—" in this case (per the ruling above) — the ring
+    // must match that exactly: no fabricated point, not even the device
+    // value. Skipping the push leaves a genuine gap, which Step I-5's
+    // gap-honesty logic already renders correctly as a break in the line.
     const pm: ProcessMetrics = { ...PROCESS_METRICS, gpu_util_percent: null };
-    const ring = updateRing(EMPTY_RING, pm, { gpuPct: 64, vramUsedGb: null, memTotal: 32, vramTotal: 24 });
-    expect(ring.gpu[ring.gpu.length - 1]!.value).toBe(64);
+    const ring = updateRing(EMPTY_RING, pm, {
+      gpuPct: 64,
+      vramUsedGb: null,
+      memTotal: 32,
+      vramTotal: 24,
+    });
+    expect(ring.gpu).toHaveLength(0);
   });
 
-  it("pushes device vram as percent of vramTotal when process vram_mb is null", () => {
+  it("does NOT push a device-fallback point when process vram_mb is null", () => {
     const pm: ProcessMetrics = { ...PROCESS_METRICS, vram_mb: null };
-    const ring = updateRing(EMPTY_RING, pm, { gpuPct: null, vramUsedGb: 20, memTotal: 32, vramTotal: 24 });
-    // 20 GB used / 24 GB total = 83.33...% — ring stores percent, not raw GB
-    const pct = ring.vram[ring.vram.length - 1]!.value;
-    expect(Math.abs(pct - (20 / 24) * 100)).toBeLessThan(0.1);
+    const ring = updateRing(EMPTY_RING, pm, {
+      gpuPct: null,
+      vramUsedGb: 20,
+      memTotal: 32,
+      vramTotal: 24,
+    });
+    expect(ring.vram).toHaveLength(0);
   });
 
   it("ring.mem stores percent of memTotal, not raw GB (I-4 unit unification)", () => {
     // 8.3 GB of a 30.5 GB total → ~27.2%
     const memKb = 8.3 * 1024 * 1024;
     const pm: ProcessMetrics = { ...PROCESS_METRICS, memory_kb: memKb };
-    const ring = updateRing(EMPTY_RING, pm, { gpuPct: null, vramUsedGb: null, memTotal: 30.5, vramTotal: 24 });
+    const ring = updateRing(EMPTY_RING, pm, {
+      gpuPct: null,
+      vramUsedGb: null,
+      memTotal: 30.5,
+      vramTotal: 24,
+    });
     const pct = ring.mem[ring.mem.length - 1]!.value;
     expect(Math.abs(pct - (8.3 / 30.5) * 100)).toBeLessThan(0.1);
   });
@@ -134,53 +260,104 @@ describe("updateRing — ring ingests display value", () => {
 
 // ── G2b: sparkline stretch + 30s window ──────────────────────────────
 
-describe("LlamaCppHardwareFooter — sparkline stretch and 30s window", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  function make120Points() {
-    vi.useFakeTimers();
-    const now = Date.now();
-    // 120 points, 1 second apart, ending at frozen 'now'
-    return Array.from({ length: 120 }, (_, i) => ({
-      slot: i,
-      timestamp: new Date(now - (119 - i) * 1000),
-      value: i % 100,
-    }));
-  }
-
-  it("sparkline SVG has preserveAspectRatio=none (stretch mode)", () => {
-    const history = make120Points();
-    render(
+describe("LlamaCppHardwareFooter — sparkline stretch mode wiring (process mode)", () => {
+  // The two tests this replaces used idle-mode's cpuHistory fallback purely
+  // as a convenient vehicle to inject a static history array — not because
+  // idle-mode's system fallback was itself the thing under test. That
+  // vehicle no longer exists (idle mode now shows nothing, per the new
+  // ruling above). The underlying stretch/windowMs MECHANICS are already
+  // directly and thoroughly covered in Sparkline.test.tsx (7+ call sites);
+  // duplicating that here would be redundant. What's actually specific to
+  // THIS file and still worth guarding: that FooterStat's JSX continues to
+  // pass `stretch` to its Sparkline calls at all — a future edit could
+  // silently drop the prop without any Sparkline-level test catching it.
+  it("CPU tile's Sparkline is called with stretch mode (process mode, real data present)", () => {
+    // A single render lands on the ring's OWN transition-reset branch
+    // (prevProc undefined -> processMetrics present counts as a mode
+    // change, which resets to EMPTY_RING rather than accumulating) — this
+    // is existing, correct application behavior, not something this test
+    // should fight. A second render with a NEW object (same values, new
+    // reference, so React sees a real prop change) exercises the actual
+    // accumulation path and gives the ring one real point, matching what
+    // a genuine second poll does.
+    const { rerender } = render(
       <LlamaCppHardwareFooter
         {...BASE_PROPS}
-        cpuHistory={history}
-      />
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
     );
-    // At least one SVG must have preserveAspectRatio="none"
-    const svgs = document.querySelectorAll("svg");
-    const hasStretch = Array.from(svgs).some(
-      (svg) => svg.getAttribute("preserveAspectRatio") === "none"
-    );
-    expect(hasStretch, "at least one sparkline SVG must have preserveAspectRatio=none").toBe(true);
-  });
-
-  it("sparkline receives exactly the last 30 points (30s window)", () => {
-    const history = make120Points();
-    render(
+    rerender(
       <LlamaCppHardwareFooter
         {...BASE_PROPS}
-        cpuHistory={history}
-      />
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
     );
-    // The CPU sparkline is in the tile labelled "CPU"
     const cpuLabel = screen.getByText("CPU");
     const cpuTile = cpuLabel.closest("[data-accent-el]") as HTMLElement;
-    const linePath = cpuTile?.querySelector("path[fill='none']");
-    expect(linePath, "CPU tile must have a sparkline path").toBeTruthy();
-    // path d: "Mx,y Lx,y ..." — one M/L command per data point
-    const ptCount = ([...linePath!.getAttribute("d")!.matchAll(/[ML]/g)]).length;
-    expect(ptCount, `expected 30 points (last 30s), got ${ptCount}`).toBe(30);
+    // The tile's icon (lucide-react's <Cpu>) also renders as an <svg> —
+    // check ALL svgs in the tile, not just the first, since DOM order
+    // isn't guaranteed to put the Sparkline's svg first.
+    const svgs = cpuTile ? Array.from(cpuTile.querySelectorAll("svg")) : [];
+    expect(
+      svgs.length,
+      "CPU tile must render at least one svg",
+    ).toBeGreaterThan(0);
+    const hasStretch = svgs.some(
+      (svg) => svg.getAttribute("preserveAspectRatio") === "none",
+    );
+    expect(
+      hasStretch,
+      "CPU tile's Sparkline must use stretch mode in process mode",
+    ).toBe(true);
+  });
+});
+
+// ─── value-column width stability ──────────────────────────────────────
+
+describe("FooterStat value column reserves a fixed width (no side-to-side shift)", () => {
+  it("the value column's reserved width is the SAME whether the value is short or long", () => {
+    // User-reported: "the bar is physically moving, shifting side to
+    // side." Root cause: the value column had flexShrink:0 (won't
+    // compress) but no actual reserved minWidth — a value crossing a
+    // digit-count boundary (e.g. "9%" -> "10%") forced the column wider,
+    // and since all 5 footer tiles share flex:1 in one row, the WHOLE
+    // row redistributed space to compensate. This test proves the fix
+    // mechanically: the column's reserved width must be identical
+    // regardless of whether the rendered value is short or long — that's
+    // what makes the row's layout independent of content.
+    const { container: shortContainer } = render(
+      <FooterStat
+        icon={<span />}
+        label="CPU"
+        value="3%"
+        color="var(--metric-cpu)"
+      />,
+    );
+    const { container: longContainer } = render(
+      <FooterStat
+        icon={<span />}
+        label="CPU"
+        value="9999.9%"
+        color="var(--metric-cpu)"
+      />,
+    );
+    // The value column is the parent of the value <span> (identified by
+    // the tabular-nums style that's unique to it, per the component).
+    const getValueColumn = (container: HTMLElement) => {
+      const valueSpan = Array.from(container.querySelectorAll("span")).find(
+        (el) => el.style.fontVariantNumeric === "tabular-nums",
+      );
+      return valueSpan?.parentElement ?? null;
+    };
+    const shortColumn = getValueColumn(shortContainer);
+    const longColumn = getValueColumn(longContainer);
+    expect(shortColumn, "short-value column not found").toBeTruthy();
+    expect(longColumn, "long-value column not found").toBeTruthy();
+    expect(
+      shortColumn!.style.minWidth,
+      "the reserved width must not depend on content length",
+    ).toBe(longColumn!.style.minWidth);
+    expect(shortColumn!.style.minWidth).not.toBe("0px");
+    expect(shortColumn!.style.minWidth).not.toBe("");
   });
 });

@@ -4,9 +4,46 @@ use crate::collectors::alerts::CollectorStatus;
 use crate::models::ai::*;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
-use std::time::Instant;
 
 const HISTORY_RETENTION_SECONDS: u64 = 120;
+
+/// Previous (proc_ticks, sys_ticks, process_starttime_ticks) sample per pid,
+/// used to compute CPU% from a DELTA between two polls — the only correct
+/// way to derive "current" usage from /proc's cumulative counters (every
+/// real tool — top, ps — requires two samples for exactly this reason).
+/// The OLD formula divided the process's cumulative ticks since ITS start
+/// by the system's cumulative ticks since BOOT — two different-length time
+/// windows. On a session with a fresh process (minutes old) on a long-lived
+/// system (hours/days up), that mismatch produced numbers with no physical
+/// meaning: 82.2%, 3.4%, and 1238.0% were all observed for the SAME process
+/// across one session, direction and magnitude both arbitrary — the
+/// signature of two mismatched clocks, not a real percentage.
+/// process_starttime_ticks guards against pid reuse: if a NEW process
+/// inherits an old pid, its /proc starttime differs from whatever was
+/// cached, so the stale sample is discarded instead of computing a
+/// delta across two unrelated processes.
+static PREV_CPU_SAMPLE: LazyLock<Mutex<HashMap<u32, (u64, u64, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Pure CPU% from two ticks samples of the same process and system, taken
+/// some real interval apart. No I/O, no global state — testable with plain
+/// numbers. Returns 0.0 if the deltas can't produce a meaningful ratio
+/// (e.g. the very first sample for a pid, or a zero/negative system delta,
+/// which would otherwise divide by zero or go negative).
+fn cpu_percent_from_deltas(
+    prev_proc_ticks: u64,
+    curr_proc_ticks: u64,
+    prev_sys_ticks: u64,
+    curr_sys_ticks: u64,
+    num_cpus: f64,
+) -> f64 {
+    let proc_delta = curr_proc_ticks.saturating_sub(prev_proc_ticks) as f64;
+    let sys_delta = curr_sys_ticks.saturating_sub(prev_sys_ticks) as f64;
+    if sys_delta <= 0.0 || num_cpus <= 0.0 {
+        return 0.0;
+    }
+    ((proc_delta / (sys_delta / num_cpus)) * 100.0).max(0.0)
+}
 
 /// Find PIDs of processes matching a name pattern by scanning /proc.
 ///
@@ -49,24 +86,68 @@ fn find_process_pids(name_pattern: &str) -> Vec<u32> {
     pids
 }
 
-static PREV_CPU_SAMPLE: LazyLock<Mutex<HashMap<u32, (u64, u64, Instant)>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Find llama-server's PID by matching its configured --port, not by
+/// scanning every process on the system for a name substring.
+///
+/// `find_process_pids("llama")` — used as the fallback below — matches
+/// ANYTHING whose exe or cmdline merely CONTAINS "llama" anywhere on the
+/// system, with no ordering guarantee, and `collect_process_metrics` took
+/// whichever match came first. On a session that had already cycled
+/// through five different llama-server PIDs (model restarts), an
+/// orphaned process from an earlier run that never fully exited could
+/// silently be the one whose stats get reported instead of the current
+/// one — user-reported: System Monitor showed the real, current process
+/// at 40.73% CPU / 8.8GB RAM while the dashboard showed 1202.0% / 14.34GB
+/// for the SAME moment, a gap too large to be explained by Step O's
+/// formula fix alone.
+///
+/// This is the SAME matching logic already proven correct elsewhere in
+/// this codebase (`api::launcher::find_llama_server_pid_by_port`, used by
+/// the RUN MODELS table's own VRAM lookup, confirmed against nvidia-smi's
+/// real output) — reimplemented here against raw /proc rather than
+/// threading a `sysinfo::System` into this file's hot polling path, which
+/// would add a full process-table refresh cost to every single poll.
+///
+/// Deliberately NOT applied to `find_process_pids`/`collect_process_metrics`
+/// generically: OpenWebUI is a python/uvicorn process whose `exe` symlink
+/// doesn't reflect the meaningful name at all (see this file's own doc
+/// comment on `find_process_pids`), so a port-based llama-server-specific
+/// matcher is not a safe drop-in replacement for the generic scan used by
+/// the other three services.
+fn find_llama_pid_by_port(port: u16) -> Option<u32> {
+    let port_str = port.to_string();
+    let entries = std::fs::read_dir("/proc").ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(pid_str) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Ok(pid) = pid_str.parse::<u32>() else {
+            continue;
+        };
 
-/// Pure CPU% from two consecutive tick samples of the same process and system.
-/// Delta-based — the only correct way to get "current" usage from cumulative /proc counters.
-pub fn cpu_percent_from_deltas(
-    prev_proc_ticks: u64,
-    curr_proc_ticks: u64,
-    prev_sys_ticks: u64,
-    curr_sys_ticks: u64,
-    num_cpus: f64,
-) -> f64 {
-    let proc_delta = curr_proc_ticks.saturating_sub(prev_proc_ticks) as f64;
-    let sys_delta = curr_sys_ticks.saturating_sub(prev_sys_ticks) as f64;
-    if sys_delta <= 0.0 || num_cpus <= 0.0 {
-        return 0.0;
+        let is_llama_server = std::fs::read_link(path.join("exe"))
+            .ok()
+            .and_then(|exe| exe.file_name().and_then(|n| n.to_str()).map(String::from))
+            .is_some_and(|name| name.contains("llama-server"));
+        if !is_llama_server {
+            continue;
+        }
+
+        if let Ok(cmdline) = std::fs::read_to_string(path.join("cmdline")) {
+            let args: Vec<&str> = cmdline.split('\0').filter(|s| !s.is_empty()).collect();
+            let has_matching_port = args
+                .windows(2)
+                .any(|w| w[0] == "--port" && w[1] == port_str);
+            if has_matching_port {
+                return Some(pid);
+            }
+        }
     }
-    ((proc_delta / (sys_delta / num_cpus)) * 100.0).max(0.0)
+    None
 }
 
 /// Read CPU and memory usage for a given PID from /proc/[pid]/stat and /proc/[pid]/status
@@ -118,35 +199,62 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         .count()
         .max(1) as f64;
 
-    // Delta-based CPU%: diff this poll's ticks against the previous poll's ticks for the
-    // same pid. A single point-in-time read of cumulative /proc counters yields a lifetime
-    // average against system uptime, not instantaneous usage.
-    let curr_proc_ticks = total_time as u64;
-    let curr_sys_ticks = total_sys_time as u64;
+    // Get process start time (field 22, 1-indexed / fields[21] 0-indexed) —
+    // read here (moved up from below) because it's now also used as the
+    // pid-reuse guard for the CPU delta cache: a NEW process that happens
+    // to inherit an old pid will have a DIFFERENT starttime, so a stale
+    // cached sample from the previous occupant of this pid gets discarded
+    // instead of producing a nonsense delta across two unrelated processes.
+    let starttime: u64 = fields[21].parse().ok()?;
+
+    // CPU% via DELTA between this poll and the previous one for this pid —
+    // see PREV_CPU_SAMPLE's doc comment for why: a single point-in-time
+    // read of cumulative /proc counters cannot yield "current" usage.
     let cpu_percent = {
         let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
-        // Evict dead pids to bound HashMap growth across many model start/stop cycles.
-        cache.retain(|&cached_pid, _| {
-            std::path::Path::new(&format!("/proc/{}", cached_pid)).exists()
-        });
-        let pct = if let Some((prev_proc, prev_sys, ts)) = cache.get(&pid) {
-            let prev_proc = *prev_proc;
-            let prev_sys = *prev_sys;
-            // Skip divisions on very fast consecutive polls to avoid noisy near-zero deltas.
-            if ts.elapsed().as_secs_f64() >= 0.2 {
-                cpu_percent_from_deltas(prev_proc, curr_proc_ticks, prev_sys, curr_sys_ticks, num_cpus)
-            } else {
-                0.0
+        // Safety valve against unbounded growth: this map is only ever
+        // populated by the 4 named services this file tracks (llama,
+        // OpenWebUI, OpenCode, ComfyUI), so it should never realistically
+        // hold more than a handful of entries — one per service, growing
+        // only across process restarts. In a backend meant to run
+        // indefinitely, a permanent entry-per-restart-ever IS a genuine
+        // (if very slow) unbounded leak with no natural eviction otherwise
+        // (a pid, once inserted, is never removed just because that
+        // process exited). Rather than track process liveness explicitly
+        // (extra filesystem calls on the hot polling path for a
+        // slow-growing, low-stakes map), a coarse ceiling far above any
+        // realistic size is a cheap, honest correctness net: if it's ever
+        // exceeded, something is wrong (e.g. this cache being fed
+        // unexpected/unbounded pids), and clearing it just means one
+        // extra 0.0 reading while it refills — the same harmless
+        // first-poll state every entry already goes through normally.
+        const MAX_TRACKED_PIDS: usize = 64;
+        if cache.len() > MAX_TRACKED_PIDS {
+            cache.clear();
+        }
+        let prev = cache.get(&pid).copied();
+        let curr_proc_ticks = total_time as u64;
+        // Always store the current sample for the NEXT poll to diff
+        // against, regardless of whether this poll could itself produce
+        // a percentage.
+        cache.insert(pid, (curr_proc_ticks, total_sys_time as u64, starttime));
+        match prev {
+            Some((prev_proc, prev_sys, prev_starttime)) if prev_starttime == starttime => {
+                cpu_percent_from_deltas(
+                    prev_proc,
+                    curr_proc_ticks,
+                    prev_sys,
+                    total_sys_time as u64,
+                    num_cpus,
+                )
             }
-        } else {
-            0.0 // First poll for this pid — no prior sample to delta against.
-        };
-        cache.insert(pid, (curr_proc_ticks, curr_sys_ticks, Instant::now()));
-        pct
+            // First poll ever seen for this pid, OR the pid was reused by
+            // a different process since the last sample (starttime
+            // mismatch) — report 0.0 rather than a wrong number; the next
+            // poll (a few seconds away) will have a real delta to work with.
+            _ => 0.0,
+        }
     };
-
-    // Get process start time and calculate uptime
-    let starttime: u64 = fields[21].parse().ok()?;
     let clk_tck = unsafe { libc::sysconf(libc::_SC_CLK_TCK) as u64 };
     let uptime_seconds = read_uptime_seconds();
     let process_start_sec = starttime as f64 / clk_tck as f64;
@@ -812,7 +920,19 @@ pub async fn collect_ai_metrics(
         .unwrap_or((None, None));
 
     // Collect per-process metrics for llama-server, OpenCode, and ComfyUI
-    let llama_process = collect_process_metrics("llama");
+    // llama-server: resolve by the port it was actually launched with, not
+    // by scanning every process on the system for a name substring (see
+    // find_llama_pid_by_port's doc comment for why — user-reported wrong
+    // CPU/RAM/VRAM readings traced to this). Falls back to the old
+    // generic scan only if no running profile/port is currently known
+    // (e.g. between polls right at startup) — preserves existing behavior
+    // for that edge case rather than silently going blank.
+    let llama_process = crate::api::launcher::get_running_script()
+        .and_then(|script| crate::api::launcher::get_profile_parsed_args(&script))
+        .and_then(|args| args.port)
+        .and_then(find_llama_pid_by_port)
+        .and_then(read_process_metrics)
+        .or_else(|| collect_process_metrics("llama"));
     let openwebui_process =
         collect_process_metrics("open_webui").or_else(|| collect_process_metrics("open-webui"));
     let opencode_process = collect_process_metrics("opencode");
@@ -1169,73 +1289,72 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
         assert_eq!(slot.n_predict, Some(0));
     }
 
-    // ── cpu_percent_from_deltas (Step O) ─────────────────────────────────────
+    // ─── Step O: cpu_percent_from_deltas ───────────────────────────────
+    // Pure function, no /proc access needed — these are genuinely runnable
+    // via `cargo test`, unlike read_process_metrics/find_llama_pid_by_port
+    // which touch the filesystem and need a live PID to exercise for real.
 
     #[test]
-    fn cpu_percent_from_deltas_saturated_core() {
-        // 1 proc tick across 16 sys ticks with 16 cpus → one full core = 100%
-        let pct = cpu_percent_from_deltas(100, 101, 1000, 1016, 16.0);
-        assert!(
-            (pct - 100.0).abs() < 0.001,
-            "expected 100.0, got {pct}"
+    fn one_fully_saturated_core_is_100_percent() {
+        // 16 cpus, process accumulates 100 ticks while the system-wide
+        // total (summed across all 16 cores) accumulates 1600 ticks —
+        // i.e. system average per-core = 100 ticks, exactly what one
+        // fully-busy core looks like against an otherwise-idle machine.
+        // 100 / (1600/16) * 100 = 100 / 100 * 100 = 100.0
+        let pct = cpu_percent_from_deltas(0, 100, 0, 1600, 16.0);
+        assert!((pct - 100.0).abs() < 0.001, "expected 100.0, got {pct}");
+    }
+
+    #[test]
+    fn half_a_core_is_50_percent() {
+        // Same setup, process only accumulates 50 ticks against the same
+        // 1600-tick system delta -> half a core's worth.
+        let pct = cpu_percent_from_deltas(0, 50, 0, 1600, 16.0);
+        assert!((pct - 50.0).abs() < 0.001, "expected 50.0, got {pct}");
+    }
+
+    #[test]
+    fn zero_proc_delta_is_zero_percent() {
+        // Process did nothing between samples -> 0%, not a divide
+        // artifact or a leftover value from the previous poll.
+        let pct = cpu_percent_from_deltas(500, 500, 0, 1600, 16.0);
+        assert_eq!(pct, 0.0);
+    }
+
+    #[test]
+    fn zero_or_negative_sys_delta_returns_zero_not_a_panic() {
+        // A system-ticks delta of zero (or, from a saturating_sub, an
+        // impossible negative-turned-zero) must never divide-by-zero or
+        // produce infinity/NaN — the honest answer when the denominator
+        // is meaningless is 0.0, not a crash.
+        assert_eq!(cpu_percent_from_deltas(0, 100, 1000, 1000, 16.0), 0.0);
+    }
+
+    #[test]
+    fn regression_mismatched_clock_windows_no_longer_apply() {
+        // The OLD (broken) formula was total_process_ticks_since_start /
+        // (total_SYSTEM_ticks_since_BOOT / num_cpus) — two different-
+        // length time windows, which is what produced 82.2%, 3.4%, and
+        // 1238.0% for the same real process across one session. The new
+        // delta-based function never sees "since start" or "since boot"
+        // at all — only two close-together samples — so a long-lived
+        // system (huge cumulative sys ticks) paired with a young process
+        // (small cumulative proc ticks) can no longer produce a wrong
+        // number just because of how old the SYSTEM happens to be.
+        // Simulate: system has been up a long time (huge prior sys
+        // ticks), process is young (small prior proc ticks) — the delta
+        // over one real poll interval is still correctly computed from
+        // ONLY what changed, not the absolute magnitudes.
+        let pct = cpu_percent_from_deltas(
+            10_000,      // prev proc ticks (process has some history)
+            10_100,      // curr proc ticks (+100 this interval)
+            50_000_000,  // prev sys ticks (system has been up a long time)
+            50_001_600,  // curr sys ticks (+1600 this interval, 16 cpus)
+            16.0,
         );
-    }
-
-    #[test]
-    fn cpu_percent_from_deltas_zero_proc() {
-        // Zero process delta → 0% regardless of system delta
-        let pct = cpu_percent_from_deltas(100, 100, 1000, 1016, 16.0);
-        assert_eq!(pct, 0.0, "zero proc delta must yield 0.0");
-    }
-
-    #[test]
-    fn cpu_percent_from_deltas_zero_sys() {
-        // Zero system delta → guard returns 0.0 (avoids division by zero)
-        let pct = cpu_percent_from_deltas(100, 101, 1000, 1000, 16.0);
-        assert_eq!(pct, 0.0, "zero sys delta must yield 0.0");
-    }
-
-    #[test]
-    fn cpu_percent_delta_cache_integration() {
-        use std::time::{Duration, Instant};
-        // Synthetic pid well above kernel's pid_max — won't collide with real /proc entries
-        // or other tests, and retain() won't evict it (the path won't exist, but we clean up
-        // manually after to leave the cache tidy).
-        let synthetic_pid: u32 = u32::MAX - 42;
-
-        // Pre-seed the cache as if a poll ran 5 seconds ago.
-        {
-            let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
-            let fake_past = Instant::now() - Duration::from_secs(5);
-            cache.insert(synthetic_pid, (100u64, 1000u64, fake_past));
-        }
-
-        // Simulate reading curr ticks: proc=101, sys=1016, 16 cpus → expected 100%.
-        let curr_proc = 101u64;
-        let curr_sys = 1016u64;
-        let num_cpus = 16.0f64;
-
-        let pct = {
-            let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
-            let result = if let Some((prev_proc, prev_sys, ts)) = cache.get(&synthetic_pid) {
-                let prev_proc = *prev_proc;
-                let prev_sys = *prev_sys;
-                if ts.elapsed().as_secs_f64() >= 0.2 {
-                    cpu_percent_from_deltas(prev_proc, curr_proc, prev_sys, curr_sys, num_cpus)
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-            cache.insert(synthetic_pid, (curr_proc, curr_sys, Instant::now()));
-            cache.remove(&synthetic_pid); // cleanup
-            result
-        };
-
-        assert!(
-            (pct - 100.0).abs() < 0.001,
-            "second poll with 5s elapsed and known ticks delta must yield ~100%, got {pct}"
-        );
+        // Same +100 proc / +1600 sys shape as the 100% case above — the
+        // huge absolute sys_ticks magnitude must NOT affect the result,
+        // only the delta does.
+        assert!((pct - 100.0).abs() < 0.001, "expected 100.0, got {pct}");
     }
 }

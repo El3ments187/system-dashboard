@@ -877,7 +877,16 @@ export default function LlamaCppPage() {
                   accent
                   testId="thrpt-generated"
                   label="Generated"
-                  value={`${fmtNum(tokenUsage?.completion_tokens) || "0"} token`}
+                  // User-reported: the value didn't fit the tile
+                  // ("464,408..." truncated by MetricTile's own
+                  // ellipsis). Root cause: this was the ONLY one of the
+                  // four throughput tiles appending a literal unit
+                  // suffix (" token") to its number — Prompt Tokens and
+                  // Total Sent both show bare numbers. The label itself
+                  // ("Generated") already conveys what's being counted;
+                  // the suffix was redundant AND the direct cause of the
+                  // overflow. Matches the sibling tiles' convention now.
+                  value={fmtNum(tokenUsage?.completion_tokens) || "0"}
                   mono
                   style={{ borderRadius: 9, padding: "6px 10px" }}
                   valueSize={17}
@@ -1168,14 +1177,13 @@ export default function LlamaCppPage() {
                         </span>
                       ) : (
                         <>
-                          <span
-                            title="Generation length cap for this request (n_predict) — separate from the model's context window shown above"
-                          >
+                          <span title="Generation length cap for this request (n_predict) — separate from the model's context window shown above">
                             {nd != null ? nd.toLocaleString() : "—"} /{" "}
                             {np.toLocaleString()} gen. limit
                           </span>
                           <span title="Tokens remaining before hitting the generation-length cap, not the context window">
-                            Gen. remaining {nr != null ? nr.toLocaleString() : "—"}
+                            Gen. remaining{" "}
+                            {nr != null ? nr.toLocaleString() : "—"}
                           </span>
                         </>
                       );

@@ -1371,14 +1371,25 @@ pub fn scan_profiles() -> ProfileResponse {
                 "[Launcher] Recovered running state for {} (PID {} on port {})",
                 profile.script_path, pid, port
             );
+            // Preserve any peak VRAM/RAM already known from BEFORE tracking
+            // was lost (e.g. a Model Deck backend restart while llama-server
+            // itself kept running) rather than unconditionally discarding
+            // it. The unconditional insert this replaced would blank these
+            // back to None on every such recovery, fighting against
+            // start_metrics_updater's 2-second writes each time it fired.
+            let (prior_peak_vram_mb, prior_peak_ram_mb) = guard
+                .states
+                .get(&profile.script_path)
+                .map(|s| (s.peak_vram_mb, s.peak_ram_mb))
+                .unwrap_or((None, None));
             guard.states.insert(
                 profile.script_path.clone(),
                 ProfileState {
                     status: "running".to_string(),
                     llama_server_pid: Some(pid),
                     start_time: None,
-                    peak_vram_mb: None,
-                    peak_ram_mb: None,
+                    peak_vram_mb: prior_peak_vram_mb,
+                    peak_ram_mb: prior_peak_ram_mb,
                     current_tps: None,
                 },
             );
@@ -1620,15 +1631,11 @@ mod tests {
     use std::os::unix::process::CommandExt;
     use std::time::Duration;
 
-    // Serializes tests that mutate process-global env vars to prevent races
-    // when cargo runs tests in parallel threads within the same binary.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     // ── J1: default_scan_dir derives from env, never a literal user path ─
 
     #[test]
     fn default_scan_dir_respects_override_env_var() {
-        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: single-threaded test; no other thread reads MODEL_DECK_SCAN_DIR concurrently.
         unsafe { std::env::set_var("MODEL_DECK_SCAN_DIR", "/custom/models"); }
         let dir = default_scan_dir();
         unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
@@ -1638,7 +1645,7 @@ mod tests {
 
     #[test]
     fn default_scan_dir_derives_from_home_when_no_override() {
-        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: single-threaded test; no other thread reads HOME or MODEL_DECK_SCAN_DIR concurrently.
         unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
         let orig_home = std::env::var("HOME").unwrap_or_default();
         unsafe { std::env::set_var("HOME", "/tmp/probe"); }

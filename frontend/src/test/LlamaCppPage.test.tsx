@@ -1400,7 +1400,13 @@ describe("LlamaCppPage Throughput card tiles", () => {
     );
   });
 
-  it("Generated tile shows value + 'token' unit from token_usage.completion_tokens", async () => {
+  it("Generated tile shows a bare number, no redundant unit suffix (matches its sibling tiles)", async () => {
+    // Previously appended a literal " token" suffix — the only one of
+    // the four throughput tiles to do so, and the direct cause of a
+    // real overflow/truncation bug at larger values (user-reported:
+    // "464,408..." cut off by MetricTile's own ellipsis). The label
+    // ("Generated") already conveys what's being counted; Prompt Tokens
+    // and Total Sent both show bare numbers too.
     mockedCtx.mockReturnValue(
       baseCtx({ token_usage: { prompt_tokens: 100, completion_tokens: 512 } }),
     );
@@ -1408,7 +1414,25 @@ describe("LlamaCppPage Throughput card tiles", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const tile = screen.getByTestId("thrpt-generated");
     expect(tile).toHaveTextContent("512");
-    expect(tile).toHaveTextContent("token");
+    expect(tile).not.toHaveTextContent("token");
+  });
+
+  it("Generated tile does not truncate a large value (the original overflow bug)", async () => {
+    mockedCtx.mockReturnValue(
+      baseCtx({
+        token_usage: { prompt_tokens: 62069, completion_tokens: 464408 },
+      }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const tile = screen.getByTestId("thrpt-generated");
+    // fmtNum formats with thousands separators; the exact separator
+    // character isn't the point here — the full, untruncated digit
+    // sequence being present is.
+    expect(tile).toHaveTextContent("464");
+    expect(tile).toHaveTextContent("408");
+    expect(tile).not.toHaveTextContent("…");
+    expect(tile).not.toHaveTextContent("...");
   });
 
   it("Total Sent tile shows value from total_tokens_sent", async () => {
@@ -1960,27 +1984,37 @@ describe("LlamaCppPage throughput sparklines fill their tile (not half-width)", 
     const path = await import("path");
     const src = fs.readFileSync(
       path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
-      "utf-8"
+      "utf-8",
     );
 
     const genBlockStart = src.indexOf("data={aiGenTpsHistory");
     const genBlockEnd = src.indexOf("/>", genBlockStart);
     const genBlock = src.slice(genBlockStart, genBlockEnd);
-    expect(genBlockStart, "Generation Speed sparkline not found in source").toBeGreaterThan(-1);
-    expect(genBlock, "Generation Speed sparkline must use stretch").toContain("stretch");
+    expect(
+      genBlockStart,
+      "Generation Speed sparkline not found in source",
+    ).toBeGreaterThan(-1);
+    expect(genBlock, "Generation Speed sparkline must use stretch").toContain(
+      "stretch",
+    );
     expect(
       /width\s*=\s*\{/.test(genBlock),
-      `Generation Speed sparkline must not hardcode ANY pixel width — found one in: ${genBlock}`
+      `Generation Speed sparkline must not hardcode ANY pixel width — found one in: ${genBlock}`,
     ).toBe(false);
 
     const promptBlockStart = src.indexOf("data={aiPromptTpsHistory");
     const promptBlockEnd = src.indexOf("/>", promptBlockStart);
     const promptBlock = src.slice(promptBlockStart, promptBlockEnd);
-    expect(promptBlockStart, "Prompt Speed sparkline not found in source").toBeGreaterThan(-1);
-    expect(promptBlock, "Prompt Speed sparkline must use stretch").toContain("stretch");
+    expect(
+      promptBlockStart,
+      "Prompt Speed sparkline not found in source",
+    ).toBeGreaterThan(-1);
+    expect(promptBlock, "Prompt Speed sparkline must use stretch").toContain(
+      "stretch",
+    );
     expect(
       /width\s*=\s*\{/.test(promptBlock),
-      `Prompt Speed sparkline must not hardcode ANY pixel width — found one in: ${promptBlock}`
+      `Prompt Speed sparkline must not hardcode ANY pixel width — found one in: ${promptBlock}`,
     ).toBe(false);
   });
 });
@@ -1997,21 +2031,32 @@ describe("LlamaCppPage: generation-length cap is distinguishable from context wi
     const path = await import("path");
     const src = fs.readFileSync(
       path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
-      "utf-8"
+      "utf-8",
     );
     const blockStart = src.indexOf("const nr = slot0.n_remain");
     const blockEnd = src.indexOf("})()", blockStart);
     const block = src.slice(blockStart, blockEnd);
-    expect(blockStart, "n_predict progress block not found").toBeGreaterThan(-1);
+    expect(blockStart, "n_predict progress block not found").toBeGreaterThan(
+      -1,
+    );
     // The old bare "Remaining {nr...}" (matching the context card's own
     // "REMAINING" field name with nothing to distinguish them) must be gone.
     expect(
       />\s*Remaining\s*\{/.test(block),
-      "bare 'Remaining' label reintroduced — indistinguishable from the context window's own Remaining field"
+      "bare 'Remaining' label reintroduced — indistinguishable from the context window's own Remaining field",
     ).toBe(false);
-    expect(block, "must clearly label this as the generation cap, not context").toContain("Gen. remaining");
-    expect(block, "must explain n_predict is separate from n_ctx via tooltip").toContain("n_predict");
-    expect(block, "tooltip must reference the context window for contrast").toContain("context window");
+    expect(
+      block,
+      "must clearly label this as the generation cap, not context",
+    ).toContain("Gen. remaining");
+    expect(
+      block,
+      "must explain n_predict is separate from n_ctx via tooltip",
+    ).toContain("n_predict");
+    expect(
+      block,
+      "tooltip must reference the context window for contrast",
+    ).toContain("context window");
   });
 });
 
@@ -2027,14 +2072,14 @@ describe("LlamaCppPage throughput row height stays bounded (Step Q side-effect f
     const path = await import("path");
     const src = fs.readFileSync(
       path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
-      "utf-8"
+      "utf-8",
     );
     const genBlockStart = src.indexOf("data={aiGenTpsHistory");
     const genContainerStart = src.lastIndexOf("<div", genBlockStart);
     const genContainer = src.slice(genContainerStart, genBlockStart);
     expect(
       genContainer,
-      "Generation Speed's sparkline container must not use open-ended flex:1/minHeight"
+      "Generation Speed's sparkline container must not use open-ended flex:1/minHeight",
     ).not.toMatch(/flex:\s*1,\s*minHeight/);
     expect(genContainer).toMatch(/height:\s*28/);
 
@@ -2043,7 +2088,7 @@ describe("LlamaCppPage throughput row height stays bounded (Step Q side-effect f
     const promptContainer = src.slice(promptContainerStart, promptBlockStart);
     expect(
       promptContainer,
-      "Prompt Speed's sparkline container must not use open-ended flex:1/minHeight"
+      "Prompt Speed's sparkline container must not use open-ended flex:1/minHeight",
     ).not.toMatch(/flex:\s*1,\s*minHeight/);
     expect(promptContainer).toMatch(/height:\s*28/);
   });

@@ -5,10 +5,10 @@ import {
   waitFor,
   fireEvent,
   within,
+  act,
 } from "@testing-library/react";
 import { LogConsole, lineMatchesFilters } from "../components/LogConsole";
 import type { LogLine } from "../types/metrics";
-import * as logBuffer from "../utils/logBuffer";
 
 // ─── WebSocket mock ────────────────────────────────────────────────────
 
@@ -594,39 +594,149 @@ describe("LogConsole preset chip filtering", () => {
   });
 });
 
-// ─── Hidden-tab pending buffer integration (B5) ────────────────────────────
+// ─── active-profile-loss debounce ──────────────────────────────────────
 
-describe("LogConsole hidden-tab pending buffer", () => {
-  it("pending buffer stays <=5000 when rAF is suppressed (hidden tab)", async () => {
-    // Spy on appendPending to verify: (a) LogConsole calls it for "log" WS
-    // frames, and (b) it passes the cap of 5000. The cap behaviour itself is
-    // proven by logBuffer.test.ts; this is the integration wire-in test.
-    const spy = vi.spyOn(logBuffer, "appendPending");
+describe("LogConsole active-profile detection debounces a stop", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-    // Stub rAF so the pending buffer is never flushed — simulates hidden tab.
-    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0 as any);
+  it("does NOT clear logs after a single poll reporting no active profile (a transient flake)", async () => {
+    // User-reported: "the console goes blank after a short period... I
+    // can no longer see the errors." Traced to this exact poll: ANY
+    // single fetch reporting no active profile immediately cleared logs
+    // and closed the websocket. This test proves ONE such poll — a
+    // plausible transient race, not a real stop — no longer wipes
+    // anything.
+    vi.useFakeTimers();
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      // First call (mount): profile is running. Second call (poll #2,
+      // 3s later): a single flaky read reports nothing active.
+      if (callCount === 1) {
+        return Promise.resolve(
+          profilesResp({
+            profiles: [activeProfile],
+            states: {
+              "/scripts/run.sh": { status: "running", llama_server_pid: 1234 },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(profilesResp({ profiles: [], states: {} }));
+    });
 
-    setupRunning();
     render(<LogConsole />);
-    await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
     const ws = wsInstances[wsInstances.length - 1];
     ws.openWs();
+    ws.sendHistory([makeLine("important error context", "error")]);
+    await vi.waitFor(() =>
+      expect(screen.getByText("important error context")).toBeInTheDocument(),
+    );
 
-    // Send 10 "log" messages while rAF is suppressed.
-    for (let i = 0; i < 10; i++) {
-      ws.onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({ type: "log", line: makeLine(`line-${i}`) }),
+    // One flaky poll (3s later) reporting no active profile.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    // The log must still be visible — one flaky poll must not blank it.
+    expect(screen.getByText("important error context")).toBeInTheDocument();
+  });
+
+  it("DOES clear logs after TWO CONSECUTIVE polls confirm no active profile (a real stop)", async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        return Promise.resolve(
+          profilesResp({
+            profiles: [activeProfile],
+            states: {
+              "/scripts/run.sh": { status: "running", llama_server_pid: 1234 },
+            },
+          }),
+        );
+      }
+      // Every poll after the first reports nothing active — a real stop.
+      return Promise.resolve(profilesResp({ profiles: [], states: {} }));
+    });
+
+    render(<LogConsole />);
+    await vi.waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([makeLine("some log line", "info")]);
+    await vi.waitFor(() =>
+      expect(screen.getByText("some log line")).toBeInTheDocument(),
+    );
+
+    // Poll #2 (3s): first null — not confirmed yet, must NOT clear.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("some log line")).toBeInTheDocument();
+
+    // Poll #3 (6s total): second CONSECUTIVE null — now confirmed, must
+    // clear, matching a genuine stop.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await vi.waitFor(() =>
+      expect(screen.queryByText("some log line")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("self-corrects: a flaky null poll followed by the SAME profile again clears nothing", async () => {
+    // The debounce counter must reset the moment a real active profile is
+    // seen again — a flake sandwiched between two genuine "running" polls
+    // must never accumulate toward a false stop.
+    vi.useFakeTimers();
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      // Poll 1 (mount): running. Poll 2 (3s): flaky null. Poll 3 (6s):
+      // running again — the SAME profile, proving the flake didn't
+      // silently start counting toward a stop.
+      if (callCount === 2) {
+        return Promise.resolve(profilesResp({ profiles: [], states: {} }));
+      }
+      return Promise.resolve(
+        profilesResp({
+          profiles: [activeProfile],
+          states: {
+            "/scripts/run.sh": { status: "running", llama_server_pid: 1234 },
+          },
         }),
       );
-    }
+    });
 
-    // appendPending must have been called with the 5000 cap every time.
-    expect(spy.mock.calls.length).toBeGreaterThan(0);
-    for (const call of spy.mock.calls) {
-      expect(call[2], "appendPending must be called with cap=5000").toBe(5000);
-    }
+    render(<LogConsole />);
+    await vi.waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+    const ws = wsInstances[wsInstances.length - 1];
+    ws.openWs();
+    ws.sendHistory([makeLine("persistent log", "info")]);
+    await vi.waitFor(() =>
+      expect(screen.getByText("persistent log")).toBeInTheDocument(),
+    );
 
-    vi.restoreAllMocks();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    }); // poll 2: flaky null
+    expect(screen.getByText("persistent log")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    }); // poll 3: running again
+    // A THIRD poll's worth of time passing (which would have been the
+    // "second consecutive null" if the flake had counted) must still not
+    // clear anything, since the flake was reset by poll 3 seeing the
+    // profile active again.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("persistent log")).toBeInTheDocument();
   });
 });
