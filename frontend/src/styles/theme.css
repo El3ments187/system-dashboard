@@ -1191,51 +1191,13 @@ main {
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 28px;
+  gap: 16px;
   padding: 20px;
   max-width: 1500px;
   margin: 0 auto;
   width: 100%;
   align-items: start;
   animation: fadeIn 400ms ease;
-  overflow-y: auto;
-  align-content: start;
-}
-
-/* Grouped sections (Connections / Documentation / Diagnostics) — replaces
-   the old flat single-grid layout so related settings sit together and
-   siblings within a group share height. */
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.settings-section-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding-left: 2px;
-}
-
-.settings-subgrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
-  align-items: stretch;
-}
-
-/* Diagnostic/status cards (read-only, no Save action) get a lighter,
-   more compact treatment than editable form cards. */
-.settings-subgrid--compact .settings-card-body {
-  padding-top: 10px;
-  padding-bottom: 14px;
-}
-
-.settings-subgrid--compact .settings-card {
-  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
 }
 
 /* Universal truncation-safe field row: label + input/value + optional

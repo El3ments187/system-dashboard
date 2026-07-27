@@ -15,7 +15,10 @@ vi.mock("../services/api", () => ({
   getRepoInfo: vi.fn().mockResolvedValue(null),
   getSettingsLocation: vi
     .fn()
-    .mockResolvedValue({ path: "/home/user/.config/model-deck/settings.json", exists: false }),
+    .mockResolvedValue({
+      path: "/home/user/.config/model-deck/settings.json",
+      exists: false,
+    }),
 }));
 
 vi.mock("../components/DirectoryBrowserModal", () => ({
@@ -94,12 +97,18 @@ describe("SettingsPage N — layout + truncation (Step N)", () => {
     expect(input).toHaveAttribute("title", longPath);
   });
 
-  it("groups cards under Connections, Documentation, and Diagnostics section labels", async () => {
-    render(<SettingsPage accent={accent} />);
+  // Grouped section labels (Connections / Documentation / Diagnostics) were
+  // removed when the settings page reverted to a flat settings-grid layout.
+  // Cards now sit directly in the grid; their own card titles are the
+  // identifiers. The old test asserted the wrong rule (grouped wrappers).
+  it("renders card titles directly in the flat settings grid (no section wrappers)", async () => {
+    const { container } = render(<SettingsPage accent={accent} />);
     await waitFor(() => {
-      expect(screen.getByText("Connections")).toBeInTheDocument();
+      expect(screen.getByText("AI Service Configuration")).toBeInTheDocument();
     });
-    expect(screen.getByText("Documentation")).toBeInTheDocument();
-    expect(screen.getByText("Diagnostics")).toBeInTheDocument();
+    expect(screen.getByText("LLAMA.CPP Configuration")).toBeInTheDocument();
+    expect(screen.getByText("LLAMA.CPP Documentation")).toBeInTheDocument();
+    // No grouped section wrapper elements
+    expect(container.querySelector(".settings-section")).toBeNull();
   });
 });

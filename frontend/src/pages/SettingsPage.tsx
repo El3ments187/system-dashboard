@@ -51,12 +51,21 @@ function SettingsFileLocationCard({
 
       <div className="settings-card-body">
         {location == null ? (
-          <div style={{ padding: 12, fontSize: 12, color: "var(--text-muted)" }}>
+          <div
+            style={{ padding: 12, fontSize: 12, color: "var(--text-muted)" }}
+          >
             Loading location…
           </div>
         ) : (
           <div className="settings-field">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 8,
+              }}
+            >
               <span
                 style={{
                   fontSize: 10,
@@ -94,7 +103,13 @@ function SettingsFileLocationCard({
               </button>
             </div>
             {!location.exists && (
-              <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                }}
+              >
                 File will be created when you save settings.
               </div>
             )}
@@ -462,182 +477,39 @@ export default function SettingsPage({}: SettingsPageProps) {
 
   return (
     <main className="settings-grid">
-      <section className="settings-section">
-        <div className="settings-section-label">Connections</div>
-        <div className="settings-subgrid">
-          <SettingsCard>
-            <div className="settings-card-header">
-              <div data-accent-el="" className="settings-icon-badge">
-                <SettingsIcon
-                  size={16}
-                  style={{ color: "var(--accent-primary)" }}
-                />
-              </div>
-              <div>
-                <div className="settings-card-title">AI Service Configuration</div>
-                <div className="settings-card-subtitle">
-                  Connections to AI services on the network
-                </div>
-              </div>
+      <SettingsCard>
+        <div className="settings-card-header">
+          <div data-accent-el="" className="settings-icon-badge">
+            <SettingsIcon
+              size={16}
+              style={{ color: "var(--accent-primary)" }}
+            />
+          </div>
+          <div>
+            <div className="settings-card-title">AI Service Configuration</div>
+            <div className="settings-card-subtitle">
+              Connections to AI services on the network
             </div>
+          </div>
+        </div>
 
-            <div className="settings-card-body">
-              {loading ? (
-                <div
-                  style={{
-                    padding: 20,
-                    textAlign: "center",
-                    color: "var(--text-muted)",
-                    fontSize: 13,
-                  }}
-                >
-                  Loading settings...
-                </div>
-              ) : (
-                <>
-                  {fields.map(({ key, label, placeholder }) =>
-                    renderUrlField(key, label, placeholder, <Link2 size={12} />),
-                  )}
-
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "center",
-                      marginTop: 16,
-                    }}
-                  >
-                    <button
-                      data-accent-el=""
-                      className="settings-btn settings-btn-accent"
-                      onClick={handleSave}
-                      disabled={saving}
-                      style={{ padding: "10px 24px" }}
-                    >
-                      {saving ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Save size={14} />
-                      )}
-                      {saving ? "Saving..." : "Save Settings"}
-                    </button>
-                  </div>
-                </>
+        <div className="settings-card-body">
+          {loading ? (
+            <div
+              style={{
+                padding: 20,
+                textAlign: "center",
+                color: "var(--text-muted)",
+                fontSize: 13,
+              }}
+            >
+              Loading settings...
+            </div>
+          ) : (
+            <>
+              {fields.map(({ key, label, placeholder }) =>
+                renderUrlField(key, label, placeholder, <Link2 size={12} />),
               )}
-            </div>
-          </SettingsCard>
-
-          <SettingsCard>
-            <div className="settings-card-header">
-              <div data-accent-el="" className="settings-icon-badge">
-                <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
-              </div>
-              <div>
-                <div className="settings-card-title">LLAMA.CPP Configuration</div>
-                <div className="settings-card-subtitle">
-                  Repository, build, and connection settings
-                </div>
-              </div>
-            </div>
-
-            <div className="settings-card-body">
-              {!loading &&
-                renderUrlField(
-                  "llama_server_url",
-                  "Llama Server URL",
-                  "http://localhost:8081",
-                  <Link2 size={12} />,
-                )}
-
-              <div className="settings-field">
-                <label htmlFor="llama-working-dir" className="settings-field-label">
-                  <Folder size={12} />
-                  Working Directory
-                </label>
-                <div className="settings-path-row">
-                  <input
-                    type="text"
-                    id="llama-working-dir"
-                    name="llama-working-dir"
-                    className="settings-input"
-                    value={llamaDir}
-                    readOnly
-                    title={llamaDir || undefined}
-                    placeholder="No directory selected"
-                    style={{
-                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                    }}
-                  />
-                  {llamaDir && (
-                    <button
-                      className="settings-btn"
-                      title="Copy path"
-                      onClick={() => navigator.clipboard.writeText(llamaDir)}
-                    >
-                      <Copy size={13} />
-                    </button>
-                  )}
-                  <button
-                    className="settings-btn"
-                    onClick={() => setBrowserOpen(true)}
-                  >
-                    <FolderOpen size={13} />
-                    Browse
-                  </button>
-                </div>
-              </div>
-
-              <div className="settings-field">
-                <label htmlFor="launcher-scan-dir" className="settings-field-label">
-                  <Folder size={12} />
-                  Run Models Scan Directory
-                </label>
-                <div className="settings-path-row">
-                  <input
-                    type="text"
-                    id="launcher-scan-dir"
-                    name="launcher-scan-dir"
-                    className="settings-input"
-                    value={scanDir}
-                    readOnly
-                    title={scanDir || undefined}
-                    placeholder="No directory selected"
-                    style={{
-                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                    }}
-                  />
-                  {scanDir && (
-                    <button
-                      className="settings-btn"
-                      title="Copy path"
-                      onClick={() => navigator.clipboard.writeText(scanDir)}
-                    >
-                      <Copy size={13} />
-                    </button>
-                  )}
-                  <button
-                    className="settings-btn"
-                    onClick={() => setScanBrowserOpen(true)}
-                  >
-                    <FolderOpen size={13} />
-                    Browse
-                  </button>
-                </div>
-              </div>
-
-              <div className="settings-field">
-                <div className="settings-field-label">
-                  <SettingsIcon size={12} />
-                  Update Script
-                </div>
-                <button
-                  data-accent-el=""
-                  className="settings-btn settings-btn-accent"
-                  onClick={() => setEditScriptOpen(true)}
-                >
-                  <SettingsIcon size={13} />
-                  Edit Update Script
-                </button>
-              </div>
 
               <div
                 style={{
@@ -661,225 +533,358 @@ export default function SettingsPage({}: SettingsPageProps) {
                   {saving ? "Saving..." : "Save Settings"}
                 </button>
               </div>
-            </div>
-          </SettingsCard>
+            </>
+          )}
         </div>
-      </section>
+      </SettingsCard>
 
-      <section className="settings-section">
-        <div className="settings-section-label">Documentation</div>
-        <div className="settings-subgrid">
-          <SettingsCard>
-            <div className="settings-card-header">
-              <div data-accent-el="" className="settings-icon-badge">
-                <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />
-              </div>
-              <div>
-                <div className="settings-card-title">LLAMA.CPP Documentation</div>
-                <div className="settings-card-subtitle">
-                  Documentation links shown on the AI page
-                </div>
-              </div>
+      <SettingsCard>
+        <div className="settings-card-header">
+          <div data-accent-el="" className="settings-icon-badge">
+            <GitBranch size={16} style={{ color: "var(--accent-primary)" }} />
+          </div>
+          <div>
+            <div className="settings-card-title">LLAMA.CPP Configuration</div>
+            <div className="settings-card-subtitle">
+              Repository, build, and connection settings
             </div>
+          </div>
+        </div>
 
-            <div className="settings-card-body">
-              {(repoInfo?.local_build_tag || repoInfo?.latest_build_tag) && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 4,
-                    marginBottom: 12,
-                  }}
+        <div className="settings-card-body">
+          {!loading &&
+            renderUrlField(
+              "llama_server_url",
+              "Llama Server URL",
+              "http://localhost:8081",
+              <Link2 size={12} />,
+            )}
+
+          <div className="settings-field">
+            <label htmlFor="llama-working-dir" className="settings-field-label">
+              <Folder size={12} />
+              Working Directory
+            </label>
+            <div className="settings-path-row">
+              <input
+                type="text"
+                id="llama-working-dir"
+                name="llama-working-dir"
+                className="settings-input"
+                value={llamaDir}
+                readOnly
+                title={llamaDir || undefined}
+                placeholder="No directory selected"
+                style={{
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                }}
+              />
+              {llamaDir && (
+                <button
+                  className="settings-btn"
+                  title="Copy path"
+                  onClick={() => navigator.clipboard.writeText(llamaDir)}
                 >
-                  {repoInfo?.local_build_tag && (
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                      Installed tag:{" "}
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          color: "var(--accent-primary)",
-                        }}
-                      >
-                        {repoInfo.local_build_tag}
-                      </span>
-                    </div>
-                  )}
-                  {repoInfo?.latest_build_tag && (
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                      Latest available:{" "}
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          color:
-                            repoInfo.local_build_tag &&
-                            repoInfo.local_build_tag !== repoInfo.latest_build_tag
-                              ? "var(--warning)"
-                              : "var(--text-primary)",
-                        }}
-                      >
-                        {repoInfo.latest_build_tag}
-                      </span>
-                      {repoInfo.local_build_tag &&
-                        repoInfo.local_build_tag !== repoInfo.latest_build_tag && (
-                          <span
-                            style={{
-                              marginLeft: 6,
-                              color: "var(--warning)",
-                              fontWeight: 700,
-                            }}
-                          >
-                            Update available
-                          </span>
-                        )}
-                    </div>
-                  )}
+                  <Copy size={13} />
+                </button>
+              )}
+              <button
+                className="settings-btn"
+                onClick={() => setBrowserOpen(true)}
+              >
+                <FolderOpen size={13} />
+                Browse
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-field">
+            <label htmlFor="launcher-scan-dir" className="settings-field-label">
+              <Folder size={12} />
+              Run Models Scan Directory
+            </label>
+            <div className="settings-path-row">
+              <input
+                type="text"
+                id="launcher-scan-dir"
+                name="launcher-scan-dir"
+                className="settings-input"
+                value={scanDir}
+                readOnly
+                title={scanDir || undefined}
+                placeholder="No directory selected"
+                style={{
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                }}
+              />
+              {scanDir && (
+                <button
+                  className="settings-btn"
+                  title="Copy path"
+                  onClick={() => navigator.clipboard.writeText(scanDir)}
+                >
+                  <Copy size={13} />
+                </button>
+              )}
+              <button
+                className="settings-btn"
+                onClick={() => setScanBrowserOpen(true)}
+              >
+                <FolderOpen size={13} />
+                Browse
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-field">
+            <div className="settings-field-label">
+              <SettingsIcon size={12} />
+              Update Script
+            </div>
+            <button
+              data-accent-el=""
+              className="settings-btn settings-btn-accent"
+              onClick={() => setEditScriptOpen(true)}
+            >
+              <SettingsIcon size={13} />
+              Edit Update Script
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginTop: 16,
+            }}
+          >
+            <button
+              data-accent-el=""
+              className="settings-btn settings-btn-accent"
+              onClick={handleSave}
+              disabled={saving}
+              style={{ padding: "10px 24px" }}
+            >
+              {saving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Save size={14} />
+              )}
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard>
+        <div className="settings-card-header">
+          <div data-accent-el="" className="settings-icon-badge">
+            <BookOpen size={16} style={{ color: "var(--accent-primary)" }} />
+          </div>
+          <div>
+            <div className="settings-card-title">LLAMA.CPP Documentation</div>
+            <div className="settings-card-subtitle">
+              Documentation links shown on the AI page
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-card-body">
+          {(repoInfo?.local_build_tag || repoInfo?.latest_build_tag) && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                marginBottom: 12,
+              }}
+            >
+              {repoInfo?.local_build_tag && (
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  Installed tag:{" "}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      color: "var(--accent-primary)",
+                    }}
+                  >
+                    {repoInfo.local_build_tag}
+                  </span>
                 </div>
               )}
-
-              <div className="settings-field">
-                <div className="settings-field-label">
-                  <Terminal size={12} />
-                  Installed Version Command
-                </div>
-                <button
-                  data-accent-el=""
-                  className="settings-btn settings-btn-accent"
-                  onClick={() => setEditLocalCmdOpen(true)}
-                >
-                  <Terminal size={13} />
-                  Edit Installed Version Command
-                </button>
-              </div>
-
-              <div className="settings-field">
-                <div className="settings-field-label">
-                  <Terminal size={12} />
-                  Latest Version Command
-                </div>
-                <button
-                  data-accent-el=""
-                  className="settings-btn settings-btn-accent"
-                  onClick={() => setEditLatestCmdOpen(true)}
-                >
-                  <Terminal size={13} />
-                  Edit Latest Version Command
-                </button>
-              </div>
-
-              <div className="settings-field">
-                <label htmlFor="readme-url" className="settings-field-label">
-                  <BookOpen size={12} />
-                  README URL
-                </label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    type="url"
-                    id="readme-url"
-                    name="readme-url"
-                    className="settings-input"
-                    value={docSettings.readmeUrl}
-                    title={docSettings.readmeUrl || undefined}
-                    onChange={(e) =>
-                      setDocSettings((prev) => ({
-                        ...prev,
-                        readmeUrl: e.target.value,
-                      }))
-                    }
-                    placeholder="https://github.com/ggml-org/llama.cpp/blob/master/README.md"
-                  />
-                  <button
-                    className="settings-btn"
-                    onClick={() =>
-                      docSettings.readmeUrl &&
-                      window.open(
-                        docSettings.readmeUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
-                    disabled={!docSettings.readmeUrl}
+              {repoInfo?.latest_build_tag && (
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  Latest available:{" "}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      color:
+                        repoInfo.local_build_tag &&
+                        repoInfo.local_build_tag !== repoInfo.latest_build_tag
+                          ? "var(--warning)"
+                          : "var(--text-primary)",
+                    }}
                   >
-                    <ExternalLink size={13} />
-                  </button>
+                    {repoInfo.latest_build_tag}
+                  </span>
+                  {repoInfo.local_build_tag &&
+                    repoInfo.local_build_tag !== repoInfo.latest_build_tag && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          color: "var(--warning)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Update available
+                      </span>
+                    )}
                 </div>
-                {docErrors.readmeUrl && (
-                  <div
-                    style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
-                  >
-                    {docErrors.readmeUrl}
-                  </div>
-                )}
-              </div>
-
-              <div className="settings-field">
-                <label htmlFor="build-notes-url" className="settings-field-label">
-                  <FileText size={12} />
-                  Build Notes URL
-                </label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    type="url"
-                    id="build-notes-url"
-                    name="build-notes-url"
-                    className="settings-input"
-                    value={docSettings.buildNotesUrl}
-                    title={docSettings.buildNotesUrl || undefined}
-                    onChange={(e) =>
-                      setDocSettings((prev) => ({
-                        ...prev,
-                        buildNotesUrl: e.target.value,
-                      }))
-                    }
-                    placeholder="https://github.com/ggml-org/llama.cpp/releases"
-                  />
-                  <button
-                    className="settings-btn"
-                    onClick={() =>
-                      docSettings.buildNotesUrl &&
-                      window.open(
-                        docSettings.buildNotesUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
-                    disabled={!docSettings.buildNotesUrl}
-                  >
-                    <ExternalLink size={13} />
-                  </button>
-                </div>
-                {docErrors.buildNotesUrl && (
-                  <div
-                    style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
-                  >
-                    {docErrors.buildNotesUrl}
-                  </div>
-                )}
-              </div>
-
-              <div
-                style={{ display: "flex", justifyContent: "center", marginTop: 16 }}
-              >
-                <button
-                  data-accent-el=""
-                  className="settings-btn settings-btn-accent"
-                  onClick={handleSaveDocSettings}
-                  style={{ padding: "10px 24px" }}
-                >
-                  {docSaveState === "success" ? (
-                    <CheckCircle size={14} />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  {docSaveState === "success"
-                    ? "Saved"
-                    : "Save Documentation Settings"}
-                </button>
-              </div>
+              )}
             </div>
-          </SettingsCard>
+          )}
+
+          <div className="settings-field">
+            <div className="settings-field-label">
+              <Terminal size={12} />
+              Installed Version Command
+            </div>
+            <button
+              data-accent-el=""
+              className="settings-btn settings-btn-accent"
+              onClick={() => setEditLocalCmdOpen(true)}
+            >
+              <Terminal size={13} />
+              Edit Installed Version Command
+            </button>
+          </div>
+
+          <div className="settings-field">
+            <div className="settings-field-label">
+              <Terminal size={12} />
+              Latest Version Command
+            </div>
+            <button
+              data-accent-el=""
+              className="settings-btn settings-btn-accent"
+              onClick={() => setEditLatestCmdOpen(true)}
+            >
+              <Terminal size={13} />
+              Edit Latest Version Command
+            </button>
+          </div>
+
+          <div className="settings-field">
+            <label htmlFor="readme-url" className="settings-field-label">
+              <BookOpen size={12} />
+              README URL
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="url"
+                id="readme-url"
+                name="readme-url"
+                className="settings-input"
+                value={docSettings.readmeUrl}
+                title={docSettings.readmeUrl || undefined}
+                onChange={(e) =>
+                  setDocSettings((prev) => ({
+                    ...prev,
+                    readmeUrl: e.target.value,
+                  }))
+                }
+                placeholder="https://github.com/ggml-org/llama.cpp/blob/master/README.md"
+              />
+              <button
+                className="settings-btn"
+                onClick={() =>
+                  docSettings.readmeUrl &&
+                  window.open(
+                    docSettings.readmeUrl,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+                disabled={!docSettings.readmeUrl}
+              >
+                <ExternalLink size={13} />
+              </button>
+            </div>
+            {docErrors.readmeUrl && (
+              <div
+                style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
+              >
+                {docErrors.readmeUrl}
+              </div>
+            )}
+          </div>
+
+          <div className="settings-field">
+            <label htmlFor="build-notes-url" className="settings-field-label">
+              <FileText size={12} />
+              Build Notes URL
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="url"
+                id="build-notes-url"
+                name="build-notes-url"
+                className="settings-input"
+                value={docSettings.buildNotesUrl}
+                title={docSettings.buildNotesUrl || undefined}
+                onChange={(e) =>
+                  setDocSettings((prev) => ({
+                    ...prev,
+                    buildNotesUrl: e.target.value,
+                  }))
+                }
+                placeholder="https://github.com/ggml-org/llama.cpp/releases"
+              />
+              <button
+                className="settings-btn"
+                onClick={() =>
+                  docSettings.buildNotesUrl &&
+                  window.open(
+                    docSettings.buildNotesUrl,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+                disabled={!docSettings.buildNotesUrl}
+              >
+                <ExternalLink size={13} />
+              </button>
+            </div>
+            {docErrors.buildNotesUrl && (
+              <div
+                style={{ marginTop: 6, fontSize: 11, color: "var(--danger)" }}
+              >
+                {docErrors.buildNotesUrl}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{ display: "flex", justifyContent: "center", marginTop: 16 }}
+          >
+            <button
+              data-accent-el=""
+              className="settings-btn settings-btn-accent"
+              onClick={handleSaveDocSettings}
+              style={{ padding: "10px 24px" }}
+            >
+              {docSaveState === "success" ? (
+                <CheckCircle size={14} />
+              ) : (
+                <Save size={14} />
+              )}
+              {docSaveState === "success"
+                ? "Saved"
+                : "Save Documentation Settings"}
+            </button>
+          </div>
         </div>
-      </section>
+      </SettingsCard>
 
       <DirectoryBrowserModal
         isOpen={browserOpen}
@@ -918,13 +923,9 @@ export default function SettingsPage({}: SettingsPageProps) {
         title="Edit Latest Version Command"
         description="Shell command run in the working directory. Output is used as the latest available version tag."
       />
-      <section className="settings-section">
-        <div className="settings-section-label">Diagnostics</div>
-        <div className="settings-subgrid settings-subgrid--compact">
-          <SettingsFileLocationCard location={settingsLocation} />
-          <GpuBackendStatus />
-        </div>
-      </section>
+      <SettingsFileLocationCard location={settingsLocation} />
+
+      <GpuBackendStatus />
     </main>
   );
 }

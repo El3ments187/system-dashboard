@@ -426,7 +426,8 @@ export default function LlamaCppPage() {
               className="accent-fill accent-glow-target"
               style={{
                 height: 2,
-                width: 36,
+                width: `14ch`,
+                fontSize: 10,
                 background: "var(--accent-fill)",
                 backgroundSize: "var(--accent-fill-size, 200% 200%)",
                 borderRadius: 2,
@@ -714,6 +715,24 @@ export default function LlamaCppPage() {
                 flex: 1,
               }}
             >
+              {/* Accent line — matches Active Model's hero-card divider,
+                  added for consistency across the top row. */}
+              <div
+                className="accent-fill accent-glow-target"
+                style={{
+                  height: 2,
+                  width: `12ch`,
+                  fontSize: 10.5,
+                  background: "var(--accent-fill)",
+                  backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                  borderRadius: 2,
+                  flexShrink: 0,
+                }}
+              >
+                <span className="sheen-flow-overlay" aria-hidden />
+                <span className="bright-breathe" />
+                <span className="bright-surge" />
+              </div>
               {/* Gen Speed banner */}
               <div
                 data-accent-el=""
@@ -941,6 +960,24 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
               }}
             >
+              {/* Accent line — matches Active Model's hero-card divider,
+                  added for consistency across the top row. */}
+              <div
+                className="accent-fill accent-glow-target"
+                style={{
+                  height: 2,
+                  width: `9ch`,
+                  fontSize: 10.5,
+                  background: "var(--accent-fill)",
+                  backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                  borderRadius: 2,
+                  flexShrink: 0,
+                }}
+              >
+                <span className="sheen-flow-overlay" aria-hidden />
+                <span className="bright-breathe" />
+                <span className="bright-surge" />
+              </div>
               {!llamaOnline && !llamaCppLoading && (
                 <div
                   className="error-banner"
@@ -1251,6 +1288,28 @@ export default function LlamaCppPage() {
                   alignContent: "start",
                 }}
               >
+                {/* Accent line — matches Active Model's hero-card divider.
+                    This card's content is a 2-column grid (KvRow items),
+                    not flex-column like Throughput/Context, so this needs
+                    gridColumn: "1 / -1" to span both columns as its own
+                    full-width row rather than sharing a cell with the
+                    first KvRow. */}
+                <div
+                  className="accent-fill accent-glow-target"
+                  style={{
+                    gridColumn: "1 / -1",
+                    height: 2,
+                    width: `9ch`,
+                    fontSize: 10.5,
+                    background: "var(--accent-fill)",
+                    backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                    borderRadius: 2,
+                  }}
+                >
+                  <span className="sheen-flow-overlay" aria-hidden />
+                  <span className="bright-breathe" />
+                  <span className="bright-surge" />
+                </div>
                 <KvRow
                   icon={<Server size={11} />}
                   label="Server"
@@ -1399,6 +1458,23 @@ export default function LlamaCppPage() {
                   gap: 8,
                 }}
               >
+                {/* Accent line — matches Active Model's hero-card divider. */}
+                <div
+                  className="accent-fill accent-glow-target"
+                  style={{
+                    height: 2,
+                    width: `11ch`,
+                    fontSize: 10.5,
+                    background: "var(--accent-fill)",
+                    backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                    borderRadius: 2,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span className="sheen-flow-overlay" aria-hidden />
+                  <span className="bright-breathe" />
+                  <span className="bright-surge" />
+                </div>
                 {/* Build boxes */}
                 <div style={{ display: "flex", gap: 7 }}>
                   <MetricTile
