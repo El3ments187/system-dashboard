@@ -2095,56 +2095,52 @@ describe("LlamaCppPage throughput row height stays bounded (Step Q side-effect f
 });
 
 describe("LlamaCppPage: accent-line divider consistent across all five cards", () => {
-  it("all five cards have the accent-line divider (user-requested consistency)", async () => {
-    // Originally unique to Active Model (the "hero" card). User asked for
-    // it on Throughput and Context, then Runtime and llama.cpp too — now
-    // consistent across every card on the page. Source-level guard (not a
-    // rendered-DOM count) since rendered count also depends on runtime
-    // state (e.g. Context's conditional offline banner) — the reliable,
-    // deterministic signal is that each card's OWN JSX contains the marker.
+  it("all five cards carry the title-width accent divider (user-requested consistency)", async () => {
+    // User rulings, in order: (1) the divider on every card, (2) it must
+    // extend exactly as far as each card's name — so a static width was
+    // replaced by a fit-content wrapper (Active Model inline; the other
+    // four via CardHeader's opt-in titleAccentBar prop, which renders the
+    // bar at width:100% of the title's real rendered width). Source-level
+    // guard: Active Model's block contains the inline marker; the other
+    // four blocks pass the prop; CardComponents owns the implementation.
     const fs = await import("fs");
     const path = await import("path");
     const src = fs.readFileSync(
       path.resolve(__dirname, "../pages/LlamaCppPage.tsx"),
       "utf-8",
     );
+    const cardComponents = fs.readFileSync(
+      path.resolve(__dirname, "../components/shared/CardComponents.tsx"),
+      "utf-8",
+    );
+    // Active Model: inline bar inside its own fit-content label wrapper.
+    const am = src.slice(
+      src.indexOf("{/* ── Active Model Card ── */}"),
+      src.indexOf("{/* ── Throughput Card ── */}"),
+    );
+    expect(
+      am.includes('className="accent-fill accent-glow-target"'),
+      "Active Model is missing its inline accent divider",
+    ).toBe(true);
+    // The other four: divider via CardHeader's titleAccentBar prop.
     const blocks: Array<[string, number, number]> = [
-      [
-        "Active Model",
-        src.indexOf("{/* ── Active Model Card ── */}"),
-        src.indexOf("{/* ── Throughput Card ── */}"),
-      ],
-      [
-        "Throughput",
-        src.indexOf("{/* ── Throughput Card ── */}"),
-        src.indexOf("{/* ── Context Card ── */}"),
-      ],
-      [
-        "Context",
-        src.indexOf("{/* ── Context Card ── */}"),
-        src.indexOf("{/* ── Context Card ── */}") + 4000,
-      ],
-      [
-        "Runtime",
-        src.indexOf("{/* Runtime card */}"),
-        src.indexOf("{/* llama.cpp card */}"),
-      ],
-      [
-        "llama.cpp",
-        src.indexOf("{/* llama.cpp card */}"),
-        src.indexOf("{/* llama.cpp card */}") + 4000,
-      ],
+      ["Throughput", src.indexOf("{/* ── Throughput Card ── */}"), src.indexOf("{/* ── Context Card ── */}")],
+      ["Context", src.indexOf("{/* ── Context Card ── */}"), src.indexOf("{/* ── Context Card ── */}") + 4000],
+      ["Runtime", src.indexOf("{/* Runtime card */}"), src.indexOf("{/* llama.cpp card */}")],
+      ["llama.cpp", src.indexOf("{/* llama.cpp card */}"), src.indexOf("{/* llama.cpp card */}") + 4000],
     ];
     for (const [name, start, end] of blocks) {
-      expect(start, `${name} card comment marker not found`).toBeGreaterThan(
-        -1,
-      );
+      expect(start, `${name} card comment marker not found`).toBeGreaterThan(-1);
       expect(
-        src
-          .slice(start, end)
-          .includes('className="accent-fill accent-glow-target"'),
-        `${name} card is missing the accent-line divider`,
+        src.slice(start, end).includes("titleAccentBar"),
+        `${name} card is missing the titleAccentBar prop`,
       ).toBe(true);
     }
+    // And the prop must actually render the marker in CardHeader.
+    expect(
+      cardComponents.includes("titleAccentBar") &&
+        cardComponents.includes('className="accent-fill accent-glow-target"'),
+      "CardHeader is missing the titleAccentBar implementation",
+    ).toBe(true);
   });
 });

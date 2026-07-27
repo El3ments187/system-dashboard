@@ -82,12 +82,20 @@ export function CardHeader({
   online,
   right,
   compact = false,
+  titleAccentBar = false,
 }: {
   icon: React.ReactNode;
   title: string;
   online?: boolean;
   right?: React.ReactNode;
   compact?: boolean;
+  /** Renders the accent divider directly beneath the title, sized to the
+      title's REAL rendered width (icon + gap + text + letter-spacing).
+      Opt-in so the many other CardHeader users are untouched. Added when
+      the user ruled the per-card accent bars must extend exactly as far
+      as each card's name — a static width can't do that across different
+      titles; a fit-content wrapper can't get it wrong. */
+  titleAccentBar?: boolean;
 }) {
   if (compact) {
     return (
@@ -103,28 +111,52 @@ export function CardHeader({
       >
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 10.5,
-            fontWeight: 600,
-            color: "var(--text-secondary)",
-            textTransform: "uppercase",
-            letterSpacing: "1.1px",
+            display: "inline-flex",
+            flexDirection: "column",
+            gap: titleAccentBar ? 3 : 0,
           }}
         >
-          {icon && (
-            <span
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: "var(--text-secondary)",
+              textTransform: "uppercase",
+              letterSpacing: "1.1px",
+            }}
+          >
+            {icon && (
+              <span
+                style={{
+                  color: "var(--accent-primary)",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                {icon}
+              </span>
+            )}
+            {title}
+          </div>
+          {titleAccentBar && (
+            <div
+              className="accent-fill accent-glow-target"
               style={{
-                color: "var(--accent-primary)",
-                display: "flex",
-                alignItems: "center",
+                height: 2,
+                width: "100%",
+                background: "var(--accent-fill)",
+                backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                borderRadius: 2,
               }}
             >
-              {icon}
-            </span>
+              <span className="sheen-flow-overlay" aria-hidden />
+              <span className="bright-breathe" />
+              <span className="bright-surge" />
+            </div>
           )}
-          {title}
         </div>
         {right}
       </div>

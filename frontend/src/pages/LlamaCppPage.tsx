@@ -387,29 +387,60 @@ export default function LlamaCppPage() {
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-start",
                 justifyContent: "space-between",
                 marginBottom: 2,
               }}
             >
+              {/* Label + accent line share ONE fit-content wrapper so the
+                  line's width IS the label's real rendered width (icon +
+                  gap + text + letter-spacing included). User-reported: a
+                  static width (36px, then a 14ch approximation) always
+                  stopped short of the card name — ch units measure the
+                  '0' glyph only and can't see letter-spacing, the icon,
+                  or the flex gap. width:"100%" of an inline-flex column
+                  can't drift, at any font or label. */}
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "1px",
+                  display: "inline-flex",
+                  flexDirection: "column",
+                  gap: 4,
                 }}
               >
-                <span
-                  style={{ color: "var(--accent-primary)", display: "flex" }}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "1px",
+                  }}
                 >
-                  <Cpu size={14} />
-                </span>
-                Active Model
+                  <span
+                    style={{ color: "var(--accent-primary)", display: "flex" }}
+                  >
+                    <Cpu size={14} />
+                  </span>
+                  Active Model
+                </div>
+                {/* Accent line */}
+                <div
+                  className="accent-fill accent-glow-target"
+                  style={{
+                    height: 2,
+                    width: "100%",
+                    background: "var(--accent-fill)",
+                    backgroundSize: "var(--accent-fill-size, 200% 200%)",
+                    borderRadius: 2,
+                  }}
+                >
+                  <span className="sheen-flow-overlay" aria-hidden />
+                  <span className="bright-breathe" />
+                  <span className="bright-surge" />
+                </div>
               </div>
               <span
                 style={{
@@ -420,23 +451,6 @@ export default function LlamaCppPage() {
               >
                 01
               </span>
-            </div>
-            {/* Accent line */}
-            <div
-              className="accent-fill accent-glow-target"
-              style={{
-                height: 2,
-                width: `14ch`,
-                fontSize: 10,
-                background: "var(--accent-fill)",
-                backgroundSize: "var(--accent-fill-size, 200% 200%)",
-                borderRadius: 2,
-                marginBottom: 6,
-              }}
-            >
-              <span className="sheen-flow-overlay" aria-hidden />
-              <span className="bright-breathe" />
-              <span className="bright-surge" />
             </div>
             {/* Model name hero */}
             <div
@@ -694,6 +708,7 @@ export default function LlamaCppPage() {
               compact
               icon={<Zap size={13} />}
               title="Throughput"
+              titleAccentBar
               right={
                 <span
                   style={{
@@ -715,24 +730,6 @@ export default function LlamaCppPage() {
                 flex: 1,
               }}
             >
-              {/* Accent line — matches Active Model's hero-card divider,
-                  added for consistency across the top row. */}
-              <div
-                className="accent-fill accent-glow-target"
-                style={{
-                  height: 2,
-                  width: `12ch`,
-                  fontSize: 10.5,
-                  background: "var(--accent-fill)",
-                  backgroundSize: "var(--accent-fill-size, 200% 200%)",
-                  borderRadius: 2,
-                  flexShrink: 0,
-                }}
-              >
-                <span className="sheen-flow-overlay" aria-hidden />
-                <span className="bright-breathe" />
-                <span className="bright-surge" />
-              </div>
               {/* Gen Speed banner */}
               <div
                 data-accent-el=""
@@ -938,6 +935,7 @@ export default function LlamaCppPage() {
               compact
               icon={<Brain size={13} />}
               title="Context"
+              titleAccentBar
               right={
                 <span
                   style={{
@@ -960,24 +958,6 @@ export default function LlamaCppPage() {
                 overflow: "hidden",
               }}
             >
-              {/* Accent line — matches Active Model's hero-card divider,
-                  added for consistency across the top row. */}
-              <div
-                className="accent-fill accent-glow-target"
-                style={{
-                  height: 2,
-                  width: `9ch`,
-                  fontSize: 10.5,
-                  background: "var(--accent-fill)",
-                  backgroundSize: "var(--accent-fill-size, 200% 200%)",
-                  borderRadius: 2,
-                  flexShrink: 0,
-                }}
-              >
-                <span className="sheen-flow-overlay" aria-hidden />
-                <span className="bright-breathe" />
-                <span className="bright-surge" />
-              </div>
               {!llamaOnline && !llamaCppLoading && (
                 <div
                   className="error-banner"
@@ -1265,6 +1245,7 @@ export default function LlamaCppPage() {
                 compact
                 icon={<Activity size={13} />}
                 title="Runtime"
+              titleAccentBar
                 right={
                   <span
                     style={{
@@ -1288,28 +1269,6 @@ export default function LlamaCppPage() {
                   alignContent: "start",
                 }}
               >
-                {/* Accent line — matches Active Model's hero-card divider.
-                    This card's content is a 2-column grid (KvRow items),
-                    not flex-column like Throughput/Context, so this needs
-                    gridColumn: "1 / -1" to span both columns as its own
-                    full-width row rather than sharing a cell with the
-                    first KvRow. */}
-                <div
-                  className="accent-fill accent-glow-target"
-                  style={{
-                    gridColumn: "1 / -1",
-                    height: 2,
-                    width: `9ch`,
-                    fontSize: 10.5,
-                    background: "var(--accent-fill)",
-                    backgroundSize: "var(--accent-fill-size, 200% 200%)",
-                    borderRadius: 2,
-                  }}
-                >
-                  <span className="sheen-flow-overlay" aria-hidden />
-                  <span className="bright-breathe" />
-                  <span className="bright-surge" />
-                </div>
                 <KvRow
                   icon={<Server size={11} />}
                   label="Server"
@@ -1438,6 +1397,7 @@ export default function LlamaCppPage() {
                 compact
                 icon={<Package size={13} />}
                 title="llama.cpp"
+              titleAccentBar
                 right={
                   <span
                     style={{
@@ -1458,23 +1418,6 @@ export default function LlamaCppPage() {
                   gap: 8,
                 }}
               >
-                {/* Accent line — matches Active Model's hero-card divider. */}
-                <div
-                  className="accent-fill accent-glow-target"
-                  style={{
-                    height: 2,
-                    width: `11ch`,
-                    fontSize: 10.5,
-                    background: "var(--accent-fill)",
-                    backgroundSize: "var(--accent-fill-size, 200% 200%)",
-                    borderRadius: 2,
-                    flexShrink: 0,
-                  }}
-                >
-                  <span className="sheen-flow-overlay" aria-hidden />
-                  <span className="bright-breathe" />
-                  <span className="bright-surge" />
-                </div>
                 {/* Build boxes */}
                 <div style={{ display: "flex", gap: 7 }}>
                   <MetricTile
