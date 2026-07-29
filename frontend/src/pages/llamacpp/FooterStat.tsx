@@ -218,6 +218,92 @@ export interface LlamaCppHardwareFooterProps {
   processMetrics?: ProcessMetrics | null;
 }
 
+/** Owns the per-process sparkline ring: seeds on a new process's first
+ * sample, debounces resets (an isolated no-process tick is ignored; two
+ * consecutive ones confirm a real stop), and evicts stale points via
+ * updateRing's 30s window. Extracted from the component body when the
+ * ring's robustness logic (a genuine fix for user-reported permanently
+ * empty graphs) pushed the component past the lint complexity ceiling —
+ * the extraction is behavior-preserving and the hook is the natural
+ * seam: everything ring-related lives here, the component just consumes
+ * the result. Uses React's "adjust state during render on prop change"
+ * pattern (react.dev: You Might Not Need an Effect) — prevProc guards
+ * against loops.
+ */
+function useProcessRing(
+  processMetrics: ProcessMetrics | null | undefined,
+  sys: SysFallback,
+): ProcRing {
+  const [ring, setRing] = useState<ProcRing>(EMPTY_RING);
+  const [prevProc, setPrevProc] = useState<ProcessMetrics | null | undefined>(
+    undefined,
+  );
+  const [nullStreak, setNullStreak] = useState(0);
+  // User-reported: a full minute into a running model, every ring-driven
+  // graph still read "Currently Unavailable" (values populated, graphs
+  // never). Two robustness gaps in the old transition logic conspired:
+  // (1) on the null->process transition it RESET the ring and only began
+  // accumulating on the NEXT distinct update — if updates arrive slowly,
+  // are reference-stable, or the mode flaps, the ring can sit empty
+  // indefinitely (our own test suite had documented this one-update lag
+  // as a workaround rather than fixing it); (2) a SINGLE null tick wiped
+  // all history instantly — the same hair-trigger the LogConsole
+  // active-profile clear had, fixed here the same way: require
+  // consecutive null updates before treating a stop as real. Now the
+  // ring SEEDS with the first sample of a new process immediately (a dot
+  // renders on the very first tick), and an isolated null tick is
+  // ignored rather than destructive.
+  const NULL_TICKS_TO_CONFIRM_STOP = 2;
+
+  if (processMetrics !== prevProc) {
+    setPrevProc(processMetrics);
+    if (processMetrics != null) {
+      setNullStreak(0);
+      // Base-ring selection is where the debounce actually bites: keep
+      // the existing ring unless a stop was CONFIRMED (nullStreak
+      // reached the threshold — which already cleared it, so this term
+      // is belt-and-braces). Two traps this exact line has already
+      // caught, preserved here so they stay caught: (1) computing a
+      // "wasProcess" flag from prevProc alone discarded history on
+      // exactly the isolated flap the debounce exists to survive; (2) a
+      // `prevProc === undefined` mount-detector could not distinguish
+      // "never updated" from "last tick's payload was undefined" — and
+      // the real page passes undefined, not null, when the metrics
+      // object lacks the field, so an undefined-flap reseeded from
+      // empty. The mount case needs NO term at all: the ring's initial
+      // state IS EMPTY_RING, so preserving `prev` on the first update
+      // seeds from empty naturally. Stale-point safety: updateRing's
+      // evict() drops anything older than the 30s window, so a ring
+      // retained across a long gap self-empties rather than showing
+      // ancient data.
+      const startFresh = nullStreak >= NULL_TICKS_TO_CONFIRM_STOP;
+      setRing((prev) =>
+        updateRing(startFresh ? EMPTY_RING : prev, processMetrics, {
+          ...sys }),
+      );
+    } else if (prevProc != null || nullStreak > 0) {
+      // Count EVERY no-process update toward the stop confirmation — not
+      // only the first one after a process. The real page alternates
+      // between null (field present, no process) and undefined (field
+      // absent), which are DIFFERENT references: a null tick followed by
+      // an undefined tick is two consecutive no-process updates and must
+      // confirm a stop. The earlier `prevProc != null` guard alone
+      // counted only the first (prevProc was null-ish for the second, so
+      // the streak froze at 1 and a real stop never cleared the ring).
+      // The `nullStreak > 0` disjunct is what lets subsequent null-ish
+      // updates keep counting; on mount (prevProc undefined, streak 0)
+      // neither side is true, so pre-process null churn stays a no-op.
+      const streak = nullStreak + 1;
+      setNullStreak(streak);
+      if (streak >= NULL_TICKS_TO_CONFIRM_STOP) {
+        setRing(EMPTY_RING);
+      }
+    }
+  }
+
+  return ring;
+}
+
 export function LlamaCppHardwareFooter({
   memTotal,
   gpuPct,
@@ -227,31 +313,12 @@ export function LlamaCppHardwareFooter({
   gpuTempHistory,
   processMetrics,
 }: LlamaCppHardwareFooterProps) {
-  // Accumulate a per-process sparkline ring via React's "setState during render
-  // when a prop changes" pattern (react.dev/learn/you-might-not-need-an-effect
-  // "Adjusting some state when a prop changes"). React re-renders once with the
-  // new ring after each processMetrics update; prevProc guards against infinite loops.
-  const [ring, setRing] = useState<ProcRing>(EMPTY_RING);
-  const [prevProc, setPrevProc] = useState<ProcessMetrics | null | undefined>(
-    undefined,
-  );
-
-  if (processMetrics !== prevProc) {
-    setPrevProc(processMetrics);
-    const wasProcess = prevProc != null;
-    if (wasProcess !== (processMetrics != null)) {
-      setRing(EMPTY_RING);
-    } else if (processMetrics != null) {
-      setRing((prev) =>
-        updateRing(prev, processMetrics, {
-          gpuPct,
-          vramUsedGb: vramUsed,
-          memTotal,
-          vramTotal,
-        }),
-      );
-    }
-  }
+  const ring = useProcessRing(processMetrics, {
+    gpuPct,
+    vramUsedGb: vramUsed,
+    memTotal,
+    vramTotal,
+  });
 
   const isProcess = processMetrics != null;
 

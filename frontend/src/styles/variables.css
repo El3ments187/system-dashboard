@@ -1076,9 +1076,9 @@
 [data-card-glow="on"][data-accent-mode="spectrum"] [style*="--el-index"],
 [data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-halo:
-    0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
-      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
+    0 0 calc(8px + 8px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4))) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), 0.12);
 }
 
@@ -1288,9 +1288,9 @@
    ======================================== */
 [data-card-glow="on"] {
   --card-halo:
-    0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
-      calc(2px * var(--glow-intensity, 1.4)) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
+    0 0 calc(8px + 8px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4))) var(--accent-glow),
+    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), 0.12);
 }
 
@@ -1326,14 +1326,14 @@
     .accent-glow-target
   ) {
   --card-halo:
-    0 0 calc(8px + 8px * var(--glow-intensity, 1.4))
-      calc(2px * var(--glow-intensity, 1.4))
+    0 0 calc(8px + 8px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       color-mix(
         in srgb,
         var(--accent-glow) calc(var(--breathe-halo-mult, 1) * 100%),
         transparent
       ),
-    0 0 calc(48px + 14px * var(--glow-intensity, 1.4))
+    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), calc(0.12 * var(--breathe-halo-mult, 1)));
   animation: fx-breathe-halo var(--breathe-speed, 4s) ease-in-out infinite;
 }

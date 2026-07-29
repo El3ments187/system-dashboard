@@ -162,17 +162,17 @@ describe("LlamaCppHardwareFooter — process source", () => {
     // out BASE_PROPS' system numbers appearing instead.
     expect(screen.queryByText("45.0%")).not.toBeInTheDocument();
     expect(screen.queryByText("60%")).not.toBeInTheDocument();
-    // The graphs are DIFFERENT from the values, honestly: the ring
-    // (drives the sparklines) resets to empty on this first
-    // no-process->process transition and only starts accumulating on the
-    // NEXT update while already in process mode (existing, correct
-    // behavior — same mechanism the "stretch mode wiring" test above
-    // works around with a second rerender). So immediately after this
-    // FIRST transition, the graphs may still show "Currently Unavailable"
-    // for one more poll cycle even though the numbers are already real —
-    // that's expected, not a bug, and not what this test is asserting.
-    // A second update (matching the NEXT real poll) is what proves the
-    // graphs catch up too:
+    // The graphs now populate on this SAME first transition: the ring
+    // SEEDS with the first sample immediately (user-reported regression
+    // fix — a running model previously showed "Currently Unavailable"
+    // graphs indefinitely because the old logic reset on the transition
+    // and waited for the NEXT distinct update; that lag was even
+    // documented in this very comment as "expected, not a bug" — it was
+    // a bug). Only GPU Temp's graph remains unavailable here, and only
+    // because this fixture's gpuTempHistory is empty — unrelated to
+    // isProcess.
+    expect(screen.getAllByText("Currently Unavailable")).toHaveLength(1);
+    // A second update (matching the NEXT real poll) keeps accumulating:
     rerender(
       <LlamaCppHardwareFooter
         {...BASE_PROPS}
@@ -272,14 +272,10 @@ describe("LlamaCppHardwareFooter — sparkline stretch mode wiring (process mode
   // pass `stretch` to its Sparkline calls at all — a future edit could
   // silently drop the prop without any Sparkline-level test catching it.
   it("CPU tile's Sparkline is called with stretch mode (process mode, real data present)", () => {
-    // A single render lands on the ring's OWN transition-reset branch
-    // (prevProc undefined -> processMetrics present counts as a mode
-    // change, which resets to EMPTY_RING rather than accumulating) — this
-    // is existing, correct application behavior, not something this test
-    // should fight. A second render with a NEW object (same values, new
-    // reference, so React sees a real prop change) exercises the actual
-    // accumulation path and gives the ring one real point, matching what
-    // a genuine second poll does.
+    // The ring now seeds on the very first render (one point). A second
+    // render with a NEW object reference accumulates a second point,
+    // matching a genuine second poll — two points guarantee a <path>
+    // (not just a single-point dot) for the svg inspection below.
     const { rerender } = render(
       <LlamaCppHardwareFooter
         {...BASE_PROPS}
@@ -313,6 +309,111 @@ describe("LlamaCppHardwareFooter — sparkline stretch mode wiring (process mode
 });
 
 // ─── value-column width stability ──────────────────────────────────────
+
+describe("ring robustness — seed on transition, debounced reset (user-reported empty-graphs regression)", () => {
+  // Helper: the CPU tile's sparkline svg elements. A single-point ring
+  // renders a dot (<circle>); two-plus points render a line (<path>);
+  // zero points render the "Currently Unavailable" text instead of an
+  // svg. That distinction is what separates "history PRESERVED across a
+  // flap" (path) from "history LOST and merely reseeded" (circle only).
+  const cpuSparklineShapes = () => {
+    const cpuTile = screen
+      .getByText("CPU")
+      .closest("[data-accent-el]") as HTMLElement;
+    // The tile contains TWO kinds of svg: the lucide <Cpu> ICON (class
+    // "lucide", drawn entirely with <path>s) and the Sparkline chart.
+    // Counting paths without excluding the icon made a paths>0 assertion
+    // pass vacuously — caught when the stricter paths===0 case turned up
+    // 12 icon paths. Filter to non-icon svgs only.
+    const svgs = Array.from(cpuTile.querySelectorAll("svg")).filter(
+      (v) => !v.classList.contains("lucide"),
+    );
+    return {
+      paths: svgs.flatMap((v) => Array.from(v.querySelectorAll("path"))),
+      circles: svgs.flatMap((v) => Array.from(v.querySelectorAll("circle"))),
+    };
+  };
+
+  it("seeds the ring with the FIRST sample: graphs render on the very first process tick", () => {
+    // The user's exact report: model running a full minute, values
+    // populated, every ring graph still "Currently Unavailable". Old
+    // logic reset the ring on the idle->process transition and only
+    // accumulated on the NEXT distinct update — if that never arrives
+    // (or references are stable), graphs stay empty forever.
+    const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+    rerender(
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
+    );
+    // Immediately — no second update — only GPU Temp's (fixture-empty,
+    // isProcess-unrelated) graph may be unavailable.
+    expect(screen.getAllByText("Currently Unavailable")).toHaveLength(1);
+  });
+
+  it("an ISOLATED null tick does not destroy accumulated history (debounced reset)", () => {
+    // Build real multi-point history, flap null for ONE tick, return.
+    const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+    for (let i = 0; i < 3; i++) {
+      rerender(
+        <LlamaCppHardwareFooter
+          {...BASE_PROPS}
+          processMetrics={{ ...PROCESS_METRICS }}
+        />,
+      );
+    }
+    // One flaky tick with no process payload…
+    rerender(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+    // …then the process is back on the next poll.
+    rerender(
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
+    );
+    expect(screen.getAllByText("Currently Unavailable")).toHaveLength(1);
+    // History PRESERVED: 3 pre-flap points + the return tick = a line,
+    // not a lone reseeded dot. (Old logic: the return tick counted as a
+    // fresh transition and threw the history away.)
+    expect(cpuSparklineShapes().paths.length).toBeGreaterThan(0);
+  });
+
+  it("TWO consecutive no-process updates confirm a real stop and clear the ring", () => {
+    // Two distinct null-ish updates (null, then undefined — different
+    // references, so both register; exactly how alternating payloads
+    // with-field-null / without-field present in the real context) must
+    // clear. The subsequent restart then starts from a genuinely fresh
+    // ring: its first tick seeds ONE point — a dot, no multi-point path.
+    const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+    for (let i = 0; i < 3; i++) {
+      rerender(
+        <LlamaCppHardwareFooter
+          {...BASE_PROPS}
+          processMetrics={{ ...PROCESS_METRICS }}
+        />,
+      );
+    }
+    rerender(
+      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />,
+    );
+    rerender(
+      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={undefined} />,
+    );
+    rerender(
+      <LlamaCppHardwareFooter
+        {...BASE_PROPS}
+        processMetrics={{ ...PROCESS_METRICS }}
+      />,
+    );
+    const shapes = cpuSparklineShapes();
+    expect(
+      shapes.paths.length,
+      "confirmed stop must clear history — restart should NOT show pre-stop points",
+    ).toBe(0);
+    expect(shapes.circles.length).toBeGreaterThan(0);
+  });
+});
 
 describe("FooterStat value column reserves a fixed width (no side-to-side shift)", () => {
   it("the value column's reserved width is the SAME whether the value is short or long", () => {
