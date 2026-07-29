@@ -62,8 +62,6 @@ export function updateRing(
 ): ProcRing {
   const now = Date.now();
   const cutoff = now - FOOTER_WINDOW_MS;
-  const memTotal = sys.memTotal ?? 1;
-  const vramTotal = sys.vramTotal ?? 1;
   const evict = (arr: MetricHistoryPoint[]) =>
     arr.filter(
       (p) => p.timestamp instanceof Date && p.timestamp.getTime() > cutoff,
@@ -85,16 +83,30 @@ export function updateRing(
     pm.gpu_util_percent != null
       ? [...evict(ring.gpu), pt(pm.gpu_util_percent)]
       : evict(ring.gpu);
+  // Reviewed item 1: a missing TOTAL gets the same treatment as a missing
+  // per-process reading — skip the push, leave an honest gap. The old
+  // `?? 1` fallbacks turned a 6 GiB reading into a ~600 point (and a
+  // 15 GB VRAM reading into ~1494) on a 0–100 graph whenever a total was
+  // momentarily null, and the bogus point survived up to 30s of
+  // eviction. Any `?? 1` reappearing in this function is that bug
+  // regrowing. Graph unit note (user ruling 2026-07-27): these points
+  // are PERCENT OF TOTAL on the fixed 0–100 axis (how full), while the
+  // tiles show absolute GB (how much) — a deliberate pairing, not an
+  // inconsistency.
   const vramPoints =
-    pm.vram_mb != null
-      ? [...evict(ring.vram), pt((pm.vram_mb / 1024 / vramTotal) * 100)]
+    pm.vram_mb != null && sys.vramTotal != null
+      ? [...evict(ring.vram), pt((pm.vram_mb / 1024 / sys.vramTotal) * 100)]
       : evict(ring.vram);
+  const memPoints =
+    sys.memTotal != null
+      ? [
+          ...evict(ring.mem),
+          pt((pm.memory_kb / (1024 * 1024) / sys.memTotal) * 100),
+        ]
+      : evict(ring.mem);
   return {
     cpu: [...evict(ring.cpu), pt(pm.cpu_percent)],
-    mem: [
-      ...evict(ring.mem),
-      pt((pm.memory_kb / (1024 * 1024) / memTotal) * 100),
-    ],
+    mem: memPoints,
     gpu: gpuPoints,
     vram: vramPoints,
   };
@@ -218,6 +230,45 @@ export interface LlamaCppHardwareFooterProps {
   processMetrics?: ProcessMetrics | null;
 }
 
+const NULL_TICKS_TO_CONFIRM_STOP = 2;
+
+// Reviewed item 2: 10s staleness bar. Poll cadence is ~1–3s, so a genuine
+// isolated flap (one missed poll — the exact case the debounce exists to
+// survive) spans at most ~2 intervals (~6s); 10s clears that with margin
+// while still catching any real stop-then-restart, and stays well under
+// the 30s eviction window that previously bounded the splice damage.
+const STALE_GAP_MS = 10_000;
+
+/** Pure fresh-start decision for a new process tick. Extracted to module
+ * scope (a) because the hook already sits near the lint complexity
+ * ceiling and each reviewed item adds a trigger, and (b) so the three
+ * triggers are testable and readable as one flat list:
+ * 1. confirmed stop — the null-streak reached its threshold (belt and
+ *    braces with the clear that already ran at confirmation);
+ * 2. pid change — two different processes back-to-back with NO null gap
+ *    (gapless hot-swap) are two runs, never one graph (reviewed item 3;
+ *    pid already exists in ProcessMetrics);
+ * 3. stale data — the ring's own newest point is older than
+ *    STALE_GAP_MS. This is the ONLY reliable restart signal when the
+ *    page delivers a reference-stable null after a stop (null is a
+ *    primitive, so the `!==` transition gate fires exactly once and the
+ *    streak freezes at 1, unconfirmed) — a repeated poll and an
+ *    unrelated re-render are indistinguishable by reference, so time,
+ *    not identity, has to carry this case (reviewed item 2).
+ */
+function shouldStartFresh(
+  prevProc: ProcessMetrics | null | undefined,
+  pm: ProcessMetrics,
+  ring: ProcRing,
+  nullStreak: number,
+): boolean {
+  if (nullStreak >= NULL_TICKS_TO_CONFIRM_STOP) return true;
+  if (prevProc != null && prevProc.pid !== pm.pid) return true;
+  const newest =
+    ring.cpu.length > 0 ? ring.cpu[ring.cpu.length - 1].timestamp : null;
+  return newest instanceof Date && Date.now() - newest.getTime() > STALE_GAP_MS;
+}
+
 /** Owns the per-process sparkline ring: seeds on a new process's first
  * sample, debounces resets (an isolated no-process tick is ignored; two
  * consecutive ones confirm a real stop), and evicts stale points via
@@ -253,7 +304,6 @@ function useProcessRing(
   // ring SEEDS with the first sample of a new process immediately (a dot
   // renders on the very first tick), and an isolated null tick is
   // ignored rather than destructive.
-  const NULL_TICKS_TO_CONFIRM_STOP = 2;
 
   if (processMetrics !== prevProc) {
     setPrevProc(processMetrics);
@@ -276,7 +326,12 @@ function useProcessRing(
       // evict() drops anything older than the 30s window, so a ring
       // retained across a long gap self-empties rather than showing
       // ancient data.
-      const startFresh = nullStreak >= NULL_TICKS_TO_CONFIRM_STOP;
+      const startFresh = shouldStartFresh(
+        prevProc,
+        processMetrics,
+        ring,
+        nullStreak,
+      );
       setRing((prev) =>
         updateRing(startFresh ? EMPTY_RING : prev, processMetrics, {
           ...sys }),
@@ -329,6 +384,10 @@ export function LlamaCppHardwareFooter({
   // Unavailable" (Sparkline's own zero-point empty state, already proven
   // for Generation/Prompt Speed) do the rest with no new UI needed.
   const dispCpuPct = isProcess ? processMetrics.cpu_percent : null;
+  // Tile/graph unit pairing (user ruling 2026-07-27): the RAM and VRAM
+  // TILE values are absolute GB ("how much"), while their graphs plot
+  // percent-of-total on the fixed 0–100 axis ("how full") — deliberate,
+  // not an inconsistency; do not "unify" them.
   const dispMemValue = isProcess
     ? `${(processMetrics.memory_kb / 1024 / 1024).toFixed(1)} GB`
     : null;

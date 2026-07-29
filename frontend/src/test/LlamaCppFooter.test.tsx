@@ -1,6 +1,6 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   LlamaCppHardwareFooter,
   FooterStat,
@@ -413,6 +413,129 @@ describe("ring robustness — seed on transition, debounced reset (user-reported
     ).toBe(0);
     expect(shapes.circles.length).toBeGreaterThan(0);
   });
+
+  describe("stale-gap and pid-change fresh starts", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("a restart after a >10s no-data gap starts a FRESH graph even when the null reference never changed", () => {
+      // Item 2 (reviewed): after a stop, the real page can deliver the
+      // SAME `null` reference every tick (null is a primitive), so the
+      // transition gate `processMetrics !== prevProc` fires once and the
+      // stop-confirmation streak freezes at 1 — never confirmed. Within
+      // the 30s eviction window, a restart then seeds ONTO the previous
+      // run's surviving points, splicing the old model's tail into the
+      // new run's graph. Reference tricks cannot fix this (a repeated
+      // poll and an unrelated re-render are indistinguishable by
+      // reference), so the fix is time-based: if the ring's own newest
+      // point is older than STALE_GAP_MS (10s — see the constant's
+      // comment for the cadence math), a new process starts fresh.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-27T12:00:00Z"));
+      const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+      for (let i = 0; i < 3; i++) {
+        rerender(
+          <LlamaCppHardwareFooter
+            {...BASE_PROPS}
+            processMetrics={{ ...PROCESS_METRICS }}
+          />,
+        );
+      }
+      // One null tick — the ONLY transition the gate will ever see for a
+      // reference-stable null; the streak sits at 1, unconfirmed.
+      rerender(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />);
+      // 15s pass: inside the 30s window (old points still evictable-not-
+      // evicted — the splice hazard is live), past the 10s staleness bar.
+      vi.setSystemTime(new Date("2026-07-27T12:00:15Z"));
+      rerender(
+        <LlamaCppHardwareFooter
+          {...BASE_PROPS}
+          processMetrics={{ ...PROCESS_METRICS }}
+        />,
+      );
+      const shapes = cpuSparklineShapes();
+      expect(
+        shapes.paths.length,
+        "restart after a real gap must NOT splice the previous run's tail into the new graph",
+      ).toBe(0);
+      expect(shapes.circles.length).toBeGreaterThan(0);
+    });
+
+    it("a brief flap (single null tick, ~3s) still PRESERVES the growing graph (guard: staleness must not over-trigger)", () => {
+      // Anti-vacuity guard for item 2: this must pass against the code
+      // BEFORE the staleness change (proving the scenario was already
+      // healthy) and AFTER it (proving 10s was chosen high enough that a
+      // one-missed-poll flap at ~3s cadence never trips it).
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-27T12:00:00Z"));
+      const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+      for (let i = 0; i < 3; i++) {
+        rerender(
+          <LlamaCppHardwareFooter
+            {...BASE_PROPS}
+            processMetrics={{ ...PROCESS_METRICS }}
+          />,
+        );
+      }
+      rerender(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />);
+      vi.setSystemTime(new Date("2026-07-27T12:00:03Z"));
+      rerender(
+        <LlamaCppHardwareFooter
+          {...BASE_PROPS}
+          processMetrics={{ ...PROCESS_METRICS }}
+        />,
+      );
+      expect(
+        cpuSparklineShapes().paths.length,
+        "a brief flap must keep accumulated history — a line, not a reset dot",
+      ).toBeGreaterThan(0);
+    });
+
+    it("a PID change with NO null gap starts a FRESH graph (gapless hot-swap)", () => {
+      // Item 3 (reviewed): two different processes back-to-back with no
+      // null tick between them previously merged both models' points
+      // into one graph — updateRing never looked at identity. pid is
+      // already in ProcessMetrics; a pid change IS a new run.
+      const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+      for (let i = 0; i < 3; i++) {
+        rerender(
+          <LlamaCppHardwareFooter
+            {...BASE_PROPS}
+            processMetrics={{ ...PROCESS_METRICS, pid: 111 }}
+          />,
+        );
+      }
+      rerender(
+        <LlamaCppHardwareFooter
+          {...BASE_PROPS}
+          processMetrics={{ ...PROCESS_METRICS, pid: 222 }}
+        />,
+      );
+      const shapes = cpuSparklineShapes();
+      expect(
+        shapes.paths.length,
+        "pid 111's points must not appear in pid 222's graph",
+      ).toBe(0);
+      expect(shapes.circles.length).toBeGreaterThan(0);
+    });
+
+    it("same-pid ticks still ACCUMULATE (guard: identity check must not over-trigger on reference churn)", () => {
+      // Anti-vacuity guard for item 3: distinct object references with
+      // the SAME pid are the normal every-poll case and must keep
+      // building the line. Passes before and after the change.
+      const { rerender } = render(<LlamaCppHardwareFooter {...BASE_PROPS} />);
+      for (let i = 0; i < 4; i++) {
+        rerender(
+          <LlamaCppHardwareFooter
+            {...BASE_PROPS}
+            processMetrics={{ ...PROCESS_METRICS, pid: 111 }}
+          />,
+        );
+      }
+      expect(cpuSparklineShapes().paths.length).toBeGreaterThan(0);
+    });
+  });
 });
 
 describe("FooterStat value column reserves a fixed width (no side-to-side shift)", () => {
@@ -460,5 +583,57 @@ describe("FooterStat value column reserves a fixed width (no side-to-side shift)
     ).toBe(longColumn!.style.minWidth);
     expect(shortColumn!.style.minWidth).not.toBe("0px");
     expect(shortColumn!.style.minWidth).not.toBe("");
+  });
+});
+
+// ─── Item 1: missing totals must not fabricate off-scale points ────────
+
+describe("updateRing — missing totals are a gap, not a divide-by-1", () => {
+  it("no mem point is pushed when memTotal is missing (CPU unaffected)", () => {
+    // Reviewed item 1: `memTotal ?? 1` turned a 6 GiB reading into a
+    // ~600 point on a 0–100 graph whenever the total was momentarily
+    // null (backend restart, first ticks) — and the bogus point survived
+    // up to 30s of eviction. Missing total now gets the SAME treatment
+    // this function already gives a missing per-process reading: skip
+    // the push, leave an honest gap.
+    const seeded = updateRing(EMPTY_RING, { ...PROCESS_METRICS }, {
+      gpuPct: null,
+      vramUsedGb: null,
+      memTotal: 32,
+      vramTotal: 24,
+    });
+    expect(seeded.mem).toHaveLength(1);
+    const after = updateRing(seeded, { ...PROCESS_METRICS }, {
+      gpuPct: null,
+      vramUsedGb: null,
+      memTotal: null,
+      vramTotal: 24,
+    });
+    expect(
+      after.mem,
+      `missing memTotal must not push — got extra point value=${after.mem.at(-1)?.value}`,
+    ).toHaveLength(1);
+    expect(after.cpu.length).toBeGreaterThan(seeded.cpu.length);
+  });
+
+  it("no vram point is pushed when vramTotal is missing (GPU unaffected)", () => {
+    const seeded = updateRing(EMPTY_RING, { ...PROCESS_METRICS }, {
+      gpuPct: null,
+      vramUsedGb: null,
+      memTotal: 32,
+      vramTotal: 24,
+    });
+    expect(seeded.vram).toHaveLength(1);
+    const after = updateRing(seeded, { ...PROCESS_METRICS }, {
+      gpuPct: null,
+      vramUsedGb: null,
+      memTotal: 32,
+      vramTotal: null,
+    });
+    expect(
+      after.vram,
+      `missing vramTotal must not push — got extra point value=${after.vram.at(-1)?.value}`,
+    ).toHaveLength(1);
+    expect(after.gpu.length).toBeGreaterThan(seeded.gpu.length);
   });
 });
