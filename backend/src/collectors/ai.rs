@@ -1355,6 +1355,27 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
     }
 
     #[test]
+    fn process_mem_prefers_rss_anon_over_vmrss() {
+        // The exact user-reported shape: VmRSS 13.11 GB, but ~6 GB of it
+        // is file/shared driver mappings; RssAnon (7.1 GB-ish) is what
+        // System Monitor's Memory column shows and what we now report.
+        let status = "Name:\tllama-server\nVmRSS:\t13744128 kB\nRssAnon:\t7444480 kB\nRssFile:\t6299648 kB\n";
+        let kb = process_mem_kb_from_status(status);
+        assert!((kb - 7_444_480.0).abs() < 0.5, "expected RssAnon, got {kb}");
+    }
+
+    #[test]
+    fn process_mem_falls_back_to_vmrss_when_rss_anon_absent() {
+        let status = "Name:\tx\nVmRSS:\t1024 kB\n";
+        assert!((process_mem_kb_from_status(status) - 1024.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn process_mem_is_zero_when_neither_field_exists() {
+        assert_eq!(process_mem_kb_from_status("Name:\tx\n"), 0.0);
+    }
+
+    #[test]
     fn zero_proc_delta_is_zero_percent() {
         // Process did nothing between samples -> 0%, not a divide
         // artifact or a leftover value from the previous poll.
@@ -1398,26 +1419,5 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
         // result, only the delta does. (6.25% of machine under the
         // machine-fraction convention.)
         assert!((pct - 6.25).abs() < 0.001, "expected 6.25, got {pct}");
-    }
-
-    #[test]
-    fn process_mem_prefers_rss_anon_over_vmrss() {
-        // The exact user-reported shape: VmRSS 13.11 GB, but ~6 GB of it
-        // is file/shared driver mappings; RssAnon (7.1 GB-ish) is what
-        // System Monitor's Memory column shows and what we now report.
-        let status = "Name:\tllama-server\nVmRSS:\t13744128 kB\nRssAnon:\t7444480 kB\nRssFile:\t6299648 kB\n";
-        let kb = process_mem_kb_from_status(status);
-        assert!((kb - 7_444_480.0).abs() < 0.5, "expected RssAnon, got {kb}");
-    }
-
-    #[test]
-    fn process_mem_falls_back_to_vmrss_when_rss_anon_absent() {
-        let status = "Name:\tx\nVmRSS:\t1024 kB\n";
-        assert!((process_mem_kb_from_status(status) - 1024.0).abs() < 0.5);
-    }
-
-    #[test]
-    fn process_mem_is_zero_when_neither_field_exists() {
-        assert_eq!(process_mem_kb_from_status("Name:\tx\n"), 0.0);
     }
 }

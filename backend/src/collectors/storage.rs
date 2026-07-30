@@ -895,7 +895,27 @@ fn usage_from_statvfs(
 
 #[cfg(test)]
 mod tests {
-    use super::{TEMPERATURE_TTL, usage_from_statvfs};
+    use super::{TEMPERATURE_TTL, is_system_boot_mount, usage_from_statvfs};
+
+    #[test]
+    fn boot_mounts_are_filtered_exactly() {
+        // The three system/boot partitions this filter exists for.
+        assert!(is_system_boot_mount("/boot"));
+        assert!(is_system_boot_mount("/boot/efi"));
+        assert!(is_system_boot_mount("/efi"));
+    }
+
+    #[test]
+    fn user_mounts_containing_boot_are_never_filtered() {
+        // EXACT-match semantics are the load-bearing property here: a
+        // substring match would silently hide real user storage whose
+        // path merely contains "boot" or "efi". These must all survive.
+        assert!(!is_system_boot_mount("/mnt/bootlegs"));
+        assert!(!is_system_boot_mount("/home/gamer/boot"));
+        assert!(!is_system_boot_mount("/mnt/Games"));
+        assert!(!is_system_boot_mount("/media/gamer/efi-backups"));
+        assert!(!is_system_boot_mount("/"));
+    }
 
     #[test]
     fn test_usage_typical_with_reserve() {
