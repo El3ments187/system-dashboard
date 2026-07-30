@@ -7,6 +7,31 @@ export function fmtNum(v: unknown): string {
   return isNaN(n) ? String(v) : n.toLocaleString();
 }
 
+/** Counter formatter for tiles whose values grow without bound (the
+ * THROUGHPUT token counters). User-reported, twice: first the Generated
+ * tile overflowed from a redundant " token" suffix (removed), then an
+ * 18h session grew the RAW values past seven digits and the ellipsis
+ * returned ("1,607,6…"). No fixed tile width survives an unbounded
+ * counter — so at >=1,000,000 this compacts to "1.61M" (two decimals,
+ * trailing zeros trimmed: 1M, 12.3M) and below that keeps fmtNum's full
+ * comma form. Deliberately a SEPARATE function: fmtNum is shared by
+ * many small tiles whose values are naturally bounded, and a global
+ * compaction rule there would change displays nobody asked about. */
+export function fmtCount(v: unknown): string {
+  if (v == null || v === "") return "";
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  if (Math.abs(n) < 1_000_000) return n.toLocaleString();
+  // toFixed(2) yields exactly "X.YZ" — trim trailing zeros (and a bare
+  // trailing dot) with plain string ops; the obvious regex for this is
+  // flagged super-linear by sonarjs, and on principle this project
+  // resolves lint findings structurally rather than suppressing them.
+  let compact = (n / 1_000_000).toFixed(2);
+  while (compact.endsWith("0")) compact = compact.slice(0, -1);
+  if (compact.endsWith(".")) compact = compact.slice(0, -1);
+  return `${compact}M`;
+}
+
 export function getCtxColor(pct: number | null): string {
   if (pct != null && pct > 90) return "var(--danger)";
   if (pct != null && pct > 70) return "var(--warning)";

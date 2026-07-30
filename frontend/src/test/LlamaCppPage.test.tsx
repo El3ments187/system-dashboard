@@ -1417,6 +1417,40 @@ describe("LlamaCppPage Throughput card tiles", () => {
     expect(tile).not.toHaveTextContent("token");
   });
 
+  it("counter tiles compact at >=1M so magnitude can never overflow the tile again", async () => {
+    // User-reported (second overflow, different cause): Step Z removed
+    // the redundant " token" suffix, but an 18h session then grew the
+    // raw values past seven digits — "1,607,6…" / "1,773,4…" clipped by
+    // MetricTile's CSS ellipsis. DOM tests CANNOT see CSS truncation
+    // (the full string is in the DOM; the ellipsis is paint-only), so
+    // this asserts the FORMAT: at >=1,000,000 the three counters render
+    // compact ("1.61M"), below that they keep full comma form. Applied
+    // via a separate fmtCount — NOT by changing fmtNum, which many
+    // unrelated small tiles share.
+    mockedCtx.mockReturnValue(
+      baseCtx({
+        token_usage: { prompt_tokens: 165813, completion_tokens: 1607632 },
+        total_tokens_sent: 1773400,
+      }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("thrpt-generated")).toHaveTextContent("1.61M");
+    expect(screen.getByTestId("thrpt-generated")).not.toHaveTextContent("1,607,632");
+    expect(screen.getByTestId("thrpt-total-sent")).toHaveTextContent("1.77M");
+    // Below the threshold: full precision preserved.
+    expect(screen.getByTestId("thrpt-prompt-tokens")).toHaveTextContent("165,813");
+  });
+
+  it("fmtCount edges: threshold, rounding, trailing-zero trim", async () => {
+    const { fmtCount } = await import("../pages/llamacpp/parts");
+    expect(fmtCount(999999)).toBe("999,999");
+    expect(fmtCount(1000000)).toBe("1M");
+    expect(fmtCount(1607632)).toBe("1.61M");
+    expect(fmtCount(12300000)).toBe("12.3M");
+    expect(fmtCount(null)).toBe("");
+  });
+
   it("Generated tile does not truncate a large value (the original overflow bug)", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({

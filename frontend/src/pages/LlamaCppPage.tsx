@@ -44,6 +44,7 @@ import { RadialGauge } from "./llamacpp/RadialGauge";
 import { StatusIndicator } from "./llamacpp/StatusIndicator";
 import {
   fmtNum,
+  fmtCount,
   thresholdClass,
   boolLabel,
   middleTruncate,
@@ -57,7 +58,7 @@ import {
 
 // ─── Re-exports for test backward compatibility ───────────────────────────────
 
-export { fmtNum, thresholdClass, boolLabel, middleTruncate, contextGaugeLabel };
+export { fmtNum, fmtCount, thresholdClass, boolLabel, middleTruncate, contextGaugeLabel };
 export { RunModelsSection } from "./llamacpp/RunModelsSection";
 
 // ─── Local helpers ────────────────────────────────────────────────────────────
@@ -884,7 +885,7 @@ export default function LlamaCppPage() {
                   accent
                   testId="thrpt-prompt-tokens"
                   label="Prompt Tokens"
-                  value={fmtNum(tokenUsage?.prompt_tokens) || "0"}
+                  value={fmtCount(tokenUsage?.prompt_tokens) || "0"}
                   mono
                   style={{ borderRadius: 9, padding: "6px 10px" }}
                   valueSize={17}
@@ -902,7 +903,7 @@ export default function LlamaCppPage() {
                   // ("Generated") already conveys what's being counted;
                   // the suffix was redundant AND the direct cause of the
                   // overflow. Matches the sibling tiles' convention now.
-                  value={fmtNum(tokenUsage?.completion_tokens) || "0"}
+                  value={fmtCount(tokenUsage?.completion_tokens) || "0"}
                   mono
                   style={{ borderRadius: 9, padding: "6px 10px" }}
                   valueSize={17}
@@ -911,7 +912,7 @@ export default function LlamaCppPage() {
                   accent
                   testId="thrpt-total-sent"
                   label="Total Sent"
-                  value={fmtNum(m?.total_tokens_sent) || "0"}
+                  value={fmtCount(m?.total_tokens_sent) || "0"}
                   mono
                   style={{ borderRadius: 9, padding: "6px 10px" }}
                   valueSize={17}
