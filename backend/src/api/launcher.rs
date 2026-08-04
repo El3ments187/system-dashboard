@@ -1071,8 +1071,11 @@ pub fn update_profile_metrics(script_path: &str, metrics: ProfileState) {
     let state = get_state();
     let mut guard = state.write().unwrap();
     if let Some(existing) = guard.states.get_mut(script_path) {
-        existing.peak_vram_mb = metrics.peak_vram_mb.or(existing.peak_vram_mb);
-        existing.peak_ram_mb = metrics.peak_ram_mb.or(existing.peak_ram_mb);
+        // next_peak_mb (max) — see its doc comment: .or() here was
+        // last-sample-wins, which is not a peak and let one early/bad
+        // sample define a whole run.
+        existing.peak_vram_mb = next_peak_mb(metrics.peak_vram_mb, existing.peak_vram_mb);
+        existing.peak_ram_mb = next_peak_mb(metrics.peak_ram_mb, existing.peak_ram_mb);
         existing.current_tps = metrics.current_tps;
     }
 }
@@ -1486,15 +1489,13 @@ fn metrics_http_client() -> &'static reqwest::Client {
     })
 }
 
-fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
-    let output = std::process::Command::new("nvidia-smi")
-        .args([
-            "--query-compute-apps=pid,used_gpu_memory",
-            "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+/// Pure parse of `nvidia-smi --query-compute-apps=pid,used_gpu_memory
+/// --format=csv,noheader,nounits` output — extracted so the matching
+/// logic is unit-testable without executing nvidia-smi (user-reported:
+/// the RUN MODELS row showed 0.3 GB VRAM while nvidia-smi itself showed
+/// 13,310 MiB for the same PID; every seam in this pipeline now either
+/// has tests or peak-max semantics that make a bad sample harmless).
+pub(crate) fn parse_compute_apps_vram_mb(pid: u32, stdout: &str) -> Option<f64> {
     for line in stdout.lines() {
         let mut parts = line.splitn(2, ',');
         if let (Some(pid_str), Some(mb_str)) = (parts.next(), parts.next())
@@ -1506,6 +1507,32 @@ fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
         }
     }
     None
+}
+
+fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-compute-apps=pid,used_gpu_memory",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+    parse_compute_apps_vram_mb(pid, &String::from_utf8_lossy(&output.stdout))
+}
+
+/// TRUE peak semantics for the RUN MODELS columns: the stored value only
+/// ever grows within a run (fresh runs start from None, so it resets
+/// naturally per run). Plain overwrite — the previous behavior — is
+/// "last sample", not a peak: an early-load reading (0.3 GB before
+/// layers finish) could be what a stop persists, and a missing sample
+/// tick could regress a real peak. max() makes any single bad/early/
+/// missing sample harmless.
+pub(crate) fn next_peak_mb(current: Option<f64>, prev: Option<f64>) -> Option<f64> {
+    match (current, prev) {
+        (Some(c), Some(p)) => Some(c.max(p)),
+        (Some(c), None) => Some(c),
+        (None, p) => p,
+    }
 }
 
 async fn update_profile_metrics_for_script(script_path: &str) {
@@ -1580,7 +1607,17 @@ async fn update_profile_metrics_for_script(script_path: &str) {
 
     // Find the actual llama-server process by matching port from parsed_args
     // (this is the real server PID, distinct from the tracked wrapper PID).
-    let found_llama_pid = port.and_then(|p| find_llama_server_pid_by_port(&system, p));
+    // FALLBACK (user-reported stale columns): if port resolution yields
+    // nothing — parsed_args missing a port, or the port scan failing —
+    // the previous code silently skipped this entire update every 2s
+    // forever, leaving the row on stale persisted metadata from an old
+    // run while the model visibly ran. The tracked llama_server_pid
+    // (guaranteed Some by the guard above) is a sound fallback: worse
+    // than the port-verified PID only in the orphan-process edge case,
+    // strictly better than never updating at all.
+    let found_llama_pid = port
+        .and_then(|p| find_llama_server_pid_by_port(&system, p))
+        .or(llama_server_pid);
 
     if let Some(llama_pid) = found_llama_pid
         && let Some(_proc) = system.process(sysinfo::Pid::from(llama_pid as usize))
@@ -1635,7 +1672,44 @@ async fn update_profile_metrics_for_script(script_path: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_scan_dir, extract_filename_metadata, graceful_shutdown, wait_for_exit};
+    use super::{
+        default_scan_dir, extract_filename_metadata, graceful_shutdown, next_peak_mb,
+        parse_compute_apps_vram_mb, wait_for_exit,
+    };
+
+    #[test]
+    fn parse_compute_apps_finds_the_pid_line() {
+        // Shape straight from the user's nvidia-smi: several G-type
+        // processes plus llama-server's C-type line.
+        let out = "1480, 357\n2533, 51\n83691, 13310\n";
+        assert_eq!(parse_compute_apps_vram_mb(83691, out), Some(13310.0));
+    }
+
+    #[test]
+    fn parse_compute_apps_none_when_pid_absent_or_garbage() {
+        assert_eq!(parse_compute_apps_vram_mb(83691, "1480, 357\n"), None);
+        assert_eq!(
+            parse_compute_apps_vram_mb(83691, "not, csv, at all\n[N/A]\n"),
+            None
+        );
+        assert_eq!(parse_compute_apps_vram_mb(83691, ""), None);
+    }
+
+    #[test]
+    fn next_peak_only_ever_grows_within_a_run() {
+        // The exact user-visible failure shape: an early-load 0.3 GB
+        // sample must not survive once the real 13,310 MB arrives, and a
+        // later missing/low sample must not regress the recorded peak.
+        let p = next_peak_mb(Some(300.0), None);
+        let p = next_peak_mb(Some(13310.0), p);
+        assert_eq!(p, Some(13310.0));
+        let p = next_peak_mb(None, p);
+        assert_eq!(p, Some(13310.0));
+        let p = next_peak_mb(Some(12000.0), p);
+        assert_eq!(p, Some(13310.0));
+        // Fresh run: prev None + first sample = that sample (natural reset).
+        assert_eq!(next_peak_mb(Some(2900.0), None), Some(2900.0));
+    }
     use std::os::unix::process::CommandExt;
     use std::time::Duration;
 
