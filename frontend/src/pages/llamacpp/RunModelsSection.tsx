@@ -357,42 +357,42 @@ export function RunModelsSection() {
               <button
                 onClick={() => setSearchQuery("")}
                 aria-label="Clear search"
-              title="Clear search"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                color: "var(--text-muted)",
-              }}
-            >
-              <X size={10} />
+                title="Clear search"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <X size={10} />
               </button>
             )}
           </div>
           <button
-          data-accent-el=""
-          onClick={() => loadProfiles()}
-          disabled={loading}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "3px 8px",
-            fontSize: 10,
-            fontWeight: 600,
-            background: "var(--accent-tint-10)",
-            border: "1px solid var(--accent-tint-40)",
-            borderRadius: 6,
-            cursor: loading ? "not-allowed" : "pointer",
-            color: "var(--accent-primary)",
-            opacity: loading ? 0.5 : 1,
-          }}
-        >
-          <RefreshCw size={10} className={loading ? "spin" : undefined} />
-          Refresh
+            data-accent-el=""
+            onClick={() => loadProfiles()}
+            disabled={loading}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              fontSize: 10,
+              fontWeight: 600,
+              background: "var(--accent-tint-10)",
+              border: "1px solid var(--accent-tint-40)",
+              borderRadius: 6,
+              cursor: loading ? "not-allowed" : "pointer",
+              color: "var(--accent-primary)",
+              opacity: loading ? 0.5 : 1,
+            }}
+          >
+            <RefreshCw size={10} className={loading ? "spin" : undefined} />
+            Refresh
           </button>
         </div>
       </div>
@@ -524,7 +524,11 @@ export function RunModelsSection() {
       )}
 
       {/* Profile Rows */}
-      {renderEmptyState(profiles.length, getFilteredProfiles().length, searchQuery) ?? (
+      {renderEmptyState(
+        profiles.length,
+        getFilteredProfiles().length,
+        searchQuery,
+      ) ?? (
         <div
           style={
             {

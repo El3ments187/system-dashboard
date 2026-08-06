@@ -29,10 +29,17 @@ describe("accent indexer inherit opt-out", () => {
     renderHook(() => useAccentIndexer());
 
     const idx = (id: string) =>
-      (document.getElementById(id) as HTMLElement).style.getPropertyValue("--el-index");
+      (document.getElementById(id) as HTMLElement).style.getPropertyValue(
+        "--el-index",
+      );
     const assigned = [idx("a"), idx("b"), idx("d")];
     expect(assigned.every((v) => v !== "")).toBe(true);
-    expect(new Set(assigned).size, "plain markers must get DISTINCT indices").toBe(3);
-    expect(idx("c"), "inherit marker must have its stale index CLEARED").toBe("");
+    expect(
+      new Set(assigned).size,
+      "plain markers must get DISTINCT indices",
+    ).toBe(3);
+    expect(idx("c"), "inherit marker must have its stale index CLEARED").toBe(
+      "",
+    );
   });
 });

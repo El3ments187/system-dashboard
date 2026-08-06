@@ -59,10 +59,15 @@ describe("poll stall protection (hook level)", () => {
 describe("fetchWithTimeout timer-leak guard (B6b)", () => {
   it("clears its timeout when the fetch settles (no leaked timers)", async () => {
     vi.useFakeTimers();
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }) as any;
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) }) as any;
     const { fetchWithTimeout } = await import("../services/api");
     await fetchWithTimeout("/x", 1500);
-    expect(vi.getTimerCount(), "settled fetch must not leave a pending timer").toBe(0);
+    expect(
+      vi.getTimerCount(),
+      "settled fetch must not leave a pending timer",
+    ).toBe(0);
     vi.useRealTimers();
   });
 });
@@ -79,10 +84,14 @@ describe("one-shot API call uses 8000ms deadline (B6)", () => {
     getCpuMetrics().catch(() => {});
     // Must NOT abort before 8000ms
     await vi.advanceTimersByTimeAsync(7999);
-    expect(capturedSignal?.aborted, "must not abort before deadline").toBe(false);
+    expect(capturedSignal?.aborted, "must not abort before deadline").toBe(
+      false,
+    );
     // Must abort at/after 8000ms
     await vi.advanceTimersByTimeAsync(2);
-    expect(capturedSignal?.aborted, "must abort at the 8000ms deadline").toBe(true);
+    expect(capturedSignal?.aborted, "must abort at the 8000ms deadline").toBe(
+      true,
+    );
     vi.useRealTimers();
   });
 });

@@ -394,9 +394,7 @@ describe("ring robustness — seed on transition, debounced reset (user-reported
         />,
       );
     }
-    rerender(
-      <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />,
-    );
+    rerender(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />);
     rerender(
       <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={undefined} />,
     );
@@ -444,7 +442,9 @@ describe("ring robustness — seed on transition, debounced reset (user-reported
       }
       // One null tick — the ONLY transition the gate will ever see for a
       // reference-stable null; the streak sits at 1, unconfirmed.
-      rerender(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />);
+      rerender(
+        <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />,
+      );
       // 15s pass: inside the 30s window (old points still evictable-not-
       // evicted — the splice hazard is live), past the 10s staleness bar.
       vi.setSystemTime(new Date("2026-07-27T12:00:15Z"));
@@ -478,7 +478,9 @@ describe("ring robustness — seed on transition, debounced reset (user-reported
           />,
         );
       }
-      rerender(<LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />);
+      rerender(
+        <LlamaCppHardwareFooter {...BASE_PROPS} processMetrics={null} />,
+      );
       vi.setSystemTime(new Date("2026-07-27T12:00:03Z"));
       rerender(
         <LlamaCppHardwareFooter
@@ -596,19 +598,27 @@ describe("updateRing — missing totals are a gap, not a divide-by-1", () => {
     // up to 30s of eviction. Missing total now gets the SAME treatment
     // this function already gives a missing per-process reading: skip
     // the push, leave an honest gap.
-    const seeded = updateRing(EMPTY_RING, { ...PROCESS_METRICS }, {
-      gpuPct: null,
-      vramUsedGb: null,
-      memTotal: 32,
-      vramTotal: 24,
-    });
+    const seeded = updateRing(
+      EMPTY_RING,
+      { ...PROCESS_METRICS },
+      {
+        gpuPct: null,
+        vramUsedGb: null,
+        memTotal: 32,
+        vramTotal: 24,
+      },
+    );
     expect(seeded.mem).toHaveLength(1);
-    const after = updateRing(seeded, { ...PROCESS_METRICS }, {
-      gpuPct: null,
-      vramUsedGb: null,
-      memTotal: null,
-      vramTotal: 24,
-    });
+    const after = updateRing(
+      seeded,
+      { ...PROCESS_METRICS },
+      {
+        gpuPct: null,
+        vramUsedGb: null,
+        memTotal: null,
+        vramTotal: 24,
+      },
+    );
     expect(
       after.mem,
       `missing memTotal must not push — got extra point value=${after.mem.at(-1)?.value}`,
@@ -617,19 +627,27 @@ describe("updateRing — missing totals are a gap, not a divide-by-1", () => {
   });
 
   it("no vram point is pushed when vramTotal is missing (GPU unaffected)", () => {
-    const seeded = updateRing(EMPTY_RING, { ...PROCESS_METRICS }, {
-      gpuPct: null,
-      vramUsedGb: null,
-      memTotal: 32,
-      vramTotal: 24,
-    });
+    const seeded = updateRing(
+      EMPTY_RING,
+      { ...PROCESS_METRICS },
+      {
+        gpuPct: null,
+        vramUsedGb: null,
+        memTotal: 32,
+        vramTotal: 24,
+      },
+    );
     expect(seeded.vram).toHaveLength(1);
-    const after = updateRing(seeded, { ...PROCESS_METRICS }, {
-      gpuPct: null,
-      vramUsedGb: null,
-      memTotal: 32,
-      vramTotal: null,
-    });
+    const after = updateRing(
+      seeded,
+      { ...PROCESS_METRICS },
+      {
+        gpuPct: null,
+        vramUsedGb: null,
+        memTotal: 32,
+        vramTotal: null,
+      },
+    );
     expect(
       after.vram,
       `missing vramTotal must not push — got extra point value=${after.vram.at(-1)?.value}`,

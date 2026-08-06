@@ -18,7 +18,7 @@ function pointTimeMs(ts: unknown, now: number): number {
     if (!Number.isNaN(parsed)) return parsed;
   }
   return now; // last-resort only; unreachable for any correctly-serialized
-              // Date, epoch number, or ISO string.
+  // Date, epoch number, or ISO string.
 }
 
 function windowAnchorNow(windowMs: number | undefined): number {
@@ -31,7 +31,7 @@ function computeX(
   total: number,
   windowMs: number | undefined,
   now: number,
-  coordW: number
+  coordW: number,
 ): number {
   if (windowMs != null) {
     const t = pointTimeMs(p.timestamp, now);
@@ -46,7 +46,7 @@ function computeY(
   height: number,
   flat: boolean,
   min: number,
-  range: number
+  range: number,
 ): number {
   if (domain != null) {
     const [d0, d1] = domain;
@@ -61,7 +61,7 @@ function splitSegments(
   filtered: (MetricHistoryPoint & { value: number })[],
   coords: [number, number][],
   windowMs: number | undefined,
-  now: number
+  now: number,
 ): [number, number][][] {
   const segments: [number, number][][] = [];
   let seg: [number, number][] = [coords[0]];
@@ -82,7 +82,9 @@ function splitSegments(
 
 function buildLinePath(segments: [number, number][][]): string {
   return segments
-    .map((s) => s.map(([x, y], j) => `${j === 0 ? "M" : "L"}${x},${y}`).join(" "))
+    .map((s) =>
+      s.map(([x, y], j) => `${j === 0 ? "M" : "L"}${x},${y}`).join(" "),
+    )
     .join(" ");
 }
 
@@ -119,7 +121,7 @@ export default function Sparkline({
 
   const filtered = (data ?? []).filter(
     (p): p is MetricHistoryPoint & { value: number } =>
-      p.value != null && isFinite(p.value)
+      p.value != null && isFinite(p.value),
   );
 
   if (filtered.length === 0) {
@@ -148,10 +150,13 @@ export default function Sparkline({
   const coordW = typeof resolvedWidth === "number" ? resolvedWidth : 100;
   const now = windowAnchorNow(windowMs);
 
-  const coords = filtered.map((p, i) => [
-    computeX(p, i, filtered.length, windowMs, now, coordW),
-    computeY(p.value, domain, height, flat, min, range),
-  ] as [number, number]);
+  const coords = filtered.map(
+    (p, i) =>
+      [
+        computeX(p, i, filtered.length, windowMs, now, coordW),
+        computeY(p.value, domain, height, flat, min, range),
+      ] as [number, number],
+  );
 
   const viewBox =
     typeof resolvedWidth === "string" ? `0 0 ${coordW} ${height}` : undefined;

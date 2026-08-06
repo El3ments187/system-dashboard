@@ -65,7 +65,10 @@ describe("Mechanism A CSS — rainbow-wave --el-off must not include --accent-sp
     // and [data-fx-safe="on"][data-accent-mode="rainbow-wave"] { animation: none }.
     // hue-spin must appear as an animation value outside any media query
     const huespinIdx = variablesCss.indexOf("animation: hue-spin");
-    expect(huespinIdx, "unconditional 'animation: hue-spin' declaration not found").not.toBe(-1);
+    expect(
+      huespinIdx,
+      "unconditional 'animation: hue-spin' declaration not found",
+    ).not.toBe(-1);
     // Confirm it is NOT inside a @media block (search backwards from the declaration)
     const before = variablesCss.slice(0, huespinIdx);
     const lastMedia = before.lastIndexOf("@media");

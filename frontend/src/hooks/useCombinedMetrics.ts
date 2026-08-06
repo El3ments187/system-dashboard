@@ -169,7 +169,9 @@ function makeCoreHistoryUpdater(
   cores: any[],
   now: Date,
   slide: boolean,
-): (prev: Array<MetricHistoryPoint[] | null>) => Array<MetricHistoryPoint[] | null> {
+): (
+  prev: Array<MetricHistoryPoint[] | null>,
+) => Array<MetricHistoryPoint[] | null> {
   return (prev) => {
     if (prev.length !== cores.length) {
       return Array.from({ length: cores.length }, () => makeCoreSlots());
@@ -262,9 +264,7 @@ export function useCombinedMetrics(
   >([]);
 
   // Storage
-  const [storageDevices, setStorageDevices] = useState<DeviceStorageInfo[]>(
-    [],
-  );
+  const [storageDevices, setStorageDevices] = useState<DeviceStorageInfo[]>([]);
   const [storageHistories, setStorageHistories] = useState<
     Map<string, StorageHistoryPoint[]>
   >(new Map());

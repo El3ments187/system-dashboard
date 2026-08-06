@@ -16,7 +16,7 @@
   "ignoreDependencies": [
     "puppeteer",
     "@testing-library/user-event",
-    "depcheck",
+    "depcheck"
   ],
   "ignoreBinaries": ["playwright"],
   "ignoreExportsUsedInFile": true

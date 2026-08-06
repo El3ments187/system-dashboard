@@ -1436,10 +1436,14 @@ describe("LlamaCppPage Throughput card tiles", () => {
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByTestId("thrpt-generated")).toHaveTextContent("1.61M");
-    expect(screen.getByTestId("thrpt-generated")).not.toHaveTextContent("1,607,632");
+    expect(screen.getByTestId("thrpt-generated")).not.toHaveTextContent(
+      "1,607,632",
+    );
     expect(screen.getByTestId("thrpt-total-sent")).toHaveTextContent("1.77M");
     // Below the threshold: full precision preserved.
-    expect(screen.getByTestId("thrpt-prompt-tokens")).toHaveTextContent("165,813");
+    expect(screen.getByTestId("thrpt-prompt-tokens")).toHaveTextContent(
+      "165,813",
+    );
   });
 
   it("fmtCount edges: threshold, rounding, trailing-zero trim", async () => {
@@ -2158,13 +2162,31 @@ describe("LlamaCppPage: accent-line divider consistent across all five cards", (
     ).toBe(true);
     // The other four: divider via CardHeader's titleAccentBar prop.
     const blocks: Array<[string, number, number]> = [
-      ["Throughput", src.indexOf("{/* ── Throughput Card ── */}"), src.indexOf("{/* ── Context Card ── */}")],
-      ["Context", src.indexOf("{/* ── Context Card ── */}"), src.indexOf("{/* ── Context Card ── */}") + 4000],
-      ["Runtime", src.indexOf("{/* Runtime card */}"), src.indexOf("{/* llama.cpp card */}")],
-      ["llama.cpp", src.indexOf("{/* llama.cpp card */}"), src.indexOf("{/* llama.cpp card */}") + 4000],
+      [
+        "Throughput",
+        src.indexOf("{/* ── Throughput Card ── */}"),
+        src.indexOf("{/* ── Context Card ── */}"),
+      ],
+      [
+        "Context",
+        src.indexOf("{/* ── Context Card ── */}"),
+        src.indexOf("{/* ── Context Card ── */}") + 4000,
+      ],
+      [
+        "Runtime",
+        src.indexOf("{/* Runtime card */}"),
+        src.indexOf("{/* llama.cpp card */}"),
+      ],
+      [
+        "llama.cpp",
+        src.indexOf("{/* llama.cpp card */}"),
+        src.indexOf("{/* llama.cpp card */}") + 4000,
+      ],
     ];
     for (const [name, start, end] of blocks) {
-      expect(start, `${name} card comment marker not found`).toBeGreaterThan(-1);
+      expect(start, `${name} card comment marker not found`).toBeGreaterThan(
+        -1,
+      );
       expect(
         src.slice(start, end).includes("titleAccentBar"),
         `${name} card is missing the titleAccentBar prop`,

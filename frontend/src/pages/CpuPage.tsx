@@ -146,7 +146,9 @@ function CpuVerticalProgress({
             transition: "height 0.6s ease",
           }}
         >
-          {color === accent && <span className="sheen-flow-overlay" aria-hidden />}
+          {color === accent && (
+            <span className="sheen-flow-overlay" aria-hidden />
+          )}
           {color === accent && <span className="bright-breathe" />}
           {color === accent && <span className="bright-surge" />}
         </div>

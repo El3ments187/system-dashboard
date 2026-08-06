@@ -16,7 +16,9 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 
 describe("LiveDataControlsContext", () => {
   it("starts live, and pause/resume/toggle transition correctly", () => {
-    const { result } = renderHook(() => useLiveDataControlsContext(), { wrapper });
+    const { result } = renderHook(() => useLiveDataControlsContext(), {
+      wrapper,
+    });
     expect(result.current.isPaused).toBe(false);
     act(() => result.current.pause());
     expect(result.current.isPaused).toBe(true);

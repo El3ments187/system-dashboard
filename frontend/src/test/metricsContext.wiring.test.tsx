@@ -86,7 +86,11 @@ describe("metricsContext.wiring", () => {
     let ctx!: ReturnType<typeof useMetricsContext>;
     render(
       <Wrapper>
-        <Capture setter={(c) => { ctx = c; }} />
+        <Capture
+          setter={(c) => {
+            ctx = c;
+          }}
+        />
       </Wrapper>,
     );
 

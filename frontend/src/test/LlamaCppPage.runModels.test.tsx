@@ -97,8 +97,8 @@ describe("specLabel", () => {
     // strip the prefix and uppercase the technique — unknowns follow suit.
     expect(specLabel("draft-dspark")).toBe("DSPARK");
     expect(specLabel("draft-some-future-method")).toBe("SOME-FUTURE-METHOD");
-    expect(specLabel("ternary")).toBe("TERNARY");   // non-draft-family too
-    expect(specLabel("SSM-2p")).toBe("SSM-2p");     // authored mixed case respected
+    expect(specLabel("ternary")).toBe("TERNARY"); // non-draft-family too
+    expect(specLabel("SSM-2p")).toBe("SSM-2p"); // authored mixed case respected
   });
 
   it("matches the known table case-insensitively", () => {
@@ -523,7 +523,7 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
     expect(screen.getByPlaceholderText("Search models…")).toBeInTheDocument();
   });
@@ -532,7 +532,7 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
     expect(screen.getByText(/gemma-4-26B/)).toBeInTheDocument();
 
@@ -547,7 +547,7 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
 
     const input = screen.getByPlaceholderText("Search models…");
@@ -560,7 +560,7 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
 
     const input = screen.getByPlaceholderText("Search models…");
@@ -572,7 +572,7 @@ describe("RunModelsSection search", () => {
     // that would falsely imply the scan directory itself is empty, when
     // profiles exist and simply don't match the search.
     expect(
-      screen.queryByText("No profiles found in scan directory.")
+      screen.queryByText("No profiles found in scan directory."),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/No models match/)).toBeInTheDocument();
     expect(screen.getByText(/nonexistent-xyz/)).toBeInTheDocument();
@@ -582,11 +582,11 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
 
     const input = screen.getByPlaceholderText(
-      "Search models…"
+      "Search models…",
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "gemma" } });
     expect(screen.queryByText(/Qwen3\.6-35B/)).not.toBeInTheDocument();
@@ -603,7 +603,7 @@ describe("RunModelsSection search", () => {
     global.fetch = mockFetchOnce(twoProfiles());
     render(<RunModelsSection />);
     await waitFor(() =>
-      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument()
+      expect(screen.getByText(/Qwen3\.6-35B/)).toBeInTheDocument(),
     );
     // Anti-vacuity: this must fail if the search feature doesn't exist at
     // all, not just pass because neither the input nor the button exist.

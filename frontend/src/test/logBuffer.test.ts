@@ -69,7 +69,8 @@ it("caps preserved errors at errorCap instead of growing unbounded on an error-s
   // 2000 subsequent normal lines each — a genuinely error-spewing process,
   // not the single-error scenario above.
   for (let i = 0; i < 2000; i++) buf = appendPending(buf, mkErrorLine(i), 5000);
-  for (let i = 0; i < 6000; i++) buf = appendPending(buf, mkLine(`n-${i}`), 5000);
+  for (let i = 0; i < 6000; i++)
+    buf = appendPending(buf, mkLine(`n-${i}`), 5000);
   const errorCount = buf.filter((l) => l.level === "error").length;
   expect(
     errorCount,

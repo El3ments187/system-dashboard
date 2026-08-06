@@ -16,7 +16,7 @@ describe("DirectoryBrowserModal — fallback path portability (J2)", () => {
         isOpen={true}
         onClose={vi.fn()}
         onSelect={vi.fn()}
-      />
+      />,
     );
     expect(browseDirectory).toHaveBeenCalledWith("/");
     expect(browseDirectory).not.toHaveBeenCalledWith("/home/gamer");

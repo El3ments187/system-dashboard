@@ -58,7 +58,14 @@ import {
 
 // ─── Re-exports for test backward compatibility ───────────────────────────────
 
-export { fmtNum, fmtCount, thresholdClass, boolLabel, middleTruncate, contextGaugeLabel };
+export {
+  fmtNum,
+  fmtCount,
+  thresholdClass,
+  boolLabel,
+  middleTruncate,
+  contextGaugeLabel,
+};
 export { RunModelsSection } from "./llamacpp/RunModelsSection";
 
 // ─── Local helpers ────────────────────────────────────────────────────────────
@@ -1246,7 +1253,7 @@ export default function LlamaCppPage() {
                 compact
                 icon={<Activity size={13} />}
                 title="Runtime"
-              titleAccentBar
+                titleAccentBar
                 right={
                   <span
                     style={{
@@ -1398,7 +1405,7 @@ export default function LlamaCppPage() {
                 compact
                 icon={<Package size={13} />}
                 title="llama.cpp"
-              titleAccentBar
+                titleAccentBar
                 right={
                   <span
                     style={{

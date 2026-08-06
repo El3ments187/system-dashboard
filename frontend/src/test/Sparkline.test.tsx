@@ -17,9 +17,10 @@ describe("Sparkline — constant series centers at mid-height (I-3)", () => {
     const d = path!.getAttribute("d")!;
     const pts = [...d.matchAll(/[ML]([0-9.-]+),([0-9.-]+)/g)].map((m) => m[2]);
     const ys = pts.map((y) => parseFloat(y));
-    expect(ys.every((y) => y === 16), `all y must be 16 (height/2), got: [${ys.join(", ")}]`).toBe(
-      true
-    );
+    expect(
+      ys.every((y) => y === 16),
+      `all y must be 16 (height/2), got: [${ys.join(", ")}]`,
+    ).toBe(true);
   });
 });
 
@@ -30,7 +31,9 @@ describe("Sparkline — fixed domain prop (I-4)", () => {
       timestamp: new Date(Date.now() - (4 - i) * 1000),
       value: 27,
     }));
-    const { container } = render(<Sparkline data={data} height={32} domain={[0, 100]} />);
+    const { container } = render(
+      <Sparkline data={data} height={32} domain={[0, 100]} />,
+    );
     const path = container.querySelector("path[fill='none']");
     expect(path, "sparkline must render a stroke path").toBeTruthy();
     const d = path!.getAttribute("d")!;
@@ -40,7 +43,7 @@ describe("Sparkline — fixed domain prop (I-4)", () => {
     const expectedY = 32 * (1 - 27 / 100);
     expect(
       ys.every((y) => Math.abs(y - expectedY) < 0.01),
-      `all y must be ~${expectedY.toFixed(2)}, got: [${ys.join(", ")}]`
+      `all y must be ~${expectedY.toFixed(2)}, got: [${ys.join(", ")}]`,
     ).toBe(true);
   });
 });
@@ -64,7 +67,7 @@ describe("Sparkline — timestamp robustness across producer types (P3)", () => 
       { slot: 1, timestamp: new Date(now - 5_000).toISOString(), value: 50 },
     ] as unknown as MetricHistoryPoint[];
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const path = container.querySelector("path[fill='none']");
     const d = path!.getAttribute("d") ?? "";
@@ -77,7 +80,7 @@ describe("Sparkline — timestamp robustness across producer types (P3)", () => 
     // clearly not both pinned to the edge.
     expect(
       Math.abs(xs[0] - xs[1]),
-      `both points collapsed to the same x (both defaulted to 'now'), xs=${xs}`
+      `both points collapsed to the same x (both defaulted to 'now'), xs=${xs}`,
     ).toBeGreaterThan(20);
   });
 
@@ -89,15 +92,17 @@ describe("Sparkline — timestamp robustness across producer types (P3)", () => 
       { slot: 1, timestamp: new Date(now - 5_000).toISOString(), value: 60 },
     ] as unknown as MetricHistoryPoint[];
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const path = container.querySelector("path[fill='none']");
     const d = path!.getAttribute("d") ?? "";
     const mCount = (d.match(/M/g) ?? []).length;
     // Old code: both string timestamps fall back to `now`, tCurr-tPrev=0,
     // gap NEVER detected regardless of real elapsed time — 1 M, not 2.
-    expect(mCount, `gap-honesty silently disabled for string timestamps, d="${d}"`)
-      .toBe(2);
+    expect(
+      mCount,
+      `gap-honesty silently disabled for string timestamps, d="${d}"`,
+    ).toBe(2);
   });
 });
 
@@ -114,13 +119,15 @@ describe("Sparkline — gap honesty (I-5)", () => {
       { slot: 1, timestamp: new Date(now - 5_000), value: 60 },
     ];
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const path = container.querySelector("path[fill='none']");
     expect(path, "a stroke path must be rendered").toBeTruthy();
     const d = path!.getAttribute("d") ?? "";
     const mCount = (d.match(/M/g) ?? []).length;
-    expect(mCount, `path must have 2 M commands for a gap, got d="${d}"`).toBe(2);
+    expect(mCount, `path must have 2 M commands for a gap, got d="${d}"`).toBe(
+      2,
+    );
   });
 
   it("(b) a single point renders a dot element, not a blank svg", () => {
@@ -130,7 +137,7 @@ describe("Sparkline — gap honesty (I-5)", () => {
       { slot: 0, timestamp: new Date(now - 1_000), value: 50 },
     ];
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const dot = container.querySelector("circle");
     expect(dot, "a single point must render as a circle dot").toBeTruthy();
@@ -138,11 +145,11 @@ describe("Sparkline — gap honesty (I-5)", () => {
 
   it("(c) empty history renders 'Currently Unavailable' text and no svg", () => {
     const { container, getByText } = render(
-      <Sparkline data={[]} stretch height={32} windowMs={30_000} />
+      <Sparkline data={[]} stretch height={32} windowMs={30_000} />,
     );
     expect(
       () => getByText("Currently Unavailable"),
-      "empty history must show 'Currently Unavailable'"
+      "empty history must show 'Currently Unavailable'",
     ).not.toThrow();
     const svg = container.querySelector("svg");
     expect(svg, "empty history must not render an svg").toBeNull();
@@ -163,15 +170,20 @@ describe("Sparkline — windowMs time-anchored x-axis", () => {
       { slot: 2, timestamp: new Date(now - 1000), value: 45 },
     ];
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const path = container.querySelector("path[fill='none']");
-    expect(path, "sparkline must render a stroke path with 3 points").toBeTruthy();
+    expect(
+      path,
+      "sparkline must render a stroke path with 3 points",
+    ).toBeTruthy();
     const d = path!.getAttribute("d")!;
-    const xs = [...d.matchAll(/[ML]([0-9.-]+),([0-9.-]+)/g)].map((m) => parseFloat(m[1]));
+    const xs = [...d.matchAll(/[ML]([0-9.-]+),([0-9.-]+)/g)].map((m) =>
+      parseFloat(m[1]),
+    );
     expect(
       xs.every((x) => x >= 85),
-      `all x must be >= 85 (right sliver of the 30s window), got: [${xs.join(", ")}]`
+      `all x must be >= 85 (right sliver of the 30s window), got: [${xs.join(", ")}]`,
     ).toBe(true);
   });
 
@@ -184,16 +196,21 @@ describe("Sparkline — windowMs time-anchored x-axis", () => {
       value: i % 100,
     }));
     const { container } = render(
-      <Sparkline data={data} stretch height={32} windowMs={30_000} />
+      <Sparkline data={data} stretch height={32} windowMs={30_000} />,
     );
     const path = container.querySelector("path[fill='none']");
-    expect(path, "sparkline must render a stroke path with 31 points").toBeTruthy();
+    expect(
+      path,
+      "sparkline must render a stroke path with 31 points",
+    ).toBeTruthy();
     const d = path!.getAttribute("d")!;
-    const xs = [...d.matchAll(/[ML]([0-9.-]+),([0-9.-]+)/g)].map((m) => parseFloat(m[1]));
+    const xs = [...d.matchAll(/[ML]([0-9.-]+),([0-9.-]+)/g)].map((m) =>
+      parseFloat(m[1]),
+    );
     const span = Math.max(...xs) - Math.min(...xs);
     expect(
       span,
-      `x spread must be >= 90 (full window width), got ${span}`
+      `x spread must be >= 90 (full window width), got ${span}`,
     ).toBeGreaterThanOrEqual(90);
   });
 });

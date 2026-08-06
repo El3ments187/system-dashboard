@@ -12,26 +12,39 @@ import { useStorageMetrics } from "../hooks/useStorageMetrics";
 import { useLlamaCppMetrics } from "../hooks/useLlamaCppMetrics";
 
 const setHidden = (hidden: boolean) => {
-  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
   document.dispatchEvent(new Event("visibilitychange"));
 };
 const okJson = (payload: unknown) =>
   vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
 
 describe("hidden-tab poll gating (storage + llama)", () => {
-  beforeEach(() => { vi.useFakeTimers(); setHidden(false); });
-  afterEach(() => { vi.useRealTimers(); setHidden(false); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setHidden(false);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setHidden(false);
+  });
 
   it("useStorageMetrics stops fetching while hidden and resumes on visible", async () => {
     global.fetch = okJson([]) as unknown as typeof fetch;
     renderHook(() => useStorageMetrics());
-    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1600);
+    });
     const visibleCalls = (global.fetch as any).mock.calls.length;
     expect(visibleCalls).toBeGreaterThan(2); // 500ms cadence => several ticks
 
     act(() => setHidden(true));
     const before = (global.fetch as any).mock.calls.length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
     expect(
       (global.fetch as any).mock.calls.length - before,
       "storage polls must be no-ops while hidden",
@@ -39,17 +52,25 @@ describe("hidden-tab poll gating (storage + llama)", () => {
 
     act(() => setHidden(false));
     const resumedFrom = (global.fetch as any).mock.calls.length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
-    expect((global.fetch as any).mock.calls.length).toBeGreaterThan(resumedFrom + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1600);
+    });
+    expect((global.fetch as any).mock.calls.length).toBeGreaterThan(
+      resumedFrom + 1,
+    );
   });
 
   it("useLlamaCppMetrics does not fetch while hidden (pin of existing behavior)", async () => {
     global.fetch = okJson({}) as unknown as typeof fetch;
     renderHook(() => useLlamaCppMetrics());
-    await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
     act(() => setHidden(true));
     const before = (global.fetch as any).mock.calls.length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
     expect(
       (global.fetch as any).mock.calls.length - before,
       "llama polls must be no-ops while hidden",

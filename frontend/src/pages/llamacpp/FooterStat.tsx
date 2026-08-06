@@ -334,7 +334,8 @@ function useProcessRing(
       );
       setRing((prev) =>
         updateRing(startFresh ? EMPTY_RING : prev, processMetrics, {
-          ...sys }),
+          ...sys,
+        }),
       );
     } else if (prevProc != null || nullStreak > 0) {
       // Count EVERY no-process update toward the stop confirmation — not

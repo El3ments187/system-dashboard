@@ -1,5 +1,9 @@
 import { renderHook, act } from "@testing-library/react";
-import { useLlamaCppManagement, composeUpdateCommand, FAIL_MARKER } from "../hooks/useLlamaCppManagement";
+import {
+  useLlamaCppManagement,
+  composeUpdateCommand,
+  FAIL_MARKER,
+} from "../hooks/useLlamaCppManagement";
 
 vi.mock("../services/api", () => ({
   ptySpawnTerminal: vi.fn(),
@@ -191,7 +195,7 @@ describe("composeUpdateCommand — line-continuation folding (K)", () => {
     expect(out, "stray \\ && must not appear").not.toMatch(/\\\s*&&/);
     expect(out, "no dangling backslash").not.toMatch(/\\[^n]/);
     expect(out).toContain(
-      "cd ~/Documents/AI/llama.cpp/git/llama.cpp && git pull && rm -rf build && cmake -B build"
+      "cd ~/Documents/AI/llama.cpp/git/llama.cpp && git pull && rm -rf build && cmake -B build",
     );
   });
 
@@ -200,7 +204,7 @@ describe("composeUpdateCommand — line-continuation folding (K)", () => {
       "git pull\ncmake --build build --config Release -j$(nproc)";
     const out = composeUpdateCommand(defaultScript);
     expect(out).toContain(
-      "git pull && cmake --build build --config Release -j$(nproc)"
+      "git pull && cmake --build build --config Release -j$(nproc)",
     );
     expect(out).toContain('echo "__LLAMA_UPDATE_DONE__"');
     expect(out).toContain(`echo "${FAIL_MARKER}"`);
