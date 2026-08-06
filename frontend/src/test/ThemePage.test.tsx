@@ -445,3 +445,43 @@ describe("ThemePage FX Safe Mode copy", () => {
     expect(row.textContent).not.toContain("driver crashes");
   });
 });
+
+describe("ThemePage preview joins per-element accent distribution", () => {
+  // User report (Rainbow Wave): the preview's buttons/chips/meters all
+  // rendered ONE hue. Root cause: none of them carried data-accent-el, so
+  // the indexer never handed them an --el-index and they fell back to the
+  // root's index-0 accent tokens — literally identical colors. The preview
+  // CARDS and the chart were already indexed; adjacent indexed elements
+  // differ by exactly the Spread step, so cards looking samey at a low
+  // Spread is by design, not this bug.
+  it("meter rows, accent buttons and status chips all carry data-accent-el", () => {
+    render(<ThemePage {...makeProps()} />);
+
+    for (const label of ["Monitor", "Export"]) {
+      const btn = screen.getByText(label).closest("button");
+      expect(btn, `${label} button not found`).toBeTruthy();
+      expect(
+        btn!.hasAttribute("data-accent-el"),
+        `${label} button is missing data-accent-el — it inherits the root index-0 accent instead of its own hue`,
+      ).toBe(true);
+    }
+
+    for (const label of ["Live", "Normal"]) {
+      const chip = screen.getByText(label).closest("span");
+      expect(chip, `${label} chip not found`).toBeTruthy();
+      expect(
+        chip!.hasAttribute("data-accent-el"),
+        `${label} chip is missing data-accent-el — it inherits the root index-0 accent instead of its own hue`,
+      ).toBe(true);
+    }
+
+    const rows = document.querySelectorAll(".preview-meter-row");
+    expect(rows).toHaveLength(4);
+    for (const row of Array.from(rows)) {
+      expect(
+        row.hasAttribute("data-accent-el"),
+        "a preview meter row is missing data-accent-el — label, bar and value must share one hue per row",
+      ).toBe(true);
+    }
+  });
+});

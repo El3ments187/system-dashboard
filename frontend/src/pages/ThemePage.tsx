@@ -209,7 +209,10 @@ function ThemePreview() {
       {/* Horizontal meter bars */}
       <div className="preview-meters">
         {PREVIEW_METERS.map((m) => (
-          <div key={m.label} className="preview-meter-row">
+          // The ROW carries the index so its label, bar and value share one
+          // hue; four rows therefore render four hues. Without it they all
+          // inherit the root's index-0 accent and look identical.
+          <div key={m.label} className="preview-meter-row" data-accent-el="">
             <span className="preview-meter-label">{m.label}</span>
             <div style={{ flex: 1 }}>
               <ProgressBar
@@ -227,18 +230,21 @@ function ThemePreview() {
       <div className="preview-actions">
         <button
           className="btn-accent"
+          data-accent-el=""
           style={{ fontSize: 11, padding: "5px 12px" }}
         >
           Monitor
         </button>
         <button
           className="btn-accent"
+          data-accent-el=""
           style={{ fontSize: 11, padding: "5px 12px" }}
         >
           Export
         </button>
         <span
           className="status-chip accent"
+          data-accent-el=""
           style={{
             color: "var(--accent-primary)",
             background: "var(--accent-tint-15)",
@@ -252,6 +258,7 @@ function ThemePreview() {
         </span>
         <span
           className="status-chip"
+          data-accent-el=""
           style={{
             color: "var(--accent-primary)",
             background: "var(--accent-tint-15)",
