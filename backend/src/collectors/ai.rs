@@ -22,7 +22,10 @@ const HISTORY_RETENTION_SECONDS: u64 = 120;
 /// inherits an old pid, its /proc starttime differs from whatever was
 /// cached, so the stale sample is discarded instead of computing a
 /// delta across two unrelated processes.
-static PREV_CPU_SAMPLE: LazyLock<Mutex<HashMap<u32, (u64, u64, u64)>>> =
+/// pid -> (process_ticks, system_ticks, process_starttime_ticks).
+type PrevCpuSamples = HashMap<u32, (u64, u64, u64)>;
+
+static PREV_CPU_SAMPLE: LazyLock<Mutex<PrevCpuSamples>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Pure CPU% from two ticks samples of the same process and system, taken
@@ -1408,10 +1411,10 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
         // over one real poll interval is still correctly computed from
         // ONLY what changed, not the absolute magnitudes.
         let pct = cpu_percent_from_deltas(
-            10_000,      // prev proc ticks (process has some history)
-            10_100,      // curr proc ticks (+100 this interval)
-            50_000_000,  // prev sys ticks (system has been up a long time)
-            50_001_600,  // curr sys ticks (+1600 this interval, 16 cpus)
+            10_000,     // prev proc ticks (process has some history)
+            10_100,     // curr proc ticks (+100 this interval)
+            50_000_000, // prev sys ticks (system has been up a long time)
+            50_001_600, // curr sys ticks (+1600 this interval, 16 cpus)
             16.0,
         );
         // Same +100 proc / +1600 sys shape as the one-core case above —

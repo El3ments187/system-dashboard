@@ -959,165 +959,6 @@ async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::collectors::gpu::get_gpu_backend_info;
-
-    // ── C11: /api/status contract ────────────────────────────────────
-
-    #[test]
-    fn gpu_backend_value_is_one_of_known_variants() {
-        let (gpu_backend, _nvml_available) = get_gpu_backend_info();
-        assert!(
-            matches!(gpu_backend.as_str(), "nvml" | "nvidia-smi" | "none"),
-            "gpu_backend must be one of nvml/nvidia-smi/none, got {gpu_backend:?}"
-        );
-    }
-
-    #[test]
-    fn status_json_shape_has_required_keys() {
-        let (gpu_backend, nvml_available) = get_gpu_backend_info();
-        let body = json!({
-            "gpu_backend": gpu_backend,
-            "nvml_available": nvml_available,
-            "collectors": {},
-            "last_update": "2024-01-01 00:00:00 UTC",
-        });
-        assert!(body.get("gpu_backend").is_some(), "must have gpu_backend");
-        assert!(body.get("nvml_available").is_some(), "must have nvml_available");
-        assert!(body["nvml_available"].is_boolean(), "nvml_available must be bool");
-        assert!(body.get("collectors").is_some(), "must have collectors");
-        assert!(body.get("last_update").is_some(), "must have last_update");
-    }
-
-    // ── C12: data-envelope contract ───────────────────────────────────
-
-    #[tokio::test]
-    async fn system_handler_returns_data_envelope() {
-        let resp = system_handler().await;
-        let body = resp.0;
-        assert!(body.get("data").is_some(), "system: must have 'data' key");
-        assert!(body.get("timestamp").is_some(), "system: must have 'timestamp' key");
-    }
-
-    #[tokio::test]
-    async fn memory_handler_returns_data_envelope() {
-        let resp = memory_handler().await;
-        let body = resp.0;
-        assert!(body.get("data").is_some(), "memory: must have 'data' key");
-        assert!(body.get("timestamp").is_some(), "memory: must have 'timestamp' key");
-    }
-
-    #[tokio::test]
-    async fn gpu_handler_returns_data_envelope() {
-        let resp = gpu_handler().await;
-        let body = resp.0;
-        // gpu_handler may return { "error": ... } if GPU unavailable; still check
-        // that when data IS present it is properly enveloped.
-        if body.get("error").is_none() {
-            assert!(body.get("data").is_some(), "gpu: must have 'data' key");
-            assert!(body.get("timestamp").is_some(), "gpu: must have 'timestamp' key");
-        }
-    }
-
-    #[tokio::test]
-    async fn storage_devices_handler_returns_data_envelope() {
-        let resp = storage_devices_handler().await;
-        let body = resp.0;
-        assert!(body.get("data").is_some(), "storage/devices: must have 'data' key");
-        assert!(body.get("timestamp").is_some(), "storage/devices: must have 'timestamp' key");
-    }
-
-    #[tokio::test]
-    async fn storage_history_handler_returns_data_envelope() {
-        let resp = storage_history_handler().await;
-        let body = resp.0;
-        assert!(body.get("data").is_some(), "storage/history: must have 'data' key");
-        assert!(body.get("timestamp").is_some(), "storage/history: must have 'timestamp' key");
-    }
-
-    // ── C12 extension: combined endpoint shape ─────────────────────────
-
-    #[tokio::test]
-    async fn all_metrics_handler_returns_combined_shape() {
-        let resp = all_metrics_handler().await;
-        let body = resp.0;
-        assert!(body.get("cpu").is_some(), "all: must have 'cpu' key");
-        assert!(body.get("memory").is_some(), "all: must have 'memory' key");
-        assert!(body.get("gpu").is_some(), "all: must have 'gpu' key");
-        assert!(body.get("storage_devices").is_some(), "all: must have 'storage_devices' key");
-        assert!(body.get("storage_history").is_some(), "all: must have 'storage_history' key");
-        assert!(body.get("system").is_some(), "all: must have 'system' key");
-        assert!(body.get("timestamp").is_some(), "all: must have 'timestamp' key");
-    }
-
-    // ── Item 5: process CPU% sampler ───────────────────────────────────
-
-    #[test]
-    fn process_cpu_fresh_system_always_zero() {
-        // Documents the old broken behavior: a brand-new System with a single
-        // refresh has no prior sample to diff against, so cpu_usage() is always 0.
-        let mut sys = sysinfo::System::new();
-        let pid = std::process::id() as usize;
-        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
-        assert_eq!(cpu, 0.0, "first sample on a fresh System must be 0 (no prior delta)");
-    }
-
-    #[test]
-    fn process_cpu_persistent_system_nonzero_under_load() {
-        // GREEN: two refreshes on the same persistent System with CPU work between
-        // them → second sample reports nonzero usage. Burns CPU on the test thread
-        // itself for 600 ms (well above MINIMUM_CPU_UPDATE_INTERVAL on any platform)
-        // so the process-level delta is unambiguous.
-        let pid = std::process::id() as usize;
-        let mut sys = sysinfo::System::new();
-
-        // First sample — establishes the baseline
-        get_process_cpu_percent(&mut sys, pid);
-
-        // Burn CPU for 600 ms so the delta is clearly nonzero
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
-        let mut x: u64 = 1;
-        while std::time::Instant::now() < deadline {
-            x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
-        }
-        let _ = x;
-
-        // Second sample — delta is now available
-        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
-        assert!(cpu > 0.0, "second sample with CPU work must be > 0, got {cpu}");
-    }
-
-    // ── C15: ProcessMetrics serialization contract ────────────────────
-    // Consumed by: RUNTIME card (llama_server_process in AiMetrics) and the
-    // G2 footer source swap. vram_mb + gpu_util_percent must be PRESENT in
-    // JSON even when None (null) so the frontend can distinguish "no GPU" from
-    // "field missing".
-
-    #[test]
-    fn process_metrics_serializes_all_six_keys() {
-        use crate::models::ai::ProcessMetrics;
-        let pm = ProcessMetrics {
-            pid: 1,
-            cpu_percent: 0.0,
-            memory_kb: 0,
-            uptime_seconds: 0.0,
-            vram_mb: None,
-            gpu_util_percent: None,
-        };
-        let json = serde_json::to_value(&pm).unwrap();
-        assert!(json.get("pid").is_some(), "pid must be present");
-        assert!(json.get("cpu_percent").is_some(), "cpu_percent must be present");
-        assert!(json.get("memory_kb").is_some(), "memory_kb must be present");
-        assert!(json.get("uptime_seconds").is_some(), "uptime_seconds must be present");
-        assert!(json.get("vram_mb").is_some(),
-            "vram_mb must be present (null when no GPU — RUNTIME card + G2 footer)");
-        assert!(json.get("gpu_util_percent").is_some(),
-            "gpu_util_percent must be present (null when no GPU — RUNTIME card + G2 footer)");
-    }
-}
-
 fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value> {
     let state = launcher_api::get_state();
     let guard = state.read().unwrap();
@@ -1133,7 +974,11 @@ fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value
             let (found, cpu_percent, memory_kb) = {
                 let mut sys = PROCESS_SYSTEM.lock().unwrap();
                 let (cpu, mem) = get_process_cpu_percent(&mut sys, pid_val as usize);
-                (cpu > 0.0 || sys.process(sysinfo::Pid::from(pid_val as usize)).is_some(), cpu, mem)
+                (
+                    cpu > 0.0 || sys.process(sysinfo::Pid::from(pid_val as usize)).is_some(),
+                    cpu,
+                    mem,
+                )
             };
             if found {
                 return Json(json!({
@@ -1172,4 +1017,217 @@ fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value
             "context_size": null,
         }),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collectors::gpu::get_gpu_backend_info;
+
+    // ── C11: /api/status contract ────────────────────────────────────
+
+    #[test]
+    fn gpu_backend_value_is_one_of_known_variants() {
+        let (gpu_backend, _nvml_available) = get_gpu_backend_info();
+        assert!(
+            matches!(gpu_backend.as_str(), "nvml" | "nvidia-smi" | "none"),
+            "gpu_backend must be one of nvml/nvidia-smi/none, got {gpu_backend:?}"
+        );
+    }
+
+    #[test]
+    fn status_json_shape_has_required_keys() {
+        let (gpu_backend, nvml_available) = get_gpu_backend_info();
+        let body = json!({
+            "gpu_backend": gpu_backend,
+            "nvml_available": nvml_available,
+            "collectors": {},
+            "last_update": "2024-01-01 00:00:00 UTC",
+        });
+        assert!(body.get("gpu_backend").is_some(), "must have gpu_backend");
+        assert!(
+            body.get("nvml_available").is_some(),
+            "must have nvml_available"
+        );
+        assert!(
+            body["nvml_available"].is_boolean(),
+            "nvml_available must be bool"
+        );
+        assert!(body.get("collectors").is_some(), "must have collectors");
+        assert!(body.get("last_update").is_some(), "must have last_update");
+    }
+
+    // ── C12: data-envelope contract ───────────────────────────────────
+
+    #[tokio::test]
+    async fn system_handler_returns_data_envelope() {
+        let resp = system_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "system: must have 'data' key");
+        assert!(
+            body.get("timestamp").is_some(),
+            "system: must have 'timestamp' key"
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_handler_returns_data_envelope() {
+        let resp = memory_handler().await;
+        let body = resp.0;
+        assert!(body.get("data").is_some(), "memory: must have 'data' key");
+        assert!(
+            body.get("timestamp").is_some(),
+            "memory: must have 'timestamp' key"
+        );
+    }
+
+    #[tokio::test]
+    async fn gpu_handler_returns_data_envelope() {
+        let resp = gpu_handler().await;
+        let body = resp.0;
+        // gpu_handler may return { "error": ... } if GPU unavailable; still check
+        // that when data IS present it is properly enveloped.
+        if body.get("error").is_none() {
+            assert!(body.get("data").is_some(), "gpu: must have 'data' key");
+            assert!(
+                body.get("timestamp").is_some(),
+                "gpu: must have 'timestamp' key"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_devices_handler_returns_data_envelope() {
+        let resp = storage_devices_handler().await;
+        let body = resp.0;
+        assert!(
+            body.get("data").is_some(),
+            "storage/devices: must have 'data' key"
+        );
+        assert!(
+            body.get("timestamp").is_some(),
+            "storage/devices: must have 'timestamp' key"
+        );
+    }
+
+    #[tokio::test]
+    async fn storage_history_handler_returns_data_envelope() {
+        let resp = storage_history_handler().await;
+        let body = resp.0;
+        assert!(
+            body.get("data").is_some(),
+            "storage/history: must have 'data' key"
+        );
+        assert!(
+            body.get("timestamp").is_some(),
+            "storage/history: must have 'timestamp' key"
+        );
+    }
+
+    // ── C12 extension: combined endpoint shape ─────────────────────────
+
+    #[tokio::test]
+    async fn all_metrics_handler_returns_combined_shape() {
+        let resp = all_metrics_handler().await;
+        let body = resp.0;
+        assert!(body.get("cpu").is_some(), "all: must have 'cpu' key");
+        assert!(body.get("memory").is_some(), "all: must have 'memory' key");
+        assert!(body.get("gpu").is_some(), "all: must have 'gpu' key");
+        assert!(
+            body.get("storage_devices").is_some(),
+            "all: must have 'storage_devices' key"
+        );
+        assert!(
+            body.get("storage_history").is_some(),
+            "all: must have 'storage_history' key"
+        );
+        assert!(body.get("system").is_some(), "all: must have 'system' key");
+        assert!(
+            body.get("timestamp").is_some(),
+            "all: must have 'timestamp' key"
+        );
+    }
+
+    // ── Item 5: process CPU% sampler ───────────────────────────────────
+
+    #[test]
+    fn process_cpu_fresh_system_always_zero() {
+        // Documents the old broken behavior: a brand-new System with a single
+        // refresh has no prior sample to diff against, so cpu_usage() is always 0.
+        let mut sys = sysinfo::System::new();
+        let pid = std::process::id() as usize;
+        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
+        assert_eq!(
+            cpu, 0.0,
+            "first sample on a fresh System must be 0 (no prior delta)"
+        );
+    }
+
+    #[test]
+    fn process_cpu_persistent_system_nonzero_under_load() {
+        // GREEN: two refreshes on the same persistent System with CPU work between
+        // them → second sample reports nonzero usage. Burns CPU on the test thread
+        // itself for 600 ms (well above MINIMUM_CPU_UPDATE_INTERVAL on any platform)
+        // so the process-level delta is unambiguous.
+        let pid = std::process::id() as usize;
+        let mut sys = sysinfo::System::new();
+
+        // First sample — establishes the baseline
+        get_process_cpu_percent(&mut sys, pid);
+
+        // Burn CPU for 600 ms so the delta is clearly nonzero
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
+        let mut x: u64 = 1;
+        while std::time::Instant::now() < deadline {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+        }
+        let _ = x;
+
+        // Second sample — delta is now available
+        let (cpu, _mem) = get_process_cpu_percent(&mut sys, pid);
+        assert!(
+            cpu > 0.0,
+            "second sample with CPU work must be > 0, got {cpu}"
+        );
+    }
+
+    // ── C15: ProcessMetrics serialization contract ────────────────────
+    // Consumed by: RUNTIME card (llama_server_process in AiMetrics) and the
+    // G2 footer source swap. vram_mb + gpu_util_percent must be PRESENT in
+    // JSON even when None (null) so the frontend can distinguish "no GPU" from
+    // "field missing".
+
+    #[test]
+    fn process_metrics_serializes_all_six_keys() {
+        use crate::models::ai::ProcessMetrics;
+        let pm = ProcessMetrics {
+            pid: 1,
+            cpu_percent: 0.0,
+            memory_kb: 0,
+            uptime_seconds: 0.0,
+            vram_mb: None,
+            gpu_util_percent: None,
+        };
+        let json = serde_json::to_value(&pm).unwrap();
+        assert!(json.get("pid").is_some(), "pid must be present");
+        assert!(
+            json.get("cpu_percent").is_some(),
+            "cpu_percent must be present"
+        );
+        assert!(json.get("memory_kb").is_some(), "memory_kb must be present");
+        assert!(
+            json.get("uptime_seconds").is_some(),
+            "uptime_seconds must be present"
+        );
+        assert!(
+            json.get("vram_mb").is_some(),
+            "vram_mb must be present (null when no GPU — RUNTIME card + G2 footer)"
+        );
+        assert!(
+            json.get("gpu_util_percent").is_some(),
+            "gpu_util_percent must be present (null when no GPU — RUNTIME card + G2 footer)"
+        );
+    }
 }

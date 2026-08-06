@@ -557,8 +557,12 @@ fn is_quant_token(token: &str) -> bool {
 /// B-containing word (the "Bonsai" bug).
 fn is_params_token(s: &str) -> bool {
     let core = s.strip_prefix(['A', 'a']).unwrap_or(s);
-    let Some(last) = core.chars().last() else { return false; };
-    if !matches!(last, 'B' | 'b' | 'M' | 'm') { return false; }
+    let Some(last) = core.chars().last() else {
+        return false;
+    };
+    if !matches!(last, 'B' | 'b' | 'M' | 'm') {
+        return false;
+    }
     let digits = &core[..core.len() - 1];
     !digits.is_empty()
         && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
@@ -1629,8 +1633,7 @@ async fn update_profile_metrics_for_script(script_path: &str) {
         // caught raw RSS overstating a CUDA process by ~6 GB of driver
         // mappings. Same page, same word "RAM", same number.
         let peak_ram_mb = (crate::collectors::ai::process_mem_kb_from_status(
-            &std::fs::read_to_string(format!("/proc/{}/status", llama_pid))
-                .unwrap_or_default(),
+            &std::fs::read_to_string(format!("/proc/{}/status", llama_pid)).unwrap_or_default(),
         ) / 1024.0)
             .ceil();
 
@@ -1715,30 +1718,65 @@ mod tests {
 
     // ── J1: default_scan_dir derives from env, never a literal user path ─
 
+    /// Serializes the two env-mutating tests below. `std::env` is
+    /// process-global and cargo runs tests on multiple threads, so without
+    /// this they interleave: the HOME test could observe the override test's
+    /// `MODEL_DECK_SCAN_DIR=/custom/models` and fail (~2 runs in 12,
+    /// measured). Both tests previously carried a `SAFETY: single-threaded
+    /// test` comment, which was never true and is what hid the race.
+    /// Poison-tolerant so one test panicking can't cascade into a bogus
+    /// failure in the other.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn default_scan_dir_respects_override_env_var() {
-        // SAFETY: single-threaded test; no other thread reads MODEL_DECK_SCAN_DIR concurrently.
-        unsafe { std::env::set_var("MODEL_DECK_SCAN_DIR", "/custom/models"); }
+        let _env = env_lock();
+        // SAFETY: env_lock makes this the only thread touching these vars
+        // for the duration of the test.
+        unsafe {
+            std::env::set_var("MODEL_DECK_SCAN_DIR", "/custom/models");
+        }
         let dir = default_scan_dir();
-        unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
-        assert_eq!(dir, std::path::PathBuf::from("/custom/models"),
-            "MODEL_DECK_SCAN_DIR must be returned verbatim when set");
+        unsafe {
+            std::env::remove_var("MODEL_DECK_SCAN_DIR");
+        }
+        assert_eq!(
+            dir,
+            std::path::PathBuf::from("/custom/models"),
+            "MODEL_DECK_SCAN_DIR must be returned verbatim when set"
+        );
     }
 
     #[test]
     fn default_scan_dir_derives_from_home_when_no_override() {
-        // SAFETY: single-threaded test; no other thread reads HOME or MODEL_DECK_SCAN_DIR concurrently.
-        unsafe { std::env::remove_var("MODEL_DECK_SCAN_DIR"); }
+        let _env = env_lock();
+        // SAFETY: env_lock makes this the only thread touching these vars
+        // for the duration of the test.
+        unsafe {
+            std::env::remove_var("MODEL_DECK_SCAN_DIR");
+        }
         let orig_home = std::env::var("HOME").unwrap_or_default();
-        unsafe { std::env::set_var("HOME", "/tmp/probe"); }
+        unsafe {
+            std::env::set_var("HOME", "/tmp/probe");
+        }
         let dir = default_scan_dir();
         if !orig_home.is_empty() {
-            unsafe { std::env::set_var("HOME", orig_home); }
+            unsafe {
+                std::env::set_var("HOME", orig_home);
+            }
         } else {
-            unsafe { std::env::remove_var("HOME"); }
+            unsafe {
+                std::env::remove_var("HOME");
+            }
         }
-        assert_eq!(dir, std::path::PathBuf::from("/tmp/probe/Documents/AI/Start_Scripts"),
-            "scan-dir must derive from $HOME, never a hardcoded user path");
+        assert_eq!(
+            dir,
+            std::path::PathBuf::from("/tmp/probe/Documents/AI/Start_Scripts"),
+            "scan-dir must derive from $HOME, never a hardcoded user path"
+        );
     }
 
     // ── H: params shape matcher ──────────────────────────────────────
@@ -1762,7 +1800,10 @@ mod tests {
     #[test]
     fn params_absent_yields_none_not_a_word() {
         let m = extract_filename_metadata("Behemoth-Instruct-Q4_K_M.sh").unwrap();
-        assert_eq!(m.params, None, "no size token present -> None, never a guess");
+        assert_eq!(
+            m.params, None,
+            "no size token present -> None, never a guess"
+        );
     }
 
     #[test]
@@ -1788,7 +1829,9 @@ mod tests {
     fn wait_for_exit_returns_true_after_process_dies() {
         let mut child = spawn_isolated("100");
         let pid = child.id();
-        unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
         let _ = child.wait();
         let exited = wait_for_exit(pid, Duration::from_secs(3));
         assert!(exited, "wait_for_exit must return true after process exits");
@@ -1801,6 +1844,9 @@ mod tests {
         graceful_shutdown(pid).expect("graceful_shutdown must not error");
         // try_wait reaps the zombie; returns Some once process has exited.
         let status = child.try_wait().expect("try_wait failed");
-        assert!(status.is_some(), "process must have exited after graceful_shutdown");
+        assert!(
+            status.is_some(),
+            "process must have exited after graceful_shutdown"
+        );
     }
 }

@@ -67,10 +67,7 @@ pub(crate) fn save_settings_to_path(
 }
 
 fn load_settings_from_disk() -> AiSettings {
-    match load_settings_from_path(&settings_file()) {
-        Ok(s) => s,
-        Err(_) => AiSettings::default(),
-    }
+    load_settings_from_path(&settings_file()).unwrap_or_default()
 }
 
 fn save_settings_to_disk(settings: &AiSettings) {
@@ -204,8 +201,7 @@ mod tests {
     }
 
     fn tmp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("model-deck-{}-{}", tag, std::process::id()));
+        let dir = std::env::temp_dir().join(format!("model-deck-{}-{}", tag, std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

@@ -111,9 +111,11 @@ fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
 /// cache keeps behavior uniform across paths.
 const TEMPERATURE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
-static TEMPERATURE_CACHE: LazyLock<
-    Mutex<std::collections::HashMap<String, (std::time::Instant, Option<f64>)>>,
-> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+/// device name -> (time the temperature was read, temperature in celsius).
+type TemperatureCache = std::collections::HashMap<String, (std::time::Instant, Option<f64>)>;
+
+static TEMPERATURE_CACHE: LazyLock<Mutex<TemperatureCache>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 fn collect_device_temperature_cached(device_name: &str) -> Option<f64> {
     let now = std::time::Instant::now();

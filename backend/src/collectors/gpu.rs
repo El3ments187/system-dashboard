@@ -18,14 +18,19 @@ static NVML_LAST_INIT_ATTEMPT: LazyLock<Mutex<Option<std::time::Instant>>> =
 /// wakes the GPU). At the frontend's 2 Hz poll that meant 2 spawns/sec forever
 /// while NVML is down. Serve cached results inside this TTL instead.
 const SMI_TTL: std::time::Duration = std::time::Duration::from_millis(1500);
-static SMI_CACHE: LazyLock<Mutex<Option<(std::time::Instant, Vec<GpuMetrics>)>>> =
-    LazyLock::new(|| Mutex::new(None));
+/// Timestamped snapshot of the last successful nvidia-smi scrape.
+type SmiCache = Option<(std::time::Instant, Vec<GpuMetrics>)>;
+
+static SMI_CACHE: LazyLock<Mutex<SmiCache>> = LazyLock::new(|| Mutex::new(None));
 
 /// Driver version and per-device name / enforced power limit are constants for
 /// the life of the process; querying the driver for them twice a second is
 /// pure waste. Cached on first successful read.
 static DRIVER_VERSION: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-static GPU_STATIC_INFO: LazyLock<Mutex<std::collections::HashMap<u32, (String, Option<f64>)>>> =
+/// device index -> (device name, enforced power limit in watts).
+type GpuStaticInfo = std::collections::HashMap<u32, (String, Option<f64>)>;
+
+static GPU_STATIC_INFO: LazyLock<Mutex<GpuStaticInfo>> =
     LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 /// Rate-limit hot-path logging: at 2 Hz an eprintln per poll floods stderr and
@@ -86,7 +91,10 @@ pub fn init_gpu_backend() -> (String, bool) {
         ensure_nvml_initialized(&mut guard);
     }
     let (backend, available) = get_gpu_backend_info();
-    println!("  GPU backend: {backend}{}", if available { " (NVML active)" } else { "" });
+    println!(
+        "  GPU backend: {backend}{}",
+        if available { " (NVML active)" } else { "" }
+    );
     (backend, available)
 }
 
@@ -440,7 +448,10 @@ pub fn query_process_gpu_stats(pid: u32) -> (Option<f64>, Option<f64>) {
         .process_utilization_stats(None)
         .unwrap_or_default()
         .into_iter()
-        .map(|s| GpuUtilEntry { pid: s.pid, sm_util: s.sm_util })
+        .map(|s| GpuUtilEntry {
+            pid: s.pid,
+            sm_util: s.sm_util,
+        })
         .collect();
     process_gpu_stats_from(&procs, &util_samples, pid)
 }
@@ -448,9 +459,8 @@ pub fn query_process_gpu_stats(pid: u32) -> (Option<f64>, Option<f64>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        GpuProcessEntry, GpuUtilEntry, NVML_INIT_RETRY, SMI_CACHE, SMI_TTL,
-        extract_tag, extract_tag_float, parse_smi_xml, process_gpu_stats_from,
-        smi_from_all_cached_inner,
+        GpuProcessEntry, GpuUtilEntry, NVML_INIT_RETRY, SMI_CACHE, SMI_TTL, extract_tag,
+        extract_tag_float, parse_smi_xml, process_gpu_stats_from, smi_from_all_cached_inner,
     };
     use crate::models::metrics::GpuMetrics;
     use std::sync::{Mutex, OnceLock};
@@ -497,8 +507,14 @@ mod tests {
         *SMI_CACHE.lock().unwrap() = None;
         let t0 = std::time::Instant::now();
         let mut call_count = 0u32;
-        smi_from_all_cached_inner(t0, || { call_count += 1; dummy_gpu() });
-        smi_from_all_cached_inner(t0, || { call_count += 1; dummy_gpu() });
+        smi_from_all_cached_inner(t0, || {
+            call_count += 1;
+            dummy_gpu()
+        });
+        smi_from_all_cached_inner(t0, || {
+            call_count += 1;
+            dummy_gpu()
+        });
         assert_eq!(call_count, 1, "fetch must be called only once within TTL");
     }
 
@@ -508,18 +524,29 @@ mod tests {
         *SMI_CACHE.lock().unwrap() = None;
         let t0 = std::time::Instant::now();
         let mut call_count = 0u32;
-        smi_from_all_cached_inner(t0, || { call_count += 1; dummy_gpu() });
+        smi_from_all_cached_inner(t0, || {
+            call_count += 1;
+            dummy_gpu()
+        });
         let t1 = t0 + SMI_TTL + std::time::Duration::from_millis(1);
-        smi_from_all_cached_inner(t1, || { call_count += 1; dummy_gpu() });
-        assert_eq!(call_count, 2, "fetch must be called again after TTL expires");
+        smi_from_all_cached_inner(t1, || {
+            call_count += 1;
+            dummy_gpu()
+        });
+        assert_eq!(
+            call_count, 2,
+            "fetch must be called again after TTL expires"
+        );
     }
 
     // ── C13: nvidia-smi XML parse ────────────────────────────────────
 
     #[test]
     fn extract_tag_finds_simple_value() {
-        assert_eq!(extract_tag("<product_name>RTX 4090</product_name>", "product_name"),
-            Some("RTX 4090".to_string()));
+        assert_eq!(
+            extract_tag("<product_name>RTX 4090</product_name>", "product_name"),
+            Some("RTX 4090".to_string())
+        );
     }
 
     #[test]
@@ -575,10 +602,19 @@ mod tests {
 
     #[test]
     fn process_gpu_stats_found_pid_has_vram_and_util() {
-        let procs = vec![GpuProcessEntry { pid: 42, vram_bytes: Some(2 * 1024 * 1024 * 1024) }];
-        let util = vec![GpuUtilEntry { pid: 42, sm_util: 87 }];
+        let procs = vec![GpuProcessEntry {
+            pid: 42,
+            vram_bytes: Some(2 * 1024 * 1024 * 1024),
+        }];
+        let util = vec![GpuUtilEntry {
+            pid: 42,
+            sm_util: 87,
+        }];
         let (vram, gpu) = process_gpu_stats_from(&procs, &util, 42);
-        assert!((vram.unwrap() - 2048.0).abs() < 0.1, "2 GiB → 2048 MiB, got {vram:?}");
+        assert!(
+            (vram.unwrap() - 2048.0).abs() < 0.1,
+            "2 GiB → 2048 MiB, got {vram:?}"
+        );
         assert_eq!(gpu, Some(87.0));
     }
 
@@ -592,7 +628,10 @@ mod tests {
     fn process_gpu_stats_util_unsupported_returns_vram_none() {
         // Consumer drivers often refuse process_utilization_stats → empty util list.
         // Correct behavior: return vram from running_compute_processes, None for util.
-        let procs = vec![GpuProcessEntry { pid: 7, vram_bytes: Some(512 * 1024 * 1024) }];
+        let procs = vec![GpuProcessEntry {
+            pid: 7,
+            vram_bytes: Some(512 * 1024 * 1024),
+        }];
         let (vram, gpu) = process_gpu_stats_from(&procs, &[], 7);
         assert!((vram.unwrap() - 512.0).abs() < 0.1, "512 MiB, got {vram:?}");
         assert_eq!(gpu, None, "util unsupported must be None, not a failure");

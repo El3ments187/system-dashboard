@@ -215,7 +215,10 @@ pub enum StatSource {
 /// - `prev` is `None`   → Bootstrap (first call, no history)
 /// - elapsed < 50 ms    → Bootstrap (burst poll; delta would be noise)
 /// - elapsed >= 50 ms   → Delta(stat) (normal steady-state poll)
-pub fn choose_stat_source(prev: Option<(ProcStat, std::time::Instant)>, now: std::time::Instant) -> StatSource {
+pub fn choose_stat_source(
+    prev: Option<(ProcStat, std::time::Instant)>,
+    now: std::time::Instant,
+) -> StatSource {
     match prev {
         Some((stat, at)) if now.duration_since(at).as_millis() >= 50 => StatSource::Delta(stat),
         _ => StatSource::Bootstrap,
@@ -397,14 +400,28 @@ fn read_cpu_temperature() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{choose_stat_source, normalize_cpu_model, CoreStat, ProcStat, StatSource};
+    use super::{CoreStat, ProcStat, StatSource, choose_stat_source, normalize_cpu_model};
 
     fn empty_proc_stat() -> ProcStat {
-        ProcStat { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, cores: vec![] }
+        ProcStat {
+            user: 0,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            cores: vec![],
+        }
     }
 
     fn core_stat() -> CoreStat {
-        CoreStat { _core_id: 0, user: 0, nice: 0, system: 0, idle: 0, iowait: 0 }
+        CoreStat {
+            _core_id: 0,
+            user: 0,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+        }
     }
 
     // ── C10: CPU stateful-delta decision ─────────────────────────────
@@ -412,7 +429,10 @@ mod tests {
     #[test]
     fn first_call_no_prev_gives_bootstrap() {
         let now = std::time::Instant::now();
-        assert!(matches!(choose_stat_source(None, now), StatSource::Bootstrap));
+        assert!(matches!(
+            choose_stat_source(None, now),
+            StatSource::Bootstrap
+        ));
     }
 
     #[test]
