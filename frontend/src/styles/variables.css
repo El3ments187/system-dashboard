@@ -920,6 +920,20 @@
   --fx-depth: 30; /* 2nd-hue offset in degrees (Depth slider) */
 }
 
+/* Nav page names under the two DISTRIBUTING modes: color each name with
+   its own per-element accent. --accent-primary is re-derived per element
+   from --el-index in these modes (see the blocks below), so this single
+   rule yields seven distinct hues once Header puts every button into the
+   index. Scoped to spectrum/rainbow only — in solid/sheen/flow the nav
+   keeps its muted-until-active/hover behavior. The :not(.active)
+   exclusion lets the active tab keep its inline accent styling
+   (background tint + border) exactly as before; inline hover colors
+   still win over this rule while hovering, and reset on leave. */
+[data-accent-mode="spectrum"] .dash-nav-btn:not(.active),
+[data-accent-mode="rainbow-wave"] .dash-nav-btn:not(.active) {
+  color: var(--accent-primary);
+}
+
 [data-accent-mode="rainbow-wave"] {
   --el-off: calc(var(--el-index, 0) * var(--fx-spread, 34));
 
@@ -1077,8 +1091,10 @@
 [data-card-glow="on"][data-accent-mode="rainbow-wave"] [style*="--el-index"] {
   --card-halo:
     0 0 calc(8px + 8px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
-      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4))) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      var(--accent-glow),
+    0 0
+      calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), 0.12);
 }
 
@@ -1289,8 +1305,10 @@
 [data-card-glow="on"] {
   --card-halo:
     0 0 calc(8px + 8px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
-      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4))) var(--accent-glow),
-    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      calc(2px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+      var(--accent-glow),
+    0 0
+      calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), 0.12);
 }
 
@@ -1333,7 +1351,8 @@
         var(--accent-glow) calc(var(--breathe-halo-mult, 1) * 100%),
         transparent
       ),
-    0 0 calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
+    0 0
+      calc(48px + 14px * var(--card-glow-intensity, var(--glow-intensity, 1.4)))
       rgba(var(--accent-primary-rgb), calc(0.12 * var(--breathe-halo-mult, 1)));
   animation: fx-breathe-halo var(--breathe-speed, 4s) ease-in-out infinite;
 }

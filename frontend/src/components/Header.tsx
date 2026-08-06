@@ -155,7 +155,18 @@ export default function Header({
               key={page}
               onClick={() => onPageChange?.(page)}
               className={`dash-nav-btn${activePage === page ? " active" : ""}`}
-              {...(activePage === page ? { "data-accent-el": "" } : {})}
+              // EVERY button participates in the per-element accent
+              // distribution, not just the active one. User-reported:
+              // under Spectrum Per-Element all page names rendered the
+              // same color — because only the active button carried this
+              // attribute, the other six never received an --el-index,
+              // and spectrum/rainbow derive each element's hue FROM that
+              // index. (Side effect worth knowing: seven more indexed
+              // elements ahead of the page content shifts every later
+              // element's hue slot by up to 7 — a one-time cosmetic
+              // rotation of the palette, not a bug.)
+              data-accent-el=""
+
               style={
                 activePage === page
                   ? {
