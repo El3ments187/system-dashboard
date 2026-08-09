@@ -149,6 +149,34 @@ pub(crate) fn should_refuse_start(a_run_is_live: bool) -> bool {
     a_run_is_live
 }
 
+/// Where `/v1/models` lives for a given base url.
+///
+/// Mirrors bench.py, which appends `/v1` only when the url has no path
+/// (`args.base_url = given if parts.path else given + "/v1"`). Probing a
+/// different address than the run will use would make the gate a lie.
+pub(crate) fn models_probe_url(base: &str) -> String {
+    let trimmed = base.trim().trim_end_matches('/');
+    if trimmed.ends_with("/v1") {
+        format!("{trimmed}/models")
+    } else {
+        format!("{trimmed}/v1/models")
+    }
+}
+
+/// Is a server answering at all?
+///
+/// Deliberately weaker than `queue_advance_ready`: that one waits for a
+/// SPECIFIC model id after a swap, while this only asks whether there is an
+/// endpoint to benchmark. An empty model list still counts — bench.py can
+/// auto-detect, and benching a mockserver with no model loaded is
+/// legitimate.
+pub(crate) fn server_answering(models_body: &str) -> bool {
+    serde_json::from_str::<Value>(models_body)
+        .ok()
+        .and_then(|v| v.get("data").map(|d| d.is_array()))
+        .unwrap_or(false)
+}
+
 // ── Log ring buffer ───────────────────────────────────────────────────────────
 
 /// Bench-local ring buffer with offset reads.
@@ -204,6 +232,9 @@ pub(crate) struct CurrentRun {
     pub model: Option<String>,
     pub label: Option<String>,
     pub langs: Option<String>,
+    /// The endpoint this run targets, so the page can say what is being
+    /// benchmarked before results.json exists.
+    pub url: Option<String>,
     pub attempts: Option<u32>,
     pub n: Option<u32>,
     pub temperature: Option<f64>,
@@ -371,6 +402,22 @@ pub struct StartRequest {
 }
 
 impl StartRequest {
+    /// bench.py declares `--temperature` with `default=0.0`, so omitting the
+    /// flag silently selects GREEDY decoding rather than leaving the server's
+    /// own default alone. That is a change to what is being measured, not a
+    /// safe fallback — especially with `--n > 1`, where greedy makes every
+    /// sample identical. Refuse the request instead of guessing.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.temperature.is_none() {
+            return Err(
+                "temperature is required: bench.py defaults --temperature to 0.0 (greedy), \
+                 so omitting it silently changes what the run measures"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
     /// Flags in bench.py's own spelling.
     pub(crate) fn to_args(&self) -> Vec<String> {
         let mut a: Vec<String> = Vec::new();
@@ -394,6 +441,7 @@ impl StartRequest {
             a.push("--n".into());
             a.push(v.to_string());
         }
+        // Always forwarded, never conditional — see validate().
         if let Some(v) = self.temperature {
             a.push("--temperature".into());
             a.push(v.to_string());
@@ -453,6 +501,9 @@ pub async fn check_handler() -> axum::response::Json<Value> {
 pub async fn start_handler(
     axum::extract::Json(req): axum::extract::Json<StartRequest>,
 ) -> axum::response::Json<Value> {
+    if let Err(e) = req.validate() {
+        return axum::response::Json(json!({ "error": e, "success": false }));
+    }
     if should_refuse_start(a_run_is_live()) {
         return axum::response::Json(json!({
             "error": "a bench run is already active", "success": false
@@ -478,6 +529,7 @@ pub async fn start_handler(
                 model: req.model.clone(),
                 label: req.label.clone(),
                 langs: req.langs.clone(),
+                url: req.url.clone(),
                 attempts: req.attempts,
                 n: req.n,
                 temperature: req.temperature,
@@ -497,6 +549,46 @@ pub async fn start_handler(
         }
         Err(e) => axum::response::Json(json!({ "error": e, "success": false })),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadyQuery {
+    pub url: Option<String>,
+}
+
+/// Is there a server to benchmark at this url?
+///
+/// The Start button gates on this. Probed from the backend rather than the
+/// page because an arbitrary llama-server is a cross-origin target.
+pub async fn ready_handler(
+    axum::extract::Query(q): axum::extract::Query<ReadyQuery>,
+) -> axum::response::Json<Value> {
+    let base = q.url.unwrap_or_default();
+    if base.trim().is_empty() {
+        return axum::response::Json(json!({
+            "data": { "ready": false, "url": base, "reason": "no url configured" },
+            "success": true
+        }));
+    }
+    let probe = models_probe_url(&base);
+    let client = reqwest::Client::new();
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(3), client.get(&probe).send()).await;
+
+    let (ready, reason) = match result {
+        Ok(Ok(resp)) => match resp.text().await {
+            Ok(body) if server_answering(&body) => (true, String::new()),
+            Ok(_) => (false, format!("{probe} did not return a model list")),
+            Err(e) => (false, format!("could not read {probe}: {e}")),
+        },
+        Ok(Err(e)) => (false, format!("no server answering at {base}: {e}")),
+        Err(_) => (false, format!("no server answering at {base}: timed out")),
+    };
+
+    axum::response::Json(json!({
+        "data": { "ready": ready, "url": base, "probe": probe, "reason": reason },
+        "success": true
+    }))
 }
 
 /// The run this backend spawned, if it is still alive.
@@ -792,6 +884,73 @@ mod tests {
             p,
             PathBuf::from("/opt/localbench/runs/seedE_20260808-223643")
         );
+    }
+
+    // T45 — the silent-greedy trap: bench.py --temperature defaults to 0.0.
+    #[test]
+    fn t45_start_refuses_a_missing_temperature_rather_than_defaulting_to_greedy() {
+        let mut req = StartRequest {
+            model: Some("m".into()),
+            ..Default::default()
+        };
+        let err = req
+            .validate()
+            .expect_err("a missing temperature must be refused");
+        assert!(
+            err.contains("greedy"),
+            "the reason must name the trap: {err}"
+        );
+
+        req.temperature = Some(0.6);
+        assert!(req.validate().is_ok());
+        let joined = req.to_args().join(" ");
+        assert!(
+            joined.contains("--temperature 0.6"),
+            "temperature must always be forwarded explicitly: {joined}"
+        );
+    }
+
+    #[test]
+    fn t45_temperature_zero_is_a_real_value_not_an_absent_one() {
+        // 0.0 chosen deliberately must still be forwarded, and must not be
+        // confused with "not supplied".
+        let req = StartRequest {
+            temperature: Some(0.0),
+            ..Default::default()
+        };
+        assert!(req.validate().is_ok());
+        assert!(req.to_args().join(" ").contains("--temperature 0"));
+    }
+
+    // T37 (backend half) — the readiness gate Start depends on.
+    #[test]
+    fn t37_probe_url_matches_bench_pys_own_v1_handling() {
+        // bench.py appends /v1 only when the url has no path.
+        assert_eq!(
+            models_probe_url("http://localhost:8081"),
+            "http://localhost:8081/v1/models"
+        );
+        assert_eq!(
+            models_probe_url("http://localhost:8081/"),
+            "http://localhost:8081/v1/models"
+        );
+        // Already /v1 — must not become /v1/v1/models.
+        assert_eq!(
+            models_probe_url("http://127.0.0.1:8123/v1"),
+            "http://127.0.0.1:8123/v1/models"
+        );
+    }
+
+    #[test]
+    fn t37_answering_is_weaker_than_expecting_a_specific_model() {
+        // An empty roster still means a server is there to benchmark.
+        assert!(server_answering(r#"{"data":[]}"#));
+        assert!(server_answering(r#"{"data":[{"id":"ref-model"}]}"#));
+        // Nothing answering, or answering with something else entirely.
+        assert!(!server_answering("connection refused"));
+        assert!(!server_answering(r#"{"error":"no model loaded"}"#));
+        // The stricter queue check still demands the exact id.
+        assert!(!queue_advance_ready(r#"{"data":[]}"#, "some-model"));
     }
 
     // T06 — start refusal.

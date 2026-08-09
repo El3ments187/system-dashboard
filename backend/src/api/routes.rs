@@ -112,6 +112,7 @@ pub fn create_router() -> axum::Router {
         .route("/api/bench/runs/{id}", get(bench_api::run_by_id_handler))
         .route("/api/bench/log", get(bench_api::log_handler))
         .route("/api/bench/current", get(bench_api::current_handler))
+        .route("/api/bench/ready", get(bench_api::ready_handler))
         .route("/api/bench/resume", post(bench_api::resume_handler))
         .route(
             "/api/bench/queue/advance",
@@ -405,9 +406,11 @@ async fn update_settings_handler(
         comfyui_url: req.comfyui_url,
         launcher_scan_dir: req.launcher_scan_dir.clone(),
         llama_working_dir: req.llama_working_dir.clone(),
-        // This handler replaces the whole settings object, and the Settings
-        // page has no bench_dir field yet (v1.1). Falling back to the stored
-        // value keeps a save from the UI from silently wiping it.
+        // This handler RECONSTRUCTS the settings object rather than merging,
+        // so any field a client omits would be wiped. Falling back to the
+        // stored value makes that structural rather than a one-off guard: it
+        // protects bench_dir today and any future field added to AiSettings
+        // before the UI that sends it ships.
         bench_dir: req
             .bench_dir
             .clone()
