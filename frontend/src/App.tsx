@@ -16,6 +16,7 @@ import AiPage from "./pages/AiPage";
 import LlamaCppTerminalViewer from "./pages/LlamaCppTerminalViewer";
 import SettingsPage from "./pages/SettingsPage";
 import OverviewPage from "./pages/OverviewPage";
+import BenchPage from "./pages/BenchPage";
 import ThemePage from "./pages/ThemePage";
 import PanelErrorBoundary from "./components/common/PanelErrorBoundary";
 
@@ -24,6 +25,7 @@ type ActivePage =
   | "gpu"
   | "cpu"
   | "llama-cpp"
+  | "bench"
   | "ai"
   | "terminal"
   | "settings"
@@ -34,6 +36,7 @@ function getPageFromPathname(pathname: string): ActivePage {
   if (pathname === "/cpu") return "cpu";
   if (pathname === "/llama-cpp") return "llama-cpp";
   if (pathname === "/llama-cpp/terminal") return "terminal";
+  if (pathname === "/bench") return "bench";
   if (pathname === "/ai") return "ai";
   if (pathname === "/settings") return "settings";
   if (pathname === "/theme") return "theme";
@@ -58,6 +61,7 @@ function PageContent({
   if (activePage === "gpu") return <GpuPage accent={accent} />;
   if (activePage === "cpu") return <CpuPage accent={accent} />;
   if (activePage === "llama-cpp") return <LlamaCppPage />;
+  if (activePage === "bench") return <BenchPage />;
   if (activePage === "settings") return <SettingsPage accent={accent} />;
   if (activePage === "ai") return <AiPage />;
   return <OverviewPage accent={accent} />;

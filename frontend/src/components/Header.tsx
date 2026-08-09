@@ -13,6 +13,7 @@ interface HeaderProps {
     | "gpu"
     | "cpu"
     | "llama-cpp"
+    | "bench"
     | "ai"
     | "terminal"
     | "settings"
@@ -23,6 +24,7 @@ interface HeaderProps {
       | "gpu"
       | "cpu"
       | "llama-cpp"
+      | "bench"
       | "ai"
       | "terminal"
       | "settings"
@@ -35,6 +37,7 @@ const PAGE_LABELS: Record<string, string> = {
   gpu: "GPU",
   cpu: "CPU",
   "llama-cpp": "llama.cpp",
+  bench: "Bench",
   ai: "AI",
   settings: "Settings",
   theme: "Theme",
@@ -59,8 +62,24 @@ export default function Header({
   onPageChange,
 }: HeaderProps) {
   const pages: Array<
-    "overview" | "gpu" | "cpu" | "llama-cpp" | "ai" | "settings" | "theme"
-  > = ["overview", "gpu", "cpu", "llama-cpp", "ai", "settings", "theme"];
+    | "overview"
+    | "gpu"
+    | "cpu"
+    | "llama-cpp"
+    | "bench"
+    | "ai"
+    | "settings"
+    | "theme"
+  > = [
+    "overview",
+    "gpu",
+    "cpu",
+    "llama-cpp",
+    "bench",
+    "ai",
+    "settings",
+    "theme",
+  ];
 
   const { systemMetrics: system } = useMetricsContext();
 

@@ -1788,3 +1788,178 @@ main {
     animation: none !important;
   }
 }
+
+/* ── Bench page ───────────────────────────────────────────────────────────
+   Verdict colours only (--success / --warning / --danger / --text-muted):
+   a strip square encodes what happened to a sample, so it must never take
+   the accent — under Rainbow an accent-tinted verdict lies in every mode.
+   Anything a theme toggle changes lives here rather than in a style={{}},
+   because an attribute selector cannot reach an inline value. */
+
+.bench-strip {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+}
+.bench-sgrp {
+  display: inline-flex;
+  gap: 3px;
+}
+.bench-sdiv {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+  margin: 0 5px;
+}
+.bench-att {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.bench-att.solved {
+  background: var(--success);
+}
+/* Opacity encodes the point loss: solved, but a retry cost a point. */
+.bench-att.solved.late {
+  opacity: 0.55;
+}
+.bench-att.miss {
+  background: none;
+  border: 1.5px solid var(--danger);
+  opacity: 0.7;
+}
+.bench-att.to {
+  background: none;
+  border: 1.5px solid var(--warning);
+  opacity: 0.8;
+}
+/* Dashed and hollow: the endpoint never answered. Excluded from every
+   rate, and deliberately not readable as a zero. */
+.bench-att.server {
+  background: none;
+  border: 1.5px dashed var(--text-muted);
+}
+.bench-att.pending {
+  background: var(--border-color);
+}
+.bench-att.live {
+  background: var(--accent-tint-15);
+  border: 1.5px solid var(--accent-primary);
+  animation: bench-livecell 1.2s ease-in-out infinite;
+}
+@keyframes bench-livecell {
+  50% {
+    background: var(--accent-tint-10);
+  }
+}
+
+/* Gated, not inline, so the Neon Glow toggle can actually reach it.
+   RadialGauge takes no className, so the progress arc is reached through a
+   wrapper: the last path in its svg is the progress stroke. */
+[data-glow="neon"] .bench-gauge svg path:last-of-type {
+  filter: drop-shadow(0 0 5px var(--accent-tint-40));
+}
+
+.bench-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.bench-pulse .bench-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: bench-beat 3s ease-out infinite;
+}
+@keyframes bench-beat {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+/* Heartbeat older than 90s: the run is not reporting health. */
+.bench-pulse.stale .bench-dot {
+  background: var(--warning);
+  animation: none;
+}
+
+.bench-kofn {
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 0 5px;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+.bench-kofn.all {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+.bench-kofn.some {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.bench-kofn.none {
+  color: var(--text-muted);
+}
+
+.bench-banner {
+  border: 1px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  color: var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.bench-cut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--warning);
+}
+.bench-cut::before,
+.bench-cut::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--warning);
+  opacity: 0.6;
+}
+/* Samples recorded after the truncation trigger measure the cap, not the
+   model. Marked, not hidden. */
+.bench-tainted {
+  outline: 1px dashed color-mix(in srgb, var(--warning) 55%, transparent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bench-att.live,
+  .bench-pulse .bench-dot {
+    animation: none;
+  }
+  /* App parity: reduce already zeroes --card-glow, so the gauge glow goes
+     with it rather than being the one effect that ignores the preference. */
+  [data-glow="neon"] .bench-gauge svg path:last-of-type {
+    filter: none;
+  }
+}
+
+/* The Tasks & Runs table has a position:sticky thead with an opaque
+   background. Both it and the accent spine are positioned with z-index
+   auto, so they paint in DOM order and the header — which comes later —
+   covers the spine for exactly one header-band's height. Raising the
+   spine is safe by construction: it is 3px of non-interactive card edge
+   with no hit target of its own. Scoped to the bench page rather than
+   changing the shared AccentSpine, which every other page relies on. */
+.bench-page .card-accent-spine {
+  z-index: 3;
+}
