@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BenchCheck,
   BenchCurrent,
+  BenchReadiness,
   BenchRunDetail,
   BenchRunRow,
   BenchTaskList,
@@ -39,6 +40,23 @@ async function getJson<T>(url: string, timeoutMs = 8000): Promise<T> {
   }
 }
 
+/** One probe of the target server, shaped so the poll stays trivial. */
+async function probeReadiness(targetUrl: string): Promise<BenchReadiness> {
+  if (!targetUrl) return { ready: false, url: "", reason: "no url configured" };
+  try {
+    return await getJson<BenchReadiness>(
+      `/api/bench/ready?url=${encodeURIComponent(targetUrl)}`,
+      6000,
+    );
+  } catch (e) {
+    return {
+      ready: false,
+      url: targetUrl,
+      reason: e instanceof Error ? e.message : "probe failed",
+    };
+  }
+}
+
 export function isRunning(detail: BenchRunDetail | null): boolean {
   if (!detail) return false;
   return Object.keys(detail.live ?? {}).length > 0;
@@ -46,8 +64,24 @@ export function isRunning(detail: BenchRunDetail | null): boolean {
 
 /** How often the process-state probe runs. Cheap: no file parsing. */
 export const CURRENT_POLL_MS = 3000;
+/** How often the target server is re-probed, so a model started elsewhere
+ *  flips the Start gate without a reload. */
+export const READY_POLL_MS = 5000;
 
 export interface BenchData {
+  /**
+   * The server a run will target. ONE field with three consumers — the
+   * readiness gate, the mock-target badge, and the flags passed to
+   * bench.py — so they cannot drift apart.
+   */
+  targetUrl: string;
+  setTargetUrl: (url: string) => void;
+  /** The configured llama-server, used as the default and as the
+   *  "is this a real target" comparison. */
+  defaultUrl: string;
+  /** Configured localbench checkout, for the runs-path chip. */
+  benchDir: string | null;
+  readiness: BenchReadiness;
   /**
    * Process state from the backend. True the instant bench.py is spawned,
    * where results.json does not exist yet.
@@ -71,6 +105,17 @@ export function useBenchData(): BenchData {
     running: false,
     run: null,
   });
+  // Session-only on purpose: a mock/test url must never survive a reload as
+  // a saved default. A fresh load shows the real server unless the user has
+  // changed it in THIS session.
+  const [targetUrl, setTargetUrl] = useState("");
+  const [defaultUrl, setDefaultUrl] = useState("");
+  const [benchDir, setBenchDir] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<BenchReadiness>({
+    ready: false,
+    url: "",
+    reason: "checking…",
+  });
   const [check, setCheck] = useState<BenchCheck | null>(null);
   const [taskList, setTaskList] = useState<BenchTaskList | null>(null);
   const [runs, setRuns] = useState<BenchRunRow[]>([]);
@@ -86,6 +131,51 @@ export function useBenchData(): BenchData {
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
   const selectRun = useCallback((runId: string) => setSelectedRunId(runId), []);
+
+  // The configured llama-server is the default target and the yardstick for
+  // "is this a real server". Fetched once.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/ai/settings");
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          llama_server_url?: string;
+          bench_dir?: string | null;
+        };
+        if (cancelled) return;
+        setBenchDir(body.bench_dir?.trim() ? body.bench_dir : null);
+        const url = body.llama_server_url ?? "";
+        if (!url) return;
+        setDefaultUrl(url);
+        setTargetUrl((cur) => cur || url);
+      } catch {
+        // No settings: the field stays editable and readiness will say so.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Re-probe the target so starting a model elsewhere flips the gate without
+  // a reload — the same self-syncing principle as the update button.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const next = await probeReadiness(targetUrl);
+      if (cancelled) return;
+      setReadiness(next);
+      timer = setTimeout(() => void tick(), READY_POLL_MS);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [targetUrl, nonce]);
 
   // Process state, polled independently of results.json. This is what makes
   // the hero populate the moment a run starts: bench.py writes `live` only
@@ -225,6 +315,11 @@ export function useBenchData(): BenchData {
   }, [selectedRunId, nonce]);
 
   return {
+    targetUrl,
+    setTargetUrl,
+    defaultUrl,
+    benchDir,
+    readiness,
     current,
     check,
     taskList,

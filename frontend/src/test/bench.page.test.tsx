@@ -27,7 +27,11 @@ import BenchPage from "../pages/BenchPage";
 import Header from "../components/Header";
 
 vi.mock("../context/MetricsContext", () => ({
-  useMetricsContext: () => ({ systemMetrics: null }),
+  // The active model's sampling temperature is what Run Setup inherits.
+  useMetricsContext: () => ({
+    systemMetrics: null,
+    aiCurrentMetrics: { temperature: 0.6 },
+  }),
 }));
 vi.mock("../context/LiveDataControlsContext", () => ({
   useLiveDataControlsContext: () => ({ isPaused: false, toggle: () => {} }),
@@ -35,6 +39,60 @@ vi.mock("../context/LiveDataControlsContext", () => ({
 vi.mock("../hooks/useFetchAlerts", () => ({
   useFetchAlerts: () => ({ alerts: [], refetch: () => {} }),
 }));
+
+const TASK_LIST = {
+  suite_hash: "e293ad7",
+  tasks: [
+    {
+      number: 1,
+      id: "js/retry_backoff",
+      lang: "js",
+      difficulty: "medium",
+      kind: "fix",
+      assertions: 35,
+    },
+    {
+      number: 2,
+      id: "js/formula_engine",
+      lang: "js",
+      difficulty: "very_hard",
+      kind: "build",
+      assertions: 77,
+    },
+    {
+      number: 3,
+      id: "js/interval_set",
+      lang: "js",
+      difficulty: "extreme",
+      kind: "fix",
+      assertions: 69,
+    },
+    {
+      number: 4,
+      id: "js/decimal_calc",
+      lang: "js",
+      difficulty: "hard",
+      kind: "fix",
+      assertions: 40,
+    },
+    {
+      number: 5,
+      id: "java/ring_buffer",
+      lang: "java",
+      difficulty: "hard",
+      kind: "fix",
+      assertions: 231,
+    },
+    {
+      number: 6,
+      id: "java/csv_parser",
+      lang: "java",
+      difficulty: "medium",
+      kind: "fix",
+      assertions: 60,
+    },
+  ],
+};
 
 const CHECK = {
   version: "2026.08.07-124",
@@ -71,10 +129,22 @@ interface MockOpts {
   detail?: unknown;
   runs?: unknown[];
   failCheck?: boolean;
+  /** Readiness of the target server (Fix 4's Start gate). */
+  ready?: { ready: boolean; url: string; reason: string };
+  /** What /api/ai/settings reports. */
+  settings?: Record<string, unknown> | null;
   /** Process state from POST /api/bench/start, before any results.json. */
   current?: { running: boolean; run: unknown };
   /** Simulate results.json not existing yet. */
   noDetail?: boolean;
+}
+
+/** The { data, success } envelope every /api/bench endpoint returns. */
+function okJson(data: unknown) {
+  return Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ data, success: true }),
+  } as Response);
 }
 
 function installFetch(opts: MockOpts = {}) {
@@ -84,18 +154,34 @@ function installFetch(opts: MockOpts = {}) {
   global.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
-    const ok = (data: unknown) =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ data, success: true }),
-      } as Response);
+    const ok = okJson;
     if (url.includes("/api/bench/check")) {
       if (opts.failCheck)
         return Promise.resolve({ ok: false, status: 500 } as Response);
       return ok(CHECK);
     }
-    if (url.includes("/api/bench/tasks"))
-      return ok({ suite_hash: "e293ad7", tasks: [] });
+    if (url.includes("/api/bench/tasks")) return ok(TASK_LIST);
+    if (url.includes("/api/ai/settings"))
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve(
+            opts.settings === null
+              ? {}
+              : (opts.settings ?? {
+                  llama_server_url: "http://localhost:8081",
+                  bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+                }),
+          ),
+      } as Response);
+    if (url.includes("/api/bench/ready"))
+      return ok(
+        opts.ready ?? {
+          ready: true,
+          url: "http://localhost:8081",
+          reason: "",
+        },
+      );
     if (url.includes("/api/bench/current"))
       return ok(opts.current ?? { running: false, run: null });
     if (url.includes("/api/bench/runs/")) {
@@ -586,6 +672,382 @@ describe("run controls", () => {
     await waitFor(() =>
       expect(calls.some((u) => u.includes("/api/bench/stop"))).toBe(true),
     );
+  });
+});
+
+// T37 — Start gated on SERVER readiness (Fix 4).
+describe("T37 server-readiness gate", () => {
+  const NOT_READY = {
+    ready: false,
+    url: "http://localhost:8081",
+    reason: "no server answering at http://localhost:8081: connection refused",
+  };
+
+  it("disables Start and renders the reason when nothing answers", async () => {
+    installFetch({ ready: NOT_READY });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(true),
+    );
+    // The first probe runs before the settings fetch resolves, so the
+    // reason is briefly "no url configured" — wait for the real one.
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-start-blocked").textContent).toMatch(
+        /no server answering/i,
+      ),
+    );
+    // The remedy must be in the UI, not only a tooltip.
+    expect(screen.getByTestId("bench-start-blocked").textContent).toMatch(
+      /llama\.cpp page|mockserver/i,
+    );
+  });
+
+  it("enables Start when the server answers", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    expect(screen.queryByTestId("bench-start-blocked")).toBeNull();
+  });
+
+  it("flips without a remount once a failing probe starts succeeding", async () => {
+    let ready = false;
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const ok = okJson;
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return ok({
+          ready,
+          url: "http://localhost:8081",
+          reason: ready ? "" : "down",
+        });
+      if (url.includes("/api/bench/check")) return ok(CHECK);
+      if (url.includes("/api/bench/tasks"))
+        return ok({ suite_hash: "e293ad7", tasks: [] });
+      if (url.includes("/api/bench/current"))
+        return ok({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) return ok(benchRun);
+      if (url.includes("/api/bench/runs")) return ok([runRow()]);
+      return ok({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(true),
+    );
+    // A model starts elsewhere; no reload, no remount.
+    ready = true;
+    await waitFor(
+      () =>
+        expect(
+          (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+            .disabled,
+        ).toBe(false),
+      { timeout: 9000 },
+    );
+  }, 15000);
+});
+
+// T38 — the target is visible, and mock runs are badged (Fix 5).
+describe("T38 target visibility", () => {
+  it("badges a non-default target in the hero", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail as { config: { url: string } }).config.url =
+      "http://127.0.0.1:8123";
+    installFetch({ detail });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-mock-badge").length).toBeGreaterThan(
+        0,
+      ),
+    );
+    expect(screen.getByTestId("bench-target-url").textContent).toContain(
+      "8123",
+    );
+  });
+
+  it("renders NO badge when the run targets the configured llama-server", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail as { config: { url: string } }).config.url =
+      "http://localhost:8081";
+    installFetch({
+      detail,
+      runs: [
+        runRow({
+          config: { ...benchRun.config, url: "http://localhost:8081" },
+        }),
+      ],
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "seedA",
+      ),
+    );
+    expect(
+      screen.queryAllByTestId("bench-mock-badge"),
+      "a real target must not be badged",
+    ).toHaveLength(0);
+  });
+
+  it("badges the mock run's History row and leaves a real one unbadged", async () => {
+    installFetch({
+      runs: [
+        runRow({
+          run_id: "mock",
+          config: { ...benchRun.config, url: "http://127.0.0.1:8123" },
+        }),
+        runRow({
+          run_id: "real",
+          created: "2026-08-07T10:00:00",
+          config: { ...benchRun.config, url: "http://localhost:8081" },
+        }),
+      ],
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-tab-hist")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("bench-tab-hist"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-run-row")).toHaveLength(2),
+    );
+    const rows = screen.getAllByTestId("bench-run-row");
+    const badgedRows = rows.filter((r) =>
+      r.querySelector('[data-testid="bench-mock-badge"]'),
+    );
+    expect(badgedRows).toHaveLength(1);
+  });
+});
+
+// T39 — Start/Stop follow ACTUAL run liveness, including across a remount.
+describe("T39 liveness wiring", () => {
+  const LIVE_RUN = {
+    running: true,
+    run: {
+      pid: 99,
+      folder: "f",
+      model: "m",
+      label: null,
+      langs: "js",
+      url: "http://localhost:8081",
+      attempts: 3,
+      n: 1,
+      temperature: 0.6,
+      started: "2026-08-09T12:00:00Z",
+    },
+  };
+
+  it("running → Start disabled, Stop enabled", async () => {
+    installFetch({ current: LIVE_RUN });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-stop-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    expect(
+      (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("a REMOUNT while the backend run is live still shows Stop enabled", async () => {
+    installFetch({ current: LIVE_RUN });
+    const first = render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-stop-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    first.unmount();
+
+    // Fresh mount, same backend state: liveness must come from the backend,
+    // not from "did I click Start in this session".
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-stop-run") as HTMLButtonElement)
+          .disabled,
+        "liveness must survive a remount — a local flag would not",
+      ).toBe(false),
+    );
+  });
+});
+
+// T40 / T43 / T44 — Run Setup is a real form (Fix 7, Fix 10).
+describe("T40/T43/T44 Run Setup form", () => {
+  it("T40 the url field defaults to the llama-server, not the last run's url", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    // The stored run used a mock url; a fresh mount must NOT inherit it.
+    (detail as { config: { url: string } }).config.url =
+      "http://127.0.0.1:8123";
+    installFetch({ detail });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-url-field") as HTMLInputElement).value,
+      ).toBe("http://localhost:8081"),
+    );
+  });
+
+  it("T43 every field is a real editable control", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-field-model")).toBeTruthy(),
+    );
+    for (const id of [
+      "bench-field-model",
+      "bench-url-field",
+      "bench-field-langs",
+      "bench-field-attempts",
+      "bench-field-n",
+      "bench-field-temperature",
+    ]) {
+      const el = screen.getByTestId(id) as HTMLInputElement;
+      expect(el.tagName, `${id} must be an input, not static text`).toBe(
+        "INPUT",
+      );
+      expect(el.readOnly).toBe(false);
+    }
+    const attempts = screen.getByTestId(
+      "bench-field-attempts",
+    ) as HTMLInputElement;
+    fireEvent.change(attempts, { target: { value: "7" } });
+    expect(attempts.value).toBe("7");
+  });
+
+  it("T44 temperature inherits the active model's value until overridden", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const temp = (await screen.findByTestId(
+      "bench-field-temperature",
+    )) as HTMLInputElement;
+    // The mocked metrics context reports 0.6 (see the module mock).
+    await waitFor(() => expect(temp.value).toBe("0.6"));
+    expect(screen.getByText(/inherited from active model/i)).toBeTruthy();
+
+    fireEvent.change(temp, { target: { value: "0.9" } });
+    expect(temp.value).toBe("0.9");
+    expect(screen.queryByText(/inherited from active model/i)).toBeNull();
+  });
+});
+
+// T41 — console tab keeps its state across a switch (Fix 8).
+describe("T41 console tab state", () => {
+  it("keeps level filters across tabbing away and back", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-tab-console")).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByTestId("bench-tab-console"));
+    const warn = await screen.findByTestId("bench-log-level-warn");
+    expect(warn.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(warn);
+    expect(warn.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByTestId("bench-tab-tasks"));
+    fireEvent.click(screen.getByTestId("bench-tab-console"));
+    expect(
+      screen.getByTestId("bench-log-level-warn").getAttribute("aria-pressed"),
+      "filters must survive the hidden toggle, not reset",
+    ).toBe("false");
+  });
+
+  it("keeps streaming while another tab is showing (stays mounted)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-tab-console")).toBeTruthy(),
+    );
+    // Console pane exists even while "This run" is the active tab.
+    expect(screen.getByTestId("bench-console")).toBeTruthy();
+  });
+});
+
+// T46 — the runs-path chip shows the REAL configured location (Fix 11).
+describe("T46 runs path chip", () => {
+  it("renders the configured bench_dir", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const chip = await screen.findByTestId("bench-runs-path");
+    await waitFor(() =>
+      expect(chip.textContent).toContain(
+        "/home/gamer/Projects/ai_benchmark/localbench/runs",
+      ),
+    );
+  });
+
+  it("says so explicitly when bench_dir is unset, rather than rendering blank", async () => {
+    installFetch({ settings: { llama_server_url: "http://localhost:8081" } });
+    render(<BenchPage />);
+    const chip = await screen.findByTestId("bench-runs-path");
+    await waitFor(() => expect(chip.textContent).toMatch(/unset/i));
+    expect(chip.textContent).toMatch(/settings/i);
+  });
+});
+
+// T47 — the hero counts THIS run's scope, not the whole suite.
+describe("T47 hero task count", () => {
+  it("counts only the run's selected languages", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail as { config: { langs: string[] } }).config.langs = ["js"];
+    installFetch({ detail });
+    render(<BenchPage />);
+    const chip = await screen.findByTestId("bench-hero-taskcount");
+    // 4 js tasks of 6 in the suite — NOT 6.
+    await waitFor(() => expect(chip.textContent).toBe("4"));
+    expect(chip.parentElement?.textContent).toMatch(/js only/);
+  });
+
+  it("agrees with the number of rows Tasks & Runs renders for that run", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail as { config: { langs: string[] } }).config.langs = ["js"];
+    installFetch({ detail });
+    render(<BenchPage />);
+    const chip = await screen.findByTestId("bench-hero-taskcount");
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-task-row").length).toBeGreaterThan(0),
+    );
+    expect(
+      Number(chip.textContent),
+      "the hero must not contradict the table below it",
+    ).toBe(screen.getAllByTestId("bench-task-row").length);
+  });
+
+  it("shows the full suite when no language filter is set", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail as { config: { langs: string[] } }).config.langs = [];
+    installFetch({ detail });
+    render(<BenchPage />);
+    const chip = await screen.findByTestId("bench-hero-taskcount");
+    await waitFor(() => expect(chip.textContent).toBe("6"));
+    // Scoped to the chip: "only" appears in other copy on the page.
+    expect(
+      chip.parentElement?.textContent,
+      "an unfiltered run must not claim a language scope",
+    ).not.toMatch(/only/);
   });
 });
 

@@ -437,6 +437,138 @@ export function runNaming(
   return { name, model: actual };
 }
 
+export type BenchLogLevel = "info" | "warn" | "error";
+
+/**
+ * bench.py's stdout carries no level field, so the console derives one from
+ * the line itself. Kept pure and small: the console's filters are only as
+ * trustworthy as this classification, and it is the kind of rule that rots
+ * silently inside a component.
+ */
+export function classifyBenchLine(line: string): BenchLogLevel {
+  const l = line.toLowerCase();
+  if (
+    l.includes("stopping:") ||
+    l.includes("traceback") ||
+    l.includes("✗") ||
+    /\berror\b/.test(l)
+  )
+    return "error";
+  if (l.includes("!!") || l.includes("warn") || l.includes("skipped"))
+    return "warn";
+  return "info";
+}
+
+/**
+ * Why Start is unavailable, or null when it is available.
+ *
+ * The two conditions compose and neither silently overrides the other: a
+ * live run blocks a second start (bench refuses it anyway), and an
+ * unanswering target would produce a doomed sweep that bench.py only cleans
+ * up after three server errors. Returning the reason rather than a boolean
+ * is what lets the UI say WHY.
+ */
+export function startDisabledReason(opts: {
+  running: boolean;
+  serverReady: boolean;
+  serverReason: string;
+  haveFlags: boolean;
+}): string | null {
+  if (opts.running)
+    return "a run is active — Start enables when it finishes or is stopped";
+  if (!opts.serverReady)
+    return opts.serverReason || "no server answering at the configured url";
+  if (!opts.haveFlags)
+    return "no previous run to take flags from — run bench.py once from the CLI first";
+  return null;
+}
+
+/**
+ * Is this run pointed somewhere other than the configured llama-server?
+ *
+ * A dry run against tools/mockserver.py and a real benchmark are otherwise
+ * visually identical — including in History, where seeded mock runs sit
+ * looking like real scores. Kept pure so the rule is testable and can be
+ * adjusted in one place.
+ */
+export function isNonDefaultTarget(
+  url: string | null | undefined,
+  defaultUrl: string | null | undefined,
+): boolean {
+  const a = normalizeTarget(url);
+  const b = normalizeTarget(defaultUrl);
+  // Unknown target, or no configured default to compare against: say
+  // nothing rather than badge something that may be correct.
+  if (!a || !b) return false;
+  return a !== b;
+}
+
+function normalizeTarget(url: string | null | undefined): string {
+  if (!url) return "";
+  // Written without a regex on purpose: /\/+$/ backtracks super-linearly on
+  // a pathological input, and this runs on every render that shows a badge.
+  let out = url.trim().toLowerCase();
+  while (out.endsWith("/")) out = out.slice(0, -1);
+  if (out.endsWith("/v1")) out = out.slice(0, -3);
+  while (out.endsWith("/")) out = out.slice(0, -1);
+  return out;
+}
+
+/**
+ * How long a planned run is likely to take, from historical pace.
+ *
+ * Mean seconds per GRADED sample across stored runs, times the number of
+ * samples planned. Server samples are excluded — they took no model time and
+ * would drag the estimate down. Returns null rather than a guess when there
+ * is no history to reason from.
+ */
+export function estimatedRunSeconds(
+  details: BenchRunDetail[],
+  plannedSamples: number,
+): number | null {
+  const graded = details.flatMap((d) => gradedRecords(d.records));
+  if (graded.length === 0 || plannedSamples <= 0) return null;
+  const mean = graded.reduce((s, r) => s + r.seconds, 0) / graded.length;
+  return mean * plannedSamples;
+}
+
+export interface TaskScope {
+  /** Tasks this run's configuration actually covers. */
+  count: number;
+  /** The whole suite, for context. */
+  total: number;
+  /** e.g. "js only" — omitted when the run covers every language. */
+  langsLabel: string | null;
+}
+
+/**
+ * How many tasks THIS run covers.
+ *
+ * Derived from the language filter over the full task list, NOT from
+ * `results.json.tasks` — that array holds only the tasks that actually ran,
+ * so an interrupted run would under-report its own scope. The suite-wide
+ * availability count belongs to Run Setup's Toolchains row; the hero reports
+ * scope, which is a different question.
+ */
+export function runTaskScope(
+  tasks: Array<{ id: string; lang: string }> | null | undefined,
+  langs: string[] | null | undefined,
+): TaskScope {
+  const total = tasks?.length ?? 0;
+  if (!tasks || tasks.length === 0)
+    return { count: 0, total: 0, langsLabel: null };
+  const selected = (langs ?? []).filter(Boolean);
+  if (selected.length === 0) return { count: total, total, langsLabel: null };
+  const set = new Set(selected);
+  const count = tasks.filter((t) => set.has(t.lang)).length;
+  const coversEverything = count === total;
+  return {
+    count,
+    total,
+    langsLabel: coversEverything ? null : `${selected.join(", ")} only`,
+  };
+}
+
 /** Server samples are counted, but only so they can be shown as excluded. */
 export function serverExcludedCount(records: BenchRecord[]): number {
   return records.filter((r) => r.status === "server").length;

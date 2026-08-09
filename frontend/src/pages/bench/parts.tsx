@@ -112,7 +112,7 @@ export function KOfN({ solved, of }: { solved: number; of: number }) {
   );
 }
 
-export type BenchTab = "tasks" | "hist" | "cmp" | "leads";
+export type BenchTab = "tasks" | "hist" | "cmp" | "leads" | "console";
 
 export function SubTabs({
   active,
@@ -128,6 +128,7 @@ export function SubTabs({
     { id: "hist", label: "History" },
     { id: "cmp", label: `Compare ${compareCount || ""}`.trim() },
     { id: "leads", label: "Leads" },
+    { id: "console", label: "Console" },
   ];
   return (
     <span style={{ display: "inline-flex", gap: 4 }}>

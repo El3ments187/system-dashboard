@@ -6,6 +6,8 @@
  */
 import { Fragment, useMemo, useState } from "react";
 import { List, RefreshCw, Search, TriangleAlert } from "lucide-react";
+import { BenchConsole } from "./BenchConsole";
+import { TargetBadge } from "../BenchPage";
 import { Card, CardHeader } from "../../components/shared/CardComponents";
 import MetricTile from "../../components/shared/MetricTile";
 import { fmtNum } from "../llamacpp/parts";
@@ -28,6 +30,7 @@ import {
   isBudgetTainted,
   leadsFromRuns,
   regressionChips,
+  isNonDefaultTarget,
   runNaming,
   runTaskAvg,
   sampleLabel,
@@ -80,12 +83,66 @@ const EDHEAD: React.CSSProperties = {
   color: "var(--text-secondary)",
 };
 
+/**
+ * Where runs are stored. Read-only DISPLAY of the configured `bench_dir`
+ * (settings.json) — the Settings page is where it is SET, so there is no
+ * second editable copy here. An empty slot would read as a bug, and an
+ * unset value with nowhere to fix it is worse, so the unset state says so
+ * and points at Settings.
+ */
+function RunsPathChip({ benchDir }: { benchDir: string | null }) {
+  const unset = !benchDir;
+  return (
+    <span
+      data-testid="bench-runs-path"
+      title={
+        unset
+          ? "bench_dir is not configured. Set it on the Settings page; the Bench page reads runs from <bench_dir>/runs."
+          : `${benchDir}/runs`
+      }
+      style={{
+        font: `10.5px ${MONO}`,
+        color: unset ? "var(--warning)" : "var(--text-secondary)",
+        background: "var(--bg-secondary)",
+        border: `1px solid ${unset ? "color-mix(in srgb, var(--warning) 45%, transparent)" : "var(--border-light)"}`,
+        borderRadius: "var(--radius-sm)",
+        padding: "3px 9px",
+        maxWidth: 260,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {unset ? (
+        <>
+          bench_dir unset —{" "}
+          <a
+            href="/settings"
+            style={{ color: "var(--accent-primary)" }}
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.pushState({}, "", "/settings");
+              window.dispatchEvent(new PopStateEvent("popstate"));
+            }}
+          >
+            set it in Settings
+          </a>
+        </>
+      ) : (
+        `${benchDir}/runs`
+      )}
+    </span>
+  );
+}
+
 export function TasksAndRuns({
   bench,
   now,
+  running,
 }: {
   bench: BenchData;
   now: number;
+  running: boolean;
 }) {
   const { detail, runs, storedDetails, selectRun, refresh } = bench;
   const [tab, setTab] = useState<BenchTab>("tasks");
@@ -118,6 +175,7 @@ export function TasksAndRuns({
         titleAccentBar
         right={
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RunsPathChip benchDir={bench.benchDir} />
             <SubTabs
               active={tab}
               onChange={setTab}
@@ -198,6 +256,18 @@ export function TasksAndRuns({
       {tab === "leads" && (
         <LeadsPane details={storedDetails} edition={currentEdition} />
       )}
+      {/* Mounted at all times: the log is a background process's output, so
+          hiding the pane must not stop it streaming or reset its state. */}
+      <div
+        style={{
+          display: tab === "console" ? "flex" : "none",
+          flexDirection: "column",
+          flex: tab === "console" ? 1 : undefined,
+          minHeight: 0,
+        }}
+      >
+        <BenchConsole running={running} active={tab === "console"} />
+      </div>
     </Card>
   );
 }
@@ -675,6 +745,11 @@ function HistoryPane({
                   data-testid="bench-run-name"
                 >
                   {runNaming(run.models, run.config).name}
+                  {isNonDefaultTarget(run.config?.url, bench.defaultUrl) && (
+                    <span style={{ marginLeft: 6 }}>
+                      <TargetBadge url={run.config?.url ?? ""} />
+                    </span>
+                  )}
                   {runNaming(run.models, run.config).model && (
                     <span
                       data-testid="bench-run-real-model"
@@ -875,6 +950,11 @@ function ComparePane({
                 <th style={TH}>Task</th>
                 {details.map((d) => (
                   <th key={d.run_id} style={TH}>
+                    {isNonDefaultTarget(d.config?.url, bench.defaultUrl) && (
+                      <span style={{ marginRight: 5 }}>
+                        <TargetBadge url={d.config?.url ?? ""} />
+                      </span>
+                    )}
                     {runNaming(d.models, d.config).name}
                     {runNaming(d.models, d.config).model
                       ? ` (${runNaming(d.models, d.config).model})`

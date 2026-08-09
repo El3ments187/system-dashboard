@@ -11,7 +11,6 @@ import {
   Gauge as GaugeIcon,
   SlidersHorizontal,
   Target,
-  Terminal,
   TriangleAlert,
 } from "lucide-react";
 import { Card, CardHeader } from "../components/shared/CardComponents";
@@ -23,19 +22,23 @@ import { StatusIndicator } from "./llamacpp/StatusIndicator";
 import { fmtNum, middleTruncate } from "./llamacpp/parts";
 import { fmtUptime } from "./llamaCppUtils";
 import { AlertSeverity, useAlertsContext } from "../context/AlertsContext";
+import { useMetricsContext } from "../context/MetricsContext";
 import { useBenchData, isRunning } from "./bench/useBenchData";
 import { TasksAndRuns } from "./bench/TasksAndRuns";
 import { BenchFooter } from "./bench/BenchFooter";
 import {
+  estimatedRunSeconds,
   flakyTasks,
   gradedRecords,
+  isNonDefaultTarget,
   runNaming,
+  runTaskScope,
+  startDisabledReason,
   greedyInterlock,
   heartbeatAgeMs,
   historicalTaskMedian,
   isHeartbeatStale,
   runTaskAvg,
-  sampleLabel,
   serverExcludedCount,
   truncationState,
 } from "./bench/compute";
@@ -44,7 +47,9 @@ import type {
   BenchCurrent,
   BenchLive,
   BenchRunDetail,
+  BenchReadiness,
   BenchRunRow,
+  BenchTaskList,
   CurrentRun,
 } from "./bench/types";
 
@@ -74,6 +79,35 @@ const BODY_STYLE: React.CSSProperties = {
   flexDirection: "column",
   minWidth: 0,
 };
+
+/**
+ * A run pointed at anything but the configured llama-server. Without this a
+ * mockserver dry run and a real benchmark are indistinguishable — in the
+ * live view and, worse, in History where the scores persist.
+ */
+export function TargetBadge({ url }: { url: string }) {
+  return (
+    <span
+      data-testid="bench-mock-badge"
+      title={`This run targets ${url}, not the configured llama-server. Scores from a mock or alternate endpoint are not comparable with real benchmark runs.`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        font: "600 9px Inter, system-ui, sans-serif",
+        letterSpacing: "0.5px",
+        textTransform: "uppercase",
+        border: "1px solid var(--warning)",
+        color: "var(--warning)",
+        borderRadius: 4,
+        padding: "1px 5px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      mock / other server
+    </span>
+  );
+}
 
 function CornerIndex({ n }: { n: string }) {
   return (
@@ -194,6 +228,9 @@ function HeroCard({
   beatAge,
   truncationWarned,
   current,
+  defaultUrl,
+  targetUrl,
+  taskList,
 }: {
   detail: BenchRunDetail | null;
   check: BenchCheck | null;
@@ -204,20 +241,27 @@ function HeroCard({
   beatAge: number | null;
   truncationWarned: boolean;
   current: BenchCurrent;
+  defaultUrl: string;
+  targetUrl: string;
+  taskList: BenchTaskList | null;
 }) {
   const { displayName, displayModel, folder, startedAt, configLabel, warming } =
     heroIdentity(detail, current, runs);
 
-  const tracks = check?.tracks ?? [];
-  const totalTasks = tracks.reduce((s, t) => s + t.tasks, 0);
-  const availableTasks = tracks
-    .filter((t) => t.available)
-    .reduce((s, t) => s + t.tasks, 0);
-  const skipped = tracks.filter((t) => !t.available);
-  const skippedText = skipped
-    .map((t) => `${t.lang} skipped (${t.tasks})`)
-    .join(", ");
+  // A live run's own flags win; otherwise the selected run's stored config.
+  const liveLangs = current.running ? current.run?.langs : null;
+  const scope = runTaskScope(
+    taskList?.tasks,
+    liveLangs ? liveLangs.split(",") : detail?.config?.langs,
+  );
   const serverErrors = live.consecutive_server_errors ?? 0;
+  // While a run is live the target is the one it was spawned with; for a
+  // stored run it is the url preserved in its own config; before any run
+  // it is whatever Run Setup currently shows.
+  const heroTarget =
+    (current.running ? current.run?.url : null) ??
+    detail?.config?.url ??
+    targetUrl;
   const heartbeatText =
     beatAge === null
       ? "no heartbeat yet"
@@ -283,11 +327,26 @@ function HeroCard({
               localbench <b style={{ fontFamily: MONO }}>{check.version}</b>
             </Chip>
           )}
+          {/* THIS run's scope. Suite-wide availability (and which
+              toolchains are missing) lives in Run Setup's Toolchains row —
+              duplicating it here reads as "the whole suite is running". */}
           <Chip>
-            <b style={{ fontFamily: MONO }}>{availableTasks}</b> of {totalTasks}{" "}
-            tasks
-            {skipped.length > 0 ? ` · ${skippedText}` : ""}
+            <b style={{ fontFamily: MONO }} data-testid="bench-hero-taskcount">
+              {scope.count}
+            </b>{" "}
+            of {scope.total} tasks
+            {scope.langsLabel ? ` · ${scope.langsLabel}` : ""}
           </Chip>
+          {/* What this run actually targets. A mock and a real benchmark
+              are otherwise identical on screen. */}
+          <Chip>
+            <span data-testid="bench-target-url" style={{ fontFamily: MONO }}>
+              {heroTarget || "no target"}
+            </span>
+          </Chip>
+          {isNonDefaultTarget(heroTarget, defaultUrl) && (
+            <TargetBadge url={heroTarget} />
+          )}
         </div>
 
         {warming && (
@@ -703,23 +762,115 @@ function ActionButton({
   );
 }
 
+interface RunForm {
+  model: string;
+  langs: string;
+  attempts: number;
+  n: number;
+  temperature: number;
+}
+
+function Field({
+  label,
+  hint,
+  hintAccent,
+  children,
+}: {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  hintAccent?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={LABEL_STYLE}>{label}</span>
+      {children}
+      {hint && (
+        <span
+          style={{
+            fontSize: 9.5,
+            color: hintAccent ? "var(--accent-primary)" : "var(--text-muted)",
+          }}
+        >
+          {hint}
+        </span>
+      )}
+    </label>
+  );
+}
+
+const FIELD_INPUT: React.CSSProperties = {
+  background: "var(--bg-secondary)",
+  border: "1px solid var(--border-color)",
+  borderRadius: 6,
+  padding: "6px 8px",
+  color: "var(--text-primary)",
+  font: `12px ${MONO}`,
+  width: "100%",
+  minWidth: 0,
+};
+
+/**
+ * Run Setup is a FORM, not a summary of the last run.
+ *
+ * Values are overrides layered over live defaults, so the fields track
+ * incoming data (the selected run, the active model's temperature) until the
+ * user actually types — rather than being snapshotted once and going stale,
+ * or stomping an edit when a poll lands.
+ */
 function RunSetupCard({
   detail,
   check,
   running,
   onRefresh,
+  targetUrl,
+  setTargetUrl,
+  defaultUrl,
+  readiness,
+  activeTemperature,
+  storedDetails,
+  taskCount,
 }: {
   detail: BenchRunDetail | null;
   check: BenchCheck | null;
   running: boolean;
   onRefresh: () => void;
+  targetUrl: string;
+  setTargetUrl: (url: string) => void;
+  defaultUrl: string;
+  readiness: BenchReadiness;
+  activeTemperature: number | null;
+  storedDetails: BenchRunDetail[];
+  taskCount: number;
 }) {
-  const greedy = greedyInterlock(
-    detail?.config?.n,
-    detail?.config?.temperature,
-  );
+  const [override, setOverride] = useState<Partial<RunForm>>({});
   const tracks = check?.tracks ?? [];
-  const modelName = detail?.models.join(", ") ?? "no run selected";
+
+  const availableLangs = tracks
+    .filter((t) => t.available)
+    .map((t) => t.lang)
+    .join(",");
+
+  const form: RunForm = {
+    model: override.model ?? detail?.config?.model ?? "",
+    langs: override.langs ?? detail?.config?.langs?.join(",") ?? availableLangs,
+    attempts: override.attempts ?? detail?.config?.attempts ?? 3,
+    n: override.n ?? detail?.config?.n ?? 1,
+    // Temperature follows the ACTIVE model unless overridden, so bench
+    // measures the model as it is actually configured rather than a value
+    // copied from some earlier run.
+    temperature: override.temperature ?? activeTemperature ?? 0,
+  };
+  const temperatureInherited =
+    override.temperature === undefined && activeTemperature !== null;
+  let temperatureHint = "overriding the active model";
+  if (temperatureInherited)
+    temperatureHint = "inherited from active model · click to override";
+  else if (activeTemperature === null)
+    temperatureHint = "no active model to inherit from — sent explicitly";
+
+  const set = <K extends keyof RunForm>(key: K, value: RunForm[K]) =>
+    setOverride((o) => ({ ...o, [key]: value }));
 
   const post = (path: string, body?: unknown) => {
     fetch(path, {
@@ -732,17 +883,29 @@ function RunSetupCard({
       .catch(() => setTimeout(onRefresh, 900));
   };
 
-  // Start repeats the selected run's flags; bench.py names the new folder
-  // itself, so this is a fresh run rather than a resume.
+  // Started from the form's own values against the CURRENTLY configured url
+  // — not the url an older run happened to use, which is how a stale mock
+  // target outlives the run that introduced it. temperature is always sent:
+  // the backend refuses a missing one because bench.py would fall back to
+  // greedy silently.
   const startRun = () =>
     post("/api/bench/start", {
-      model: detail?.config?.model,
-      langs: detail?.config?.langs?.join(","),
-      attempts: detail?.config?.attempts,
-      n: detail?.config?.n,
-      temperature: detail?.config?.temperature,
-      url: detail?.config?.url,
+      model: form.model || undefined,
+      langs: form.langs || undefined,
+      attempts: form.attempts,
+      n: form.n,
+      temperature: form.temperature,
+      url: targetUrl,
     });
+
+  const greedy = greedyInterlock(form.n, form.temperature);
+  const estimate = estimatedRunSeconds(storedDetails, taskCount * form.n);
+  const blockedReason = startDisabledReason({
+    running,
+    serverReady: readiness.ready,
+    serverReason: readiness.reason,
+    haveFlags: true,
+  });
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -755,50 +918,114 @@ function RunSetupCard({
       />
       <div style={{ padding: "10px 15px 13px", minWidth: 0 }}>
         <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "8px 10px",
+          }}
         >
-          <MetricTile
-            accent
-            mono
-            label="Model"
-            value={middleTruncate(modelName, 16)}
-            valueSize={11}
-          />
-          <MetricTile
-            accent
-            mono
+          <Field label="Model" hint="defaults to the selected run's model">
+            <input
+              data-testid="bench-field-model"
+              style={FIELD_INPUT}
+              value={form.model}
+              spellCheck={false}
+              placeholder="auto-detect from the server"
+              onChange={(e) => set("model", e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="URL"
+            hint={
+              isNonDefaultTarget(targetUrl, defaultUrl)
+                ? "not the configured llama-server"
+                : "defaults to the configured llama-server"
+            }
+          >
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                data-testid="bench-url-field"
+                style={{
+                  ...FIELD_INPUT,
+                  borderColor: readiness.ready
+                    ? "var(--border-color)"
+                    : "color-mix(in srgb, var(--warning) 45%, transparent)",
+                }}
+                value={targetUrl}
+                spellCheck={false}
+                onChange={(e) => setTargetUrl(e.target.value)}
+              />
+              {isNonDefaultTarget(targetUrl, defaultUrl) && (
+                <TargetBadge url={targetUrl} />
+              )}
+            </div>
+          </Field>
+
+          <Field
             label="Languages"
-            value={detail?.config?.langs?.join(" ") ?? "—"}
-            valueSize={11}
-          />
-          <MetricTile
-            accent
-            mono
-            label="Attempts"
-            value={detail?.config?.attempts ?? null}
-            valueSize={14}
-          />
-          <MetricTile
-            accent
-            mono
-            label="Samples --n"
-            value={detail?.config?.n ?? null}
-            valueSize={14}
-          />
-          <MetricTile
-            accent
-            mono
+            hint={
+              tracks.some((t) => !t.available)
+                ? `${tracks
+                    .filter((t) => !t.available)
+                    .map((t) => t.lang)
+                    .join(", ")}: toolchain missing`
+                : "comma-separated subset"
+            }
+          >
+            <input
+              data-testid="bench-field-langs"
+              style={FIELD_INPUT}
+              value={form.langs}
+              spellCheck={false}
+              onChange={(e) => set("langs", e.target.value)}
+            />
+          </Field>
+
+          <Field label="Attempts">
+            <input
+              data-testid="bench-field-attempts"
+              type="number"
+              min={1}
+              style={FIELD_INPUT}
+              value={form.attempts}
+              onChange={(e) => set("attempts", Number(e.target.value))}
+            />
+          </Field>
+
+          <Field label="Samples --n">
+            <input
+              data-testid="bench-field-n"
+              type="number"
+              min={1}
+              style={FIELD_INPUT}
+              value={form.n}
+              onChange={(e) => set("n", Number(e.target.value))}
+            />
+          </Field>
+
+          <Field
             label="Temperature"
-            value={detail?.config?.temperature ?? null}
-            valueSize={14}
-          />
-          <MetricTile
-            accent
-            mono
-            label="Provenance"
-            value={sampleLabel(detail?.config ?? null)}
-            valueSize={11}
-          />
+            hintAccent={temperatureInherited}
+            hint={temperatureHint}
+          >
+            <input
+              data-testid="bench-field-temperature"
+              type="number"
+              step="0.05"
+              min={0}
+              title="Defaults to the active model's own sampling temperature, so bench measures it as configured. Override only to test a different setting than the one running."
+              style={{
+                ...FIELD_INPUT,
+                borderStyle: temperatureInherited ? "dashed" : "solid",
+                color: temperatureInherited
+                  ? "var(--text-secondary)"
+                  : "var(--text-primary)",
+              }}
+              value={form.temperature}
+              onChange={(e) => set("temperature", Number(e.target.value))}
+            />
+          </Field>
         </div>
 
         {greedy && (
@@ -810,9 +1037,8 @@ function RunSetupCard({
               marginTop: 8,
             }}
           >
-            Temperature 0 with --n {detail?.config?.n}: greedy decoding makes
-            every sample identical — {detail?.config?.n} times the wait for one
-            sample of information.
+            Temperature 0 with --n {form.n}: greedy decoding makes every sample
+            identical — {form.n} times the wait for one sample of information.
           </div>
         )}
 
@@ -860,22 +1086,16 @@ function RunSetupCard({
         </div>
 
         <div
-          style={{
-            display: "flex",
-            gap: 8,
-            marginTop: 10,
-            flexWrap: "wrap",
-          }}
+          style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}
         >
           <ActionButton
             label="Start run"
             tone="primary"
-            disabled={running || !detail}
+            disabled={blockedReason !== null}
             onClick={startRun}
             title={
-              running
-                ? "A run is active — Start enables when it finishes or is stopped."
-                : "Spawn bench.py with the flags shown above."
+              blockedReason ??
+              `Spawn bench.py with the flags above, against ${targetUrl}.`
             }
           />
           <ActionButton
@@ -894,73 +1114,45 @@ function RunSetupCard({
           <ActionButton
             label="Re-check"
             onClick={onRefresh}
-            title="Re-run bench.py --check and reload the stored runs."
+            title="Re-probe the target server, re-run bench.py --check and reload the stored runs."
           />
+          <span
+            data-testid="bench-est-duration"
+            title="Mean seconds per graded sample across stored runs, times the samples this configuration would run. Server samples are excluded — they cost no model time."
+            style={{
+              marginLeft: "auto",
+              alignSelf: "center",
+              font: "11px Inter, system-ui, sans-serif",
+              color: "var(--text-muted)",
+            }}
+          >
+            {estimate === null
+              ? "est. — (no history yet)"
+              : `est. ${fmtUptime(estimate)}`}
+          </span>
         </div>
+
+        {blockedReason && !running && (
+          <div
+            data-testid="bench-start-blocked"
+            style={{
+              font: "11px Inter, system-ui, sans-serif",
+              color: "var(--warning)",
+              marginTop: 6,
+            }}
+          >
+            {blockedReason}
+            {!readiness.ready && (
+              <>
+                {" "}
+                Start a model on the llama.cpp page, or point --url at a
+                mockserver.
+              </>
+            )}
+          </div>
+        )}
       </div>
     </Card>
-  );
-}
-
-/**
- * bench.py's stdout, served from the backend ring buffer.
- *
- * Deliberately NOT `LogConsole`: that component discovers its source by
- * polling /api/launch/profiles and opens a llama-specific WebSocket, and the
- * brief is explicit that its llama plumbing must not be rewired.
- */
-function BenchConsole({ running }: { running: boolean }) {
-  const [lines, setLines] = useState<string[]>([]);
-  const offsetRef = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const res = await fetch(`/api/bench/log?offset=${offsetRef.current}`);
-        if (!res.ok) return;
-        const body = (await res.json()) as {
-          lines?: string[];
-          nextOffset?: number;
-        };
-        if (cancelled) return;
-        if (body.lines && body.lines.length > 0) {
-          offsetRef.current = body.nextOffset ?? offsetRef.current;
-          setLines((prev) => [...prev, ...(body.lines ?? [])].slice(-2000));
-        }
-      } catch {
-        // A console gap must not take the page down.
-      }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), running ? 1000 : 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [running]);
-
-  return (
-    <div
-      data-testid="bench-console"
-      style={{
-        background: "color-mix(in srgb, var(--bg-secondary) 70%, black)",
-        font: `11px/1.6 ${MONO}`,
-        padding: "10px 14px",
-        flex: 1,
-        minHeight: 0,
-        overflow: "auto",
-        color: "var(--text-secondary)",
-      }}
-    >
-      {lines.length === 0 ? (
-        <div style={{ color: "var(--text-muted)" }}>
-          bench.py output appears here while a run is active.
-        </div>
-      ) : (
-        lines.map((l, i) => <div key={i}>{l}</div>)
-      )}
-    </div>
   );
 }
 
@@ -970,6 +1162,10 @@ export default function BenchPage() {
   const bench = useBenchData();
   const { detail, check, runs, storedDetails } = bench;
   const { addAlert } = useAlertsContext();
+  // Same source as the llama.cpp page's Sampling tile, so Run Setup's
+  // temperature follows the model that is actually loaded.
+  const { aiCurrentMetrics } = useMetricsContext();
+  const activeTemperature = aiCurrentMetrics?.temperature ?? null;
   const [now, setNow] = useState(() => Date.now());
 
   const records = useMemo(() => detail?.records ?? [], [detail]);
@@ -1057,6 +1253,9 @@ export default function BenchPage() {
               beatAge={heartbeatAgeMs(live.heartbeat, now)}
               truncationWarned={truncation.warned}
               current={bench.current}
+              defaultUrl={bench.defaultUrl}
+              targetUrl={bench.targetUrl}
+              taskList={bench.taskList}
             />
           </PanelErrorBoundary>
 
@@ -1085,12 +1284,19 @@ export default function BenchPage() {
             alignItems: "stretch",
           }}
         >
+          {/* Flex children default to min-height:auto ("at least as tall as
+              my content"), which is the opposite of "shrink and scroll
+              yourself". Every link in this chain needs min-height:0 or the
+              page grows past the viewport again the next time a card is
+              added here. */}
           <div
             style={{
               display: "flex",
               flexDirection: "column",
               gap: 9,
               minWidth: 0,
+              minHeight: 0,
+              overflow: "auto",
             }}
           >
             <PanelErrorBoundary panelName="Bench Run Setup">
@@ -1099,29 +1305,23 @@ export default function BenchPage() {
                 check={check}
                 running={running}
                 onRefresh={bench.refresh}
+                targetUrl={bench.targetUrl}
+                setTargetUrl={bench.setTargetUrl}
+                defaultUrl={bench.defaultUrl}
+                readiness={bench.readiness}
+                activeTemperature={activeTemperature}
+                storedDetails={storedDetails}
+                taskCount={
+                  check?.tracks
+                    .filter((t) => t.available)
+                    .reduce((a, t) => a + t.tasks, 0) ?? 0
+                }
               />
-            </PanelErrorBoundary>
-
-            <PanelErrorBoundary panelName="Bench Console">
-              <Card
-                role={null}
-                baseClass=""
-                style={{ ...PANEL_CARD_STYLE, flex: 1, minHeight: 140 }}
-              >
-                <CardHeader
-                  compact
-                  icon={<Terminal size={13} />}
-                  title="Bench Console"
-                  titleAccentBar
-                  right={<CornerIndex n="05" />}
-                />
-                <BenchConsole running={running} />
-              </Card>
             </PanelErrorBoundary>
           </div>
 
           <PanelErrorBoundary panelName="Bench Tasks and Runs">
-            <TasksAndRuns bench={bench} now={now} />
+            <TasksAndRuns bench={bench} now={now} running={running} />
           </PanelErrorBoundary>
         </div>
       </div>

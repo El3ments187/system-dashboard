@@ -123,6 +123,7 @@ export interface CurrentRun {
   model: string | null;
   label: string | null;
   langs: string | null;
+  url: string | null;
   attempts: number | null;
   n: number | null;
   temperature: number | null;
@@ -132,6 +133,14 @@ export interface CurrentRun {
 export interface BenchCurrent {
   running: boolean;
   run: CurrentRun | null;
+}
+
+export interface BenchReadiness {
+  ready: boolean;
+  url: string;
+  /** Shown verbatim next to a disabled Start button. */
+  reason: string;
+  probe?: string;
 }
 
 export interface BenchTrack {

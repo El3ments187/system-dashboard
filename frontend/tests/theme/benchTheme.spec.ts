@@ -112,6 +112,50 @@ test("T33 the accent spine is not painted over by the sticky table header", asyn
   ).toBe(true);
 });
 
+// ── T42 — content must stop at the footer ──────────────────────────────────
+
+test("T42 cards stop at the footer instead of running past the bottom", async ({
+  page,
+}) => {
+  // Deliberately short: a tall viewport hides this bug entirely.
+  await page.setViewportSize({ width: 1280, height: 620 });
+  await gotoBench(page);
+  await page.waitForTimeout(600);
+
+  const probe = await page.evaluate(() => {
+    const footer = document.querySelector('[data-testid="bench-footer"]');
+    const table = document.querySelector("table");
+    const card = table?.closest("[data-accent-el]") ?? null;
+    if (!footer || !card) return { error: "missing footer or card" } as const;
+    const f = footer.getBoundingClientRect();
+    const c = card.getBoundingClientRect();
+    return {
+      footerTop: Math.round(f.top),
+      footerBottom: Math.round(f.bottom),
+      cardBottom: Math.round(c.bottom),
+      inner: window.innerHeight,
+      pageScrolls:
+        document.documentElement.scrollHeight >
+        document.documentElement.clientHeight + 2,
+    };
+  });
+
+  expect("error" in probe ? probe.error : "").toBe("");
+  const p = probe as Exclude<typeof probe, { error: string }>;
+
+  // The footer is the floor: it must be on screen...
+  expect(
+    p.footerBottom,
+    `the footer is below the viewport (${p.footerBottom} > ${p.inner})`,
+  ).toBeLessThanOrEqual(p.inner + 2);
+  // ...and the tallest card must not spill past it.
+  expect(
+    p.cardBottom,
+    `Tasks & Runs runs past the footer (card bottom ${p.cardBottom} > footer top ${p.footerTop}) — the flex min-height:0 chain is broken`,
+  ).toBeLessThanOrEqual(p.footerTop + 2);
+  expect(p.pageScrolls, "the outer page must not scroll").toBe(false);
+});
+
 // ── T30 — Spectrum Per-Element ──────────────────────────────────────────────
 
 test("T30 two bench cards resolve DIFFERENT --accent-primary under Spectrum Per-Element", async ({
