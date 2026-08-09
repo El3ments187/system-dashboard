@@ -180,6 +180,87 @@ describe("useLlamaCppManagement ptyReadOutput polling", () => {
   });
 });
 
+describe("repo-info refetches on every update exit path", () => {
+  /**
+   * Serves repo-info with a NEW build tag from the second call onward, so a
+   * refetch is distinguishable from the mount-time snapshot by value and not
+   * only by call count.
+   */
+  function mockRepoInfo(): () => number {
+    let calls = 0;
+    global.fetch = vi.fn().mockImplementation((url: unknown) => {
+      if (String(url).includes("/api/llama/repo-info")) {
+        calls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              data: {
+                local_build_tag: calls === 1 ? "b1000" : "b2000",
+                latest_build_tag: "b2000",
+              },
+            }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    return () => calls;
+  }
+
+  it("(A) a successful update refetches repo-info so the new build tag shows without a reload", async () => {
+    const repoInfoCalls = mockRepoInfo();
+    vi.mocked(ptyReadOutput).mockResolvedValueOnce({
+      text: "__LLAMA_UPDATE_DONE__\n",
+      nextOffset: 22,
+    });
+
+    const { result } = renderHook(() => useLlamaCppManagement());
+    await act(async () => {});
+    const beforeUpdate = repoInfoCalls();
+    expect(beforeUpdate, "mount fetches repo-info exactly once").toBe(1);
+
+    await act(async () => {
+      await result.current.runUpdate();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(result.current.updateState).toBe("done");
+    expect(
+      repoInfoCalls(),
+      "a successful update must trigger a fresh repo-info fetch",
+    ).toBeGreaterThan(beforeUpdate);
+    expect(result.current.repoInfo?.local_build_tag).toBe("b2000");
+  });
+
+  it("(B) a failed update also refetches repo-info — the display re-syncs to the truth", async () => {
+    const repoInfoCalls = mockRepoInfo();
+    vi.mocked(ptyReadOutput).mockResolvedValueOnce({
+      text: `${FAIL_MARKER}\n`,
+      nextOffset: FAIL_MARKER.length + 1,
+    });
+
+    const { result } = renderHook(() => useLlamaCppManagement());
+    await act(async () => {});
+    const beforeUpdate = repoInfoCalls();
+    expect(beforeUpdate, "mount fetches repo-info exactly once").toBe(1);
+
+    await act(async () => {
+      await result.current.runUpdate();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(result.current.updateState).toBe("error");
+    expect(
+      repoInfoCalls(),
+      "a failed update must also trigger a fresh repo-info fetch",
+    ).toBeGreaterThan(beforeUpdate);
+  });
+});
+
 describe("composeUpdateCommand — line-continuation folding (K)", () => {
   it("(a) folds the user's exact confirmed-working script: no stray \\\\ &&, no dangling backslash", () => {
     const userScript =

@@ -139,6 +139,28 @@ export function useLlamaCppManagement(): LlamaCppManagement {
     };
   }, [dirPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Refetches repo-info on demand, so CURRENT / LATEST / "N behind" can
+   * re-sync without a page reload.
+   *
+   * The fetch lines are deliberately duplicated from the mount effect above
+   * rather than shared: that effect's `cancelled` flag exists to drop a late
+   * response after dirPath changed or the hook unmounted, and those
+   * cancellation semantics are load-bearing there and irrelevant here.
+   */
+  const refreshRepoInfo = useCallback(() => {
+    if (!dirPath) return;
+    const repoParams = new URLSearchParams({ path: dirPath });
+    if (localVersionCmd) repoParams.set("local_cmd", localVersionCmd);
+    if (latestVersionCmd) repoParams.set("latest_cmd", latestVersionCmd);
+    fetch(`/api/llama/repo-info?${repoParams.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { data?: RepoInfo } | null) => {
+        if (d?.data) setRepoInfo(d.data);
+      })
+      .catch(() => {});
+  }, [dirPath, localVersionCmd, latestVersionCmd]);
+
   const stopPolling = useCallback(() => {
     if (updatePollRef.current) {
       clearInterval(updatePollRef.current);
@@ -194,15 +216,22 @@ export function useLlamaCppManagement(): LlamaCppManagement {
         stopPolling();
         ptyKillTerminal(pts);
         updatePtsRef.current = null;
+        // The whole point of updating is showing the NEW build.
+        refreshRepoInfo();
         idleTimerRef.current = setTimeout(() => setUpdateState("idle"), 2000);
       } else if (failPattern.test(next)) {
         setUpdateState("error");
         stopPolling();
         ptyKillTerminal(pts);
         updatePtsRef.current = null;
+        // A failed update is not a no-op: git pull may have moved
+        // LATEST / "N behind" before a later step died. Either way the
+        // display must re-sync to the truth rather than trust its
+        // mount-time snapshot.
+        refreshRepoInfo();
       }
     },
-    [stopPolling],
+    [stopPolling, refreshRepoInfo],
   );
 
   const runUpdate = useCallback(async () => {
