@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod gpu_offload_parser;
 pub mod launcher;
 pub mod llama_management;

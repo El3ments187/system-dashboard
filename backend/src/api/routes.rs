@@ -7,6 +7,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::api::bench as bench_api;
 use crate::api::launcher as launcher_api;
 use crate::api::llama_management as ai_mgmt;
 use crate::api::log_manager;
@@ -102,6 +103,20 @@ pub fn create_router() -> axum::Router {
             get(get_logs_handler).delete(clear_logs_handler),
         )
         .route("/api/launch/logs/ws", get(logs_ws_handler))
+        .route("/api/bench/tasks", get(bench_api::tasks_handler))
+        .route("/api/bench/check", get(bench_api::check_handler))
+        .route("/api/bench/start", post(bench_api::start_handler))
+        .route("/api/bench/stop", post(bench_api::stop_handler))
+        .route("/api/bench/skip", post(bench_api::skip_handler))
+        .route("/api/bench/runs", get(bench_api::runs_handler))
+        .route("/api/bench/runs/{id}", get(bench_api::run_by_id_handler))
+        .route("/api/bench/log", get(bench_api::log_handler))
+        .route("/api/bench/current", get(bench_api::current_handler))
+        .route("/api/bench/resume", post(bench_api::resume_handler))
+        .route(
+            "/api/bench/queue/advance",
+            post(bench_api::queue_advance_handler),
+        )
 }
 
 async fn health_handler() -> axum::response::Json<Value> {
@@ -376,6 +391,8 @@ pub struct UpdateSettingsRequest {
     pub launcher_scan_dir: Option<String>,
     #[serde(default)]
     pub llama_working_dir: Option<String>,
+    #[serde(default)]
+    pub bench_dir: Option<String>,
 }
 
 async fn update_settings_handler(
@@ -388,6 +405,13 @@ async fn update_settings_handler(
         comfyui_url: req.comfyui_url,
         launcher_scan_dir: req.launcher_scan_dir.clone(),
         llama_working_dir: req.llama_working_dir.clone(),
+        // This handler replaces the whole settings object, and the Settings
+        // page has no bench_dir field yet (v1.1). Falling back to the stored
+        // value keeps a save from the UI from silently wiping it.
+        bench_dir: req
+            .bench_dir
+            .clone()
+            .or_else(|| get_ai_settings().bench_dir),
     };
     set_ai_settings(settings.clone());
     if let Some(ref dir) = req.launcher_scan_dir

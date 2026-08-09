@@ -15,6 +15,10 @@ pub struct AiSettings {
     pub launcher_scan_dir: Option<String>,
     #[serde(default)]
     pub llama_working_dir: Option<String>,
+    /// The localbench checkout the Bench page drives. Config/env is enough
+    /// for v1; a Settings-page field is v1.1.
+    #[serde(default)]
+    pub bench_dir: Option<String>,
 }
 
 impl Default for AiSettings {
@@ -26,6 +30,7 @@ impl Default for AiSettings {
             comfyui_url: "http://localhost:8188".to_string(),
             launcher_scan_dir: None,
             llama_working_dir: None,
+            bench_dir: None,
         }
     }
 }
@@ -237,6 +242,7 @@ mod tests {
             comfyui_url: "http://test:8189".to_string(),
             launcher_scan_dir: Some("/some/scan".to_string()),
             llama_working_dir: Some("/some/work".to_string()),
+            bench_dir: Some("/some/localbench".to_string()),
         };
 
         save_settings_to_path(&path, &original).unwrap();
@@ -246,6 +252,7 @@ mod tests {
         assert_eq!(loaded.openwebui_url, original.openwebui_url);
         assert_eq!(loaded.launcher_scan_dir, original.launcher_scan_dir);
         assert_eq!(loaded.llama_working_dir, original.llama_working_dir);
+        assert_eq!(loaded.bench_dir, original.bench_dir);
 
         std::fs::remove_dir_all(&dir).ok();
     }
