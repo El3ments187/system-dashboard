@@ -1,0 +1,290 @@
+/**
+ * Bench page — theme participation, verified as COMPUTED STYLE in a real
+ * browser. jsdom cannot compute cascades or pseudo-elements, so none of this
+ * is assertable in vitest.
+ *
+ * The absence tests matter as much as the presence ones: an effect that is
+ * always on is indistinguishable from a broken toggle.
+ */
+import { test, expect, type Page } from "@playwright/test";
+
+const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";
+
+async function gotoBench(page: Page) {
+  await page.goto(`${BASE_URL}/bench`);
+  await page.waitForLoadState("networkidle");
+  await page.waitForSelector('[data-testid="bench-task-avg"]', {
+    timeout: 15000,
+  });
+}
+
+async function setGlow(page: Page, on: boolean) {
+  await page.evaluate((enabled) => {
+    const root = document.documentElement;
+    if (enabled) {
+      root.setAttribute("data-glow", "neon");
+      root.setAttribute("data-card-glow", "on");
+    } else {
+      root.removeAttribute("data-glow");
+      root.removeAttribute("data-card-glow");
+    }
+  }, on);
+  await page.waitForTimeout(150);
+}
+
+// ── T29 — Neon Glow, both states ────────────────────────────────────────────
+
+test.describe("T29 bench card glow target responds to the Neon Glow toggle", () => {
+  test("ON: the bench card's .accent-glow-target ::after paints a shadow", async ({
+    page,
+  }) => {
+    await gotoBench(page);
+    await setGlow(page, true);
+
+    const shadow = await page.evaluate(() => {
+      const el = document
+        .querySelector('[data-testid="bench-task-avg"]')
+        ?.closest("[data-accent-el]")
+        ?.parentElement?.closest(".metric-card, div")
+        ?.querySelector(".accent-glow-target");
+      const target = el ?? document.querySelector(".accent-glow-target");
+      if (!target) return "NO_TARGET";
+      return getComputedStyle(target, "::after").boxShadow;
+    });
+
+    expect(shadow).not.toBe("NO_TARGET");
+    expect(shadow).not.toBe("none");
+    expect(shadow).not.toMatch(/rgba\(0,\s*0,\s*0,\s*0\)/);
+  });
+
+  test("OFF: the same target paints no shadow — the absence test", async ({
+    page,
+  }) => {
+    await gotoBench(page);
+    await setGlow(page, false);
+
+    const shadow = await page.evaluate(() => {
+      const target = document.querySelector(".accent-glow-target");
+      if (!target) return "NO_TARGET";
+      return getComputedStyle(target, "::after").boxShadow;
+    });
+
+    expect(shadow).not.toBe("NO_TARGET");
+    const isOff =
+      shadow === "none" || /rgba\(0,\s*0,\s*0,\s*0\)/.test(shadow as string);
+    expect(
+      isOff,
+      `glow must be absent with the toggle off, got: ${shadow}`,
+    ).toBe(true);
+  });
+});
+
+// ── T33 — the spine must win the stacking contest against a sticky header ───
+
+test("T33 the accent spine is not painted over by the sticky table header", async ({
+  page,
+}) => {
+  await gotoBench(page);
+  await page.waitForSelector("table thead th", { timeout: 10000 });
+
+  const probe = await page.evaluate(() => {
+    const th = document.querySelector("table thead th");
+    if (!th) return { error: "no sticky thead" } as const;
+    const card = th.closest("[data-accent-el]");
+    if (!card) return { error: "no card ancestor" } as const;
+    const spine = card.querySelector(".card-accent-spine");
+    if (!spine) return { error: "no spine" } as const;
+    const cr = card.getBoundingClientRect();
+    const tr = th.getBoundingClientRect();
+    // One pixel inside the card's left edge, at the sticky band's midline —
+    // exactly where the 3px spine should be painting.
+    const hit = document.elementFromPoint(cr.left + 1, tr.top + tr.height / 2);
+    return {
+      hitIsSpine: hit === spine || spine.contains(hit as Node),
+      hitTag: (hit as HTMLElement | null)?.tagName ?? "NONE",
+    };
+  });
+
+  expect("error" in probe ? probe.error : "").toBe("");
+  expect(
+    (probe as { hitIsSpine: boolean }).hitIsSpine,
+    `the sticky header is painting over the spine (hit ${(probe as { hitTag: string }).hitTag})`,
+  ).toBe(true);
+});
+
+// ── T30 — Spectrum Per-Element ──────────────────────────────────────────────
+
+test("T30 two bench cards resolve DIFFERENT --accent-primary under Spectrum Per-Element", async ({
+  page,
+}) => {
+  await gotoBench(page);
+  // Per-element hue is `[data-accent-mode="spectrum"] [style*="--el-index"]`:
+  // the mode on <html>, and an inline --el-index that useAccentIndexer
+  // assigns to every [data-accent-el]. Both halves have to be present.
+  await page.evaluate(() => {
+    document.documentElement.setAttribute("data-accent-mode", "spectrum");
+  });
+  await page.waitForTimeout(400);
+
+  const probe = await page.evaluate(() => {
+    const indexed = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-accent-el]"),
+    ).filter((el) => el.style.getPropertyValue("--el-index") !== "");
+    return {
+      indexedCount: indexed.length,
+      elIndexes: indexed
+        .slice(0, 8)
+        .map((el) => el.style.getPropertyValue("--el-index")),
+      hues: indexed
+        .slice(0, 8)
+        .map((el) =>
+          getComputedStyle(el).getPropertyValue("--accent-primary").trim(),
+        )
+        .filter(Boolean),
+    };
+  });
+
+  expect(
+    probe.indexedCount,
+    "useAccentIndexer must assign --el-index to bench cards",
+  ).toBeGreaterThanOrEqual(2);
+  expect(new Set(probe.elIndexes).size).toBeGreaterThan(1);
+  expect(
+    new Set(probe.hues).size,
+    `per-element mode must give cards their own hue; el-indexes=${JSON.stringify(probe.elIndexes)} hues=${JSON.stringify(probe.hues)}`,
+  ).toBeGreaterThan(1);
+});
+
+// ── T31 — semantic colours are not accent colours ───────────────────────────
+
+test("T31 a verdict keeps its semantic colour across an accent change", async ({
+  page,
+}) => {
+  await gotoBench(page);
+
+  // A strip cell is a verdict: it must read the same whatever the accent is.
+  // Deliberately NOT pinned to one status — which verdicts exist depends on
+  // whichever run is newest in the checkout, and a test that silently needs
+  // a "miss" to be present passes for the wrong reason the day there isn't
+  // one. Any verdict cell proves the rule.
+  const VERDICTS = ["miss", "timeout", "solved", "solved-late"];
+  await page.waitForFunction(
+    (states) =>
+      states.some((s) => document.querySelector(`[data-cell-state="${s}"]`)),
+    VERDICTS,
+    { timeout: 15000 },
+  );
+
+  const read = () =>
+    page.evaluate((states) => {
+      for (const state of states) {
+        const cell = document.querySelector(`[data-cell-state="${state}"]`);
+        if (!cell) continue;
+        const s = getComputedStyle(cell);
+        return { state, border: s.borderTopColor, bg: s.backgroundColor };
+      }
+      return null;
+    }, VERDICTS);
+
+  await page.evaluate(() => {
+    document.documentElement.setAttribute("data-accent-mode", "solid");
+    document.documentElement.style.setProperty("--accent-primary", "#38bdf8");
+  });
+  await page.waitForTimeout(150);
+  const before = await read();
+
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--accent-primary", "#f472b6");
+    document.documentElement.setAttribute("data-accent-mode", "rainbow");
+  });
+  await page.waitForTimeout(250);
+  const after = await read();
+
+  expect(
+    before,
+    "expected at least one verdict cell on the page",
+  ).not.toBeNull();
+  expect(after).not.toBeNull();
+  expect(after!.state, "the same verdict must be sampled twice").toBe(
+    before!.state,
+  );
+  expect(after!.border, "a verdict colour must not follow the accent").toBe(
+    before!.border,
+  );
+  expect(after!.bg, "a verdict fill must not follow the accent").toBe(
+    before!.bg,
+  );
+});
+
+// ── T32 — reduced motion ────────────────────────────────────────────────────
+
+test.describe("T32 prefers-reduced-motion", () => {
+  test.use({ colorScheme: "dark" });
+
+  test("zeroes the gauge glow and stops the live-cell and pulse animations", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await gotoBench(page);
+    await setGlow(page, true);
+
+    const result = await page.evaluate(() => {
+      // The live cell and heartbeat only exist during a run, so the rule is
+      // exercised on elements with the same classes.
+      const probe = document.createElement("div");
+      probe.innerHTML =
+        '<i class="bench-att live"></i>' +
+        '<span class="bench-pulse"><span class="bench-dot"></span></span>';
+      document.body.appendChild(probe);
+
+      const cell = probe.querySelector(".bench-att.live") as HTMLElement;
+      const dot = probe.querySelector(".bench-dot") as HTMLElement;
+      const arc = document.querySelector(
+        ".bench-gauge svg path:last-of-type",
+      ) as SVGPathElement | null;
+
+      const out = {
+        cellAnimation: getComputedStyle(cell).animationName,
+        dotAnimation: getComputedStyle(dot).animationName,
+        arcFilter: arc ? getComputedStyle(arc).filter : "NO_ARC",
+      };
+      probe.remove();
+      return out;
+    });
+
+    expect(result.cellAnimation).toBe("none");
+    expect(result.dotAnimation).toBe("none");
+    expect(result.arcFilter).not.toBe("NO_ARC");
+    expect(
+      result.arcFilter,
+      "reduced motion must drop the gauge drop-shadow",
+    ).toBe("none");
+  });
+
+  test("without the preference, the gauge glow paints and the cell animates", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await gotoBench(page);
+    await setGlow(page, true);
+
+    const result = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.innerHTML = '<i class="bench-att live"></i>';
+      document.body.appendChild(probe);
+      const cell = probe.querySelector(".bench-att.live") as HTMLElement;
+      const arc = document.querySelector(
+        ".bench-gauge svg path:last-of-type",
+      ) as SVGPathElement | null;
+      const out = {
+        cellAnimation: getComputedStyle(cell).animationName,
+        arcFilter: arc ? getComputedStyle(arc).filter : "NO_ARC",
+      };
+      probe.remove();
+      return out;
+    });
+
+    expect(result.cellAnimation).toBe("bench-livecell");
+    expect(result.arcFilter).toContain("drop-shadow");
+  });
+});
