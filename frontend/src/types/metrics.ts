@@ -259,6 +259,7 @@ export interface AiSettings {
   comfyui_url: string;
   launcher_scan_dir?: string;
   llama_working_dir?: string;
+  bench_dir?: string | null;
 }
 
 export interface TestConnectionResult {

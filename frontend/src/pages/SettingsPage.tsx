@@ -158,6 +158,12 @@ export default function SettingsPage({}: SettingsPageProps) {
   const [scanDir, setScanDir] = useState(
     () => localStorage.getItem("llama_scan_dir") ?? "",
   );
+  // The localbench checkout the Bench page runs and reads. A filesystem
+  // path, so it follows the directory-field convention above rather than
+  // the URL fields' renderUrlField.
+  const [benchDir, setBenchDir] = useState(
+    () => localStorage.getItem("bench_dir") ?? "",
+  );
   const [updateScript, setUpdateScript] = useState(
     () =>
       localStorage.getItem("llama_cpp_update_script") ?? DEFAULT_UPDATE_SCRIPT,
@@ -169,6 +175,7 @@ export default function SettingsPage({}: SettingsPageProps) {
 
   const [browserOpen, setBrowserOpen] = useState(false);
   const [scanBrowserOpen, setScanBrowserOpen] = useState(false);
+  const [benchBrowserOpen, setBenchBrowserOpen] = useState(false);
   const [editScriptOpen, setEditScriptOpen] = useState(false);
   const [editLocalCmdOpen, setEditLocalCmdOpen] = useState(false);
   const [editLatestCmdOpen, setEditLatestCmdOpen] = useState(false);
@@ -280,6 +287,11 @@ export default function SettingsPage({}: SettingsPageProps) {
     localStorage.setItem("llama_scan_dir", path);
   };
 
+  const handleSelectBenchDir = (path: string) => {
+    setBenchDir(path);
+    localStorage.setItem("bench_dir", path);
+  };
+
   const handleSaveScript = (script: string) => {
     setUpdateScript(script);
     localStorage.setItem("llama_cpp_update_script", script);
@@ -305,6 +317,7 @@ export default function SettingsPage({}: SettingsPageProps) {
 
   const initialLlamaDirRef = useRef(llamaDir);
   const initialScanDirRef = useRef(scanDir);
+  const initialBenchDirRef = useRef(benchDir);
 
   useEffect(() => {
     getAiSettings()
@@ -317,6 +330,10 @@ export default function SettingsPage({}: SettingsPageProps) {
         if (s.launcher_scan_dir && !initialScanDirRef.current) {
           setScanDir(s.launcher_scan_dir);
           localStorage.setItem("llama_scan_dir", s.launcher_scan_dir);
+        }
+        if (s.bench_dir && !initialBenchDirRef.current) {
+          setBenchDir(s.bench_dir);
+          localStorage.setItem("bench_dir", s.bench_dir);
         }
         setLoading(false);
       })
@@ -363,6 +380,7 @@ export default function SettingsPage({}: SettingsPageProps) {
         ...settings,
         launcher_scan_dir: scanDir || undefined,
         llama_working_dir: llamaDir || undefined,
+        bench_dir: benchDir || undefined,
       });
     } catch {
       // silently ignore save errors — toast will show if needed
@@ -410,7 +428,10 @@ export default function SettingsPage({}: SettingsPageProps) {
   };
 
   const renderUrlField = (
-    key: Exclude<keyof AiSettings, "launcher_scan_dir" | "llama_working_dir">,
+    key: Exclude<
+      keyof AiSettings,
+      "launcher_scan_dir" | "llama_working_dir" | "bench_dir"
+    >,
     label: string,
     placeholder: string,
     icon: React.ReactNode,
@@ -454,7 +475,10 @@ export default function SettingsPage({}: SettingsPageProps) {
   );
 
   const fields: Array<{
-    key: Exclude<keyof AiSettings, "launcher_scan_dir" | "llama_working_dir">;
+    key: Exclude<
+      keyof AiSettings,
+      "launcher_scan_dir" | "llama_working_dir" | "bench_dir"
+    >;
     label: string;
     placeholder: string;
   }> = [
@@ -629,6 +653,45 @@ export default function SettingsPage({}: SettingsPageProps) {
               <button
                 className="settings-btn"
                 onClick={() => setScanBrowserOpen(true)}
+              >
+                <FolderOpen size={13} />
+                Browse
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-field">
+            <label htmlFor="bench-dir" className="settings-field-label">
+              <Folder size={12} />
+              Bench (localbench) Directory
+            </label>
+            <div className="settings-path-row">
+              <input
+                type="text"
+                id="bench-dir"
+                name="bench-dir"
+                data-testid="settings-bench-dir"
+                className="settings-input"
+                value={benchDir}
+                readOnly
+                title={benchDir || undefined}
+                placeholder="No directory selected"
+                style={{
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                }}
+              />
+              {benchDir && (
+                <button
+                  className="settings-btn"
+                  title="Copy path"
+                  onClick={() => navigator.clipboard.writeText(benchDir)}
+                >
+                  <Copy size={13} />
+                </button>
+              )}
+              <button
+                className="settings-btn"
+                onClick={() => setBenchBrowserOpen(true)}
               >
                 <FolderOpen size={13} />
                 Browse
@@ -897,6 +960,12 @@ export default function SettingsPage({}: SettingsPageProps) {
         onClose={() => setScanBrowserOpen(false)}
         onSelect={handleSelectScanDir}
         initialPath={scanDir || undefined}
+      />
+      <DirectoryBrowserModal
+        isOpen={benchBrowserOpen}
+        onClose={() => setBenchBrowserOpen(false)}
+        onSelect={handleSelectBenchDir}
+        initialPath={benchDir || undefined}
       />
       <EditUpdateScriptModal
         isOpen={editScriptOpen}
