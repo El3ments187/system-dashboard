@@ -1187,17 +1187,40 @@ main {
   font-size: 12px !important;
 }
 
-/* Settings page */
+/* Settings page.
+   Was CSS Grid (auto-fit columns). Grid packs items into explicit
+   rows sized to the TALLEST card in that row — a short card (e.g.
+   Settings File Location, GPU Metrics Backend) sits at the top of a
+   row whose height is set by a much taller neighbor (LLAMA.CPP
+   Configuration, Benchmark Toolchains), leaving large dead space
+   beneath it before the next row can start. Plain CSS Grid has no
+   native masonry packing to fix this.
+   Multi-column layout DOES pack this way natively (no JS, full
+   browser support): each card flows into the shortest column next,
+   like Pinterest. Trade-off, stated plainly: reading order becomes
+   column-first (top-to-bottom within a column, then next column)
+   rather than row-first — acceptable here since these cards are
+   independent/self-contained, not a sequential form. */
 .settings-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
+  /* Load-bearing: this element is a <main>, and the bare `main` rule above
+     sets display:flex. Multi-column layout is ignored on a flex container,
+     so without this the column-width below is inert and every card stacks
+     in one full-width column. The old rule got away with omitting it only
+     because `display: grid` was doing the overriding. */
+  display: block;
+  column-width: 340px;
+  column-gap: 16px;
   padding: 20px;
   max-width: 1500px;
   margin: 0 auto;
   width: 100%;
-  align-items: start;
   animation: fadeIn 400ms ease;
+}
+.settings-grid > * {
+  break-inside: avoid;
+  margin-bottom: 16px;
+  display: inline-block;
+  width: 100%;
 }
 
 /* Universal truncation-safe field row: label + input/value + optional
