@@ -37,6 +37,7 @@ import {
   roundTemperature,
   runNaming,
   runTaskScope,
+  sentenceCase,
   startDisabledReason,
   greedyInterlock,
   heartbeatAgeMs,
@@ -193,7 +194,7 @@ function heroIdentity(
   const spawned = current.running ? current.run : null;
   const naming = detail
     ? runNaming(detail.models, detail.config)
-    : { name: "no run selected", model: null };
+    : { name: "No run selected", model: null };
 
   // The primary name is the model, never the label. `--model` states an
   // expectation and `--label` overwrites the recorded name outright
@@ -221,7 +222,7 @@ function heroIdentity(
   const showingSpawnedRun =
     !!spawned?.folder && detailFolder === spawned.folder;
 
-  let displayName = "no run selected";
+  let displayName = "No run selected";
   if (realModel) displayName = realModel;
   else if (alias) displayName = alias;
   else if (spawned) displayName = "starting…";
@@ -287,8 +288,8 @@ function HeroCard({
     targetUrl;
   const heartbeatText =
     beatAge === null
-      ? "no heartbeat yet"
-      : `heartbeat ${Math.round(beatAge / 1000)}s ago`;
+      ? "No heartbeat yet"
+      : `Heartbeat ${Math.round(beatAge / 1000)}s ago`;
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -386,7 +387,7 @@ function HeroCard({
               margin: "0 0 8px",
             }}
           >
-            first sample in progress — no results file yet. bench.py writes
+            First sample in progress — no results file yet. bench.py writes
             results.json when a sample completes, so scores and strips appear
             after the first one lands.
           </div>
@@ -916,11 +917,11 @@ function RunSetupCard({
   };
   const temperatureInherited =
     override.temperature === undefined && activeTemperature !== null;
-  let temperatureHint = "overriding the active model";
+  let temperatureHint = "Overriding the active model";
   if (temperatureInherited)
-    temperatureHint = "inherited from active model · click to override";
+    temperatureHint = "Inherited from the active model · click to override";
   else if (activeTemperature === null)
-    temperatureHint = "no active model to inherit from — sent explicitly";
+    temperatureHint = "No active model to inherit from — sent explicitly";
 
   const set = <K extends keyof RunForm>(key: K, value: RunForm[K]) =>
     setOverride((o) => ({ ...o, [key]: value }));
@@ -1028,7 +1029,7 @@ function RunSetupCard({
               an expectation, not a picker. */}
           <Field
             label="Model ID"
-            hint="which model this run expects — leave blank to trust whatever the server reports"
+            hint="Which model this run expects — leave blank to trust whatever the server reports"
           >
             {/* A datalist, not a <select>: it gives the dropdown while
                 leaving the field free-text, so a model Run Models has never
@@ -1060,7 +1061,7 @@ function RunSetupCard({
 
           <Field
             label="Benchmark Alias"
-            hint="optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded"
+            hint="Optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded"
           >
             <input
               data-testid="bench-field-label"
@@ -1079,8 +1080,8 @@ function RunSetupCard({
             label="URL"
             hint={
               isNonDefaultTarget(targetUrl, defaultUrl)
-                ? "not the configured llama-server"
-                : "defaults to the configured llama-server"
+                ? "Not the configured llama-server"
+                : "Defaults to the configured llama-server"
             }
           >
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -1137,7 +1138,7 @@ function RunSetupCard({
                     title={
                       t.available
                         ? `${t.tasks} ${t.lang} tasks`
-                        : `${t.lang} cannot run — ${t.reason}. ${t.tasks} tasks skipped.`
+                        : `Cannot run ${t.lang} — ${t.reason}. ${t.tasks} tasks skipped.`
                     }
                     onClick={() => toggleLang(t.lang)}
                     style={{
@@ -1160,7 +1161,7 @@ function RunSetupCard({
               })}
             </div>
             <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>
-              click to toggle · struck through = toolchain unavailable
+              Click to toggle · struck through = toolchain unavailable
             </span>
           </div>
 
@@ -1269,7 +1270,7 @@ function RunSetupCard({
           <div
             className="bench-banner"
             data-testid="bench-start-blocked"
-            title={readiness.reason}
+            title={sentenceCase(readiness.reason)}
             style={{ margin: "10px 0 0", padding: "7px 12px", fontSize: 12 }}
           >
             <TriangleAlert size={13} />
@@ -1478,7 +1479,10 @@ export default function BenchPage() {
           </PanelErrorBoundary>
 
           <PanelErrorBoundary panelName="Bench Score">
-            <ScoreCard detail={detail} />
+            {/* Same run-scoping rule as the footer and the task table: while
+                a spawned run warms, `detail` is the PREVIOUS run, and its
+                score is not this run's score. */}
+            <ScoreCard detail={identity.warming ? null : detail} />
           </PanelErrorBoundary>
 
           <PanelErrorBoundary panelName="Bench Progress">
@@ -1547,6 +1551,7 @@ export default function BenchPage() {
               bench={bench}
               now={now}
               running={running}
+              warming={identity.warming}
               outputFolder={identity.folder}
             />
           </PanelErrorBoundary>

@@ -989,11 +989,11 @@ describe("T40/T43/T44 Run Setup form", () => {
     )) as HTMLInputElement;
     // The mocked metrics context reports 0.6 (see the module mock).
     await waitFor(() => expect(temp.value).toBe("0.6"));
-    expect(screen.getByText(/inherited from active model/i)).toBeTruthy();
+    expect(screen.getByText(/Inherited from the active model/)).toBeTruthy();
 
     fireEvent.change(temp, { target: { value: "0.9" } });
     expect(temp.value).toBe("0.9");
-    expect(screen.queryByText(/inherited from active model/i)).toBeNull();
+    expect(screen.queryByText(/Inherited from the active model/)).toBeNull();
   });
 });
 
@@ -1246,7 +1246,7 @@ describe("T49/T50/T51 Dry run", () => {
     const title = screen
       .getByTestId("bench-action-dry-run")
       .getAttribute("title");
-    expect(title).toMatch(/no server answering at http:\/\/127\.0\.0\.1:8123/);
+    expect(title).toMatch(/No server answering at http:\/\/127\.0\.0\.1:8123/);
     expect(title, "the next step must be stated").toMatch(/mockserver\.py/);
   });
 });
@@ -1675,5 +1675,226 @@ describe("T59 Compare badge counts real runs", () => {
       screen.queryAllByTestId("bench-compare-col").length,
       "the badge must count the runs actually being compared",
     ).toBe(badge);
+  });
+});
+
+// T64 — the drilldown must never present another run's failure content.
+//
+// Item 5's mechanism, one level deeper: `detail` is file-derived, and during
+// a new run's warming phase it is still the PREVIOUSLY selected run. Progress
+// and the hero were re-scoped then; the task table was not, so an older run's
+// records — including its drilldown failure text — rendered underneath a run
+// that had not produced a sample.
+describe("T64 drilldown is scoped to the current run", () => {
+  const SPAWNED_B = {
+    running: true,
+    run: {
+      pid: 9001,
+      folder: "runB_20260810-030000",
+      model: "Qwen3.6-35B-APEX",
+      label: null,
+      langs: "js",
+      attempts: 1,
+      n: 1,
+      temperature: 0.6,
+      started: new Date().toISOString(),
+      url: "http://localhost:8081",
+    },
+  };
+
+  it("shows no task rows from the previous run while a new one warms", async () => {
+    // Run A's detail is loaded and full of records; run B has just spawned
+    // and has no results.json yet.
+    installFetch({ current: SPAWNED_B });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    expect(
+      screen.queryAllByTestId("bench-task-row"),
+      "a warming run has no samples — the previous run's tasks must not fill its table",
+    ).toHaveLength(0);
+    expect(screen.getByTestId("bench-this-run-empty").textContent).toMatch(
+      /no samples recorded yet/i,
+    );
+    // The Score card is the same class of surface: it means "this run".
+    expect(
+      screen.getByTestId("bench-task-avg").textContent,
+      "the previous run's score must not be attributed to the warming run",
+    ).toContain("—");
+  });
+
+  it("does not carry an open drilldown's content across a run change", async () => {
+    installFetch();
+    const { rerender } = render(<BenchPage />);
+
+    // Open a drilldown under run A and capture something only A shows.
+    const row = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(row[0]);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-canary")).toBeTruthy(),
+    );
+
+    // Run B spawns: warming, no file of its own yet.
+    installFetch({ current: SPAWNED_B });
+    rerender(<BenchPage />);
+
+    // The process-state probe runs on its own interval, so run B's arrival
+    // is not synchronous with the rerender.
+    await waitFor(
+      () => expect(screen.queryAllByTestId("bench-task-row")).toHaveLength(0),
+      { timeout: 6000 },
+    );
+    expect(
+      screen.queryByTestId("bench-canary"),
+      "run A's drilldown content must not survive into run B",
+    ).toBeNull();
+  });
+});
+
+// T63 — UI copy is sentence-cased.
+//
+// These strings came from prose inside the spec prompts, which are written in
+// a lowercase-first style; that style was quoted verbatim into real UI copy.
+// The design file is NOT a complete audit source — several of these strings
+// never appeared in it — so the rendered page is the reference.
+describe("T63a copy is sentence-cased (byte-exact)", () => {
+  const cases: Array<[string, RegExp]> = [
+    [
+      "Model ID hint",
+      /^Which model this run expects — leave blank to trust whatever the server reports$/,
+    ],
+    [
+      "Benchmark Alias hint",
+      /^Optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded$/,
+    ],
+    ["URL hint", /^Defaults to the configured llama-server$/],
+    [
+      "Languages hint",
+      /^Click to toggle · struck through = toolchain unavailable$/,
+    ],
+  ];
+  for (const [name, re] of cases) {
+    it(`${name}`, async () => {
+      installFetch();
+      render(<BenchPage />);
+      await waitFor(() => expect(screen.getByText(re)).toBeTruthy());
+    });
+  }
+
+  it("temperature hint, in all three of its states", async () => {
+    setActiveModel({ temperature: 0.6 });
+    installFetch();
+    const { unmount } = render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /^Inherited from the active model · click to override$/,
+        ),
+      ).toBeTruthy(),
+    );
+    unmount();
+
+    setActiveModel({ temperature: null });
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(/^No active model to inherit from — sent explicitly$/),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("health strip, finished-run state", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const strip = await screen.findByTestId("bench-pacing");
+    await waitFor(() => expect(strip.textContent).toMatch(/^Run stopped — /));
+  });
+
+  it("hero warming text", async () => {
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          pid: 1,
+          folder: "w_1",
+          model: "m",
+          label: null,
+          langs: "js",
+          attempts: 1,
+          n: 1,
+          temperature: 0.6,
+          started: new Date().toISOString(),
+          url: "http://localhost:8081",
+        },
+      },
+      noDetail: true,
+      runs: [],
+    });
+    render(<BenchPage />);
+    const w = await screen.findByTestId("bench-warming");
+    expect(w.textContent).toMatch(
+      /^First sample in progress — no results file yet\./,
+    );
+  });
+});
+
+// T63b — the backstop. Catches whatever the list above missed.
+describe("T63b no unexpected lowercase-first copy", () => {
+  /**
+   * Everything here is a deliberate exception, not an oversight:
+   *  - technical identifiers whose casing is part of their correctness
+   *  - brief data-label fragments that annotate a value rather than read
+   *    as prose ("of 15 graded", "est. 3m")
+   *  - bench.py's own stdout, which this page renders verbatim
+   */
+  const ALLOW = [
+    /^bench\.py\b/, // bench.py output, bench.py output appears here…
+    /^bench_dir\b/, // the unset-path chip names the setting first
+    /^runs\//, // run folder paths
+    /^https?:\/\//, // urls
+    /^--/, // CLI flags
+    /^[a-z]+\/[a-z0-9_]+$/, // task ids: js/formula_engine
+    /^(js|ts|java|gdscript|py|doc)$/, // language codes
+    /^(info|warn|error)$/, // console level filters
+    /^x̄/, // the task-mean symbol
+    /^(of|edition|localbench|tasks?|on task|set it in Settings)$/,
+    /^est\. /, // "est. 3m 17s" — a value annotation, not a sentence
+    /^(solved|failed|in progress|timeout\/format|on retry|server —)/, // strip legend fragments
+    /^(current|previous) edition$/, // section headings (CSS-uppercased)
+    /^mock \/ other server$/, // badge (CSS-uppercased)
+    /^inspect prompt$/, // lead pill label
+    /^no server answering at/, // T61's byte-exact banner — owned by that test
+    /^at a mockserver\.$/, // tail fragment of that same banner, after <code>
+    /^\d/, // anything starting with a number
+  ];
+
+  it("every rendered text node and tooltip starts uppercase or is allowlisted", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+
+    const offenders: string[] = [];
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      const t = (n.textContent ?? "").trim();
+      if (!t || !/^[a-z]/.test(t)) continue;
+      if (!ALLOW.some((re) => re.test(t))) offenders.push(t);
+    }
+    container.querySelectorAll("[title]").forEach((e) => {
+      const t = (e.getAttribute("title") ?? "").trim();
+      if (!t || !/^[a-z]/.test(t)) return;
+      if (!ALLOW.some((re) => re.test(t))) offenders.push(t);
+    });
+
+    expect(
+      [...new Set(offenders)],
+      "lowercase-first copy that is not an allowlisted exception",
+    ).toEqual([]);
   });
 });

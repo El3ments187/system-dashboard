@@ -139,18 +139,32 @@ export function TasksAndRuns({
   bench,
   now,
   running,
+  warming,
   outputFolder,
 }: {
   bench: BenchData;
   now: number;
   running: boolean;
+  /** A spawned run whose results.json does not exist yet. */
+  warming: boolean;
   /** Run folder for the Console tab's toolbar note (moved out of the hero). */
   outputFolder: string;
 }) {
   const { detail, runs, storedDetails, selectRun, refresh } = bench;
+  // While a spawned run is warming, `detail` is still the PREVIOUS run, so
+  // that is the identity this pane must refuse to draw as "this run".
+  const runKey = warming
+    ? `warming:${bench.current.run?.folder ?? ""}`
+    : (detail?.run_id ?? "none");
   const [tab, setTab] = useState<BenchTab>("tasks");
   const [query, setQuery] = useState("");
-  const [openTask, setOpenTask] = useState<string | null>(null);
+  // Keyed by RUN AND TASK. Keyed by task alone, an expanded drilldown
+  // stayed expanded when the run underneath it changed — and a run change is
+  // exactly when its contents stop belonging to what is on screen.
+  const [openTask, setOpenTask] = useState<{
+    runKey: string;
+    task: string;
+  } | null>(null);
   const [compareIds, setCompareIds] = useState<string[] | null>(null);
 
   const currentEdition = detail?.suite_hash ?? runs[0]?.suite_hash ?? "";
@@ -262,8 +276,9 @@ export function TasksAndRuns({
         <ThisRunPane
           detail={detail}
           query={query}
-          openTask={openTask}
-          setOpenTask={setOpenTask}
+          warming={warming}
+          openTask={openTask?.runKey === runKey ? openTask.task : null}
+          setOpenTask={(task) => setOpenTask(task ? { runKey, task } : null)}
         />
       )}
       {tab === "hist" && (
@@ -308,16 +323,25 @@ export function TasksAndRuns({
 
 function ThisRunPane({
   detail,
+  warming,
   query,
   openTask,
   setOpenTask,
 }: {
   detail: BenchRunDetail | null;
+  /** A spawned run whose results.json does not exist yet. */
+  warming: boolean;
   query: string;
   openTask: string | null;
   setOpenTask: (t: string | null) => void;
 }) {
-  const records = useMemo(() => detail?.records ?? [], [detail]);
+  // Nothing file-derived describes the spawned run until its own file lands.
+  // Rendering `detail` here is how another run's failure detail appeared
+  // under a run that had not completed a sample.
+  const records = useMemo(
+    () => (warming ? [] : (detail?.records ?? [])),
+    [detail, warming],
+  );
   const trunc = useMemo(() => truncationState(records), [records]);
   const byTask = useMemo(() => groupByTask(records), [records]);
   const expectedSamples = detail?.config?.n ?? 1;
@@ -326,9 +350,23 @@ function ThisRunPane({
     task.toLowerCase().includes(query.toLowerCase()),
   );
 
+  if (warming)
+    return (
+      <div
+        data-testid="bench-this-run-empty"
+        style={{ padding: 16, color: "var(--text-muted)" }}
+      >
+        No samples recorded yet for this run. bench.py writes results.json when
+        the first sample completes; task rows appear then.
+      </div>
+    );
+
   if (!detail)
     return (
-      <div style={{ padding: 16, color: "var(--text-muted)" }}>
+      <div
+        data-testid="bench-this-run-empty"
+        style={{ padding: 16, color: "var(--text-muted)" }}
+      >
         No run selected.
       </div>
     );
@@ -478,7 +516,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
   // never read as one figure.
   const est = worst.tokens_estimated ? "~" : "";
   const estTitle = worst.tokens_estimated
-    ? "estimated by the harness, not reported by the server"
+    ? "Estimated by the harness, not reported by the server"
     : undefined;
 
   return (
@@ -711,7 +749,7 @@ function HistoryPane({
                 font: "11px Inter, system-ui, sans-serif",
               }}
             >
-              edition changed — scores across this line measure different
+              Edition changed — scores across this line measure different
               benchmarks
             </div>
           )}
@@ -825,7 +863,7 @@ function HistoryPane({
                     (chips.up.length > 0 || chips.down.length > 0) && (
                       <span
                         data-testid="bench-regression-chips"
-                        title={`vs the previous run of the same model in this edition. Newly solved: ${chips.up.join(", ") || "none"}. Regressed: ${chips.down.join(", ") || "none"}. A solved→unsolved flip within one edition is a real capability change, not benchmark drift.`}
+                        title={`Compared with the previous run of the same model in this edition. Newly solved: ${chips.up.join(", ") || "none"}. Regressed: ${chips.down.join(", ") || "none"}. A solved→unsolved flip within one edition is a real capability change, not benchmark drift.`}
                         style={{
                           display: "inline-flex",
                           gap: 6,

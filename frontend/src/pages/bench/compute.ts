@@ -468,6 +468,12 @@ export function classifyBenchLine(line: string): BenchLogLevel {
  * up after three server errors. Returning the reason rather than a boolean
  * is what lets the UI say WHY.
  */
+/** First letter upper-cased, for strings composed elsewhere (the backend's
+ *  readiness reason) that still have to read as sentences here. */
+export function sentenceCase(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
 export function startDisabledReason(opts: {
   running: boolean;
   serverReady: boolean;
@@ -475,11 +481,14 @@ export function startDisabledReason(opts: {
   haveFlags: boolean;
 }): string | null {
   if (opts.running)
-    return "a run is active — Start enables when it finishes or is stopped";
+    return "A run is active — Start enables when it finishes or is stopped";
   if (!opts.serverReady)
-    return opts.serverReason || "no server answering at the configured url";
+    return (
+      sentenceCase(opts.serverReason) ||
+      "No server answering at the configured url"
+    );
   if (!opts.haveFlags)
-    return "no previous run to take flags from — run bench.py once from the CLI first";
+    return "No previous run to take flags from — run bench.py once from the CLI first";
   return null;
 }
 
@@ -532,19 +541,19 @@ export function healthStripText(opts: {
 }): string {
   if (!opts.running) {
     if (opts.elapsed === null && opts.samples === null)
-      return "no run selected — pick one from History to see its result.";
+      return "No run selected — pick one from History to see its result.";
     const samples = opts.samples ?? 0;
-    return `run stopped — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${
+    return `Run stopped — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${
       samples === 1 ? "sample" : "samples"
     } recorded. No heartbeat: nothing is running.`;
   }
   if (opts.warming)
-    return "warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
+    return "Warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
   if (opts.median === null)
-    return "no stored median for this task yet — the heartbeat is the only health signal";
+    return "No stored median for this task yet — the heartbeat is the only health signal";
   const verdict =
     (opts.taskElapsed ?? 0) <= opts.median ? "on pace" : "over median";
-  return `median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Heartbeat and median decide health; elapsed alone proves nothing.`;
+  return `Median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Heartbeat and median decide health; elapsed alone proves nothing.`;
 }
 
 /**

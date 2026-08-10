@@ -215,7 +215,7 @@ export function BenchConsole({
           <div style={{ color: "var(--text-muted)" }}>
             {lines.length === 0
               ? "bench.py output appears here while a run is active."
-              : "no lines match the current filters."}
+              : "No lines match the current filters."}
           </div>
         ) : (
           visible.map((l, i) => (

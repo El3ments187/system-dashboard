@@ -17,13 +17,13 @@ const CELL_CLASS: Record<CellState, string> = {
 };
 
 const CELL_TITLE: Record<CellState, string> = {
-  solved: "solved on the first attempt — full points",
-  "solved-late": "solved on a retry — one point fewer per extra attempt",
-  miss: "failed after every attempt",
-  timeout: "timed out or the reply could not be parsed",
-  server: "the endpoint never answered — excluded from every rate, not a zero",
+  solved: "Solved on the first attempt — full points",
+  "solved-late": "Solved on a retry — one point fewer per extra attempt",
+  miss: "Failed after every attempt",
+  timeout: "Timed out or the reply could not be parsed",
+  server: "The endpoint never answered — excluded from every rate, not a zero",
   live: "in progress",
-  pending: "not run yet",
+  pending: "Not run yet",
 };
 
 /**
