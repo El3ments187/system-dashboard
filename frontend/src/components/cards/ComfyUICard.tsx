@@ -223,6 +223,9 @@ export default function ComfyUICard() {
           <Section title="Command">
             <div style={{ display: "flex", gap: 5 }}>
               <input
+                id="comfyui-command"
+                name="comfyui-command"
+                aria-label="Command to run"
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onKeyDown={(e) =>

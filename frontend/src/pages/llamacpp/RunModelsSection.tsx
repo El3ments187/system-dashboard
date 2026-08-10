@@ -339,6 +339,8 @@ export function RunModelsSection() {
             <Search size={10} style={{ color: "var(--text-muted)" }} />
             <input
               type="text"
+              id="run-models-search"
+              name="run-models-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search models…"

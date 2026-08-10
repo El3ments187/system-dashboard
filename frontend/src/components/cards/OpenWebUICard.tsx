@@ -223,6 +223,9 @@ export default function OpenWebUICard() {
           <Section title="Command">
             <div style={{ display: "flex", gap: 5 }}>
               <input
+                id="openwebui-command"
+                name="openwebui-command"
+                aria-label="Command to run"
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onKeyDown={(e) =>
