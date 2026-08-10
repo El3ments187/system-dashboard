@@ -366,7 +366,9 @@ test.describe("Pulse color consistency: uses --accent-glow not --accent-primary"
               return sr.style.cssText + " / background: " + sr.style.background;
             }
           }
-        } catch (_) {}
+        } catch {
+          // Cross-origin stylesheet: unreadable by design, not a failure.
+        }
       }
       // Fallback: check all rules text
       const all: string[] = [];
@@ -375,7 +377,9 @@ test.describe("Pulse color consistency: uses --accent-glow not --accent-primary"
           for (const rule of Array.from(sheet.cssRules)) {
             all.push((rule as CSSStyleRule).cssText || "");
           }
-        } catch (_) {}
+        } catch {
+          // Cross-origin stylesheet: unreadable by design, not a failure.
+        }
       }
       const match = all.find((t) => t.includes(".accent-glow-target::before"));
       return match ?? null;

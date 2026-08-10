@@ -146,7 +146,7 @@ test.describe("Storage Performance chart - read/write dual-line relationship", (
       .map((p) => p.stroke!.toLowerCase());
 
     expect(solid.length).toBeGreaterThan(0);
-    expect(dashed.length).toBe(solid.length);
+    expect(dashed).toHaveLength(solid.length);
 
     for (let i = 0; i < solid.length; i++) {
       expect(dashed[i]).not.toBe(solid[i]); // never identical (the original bug)

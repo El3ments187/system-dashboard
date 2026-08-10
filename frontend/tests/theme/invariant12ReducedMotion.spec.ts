@@ -3,7 +3,7 @@
  * prefers-reduced-motion: reduce is active.
  * Effects still render statically (not removed), but no animation runs.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { setAccentMode } from "../helpers/e2eThemeAssertions";
 
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:5173";

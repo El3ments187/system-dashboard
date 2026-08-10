@@ -70,7 +70,6 @@ async function generate(prompt: string, maxTokens = 200): Promise<void> {
   if (!res.ok)
     throw new Error(`llama.cpp /v1/chat/completions returned ${res.status}`);
   const reader = res.body!.getReader();
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const { done } = await reader.read();
     if (done) break;

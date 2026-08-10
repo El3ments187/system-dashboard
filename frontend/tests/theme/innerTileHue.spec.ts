@@ -479,7 +479,7 @@ test("Semantic colors: Online/Offline badges unchanged between Solid and Spectru
     return;
   }
   expect(solidColors.length, "need at least one status badge").toBeGreaterThan(0);
-  expect(solidColors.length).toBe(spectrumColors.length);
+  expect(solidColors).toHaveLength(spectrumColors.length);
 
   for (let i = 0; i < solidColors.length; i++) {
     expect(
