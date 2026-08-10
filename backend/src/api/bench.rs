@@ -170,6 +170,25 @@ pub(crate) fn models_probe_url(base: &str) -> String {
 /// endpoint to benchmark. An empty model list still counts — bench.py can
 /// auto-detect, and benching a mockserver with no model loaded is
 /// legitimate.
+/// The model ids the target actually reports.
+///
+/// `--model` is only an EXPECTATION: bench.py passes it through and never
+/// checks it against the server, so a stale value is recorded verbatim and
+/// the run becomes un-attributable. Returning what the endpoint really says
+/// lets the page compare the two before a run starts.
+pub(crate) fn reported_models(models_body: &str) -> Vec<String> {
+    serde_json::from_str::<Value>(models_body)
+        .ok()
+        .and_then(|v| v.get("data").and_then(|d| d.as_array().cloned()))
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|i| i.get("id").and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn server_answering(models_body: &str) -> bool {
     serde_json::from_str::<Value>(models_body)
         .ok()
@@ -566,7 +585,7 @@ pub async fn ready_handler(
     let base = q.url.unwrap_or_default();
     if base.trim().is_empty() {
         return axum::response::Json(json!({
-            "data": { "ready": false, "url": base, "reason": "no url configured" },
+            "data": { "ready": false, "url": base, "reason": "No url configured" },
             "success": true
         }));
     }
@@ -575,18 +594,34 @@ pub async fn ready_handler(
     let result =
         tokio::time::timeout(std::time::Duration::from_secs(3), client.get(&probe).send()).await;
 
-    let (ready, reason) = match result {
+    // Sentence-cased here, at the source. These strings are rendered as UI
+    // copy, and a display-layer capitalisation pass was only ever a stopgap.
+    let (ready, reason, models) = match result {
         Ok(Ok(resp)) => match resp.text().await {
-            Ok(body) if server_answering(&body) => (true, String::new()),
-            Ok(_) => (false, format!("{probe} did not return a model list")),
-            Err(e) => (false, format!("could not read {probe}: {e}")),
+            Ok(body) if server_answering(&body) => (true, String::new(), reported_models(&body)),
+            Ok(_) => (
+                false,
+                format!("{probe} did not return a model list"),
+                vec![],
+            ),
+            Err(e) => (false, format!("Could not read {probe}: {e}"), vec![]),
         },
-        Ok(Err(e)) => (false, format!("no server answering at {base}: {e}")),
-        Err(_) => (false, format!("no server answering at {base}: timed out")),
+        Ok(Err(e)) => (false, format!("No server answering at {base}: {e}"), vec![]),
+        Err(_) => (
+            false,
+            format!("No server answering at {base}: timed out"),
+            vec![],
+        ),
     };
 
     axum::response::Json(json!({
-        "data": { "ready": ready, "url": base, "probe": probe, "reason": reason },
+        "data": {
+            "ready": ready,
+            "url": base,
+            "probe": probe,
+            "reason": reason,
+            "models": models
+        },
         "success": true
     }))
 }
@@ -951,6 +986,25 @@ mod tests {
         assert!(!server_answering(r#"{"error":"no model loaded"}"#));
         // The stricter queue check still demands the exact id.
         assert!(!queue_advance_ready(r#"{"data":[]}"#, "some-model"));
+    }
+
+    // T65 — the ids the target actually reports, so a stale --model can be
+    // caught before a 35-minute run records the wrong name forever.
+    #[test]
+    fn t65_reported_models_reads_the_ids_the_endpoint_returns() {
+        assert_eq!(
+            reported_models(r#"{"data":[{"id":"Qwen3.6-35B-APEX"}]}"#),
+            vec!["Qwen3.6-35B-APEX".to_string()]
+        );
+        assert_eq!(
+            reported_models(r#"{"data":[{"id":"a"},{"id":"b"}]}"#),
+            vec!["a".to_string(), "b".to_string()]
+        );
+        // An empty roster is still a live server; it just names nothing to
+        // compare against, which must read as "unknown", not as a mismatch.
+        assert!(reported_models(r#"{"data":[]}"#).is_empty());
+        assert!(reported_models("connection refused").is_empty());
+        assert!(reported_models(r#"{"data":[{"name":"no-id-field"}]}"#).is_empty());
     }
 
     // T06 — start refusal.
