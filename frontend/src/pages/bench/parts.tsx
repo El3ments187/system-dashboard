@@ -26,6 +26,16 @@ const CELL_TITLE: Record<CellState, string> = {
   pending: "not run yet",
 };
 
+/**
+ * In-app navigation for the links this page offers ("set it in Settings",
+ * "Start a model on the llama.cpp page"). App.tsx routes off `popstate`, so
+ * pushing and dispatching keeps it a client-side move rather than a reload.
+ */
+export function navigateTo(path: string) {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 export function AttemptCell({
   state,
   decorative,

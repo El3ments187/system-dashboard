@@ -27,10 +27,17 @@ const LEVEL_COLOR: Record<BenchLogLevel, string> = {
 export function BenchConsole({
   running,
   active,
+  outputFolder,
 }: {
   running: boolean;
   /** Whether the Console tab is the one on screen. */
   active: boolean;
+  /**
+   * The run folder bench.py is writing to. It lives here rather than in the
+   * hero because the folder and the stdout of the process filling it are
+   * one subject — anyone reading the log has the path to open right there.
+   */
+  outputFolder: string;
 }) {
   const [lines, setLines] = useState<string[]>([]);
   const [filters, setFilters] = useState<Record<BenchLogLevel, boolean>>({
@@ -120,6 +127,12 @@ export function BenchConsole({
           }}
         >
           bench.py output
+          {outputFolder && (
+            <span data-testid="bench-console-output" style={{ opacity: 0.85 }}>
+              {" · "}
+              <span style={{ fontFamily: MONO }}>runs/{outputFolder}</span>
+            </span>
+          )}
         </span>
         {LEVELS.map((lvl) => (
           <button
@@ -161,6 +174,8 @@ export function BenchConsole({
             }}
           />
           <input
+            id="bench-search-logs"
+            name="bench-search-logs"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search logs…"

@@ -24,13 +24,26 @@ vi.mock("../context/AlertsContext", () => ({
 }));
 
 import BenchPage from "../pages/BenchPage";
+import { serverUnreachableCopy } from "../pages/bench/compute";
 import Header from "../components/Header";
 
+// Mutable so a test can change what the ACTIVE model reports — the source
+// Run Setup's temperature and the hero's primary name both read.
+const { activeModelMock } = vi.hoisted(() => ({
+  activeModelMock: {
+    temperature: 0.6 as number | null,
+    model_path: null as string | null,
+    model_alias: null as string | null,
+  },
+}));
+function setActiveModel(next: Partial<typeof activeModelMock>) {
+  Object.assign(activeModelMock, next);
+}
 vi.mock("../context/MetricsContext", () => ({
   // The active model's sampling temperature is what Run Setup inherits.
   useMetricsContext: () => ({
     systemMetrics: null,
-    aiCurrentMetrics: { temperature: 0.6 },
+    aiCurrentMetrics: activeModelMock,
   }),
 }));
 vi.mock("../context/LiveDataControlsContext", () => ({
@@ -133,6 +146,10 @@ interface MockOpts {
   ready?: { ready: boolean; url: string; reason: string };
   /** What /api/ai/settings reports. */
   settings?: Record<string, unknown> | null;
+  /** RUN MODELS profiles backing the Model dropdown. */
+  profiles?: unknown[];
+  /** Override the --check payload (per-language availability). */
+  check?: unknown;
   /** Process state from POST /api/bench/start, before any results.json. */
   current?: { running: boolean; run: unknown };
   /** Simulate results.json not existing yet. */
@@ -158,9 +175,22 @@ function installFetch(opts: MockOpts = {}) {
     if (url.includes("/api/bench/check")) {
       if (opts.failCheck)
         return Promise.resolve({ ok: false, status: 500 } as Response);
-      return ok(CHECK);
+      return ok(opts.check ?? CHECK);
     }
     if (url.includes("/api/bench/tasks")) return ok(TASK_LIST);
+    if (url.includes("/api/launch/profiles"))
+      return ok({
+        profiles: opts.profiles ?? [
+          {
+            name: "qwen.sh",
+            parsed_args: { alias: "Qwen3.6-27B-UD-Q4_K_XL" },
+          },
+          {
+            name: "gemma.sh",
+            parsed_args: { model_path: "/models/gemma-4-26B-it-qat.gguf" },
+          },
+        ],
+      });
     if (url.includes("/api/ai/settings"))
       return Promise.resolve({
         ok: true,
@@ -209,6 +239,7 @@ function installFetch(opts: MockOpts = {}) {
 
 beforeEach(() => {
   addAlert.mockClear();
+  setActiveModel({ temperature: 0.6, model_path: null, model_alias: null });
 });
 
 afterEach(() => {
@@ -246,7 +277,7 @@ describe("T08 Row-1 cards render from /api/bench data", () => {
     // Wait on real data, not on a tile that renders "—" before it arrives.
     await waitFor(() =>
       expect(screen.getByTestId("bench-hero-model").textContent).toContain(
-        "seedA",
+        "buggy-model",
       ),
     );
     expect(screen.getByTestId("bench-task-avg").textContent).not.toContain("—");
@@ -257,12 +288,20 @@ describe("T08 Row-1 cards render from /api/bench data", () => {
   it("surfaces the missing toolchain that --check reports, rather than assuming", async () => {
     installFetch();
     render(<BenchPage />);
+    // The tool-level row moved to Settings (Item 11). What remains here is
+    // the consequence for a RUN: the language cannot be selected.
     await waitFor(() =>
-      expect(screen.getByTestId("bench-track-gdscript")).toBeTruthy(),
+      expect(screen.getByTestId("bench-lang-gdscript")).toBeTruthy(),
     );
-    expect(screen.getByTestId("bench-track-gdscript").textContent).toContain(
-      "8 skipped",
+    const gd = screen.getByTestId("bench-lang-gdscript") as HTMLButtonElement;
+    expect(gd.disabled, "an unavailable language must not be selectable").toBe(
+      true,
     );
+    expect(gd.getAttribute("title")).toContain("skipped");
+    expect(
+      screen.queryByTestId("bench-track-gdscript"),
+      "the tool-level diagnostic row now lives on Settings",
+    ).toBeNull();
   });
 
   it("keeps rendering when the check endpoint fails", async () => {
@@ -440,8 +479,12 @@ describe("T34/T35 hero liveness", () => {
         "Qwen3.6-27B",
       ),
     );
-    // Identity row is fully populated from process state alone.
-    expect(screen.getByText(/a3 · n3 · t0.6/)).toBeTruthy();
+    // Identity row is fully populated from process state alone. Config is
+    // no longer echoed here — Run Setup owns it (Item 8) — so the started
+    // clock is what proves process state reached the hero.
+    expect(screen.getByTestId("bench-hero-tiles").textContent).toMatch(
+      /Started/,
+    );
     // ...and the missing file is stated honestly rather than shown as empty.
     const warming = screen.getByTestId("bench-warming");
     expect(warming.textContent).toMatch(/no results file yet/i);
@@ -518,11 +561,13 @@ describe("T36 label vs model", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("bench-hero-model").textContent).toContain(
-        "livecap",
+        "Qwen3.6-27B",
       ),
     );
-    const real = screen.getByTestId("bench-hero-real-model");
-    expect(real.textContent).toContain("Qwen3.6-27B");
+    // The label is shown as a label, never as the name of a model.
+    const alias = screen.getByTestId("bench-hero-alias");
+    expect(alias.textContent).toContain("Benchmark Alias");
+    expect(alias.textContent).toContain("livecap");
   });
 
   it("shows ONE name when there is no label — no duplicate-name spam", async () => {
@@ -538,7 +583,7 @@ describe("T36 label vs model", () => {
       ),
     );
     expect(
-      screen.queryByTestId("bench-hero-real-model"),
+      screen.queryByTestId("bench-hero-alias"),
       "an unlabelled run must not render a redundant second name",
     ).toBeNull();
   });
@@ -619,7 +664,7 @@ describe("run controls", () => {
     // no run to repeat, so asserting earlier would pass for the wrong reason.
     await waitFor(() =>
       expect(screen.getByTestId("bench-hero-model").textContent).toContain(
-        "seedA",
+        "buggy-model",
       ),
     );
     expect(
@@ -797,7 +842,7 @@ describe("T38 target visibility", () => {
     render(<BenchPage />);
     await waitFor(() =>
       expect(screen.getByTestId("bench-hero-model").textContent).toContain(
-        "seedA",
+        "buggy-model",
       ),
     );
     expect(
@@ -917,8 +962,8 @@ describe("T40/T43/T44 Run Setup form", () => {
     );
     for (const id of [
       "bench-field-model",
+      "bench-field-label",
       "bench-url-field",
-      "bench-field-langs",
       "bench-field-attempts",
       "bench-field-n",
       "bench-field-temperature",
@@ -1051,6 +1096,161 @@ describe("T47 hero task count", () => {
   });
 });
 
+// T48 — Model is a dropdown, but not a cage.
+describe("T48 Model dropdown", () => {
+  it("lists the models RUN MODELS knows about", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    // The datalist is what makes it a dropdown while keeping it typable.
+    expect(field.getAttribute("list")).toBe("bench-model-options");
+    await waitFor(() => {
+      const options = Array.from(
+        screen.getByTestId("bench-model-options").querySelectorAll("option"),
+      ).map((o) => o.getAttribute("value"));
+      // alias when the script sets one, else the model file's basename.
+      expect(options).toContain("Qwen3.6-27B-UD-Q4_K_XL");
+      expect(options).toContain("gemma-4-26B-it-qat.gguf");
+    });
+  });
+
+  it("still accepts a name that is NOT in the list, and submits it", async () => {
+    const calls = installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+
+    fireEvent.change(field, { target: { value: "some-unlisted-mock" } });
+    expect(field.value).toBe("some-unlisted-mock");
+    fireEvent.click(screen.getByTestId("bench-action-start-run"));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/start"))).toBe(true),
+    );
+    const body = JSON.parse(
+      (
+        global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+      ).mock.calls.find(([u]) => String(u).includes("/api/bench/start"))![1]
+        .body as string,
+    ) as { model: string };
+    expect(
+      body.model,
+      "a model outside the dropdown must not be silently dropped",
+    ).toBe("some-unlisted-mock");
+  });
+});
+
+// T49 / T50 / T51 — Dry run is the normal pipeline, pointed elsewhere.
+describe("T49/T50/T51 Dry run", () => {
+  const startBody = () =>
+    JSON.parse(
+      (
+        global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+      ).mock.calls.find(([u]) => String(u).includes("/api/bench/start"))![1]
+        .body as string,
+    ) as { url: string };
+
+  it("T49 starts a run against the mockserver address, not the configured one", async () => {
+    const calls = installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-dry-run"));
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/start"))).toBe(true),
+    );
+    expect(startBody().url).toBe("http://127.0.0.1:8123");
+  });
+
+  it("T50 leaves the configured url field byte-identical", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-url-field",
+    )) as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe("http://localhost:8081"));
+    const before = field.value;
+
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-dry-run"));
+
+    expect(
+      (screen.getByTestId("bench-url-field") as HTMLInputElement).value,
+      "a dry run must not silently repoint the configured url",
+    ).toBe(before);
+  });
+
+  it("T51 faces the same readiness gate, for the MOCK address", async () => {
+    // The configured server answers; the mockserver does not.
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready")) {
+        const down = url.includes("8123");
+        return okJson({
+          ready: !down,
+          url: down ? "http://127.0.0.1:8123" : "http://localhost:8081",
+          reason: down
+            ? "no server answering at http://127.0.0.1:8123: connection refused"
+            : "",
+        });
+      }
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson([runRow()]);
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    // Normal Start is fine — the configured server answers.
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    // Dry run is gated on the MOCK address, and says so.
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(true),
+    );
+    const title = screen
+      .getByTestId("bench-action-dry-run")
+      .getAttribute("title");
+    expect(title).toMatch(/no server answering at http:\/\/127\.0\.0\.1:8123/);
+    expect(title, "the next step must be stated").toMatch(/mockserver\.py/);
+  });
+});
+
 // T23 / T24 — the drilldown.
 describe("T23/T24 drilldown", () => {
   async function openFirstTask(detail: unknown) {
@@ -1104,5 +1304,376 @@ describe("T23/T24 drilldown", () => {
     const canary = await screen.findByTestId("bench-canary");
     expect(canary.textContent).not.toMatch(/SUITE DRIFT/);
     expect(canary.textContent).toMatch(/42\/42/);
+  });
+});
+
+// T52 — the health strip has THREE states. Only two were ever specified, so
+// a finished run fell through to live pacing copy with no heartbeat behind it.
+describe("T52 health strip states", () => {
+  it("reports a finished run instead of live pacing copy", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const strip = await screen.findByTestId("bench-pacing");
+    await waitFor(() => expect(strip.textContent).toMatch(/run stopped/i));
+    expect(
+      strip.textContent,
+      "a stopped run has no heartbeat to call a health signal",
+    ).not.toMatch(/heartbeat is the only health signal/i);
+    expect(strip.textContent).toMatch(/samples recorded/i);
+  });
+
+  it("keeps the live pacing copy while a run is actually running", async () => {
+    const live = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (live as { live: Record<string, unknown> }).live = {
+      current_task: "js/formula_engine",
+      done: 2,
+      total: 12,
+      task_elapsed: 30,
+      heartbeat: new Date().toISOString(),
+    };
+    installFetch({ detail: live });
+    render(<BenchPage />);
+    const strip = await screen.findByTestId("bench-pacing");
+    await waitFor(() =>
+      expect(strip.textContent).toMatch(/health signal|median for this task/i),
+    );
+    expect(strip.textContent).not.toMatch(/run stopped/i);
+  });
+});
+
+// T54 — Progress must not describe the PREVIOUS run while a new one warms.
+describe("T54 Progress during warming", () => {
+  it("shows no carried-over sample count, elapsed or gauge", async () => {
+    // A finished run is loaded (12 samples, 100% gauge) and a DIFFERENT run
+    // has just been spawned — the exact split-brain that showed one run in
+    // the hero and another in Progress.
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          pid: 4242,
+          folder: "qwen_20260809-120000",
+          model: "Qwen3.6-27B-UD-Q4_K_XL",
+          label: null,
+          langs: "js,ts",
+          attempts: 3,
+          n: 3,
+          temperature: 0.6,
+          started: "2026-08-09T12:00:00Z",
+          url: "http://localhost:8081",
+        },
+      },
+    });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    expect(
+      screen.getByTestId("bench-gauge-label").textContent,
+      "the previous run's completed gauge must not light up the new one",
+    ).not.toBe("100");
+    const progress = screen.getByTestId("bench-progress-tiles").textContent;
+    expect(
+      progress,
+      "the previous run's sample count must not carry",
+    ).not.toMatch(/12/);
+  });
+});
+
+// T55 — float32 noise from the server is not a temperature to show.
+describe("T55 inherited temperature formatting", () => {
+  it("renders 0.30, not the raw float32 round-trip", async () => {
+    setActiveModel({ temperature: 0.30000001192092896 });
+    installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-temperature",
+    )) as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe("0.3"));
+    expect(field.value).not.toContain("0.30000001");
+  });
+
+  it("sends the same rounded value it displays", async () => {
+    setActiveModel({ temperature: 0.30000001192092896 });
+    const calls = installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-start-run"));
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/start"))).toBe(true),
+    );
+    const body = JSON.parse(
+      (
+        global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+      ).mock.calls.find(([u]) => String(u).includes("/api/bench/start"))![1]
+        .body as string,
+    ) as { temperature: number };
+    expect(
+      body.temperature,
+      "displaying one temperature and benchmarking another would be worse than the noise",
+    ).toBe(0.3);
+  });
+});
+
+// T56 — Model ID blank + an alias must still name the real model.
+describe("T56 Model ID vs Benchmark Alias", () => {
+  it("shows the ACTIVE model as the name and the alias as an alias", async () => {
+    setActiveModel({ model_path: "/models/Qwen3.6-35B-APEX-Q3_K_L.gguf" });
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          folder: "looping_20260809-120000",
+          // Model ID was left blank; only a label was given.
+          model: null,
+          label: "looping-model",
+          langs: "js",
+          attempts: 1,
+          n: 1,
+          temperature: 0.6,
+          started: new Date().toISOString(),
+          url: "http://localhost:8081",
+          pid: 4242,
+        },
+      },
+      noDetail: true,
+      runs: [],
+    });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "Qwen3.6-35B-APEX",
+      ),
+    );
+    expect(
+      screen.getByTestId("bench-hero-model").textContent,
+      "a label must never stand in for the model name",
+    ).not.toContain("looping-model");
+    const alias = screen.getByTestId("bench-hero-alias");
+    expect(alias.textContent).toContain("Benchmark Alias");
+    expect(alias.textContent).toContain("looping-model");
+  });
+});
+
+// T57 — Config left the hero; Output moved next to the log it belongs with.
+describe("T57 hero tiles and Output relocation", () => {
+  it("renders exactly two hero tiles, with no Config echo", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-hero-tiles");
+    expect(tiles.textContent).toMatch(/Started/);
+    expect(tiles.textContent).toMatch(/Elapsed/);
+    expect(
+      tiles.textContent,
+      "Run Setup owns configuration; a compressed copy here is the duplication that was removed",
+    ).not.toMatch(/Config/);
+    expect(tiles.textContent).not.toMatch(/Output/);
+  });
+
+  it("puts the run folder in the Console tab's toolbar, once", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const out = await screen.findByTestId("bench-console-output");
+    expect(out.textContent).toContain("seedA_20260808-223558");
+    expect(
+      screen.queryAllByText(/runs\/seedA_20260808-223558/),
+      "the path belongs in one place, not two",
+    ).toHaveLength(1);
+  });
+});
+
+// T58 — Languages is four toggles sourced from real availability.
+describe("T58 language toggles", () => {
+  it("toggles independently and submits exactly what is left on", async () => {
+    const calls = installFetch({
+      check: {
+        ...CHECK,
+        tracks: [
+          { lang: "js", tasks: 4, available: true, reason: "" },
+          { lang: "ts", tasks: 7, available: true, reason: "" },
+          { lang: "java", tasks: 8, available: true, reason: "" },
+          {
+            lang: "gdscript",
+            tasks: 8,
+            available: false,
+            reason: "godot not on PATH",
+          },
+        ],
+      },
+    });
+    render(<BenchPage />);
+    // Wait for the SELECTED RUN's flags to land: before its detail arrives
+    // the form defaults to every available language, so asserting earlier
+    // would be racing the fetch rather than testing the toggles.
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-lang-ts") as HTMLButtonElement).getAttribute(
+          "aria-pressed",
+        ),
+      ).toBe("false"),
+    );
+    expect(
+      (screen.getByTestId("bench-lang-js") as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+      "the run used --langs js, so js starts on",
+    ).toBe("true");
+
+    // Two toggles back to back: batched into one render, so both must be
+    // applied — the first must not be lost to a stale read.
+    fireEvent.click(screen.getByTestId("bench-lang-ts"));
+    fireEvent.click(screen.getByTestId("bench-lang-js"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-lang-js") as HTMLButtonElement).getAttribute(
+          "aria-pressed",
+        ),
+      ).toBe("false"),
+    );
+    expect(
+      (screen.getByTestId("bench-lang-ts") as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-start-run"));
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/start"))).toBe(true),
+    );
+    const body = JSON.parse(
+      (
+        global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+      ).mock.calls.find(([u]) => String(u).includes("/api/bench/start"))![1]
+        .body as string,
+    ) as { langs: string };
+    expect(body.langs).toBe("ts");
+  });
+
+  it("cannot switch on a language whose toolchain is missing", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const gd = (await screen.findByTestId(
+      "bench-lang-gdscript",
+    )) as HTMLButtonElement;
+    expect(gd.disabled).toBe(true);
+    fireEvent.click(gd);
+    expect(gd.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+// T59 — the footer reports the page's own numbers, not a second computation.
+describe("T59 footer is single-source", () => {
+  it("matches Score's solved/graded and the hero's elapsed", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-pass-rate").textContent).not.toBe(
+        "—",
+      ),
+    );
+    const solved =
+      screen.getByTestId("bench-solved").parentElement?.textContent ?? "";
+    // "11 / 15 graded" → the same ratio the footer renders as a percentage.
+    // "Solved — samples11 / 15 graded" → the ratio Score is showing.
+    const [num, den] = solved
+      .split("/")
+      .map((part) => Number(part.replace(/\D/g, "")));
+    const expected = `${Math.round((num / den) * 100)}%`;
+    expect(screen.getByTestId("bench-footer-pass-rate").textContent).toBe(
+      expected,
+    );
+
+    const heroElapsed =
+      screen.getByTestId("bench-hero-tiles").textContent ?? "";
+    expect(
+      heroElapsed,
+      "two clocks that can disagree is worse than one shown twice",
+    ).toContain(screen.getByTestId("bench-footer-elapsed").textContent ?? "");
+  });
+
+  it("dashes every stat when there is no run at all", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-gen-speed")).toBeTruthy(),
+    );
+    for (const id of [
+      "bench-footer-gen-speed",
+      "bench-footer-samples-hr",
+      "bench-footer-pass-rate",
+      "bench-footer-server-errors",
+    ]) {
+      expect(
+        screen.getByTestId(id).textContent,
+        `${id} must be an honest dash, not a leftover figure`,
+      ).toBe("—");
+    }
+  });
+});
+
+// T61 — the refusal copy, byte for byte. A substring check is what let the
+// raw-HTTP-error version through last time.
+describe("T61 readiness refusal copy", () => {
+  it("renders the exact sentence, with no raw transport error inline", async () => {
+    installFetch({
+      ready: {
+        ready: false,
+        url: "http://localhost:8081",
+        reason:
+          "no server answering at http://localhost:8081: error sending request for url (http://localhost:8081/v1/models)",
+      },
+    });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-start-blocked");
+    await waitFor(() =>
+      expect(banner.textContent).toBe(
+        serverUnreachableCopy("http://localhost:8081"),
+      ),
+    );
+    // The technical detail is still reachable, just not in the sentence.
+    expect(banner.getAttribute("title")).toContain("error sending request");
+    expect(banner.textContent).not.toContain("error sending request");
+    expect(
+      screen.getByTestId("bench-llamacpp-link").getAttribute("href"),
+      "the page is a link, not prose naming a page",
+    ).toBe("/llama-cpp");
+  });
+});
+
+// T59b — the Compare tab's count badge is real, not the mockup's literal 3.
+describe("T59 Compare badge counts real runs", () => {
+  it("matches the number of run columns the tab actually renders", async () => {
+    installFetch({
+      runs: [runRow(), runRow({ run_id: "r2" }), runRow({ run_id: "r3" })],
+    });
+    render(<BenchPage />);
+
+    const tab = await screen.findByTestId("bench-tab-cmp");
+    await waitFor(() => expect(tab.textContent).toMatch(/Compare\s+\d/));
+    const badge = Number(/\d+/.exec(tab.textContent ?? "")?.[0]);
+
+    fireEvent.click(tab);
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(
+      screen.queryAllByTestId("bench-compare-col").length,
+      "the badge must count the runs actually being compared",
+    ).toBe(badge);
   });
 });

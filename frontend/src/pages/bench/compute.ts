@@ -484,6 +484,86 @@ export function startDisabledReason(opts: {
 }
 
 /**
+ * The sentence shown when nothing answers at the target.
+ *
+ * Kept separate from the raw probe reason on purpose. The probe returns the
+ * transport error ("error sending request for url (…/v1/models)"), which
+ * repeats the address and reads as noise in the common case — nothing is
+ * running yet. That detail stays available as a tooltip; this is what the
+ * banner says.
+ */
+/**
+ * The model the target server actually has loaded, named the way the
+ * llama.cpp page names it (basename of the path, `.gguf` dropped, alias as
+ * the fallback). Same derivation, so the two pages cannot disagree about
+ * what is running.
+ *
+ * This is the truest answer available for a LIVE run: bench.py's `--model`
+ * only states an expectation, and `--label` overwrites the recorded name
+ * outright.
+ */
+export function activeModelName(
+  modelPath: string | null | undefined,
+  modelAlias: string | null | undefined,
+): string | null {
+  const full = modelPath || modelAlias || "";
+  if (!full) return null;
+  const file = full.includes("/") ? (full.split("/").pop() ?? "") : full;
+  return file.replace(/\.gguf$/i, "") || null;
+}
+
+/**
+ * The Progress card's health line, which has THREE states, not two.
+ *
+ * Only "healthy heartbeat" and "stale heartbeat" were ever specified, so a
+ * finished run fell through to the live pacing copy and told the reader the
+ * heartbeat was its only health signal — with no heartbeat and nothing
+ * running. Pacing itself stays heartbeat-and-median: some tasks legitimately
+ * run over an hour, so elapsed time alone proves nothing.
+ */
+export function healthStripText(opts: {
+  running: boolean;
+  warming: boolean;
+  median: number | null;
+  taskElapsed: number | undefined;
+  elapsed: number | null;
+  samples: number | null;
+  fmtDuration: (s: number | null) => string;
+}): string {
+  if (!opts.running) {
+    if (opts.elapsed === null && opts.samples === null)
+      return "no run selected — pick one from History to see its result.";
+    const samples = opts.samples ?? 0;
+    return `run stopped — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${
+      samples === 1 ? "sample" : "samples"
+    } recorded. No heartbeat: nothing is running.`;
+  }
+  if (opts.warming)
+    return "warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
+  if (opts.median === null)
+    return "no stored median for this task yet — the heartbeat is the only health signal";
+  const verdict =
+    (opts.taskElapsed ?? 0) <= opts.median ? "on pace" : "over median";
+  return `median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Heartbeat and median decide health; elapsed alone proves nothing.`;
+}
+
+/**
+ * A temperature at the Sampling tile's 2dp convention.
+ *
+ * llama-server reports float32, so 0.3 comes back as 0.30000001192092896.
+ * Rounding here — rather than only at the point of display — keeps the value
+ * shown and the value benchmarked identical.
+ */
+export function roundTemperature(t: number | null): number | null {
+  if (t === null || !Number.isFinite(t)) return null;
+  return Number(t.toFixed(2));
+}
+
+export function serverUnreachableCopy(url: string): string {
+  return `No server answering at ${url}. Start a model on the llama.cpp page, or point --url at a mockserver.`;
+}
+
+/**
  * Is this run pointed somewhere other than the configured llama-server?
  *
  * A dry run against tools/mockserver.py and a real benchmark are otherwise

@@ -29,6 +29,7 @@ import DirectoryBrowserModal from "../components/DirectoryBrowserModal";
 import EditUpdateScriptModal from "../components/EditUpdateScriptModal";
 import { SettingsCard } from "../components/shared/CardComponents";
 import { GpuBackendStatus } from "../components/settings/GpuBackendStatus";
+import { ToolchainStatus } from "../components/settings/ToolchainStatus";
 
 function SettingsFileLocationCard({
   location,
@@ -85,6 +86,8 @@ function SettingsFileLocationCard({
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 type="text"
+                id="settings-file-location"
+                name="settings-file-location"
                 className="settings-input"
                 value={location.path}
                 readOnly
@@ -995,6 +998,7 @@ export default function SettingsPage({}: SettingsPageProps) {
       <SettingsFileLocationCard location={settingsLocation} />
 
       <GpuBackendStatus />
+      <ToolchainStatus />
     </main>
   );
 }

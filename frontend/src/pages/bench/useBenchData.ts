@@ -57,10 +57,40 @@ async function probeReadiness(targetUrl: string): Promise<BenchReadiness> {
   }
 }
 
+interface LaunchProfileLike {
+  name?: string;
+  parsed_args?: { alias?: string; model_path?: string } | null;
+}
+
+/**
+ * The name RUN MODELS displays for a profile: its alias if the launch script
+ * sets one, else the model file's basename, else the profile name.
+ */
+export function modelNamesFromProfiles(
+  profiles: LaunchProfileLike[],
+): string[] {
+  const names = profiles.map((p) => {
+    const alias = p.parsed_args?.alias?.trim();
+    if (alias) return alias;
+    const path = p.parsed_args?.model_path?.trim();
+    if (path) return path.split("/").pop() ?? path;
+    return p.name?.trim() ?? "";
+  });
+  return [...new Set(names.filter(Boolean))];
+}
+
 export function isRunning(detail: BenchRunDetail | null): boolean {
   if (!detail) return false;
   return Object.keys(detail.live ?? {}).length > 0;
 }
+
+/**
+ * tools/mockserver.py's DEFAULT port. Its own docstring records a real bug
+ * where the port argument was silently ignored, so `mockserver.py tasks 8081`
+ * bound 8123 anyway and produced an unexplained connection error — being
+ * exact here is what stops that repeating.
+ */
+export const MOCK_URL = "http://127.0.0.1:8123";
 
 /** How often the process-state probe runs. Cheap: no file parsing. */
 export const CURRENT_POLL_MS = 3000;
@@ -82,6 +112,10 @@ export interface BenchData {
   /** Configured localbench checkout, for the runs-path chip. */
   benchDir: string | null;
   readiness: BenchReadiness;
+  /** Readiness of the mockserver address, so Dry run uses the same gate. */
+  mockReadiness: BenchReadiness;
+  /** Model names RUN MODELS currently knows about. */
+  knownModels: string[];
   /**
    * Process state from the backend. True the instant bench.py is spawned,
    * where results.json does not exist yet.
@@ -116,6 +150,12 @@ export function useBenchData(): BenchData {
     url: "",
     reason: "checking…",
   });
+  const [mockReadiness, setMockReadiness] = useState<BenchReadiness>({
+    ready: false,
+    url: MOCK_URL,
+    reason: "checking…",
+  });
+  const [knownModels, setKnownModels] = useState<string[]>([]);
   const [check, setCheck] = useState<BenchCheck | null>(null);
   const [taskList, setTaskList] = useState<BenchTaskList | null>(null);
   const [runs, setRuns] = useState<BenchRunRow[]>([]);
@@ -176,6 +216,46 @@ export function useBenchData(): BenchData {
       if (timer) clearTimeout(timer);
     };
   }, [targetUrl, nonce]);
+
+  // The same data RUN MODELS shows on the llama.cpp page — reused, not a
+  // second endpoint. `--list` returns TASKS, so it cannot serve this.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/launch/profiles");
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          data?: { profiles?: LaunchProfileLike[] };
+        };
+        if (cancelled) return;
+        setKnownModels(modelNamesFromProfiles(body.data?.profiles ?? []));
+      } catch {
+        // No profiles: the field stays free-text, which is the fallback.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nonce]);
+
+  // Dry run targets the mockserver, and must face the same readiness gate a
+  // normal start does — bypassing it would make Dry run a special case.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const next = await probeReadiness(MOCK_URL);
+      if (cancelled) return;
+      setMockReadiness(next);
+      timer = setTimeout(() => void tick(), READY_POLL_MS);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [nonce]);
 
   // Process state, polled independently of results.json. This is what makes
   // the hero populate the moment a run starts: bench.py writes `live` only
@@ -320,6 +400,8 @@ export function useBenchData(): BenchData {
     defaultUrl,
     benchDir,
     readiness,
+    mockReadiness,
+    knownModels,
     current,
     check,
     taskList,

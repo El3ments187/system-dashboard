@@ -139,10 +139,13 @@ export function TasksAndRuns({
   bench,
   now,
   running,
+  outputFolder,
 }: {
   bench: BenchData;
   now: number;
   running: boolean;
+  /** Run folder for the Console tab's toolbar note (moved out of the hero). */
+  outputFolder: string;
 }) {
   const { detail, runs, storedDetails, selectRun, refresh } = bench;
   const [tab, setTab] = useState<BenchTab>("tasks");
@@ -174,14 +177,37 @@ export function TasksAndRuns({
         title="Tasks & Runs"
         titleAccentBar
         right={
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          /* CardHeader(compact) lays its two children out with
+             space-between, so anything handed to `right` is pushed to the
+             far edge — which is what opened a large gap between the title
+             and the path chip. The design's toolbar has no such spacer: it
+             is one flex row, gap 8, with margin-left:auto on the SEARCH
+             alone. Growing this node and left-aligning inside it restores
+             exactly that, without touching the shared CardHeader. */
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flex: 1,
+              marginLeft: 8,
+              justifyContent: "flex-start",
+              minWidth: 0,
+            }}
+          >
             <RunsPathChip benchDir={bench.benchDir} />
             <SubTabs
               active={tab}
               onChange={setTab}
               compareCount={selectedCompare.length}
             />
-            <span style={{ position: "relative", display: "inline-flex" }}>
+            <span
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                marginLeft: "auto",
+              }}
+            >
               <Search
                 size={12}
                 style={{
@@ -192,6 +218,8 @@ export function TasksAndRuns({
                 }}
               />
               <input
+                id="bench-search-tasks"
+                name="bench-search-tasks"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search tasks…"
@@ -266,7 +294,11 @@ export function TasksAndRuns({
           minHeight: 0,
         }}
       >
-        <BenchConsole running={running} active={tab === "console"} />
+        <BenchConsole
+          running={running}
+          active={tab === "console"}
+          outputFolder={outputFolder}
+        />
       </div>
     </Card>
   );
@@ -949,7 +981,7 @@ function ComparePane({
               <tr>
                 <th style={TH}>Task</th>
                 {details.map((d) => (
-                  <th key={d.run_id} style={TH}>
+                  <th key={d.run_id} data-testid="bench-compare-col" style={TH}>
                     {isNonDefaultTarget(d.config?.url, bench.defaultUrl) && (
                       <span style={{ marginRight: 5 }}>
                         <TargetBadge url={d.config?.url ?? ""} />

@@ -23,14 +23,18 @@ import { fmtNum, middleTruncate } from "./llamacpp/parts";
 import { fmtUptime } from "./llamaCppUtils";
 import { AlertSeverity, useAlertsContext } from "../context/AlertsContext";
 import { useMetricsContext } from "../context/MetricsContext";
-import { useBenchData, isRunning } from "./bench/useBenchData";
+import { MOCK_URL, useBenchData, isRunning } from "./bench/useBenchData";
 import { TasksAndRuns } from "./bench/TasksAndRuns";
 import { BenchFooter } from "./bench/BenchFooter";
+import { navigateTo } from "./bench/parts";
 import {
+  activeModelName,
   estimatedRunSeconds,
   flakyTasks,
   gradedRecords,
+  healthStripText,
   isNonDefaultTarget,
+  roundTemperature,
   runNaming,
   runTaskScope,
   startDisabledReason,
@@ -50,7 +54,6 @@ import type {
   BenchReadiness,
   BenchRunRow,
   BenchTaskList,
-  CurrentRun,
 } from "./bench/types";
 
 const MONO = '"JetBrains Mono", "Fira Code", monospace';
@@ -140,26 +143,23 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Progress is the live counter while running, and complete once finished. */
+/**
+ * Progress is the live counter while running, and complete once finished.
+ *
+ * `warming` short-circuits to 0: a spawned run has no results.json yet, and
+ * `detail` is still the PREVIOUS run — which would otherwise light the gauge
+ * at 100% over a run that has not produced a sample.
+ */
 function computeDonePct(
   live: BenchLive,
   detail: BenchRunDetail | null,
+  warming: boolean,
 ): number | null {
   if (live.total && live.total > 0)
     return Math.round(((live.done ?? 0) / live.total) * 100);
+  if (warming) return 0;
   if (detail) return 100;
   return null;
-}
-
-/**
- * Pacing is heartbeat-and-median, never wall clock: some tasks legitimately
- * run for over an hour, so elapsed time alone proves nothing.
- */
-function pacingText(median: number | null, taskElapsed: number | undefined) {
-  if (median === null)
-    return "no stored median for this task yet — the heartbeat is the only health signal";
-  const verdict = (taskElapsed ?? 0) <= median ? "on pace" : "over median";
-  return `median for this task: ${fmtUptime(median)} — ${verdict}. Heartbeat and median decide health; elapsed alone proves nothing.`;
 }
 
 // ── Row 1 ───────────────────────────────────────────────────────────────────
@@ -173,18 +173,46 @@ function pacingText(median: number | null, taskElapsed: number | undefined) {
  * started from the CLI has no process state and falls through to the file,
  * which is the original polling path, unchanged.
  */
+export interface HeroIdentity {
+  displayName: string;
+  /** The run's --label, when one was given. Never merged into the name. */
+  alias: string | null;
+  /** True when all we have to show IS the alias — the real model is unknown. */
+  aliasIsAllWeHave: boolean;
+  folder: string;
+  startedAt: string | null;
+  warming: boolean;
+}
+
 function heroIdentity(
   detail: BenchRunDetail | null,
   current: BenchCurrent,
   runs: BenchRunRow[],
-) {
+  activeModel: string | null,
+): HeroIdentity {
   const spawned = current.running ? current.run : null;
   const naming = detail
     ? runNaming(detail.models, detail.config)
     : { name: "no run selected", model: null };
 
-  const labelMasksModel =
-    !!spawned?.label && spawned.model !== spawned.label ? spawned.model : null;
+  // The primary name is the model, never the label. `--model` states an
+  // expectation and `--label` overwrites the recorded name outright
+  // (records[].model is literally `args.label or args.model`), so the real
+  // model comes from the live server while a run is up, and from
+  // config.model — the one field a label does not mask — once it is stored.
+  let realModel: string | null;
+  let alias: string | null;
+  if (spawned) {
+    realModel = activeModel ?? spawned.model ?? null;
+    alias = spawned.label ?? null;
+  } else {
+    realModel = naming.model ?? (detail ? naming.name : null);
+    alias = naming.model ? naming.name : null;
+  }
+  // Model ID blank AND a label set leaves nothing recording the real model.
+  // Showing the label as if it were one would be the original bug, so it is
+  // shown as what it is instead.
+  const aliasIsAllWeHave = realModel === null && alias !== null;
 
   const detailFolder =
     runs.find((r) => r.run_id === detail?.run_id)?.folder ?? null;
@@ -193,60 +221,55 @@ function heroIdentity(
   const showingSpawnedRun =
     !!spawned?.folder && detailFolder === spawned.folder;
 
+  let displayName = "no run selected";
+  if (realModel) displayName = realModel;
+  else if (alias) displayName = alias;
+  else if (spawned) displayName = "starting…";
+  else if (detail) displayName = naming.name;
+
   return {
-    displayName: spawned
-      ? (spawned.label ?? spawned.model ?? "starting…")
-      : naming.name,
-    displayModel: spawned ? labelMasksModel : naming.model,
+    displayName,
+    alias,
+    aliasIsAllWeHave,
     folder: spawned?.folder ?? detailFolder ?? "",
     startedAt: spawned?.started ?? detail?.created ?? null,
-    configLabel: configLabelOf(spawned, detail),
     warming:
       current.running &&
       (!showingSpawnedRun || (detail?.records?.length ?? 0) === 0),
   };
 }
 
-function configLabelOf(
-  spawned: CurrentRun | null,
-  detail: BenchRunDetail | null,
-): string | null {
-  const attempts = spawned?.attempts ?? detail?.config?.attempts ?? null;
-  const n = spawned?.n ?? detail?.config?.n ?? null;
-  const temp = spawned?.temperature ?? detail?.config?.temperature ?? null;
-  if (attempts === null && n === null && temp === null) return null;
-  return `a${attempts ?? "?"} · n${n ?? 1} · t${temp ?? 0}`;
-}
-
 function HeroCard({
+  identity,
   detail,
   check,
-  runs,
   live,
   running,
   stale,
   beatAge,
   truncationWarned,
+  elapsedSeconds,
   current,
   defaultUrl,
   targetUrl,
   taskList,
 }: {
+  identity: HeroIdentity;
   detail: BenchRunDetail | null;
   check: BenchCheck | null;
-  runs: BenchRunRow[];
   live: BenchLive;
   running: boolean;
   stale: boolean;
   beatAge: number | null;
   truncationWarned: boolean;
+  /** The page's single elapsed clock. */
+  elapsedSeconds: number | null;
   current: BenchCurrent;
   defaultUrl: string;
   targetUrl: string;
   taskList: BenchTaskList | null;
 }) {
-  const { displayName, displayModel, folder, startedAt, configLabel, warming } =
-    heroIdentity(detail, current, runs);
+  const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
 
   // A live run's own flags win; otherwise the selected run's stored config.
   const liveLangs = current.running ? current.run?.langs : null;
@@ -290,10 +313,14 @@ function HeroCard({
         >
           {middleTruncate(displayName, 30)}
         </div>
-        {displayModel && (
+        {alias && (
           <div
-            data-testid="bench-hero-real-model"
-            title="--label replaces the model name in the run's own records, so the label is shown as the run's name and the real model beneath it."
+            data-testid="bench-hero-alias"
+            title={
+              aliasIsAllWeHave
+                ? "--label replaces the model name everywhere in the run's records, and this run left Model ID blank — so the real model was never recorded. Set Model ID to keep it."
+                : "--label names the run in the results; it does not select or describe the model. The model above is the one actually loaded."
+            }
             style={{
               font: `10.5px ${MONO}`,
               color: "var(--text-muted)",
@@ -303,7 +330,8 @@ function HeroCard({
               textOverflow: "ellipsis",
             }}
           >
-            label · model {middleTruncate(displayModel, 34)}
+            Benchmark Alias: {middleTruncate(alias, 30)}
+            {aliasIsAllWeHave ? " · real model not recorded" : ""}
           </div>
         )}
 
@@ -411,10 +439,18 @@ function HeroCard({
           </div>
         )}
 
+        {/* Two tiles, not four. Config was a compressed duplicate of Run
+            Setup — which shows the same flags live and editable, and whose
+            own subtext admitted as much. Output moved to the Console tab,
+            beside bench.py's stdout: the folder being written to and what
+            the writer is saying are one subject. A 2-column override here,
+            mirroring how the Score card overrides its own tile row, rather
+            than changing the shared rule. */}
         <div
+          data-testid="bench-hero-tiles"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(2, 1fr)",
             gap: 8,
             marginTop: "auto",
           }}
@@ -430,24 +466,8 @@ function HeroCard({
             accent
             mono
             label="Elapsed"
-            value={fmtUptime(
-              live.run_elapsed ?? detail?.summary?.seconds ?? null,
-            )}
+            value={fmtUptime(elapsedSeconds)}
             valueSize={14}
-          />
-          <MetricTile
-            accent
-            mono
-            label="Output"
-            value={folder ? middleTruncate(`runs/${folder}`, 22) : null}
-            valueSize={11}
-          />
-          <MetricTile
-            accent
-            mono
-            label="Config"
-            value={configLabel}
-            valueSize={11}
           />
         </div>
       </div>
@@ -602,18 +622,31 @@ function ProgressCard({
   detail,
   live,
   running,
+  warming,
+  elapsedSeconds,
   donePct,
   median,
 }: {
   detail: BenchRunDetail | null;
   live: BenchLive;
   running: boolean;
+  /** A spawned run whose results.json does not exist yet. */
+  warming: boolean;
+  /** The page's single elapsed clock. */
+  elapsedSeconds: number | null;
   donePct: number | null;
   median: number | null;
 }) {
-  const samplesValue = live.total
-    ? `${live.done ?? 0}/${live.total}`
-    : (detail?.summary?.samples ?? null);
+  // While warming, `detail` is whatever run was selected BEFORE this one
+  // started — a finished run, with a full sample count and a 100% gauge.
+  // Reading it here is how Progress came to describe the previous run while
+  // the hero correctly described the new one. Nothing file-derived is
+  // trustworthy until the spawned run's own file lands.
+  const samplesValue = (() => {
+    if (live.total) return `${live.done ?? 0}/${live.total}`;
+    if (warming) return "0";
+    return detail?.summary?.samples ?? null;
+  })();
   const attemptValue = live.current_attempt
     ? `${live.current_attempt}/${detail?.config?.attempts ?? "?"}`
     : "—";
@@ -643,6 +676,7 @@ function ProgressCard({
             </RadialGauge>
           </span>
           <div
+            data-testid="bench-progress-tiles"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
@@ -661,9 +695,7 @@ function ProgressCard({
               accent
               mono
               label="Elapsed"
-              value={fmtUptime(
-                live.run_elapsed ?? detail?.summary?.seconds ?? null,
-              )}
+              value={fmtUptime(elapsedSeconds)}
               valueSize={14}
             />
             <MetricTile
@@ -708,7 +740,15 @@ function ProgressCard({
               marginTop: 4,
             }}
           >
-            {pacingText(median, live.task_elapsed)}
+            {healthStripText({
+              running,
+              warming,
+              median,
+              taskElapsed: live.task_elapsed,
+              elapsed: elapsedSeconds,
+              samples: detail?.summary?.samples ?? null,
+              fmtDuration: fmtUptime,
+            })}
           </div>
         </div>
       </div>
@@ -763,7 +803,10 @@ function ActionButton({
 }
 
 interface RunForm {
+  /** `--model`: the id this run EXPECTS, not a picker. Blank trusts the server. */
   model: string;
+  /** `--label`: names the run in the results. Cosmetic, and it masks `model`. */
+  label: string;
   langs: string;
   attempts: number;
   n: number;
@@ -827,6 +870,8 @@ function RunSetupCard({
   setTargetUrl,
   defaultUrl,
   readiness,
+  mockReadiness,
+  knownModels,
   activeTemperature,
   storedDetails,
   taskCount,
@@ -839,6 +884,8 @@ function RunSetupCard({
   setTargetUrl: (url: string) => void;
   defaultUrl: string;
   readiness: BenchReadiness;
+  mockReadiness: BenchReadiness;
+  knownModels: string[];
   activeTemperature: number | null;
   storedDetails: BenchRunDetail[];
   taskCount: number;
@@ -853,13 +900,19 @@ function RunSetupCard({
 
   const form: RunForm = {
     model: override.model ?? detail?.config?.model ?? "",
+    label: override.label ?? "",
     langs: override.langs ?? detail?.config?.langs?.join(",") ?? availableLangs,
     attempts: override.attempts ?? detail?.config?.attempts ?? 3,
     n: override.n ?? detail?.config?.n ?? 1,
     // Temperature follows the ACTIVE model unless overridden, so bench
     // measures the model as it is actually configured rather than a value
-    // copied from some earlier run.
-    temperature: override.temperature ?? activeTemperature ?? 0,
+    // copied from some earlier run. Rounded to the Sampling tile's 2dp
+    // convention: the server reports float32, so 0.3 arrives as
+    // 0.30000001192092896. The ROUNDED value is what gets sent as well as
+    // shown — displaying one number and benchmarking another would be
+    // worse than the noise, and 0.3 is what the setting actually means.
+    temperature:
+      override.temperature ?? roundTemperature(activeTemperature) ?? 0,
   };
   const temperatureInherited =
     override.temperature === undefined && activeTemperature !== null;
@@ -871,6 +924,36 @@ function RunSetupCard({
 
   const set = <K extends keyof RunForm>(key: K, value: RunForm[K]) =>
     setOverride((o) => ({ ...o, [key]: value }));
+
+  // `--langs` is still a comma list on the wire; the toggles only change how
+  // it is entered. An unavailable language can never be switched on.
+  const selectedLangs = form.langs
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // Functional update, deliberately: two toggles in one batch would both
+  // read the same render's value and the first would be lost.
+  const toggleLang = (lang: string) =>
+    setOverride((o) => {
+      const current = (
+        o.langs ??
+        detail?.config?.langs?.join(",") ??
+        availableLangs
+      )
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const next = current.includes(lang)
+        ? current.filter((l) => l !== lang)
+        : [...current, lang];
+      return {
+        ...o,
+        langs: tracks
+          .filter((t) => t.available && next.includes(t.lang))
+          .map((t) => t.lang)
+          .join(","),
+      };
+    });
 
   const post = (path: string, body?: unknown) => {
     fetch(path, {
@@ -888,15 +971,30 @@ function RunSetupCard({
   // target outlives the run that introduced it. temperature is always sent:
   // the backend refuses a missing one because bench.py would fall back to
   // greedy silently.
-  const startRun = () =>
+  const startWith = (url: string) =>
     post("/api/bench/start", {
       model: form.model || undefined,
+      label: form.label || undefined,
       langs: form.langs || undefined,
       attempts: form.attempts,
       n: form.n,
       temperature: form.temperature,
-      url: targetUrl,
+      url,
     });
+
+  const startRun = () => startWith(targetUrl);
+
+  // A ONE-OFF start against the mockserver. Deliberately does not write to
+  // targetUrl: silently repointing the configured field at a mock — which
+  // the user would then never notice — would be its own bug.
+  const dryRun = () => startWith(MOCK_URL);
+
+  const dryRunBlocked = startDisabledReason({
+    running,
+    serverReady: mockReadiness.ready,
+    serverReason: mockReadiness.reason,
+    haveFlags: true,
+  });
 
   const greedy = greedyInterlock(form.n, form.temperature);
   const estimate = estimatedRunSeconds(storedDetails, taskCount * form.n);
@@ -924,14 +1022,56 @@ function RunSetupCard({
             gap: "8px 10px",
           }}
         >
-          <Field label="Model" hint="defaults to the selected run's model">
+          {/* "Model ID", not "Model": this cannot make the server load
+              anything. bench.py's own help says to omit it and use whatever
+              the server reports. The dropdown is an autocomplete for stating
+              an expectation, not a picker. */}
+          <Field
+            label="Model ID"
+            hint="which model this run expects — leave blank to trust whatever the server reports"
+          >
+            {/* A datalist, not a <select>: it gives the dropdown while
+                leaving the field free-text, so a model Run Models has never
+                seen (a differently-named mock, say) stays enterable rather
+                than being locked to the list. */}
             <input
               data-testid="bench-field-model"
+              id="bench-model-id"
+              name="bench-model-id"
+              list="bench-model-options"
               style={FIELD_INPUT}
               value={form.model}
               spellCheck={false}
               placeholder="auto-detect from the server"
               onChange={(e) => set("model", e.target.value)}
+            />
+            <datalist
+              id="bench-model-options"
+              data-testid="bench-model-options"
+            >
+              {/* Blank first, because leaving it blank is the documented
+                  default rather than an edge case to bury under the list. */}
+              <option value="" label="(blank — trust the server)" />
+              {knownModels.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </Field>
+
+          <Field
+            label="Benchmark Alias"
+            hint="optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded"
+          >
+            <input
+              data-testid="bench-field-label"
+              id="bench-label"
+              name="bench-label"
+              style={FIELD_INPUT}
+              value={form.label}
+              spellCheck={false}
+              placeholder="(none)"
+              title="Maps to --label. It renames the run everywhere in results.json except config.model, so with Model ID blank the real model is not recorded anywhere."
+              onChange={(e) => set("label", e.target.value)}
             />
           </Field>
 
@@ -946,6 +1086,8 @@ function RunSetupCard({
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input
                 data-testid="bench-url-field"
+                id="bench-url"
+                name="bench-url"
                 style={{
                   ...FIELD_INPUT,
                   borderColor: readiness.ready
@@ -962,29 +1104,71 @@ function RunSetupCard({
             </div>
           </Field>
 
-          <Field
-            label="Languages"
-            hint={
-              tracks.some((t) => !t.available)
-                ? `${tracks
-                    .filter((t) => !t.available)
-                    .map((t) => t.lang)
-                    .join(", ")}: toolchain missing`
-                : "comma-separated subset"
-            }
+          {/* Toggles, not free text. There are exactly four selectable
+              codes and no per-task selection exists, so typing them from
+              memory bought nothing but a chance to get one wrong. Each
+              button's enabled state comes from --check's own PER-LANGUAGE
+              availability — never from string-matching a tool name (node
+              serves both js and ts). */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 3,
+              gridColumn: "1 / -1",
+            }}
           >
-            <input
-              data-testid="bench-field-langs"
-              style={FIELD_INPUT}
-              value={form.langs}
-              spellCheck={false}
-              onChange={(e) => set("langs", e.target.value)}
-            />
-          </Field>
+            <span style={LABEL_STYLE}>Languages</span>
+            <div
+              role="group"
+              aria-label="Languages to run"
+              data-testid="bench-lang-toggles"
+              style={{ display: "flex", gap: 5, flexWrap: "wrap" }}
+            >
+              {tracks.map((t) => {
+                const on = selectedLangs.includes(t.lang);
+                return (
+                  <button
+                    key={t.lang}
+                    type="button"
+                    disabled={!t.available}
+                    aria-pressed={on}
+                    data-testid={`bench-lang-${t.lang}`}
+                    title={
+                      t.available
+                        ? `${t.tasks} ${t.lang} tasks`
+                        : `${t.lang} cannot run — ${t.reason}. ${t.tasks} tasks skipped.`
+                    }
+                    onClick={() => toggleLang(t.lang)}
+                    style={{
+                      font: `600 11px ${MONO}`,
+                      padding: "5px 11px",
+                      borderRadius: 6,
+                      cursor: t.available ? "pointer" : "not-allowed",
+                      opacity: t.available ? 1 : 0.4,
+                      textDecoration: t.available ? "none" : "line-through",
+                      background: on
+                        ? "var(--accent-tint-15)"
+                        : "var(--bg-secondary)",
+                      border: `1px solid ${on ? "var(--accent-primary)" : "var(--border-color)"}`,
+                      color: on ? "var(--text-primary)" : "var(--text-muted)",
+                    }}
+                  >
+                    {t.lang}
+                  </button>
+                );
+              })}
+            </div>
+            <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>
+              click to toggle · struck through = toolchain unavailable
+            </span>
+          </div>
 
           <Field label="Attempts">
             <input
               data-testid="bench-field-attempts"
+              id="bench-attempts"
+              name="bench-attempts"
               type="number"
               min={1}
               style={FIELD_INPUT}
@@ -996,6 +1180,8 @@ function RunSetupCard({
           <Field label="Samples --n">
             <input
               data-testid="bench-field-n"
+              id="bench-n"
+              name="bench-n"
               type="number"
               min={1}
               style={FIELD_INPUT}
@@ -1011,6 +1197,8 @@ function RunSetupCard({
           >
             <input
               data-testid="bench-field-temperature"
+              id="bench-temperature"
+              name="bench-temperature"
               type="number"
               step="0.05"
               min={0}
@@ -1051,40 +1239,59 @@ function RunSetupCard({
             marginTop: 10,
           }}
         >
-          <span style={LABEL_STYLE}>Toolchains</span>
-          {tracks.map((t) => (
-            <span
-              key={t.lang}
-              data-testid={`bench-track-${t.lang}`}
-              title={
-                t.available
-                  ? `${t.lang}: ${t.tasks} tasks available`
-                  : `${t.lang} unavailable — ${t.tasks} tasks skipped. ${t.reason}`
-              }
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                font: `10.5px ${MONO}`,
-                border: "1px solid var(--border-color)",
-                borderRadius: 6,
-                padding: "2px 8px",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <span
-                style={{
-                  color: t.available ? "var(--success)" : "var(--danger)",
-                }}
-              >
-                ●
-              </span>
-              {t.lang}
-              {t.available ? "" : ` · ${t.tasks} skipped`}
-            </span>
-          ))}
+          {/* The tool-level diagnostic row moved to Settings, beside the
+              existing connection-status fields — it answers "which BINARY
+              is missing", a different question from "which tasks do I want
+              this time", which the language toggles above now answer with
+              the same availability data. */}
+          <a
+            href="/settings"
+            data-testid="bench-toolchains-link"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateTo("/settings");
+            }}
+            style={{
+              fontSize: 9.5,
+              color: "var(--text-muted)",
+              textDecoration: "underline",
+            }}
+          >
+            Toolchains: Settings →
+          </a>
         </div>
 
+        {/* The readiness refusal, in the same banner idiom as the hero's
+            server-error strip. The raw transport error is deliberately NOT
+            in the sentence — it repeated the address and buried the one
+            thing worth reading; it lives in the tooltip instead. */}
+        {!running && !readiness.ready && (
+          <div
+            className="bench-banner"
+            data-testid="bench-start-blocked"
+            title={readiness.reason}
+            style={{ margin: "10px 0 0", padding: "7px 12px", fontSize: 12 }}
+          >
+            <TriangleAlert size={13} />
+            <span>
+              No server answering at{" "}
+              <code className="bench-code">{readiness.url || targetUrl}</code>.{" "}
+              <a
+                href="/llama-cpp"
+                data-testid="bench-llamacpp-link"
+                style={{ color: "var(--text-primary)", fontWeight: 600 }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigateTo("/llama-cpp");
+                }}
+              >
+                Start a model on the llama.cpp page
+              </a>
+              , or point <code className="bench-code">--url</code> at a
+              mockserver.
+            </span>
+          </div>
+        )}
         <div
           style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}
         >
@@ -1116,6 +1323,16 @@ function RunSetupCard({
             onClick={onRefresh}
             title="Re-probe the target server, re-run bench.py --check and reload the stored runs."
           />
+          <ActionButton
+            label="Dry run"
+            disabled={dryRunBlocked !== null}
+            onClick={dryRun}
+            title={
+              dryRunBlocked
+                ? `${dryRunBlocked}. Bench does not start mockserver itself — run "python3 tools/mockserver.py tasks 8123" in the localbench checkout, then retry.`
+                : `Start a normal run against ${MOCK_URL} (tools/mockserver.py) — a full sweep in seconds, without a real model. Your configured url is left unchanged. Bench does not start mockserver itself.`
+            }
+          />
           <span
             data-testid="bench-est-duration"
             title="Mean seconds per graded sample across stored runs, times the samples this configuration would run. Server samples are excluded — they cost no model time."
@@ -1131,26 +1348,6 @@ function RunSetupCard({
               : `est. ${fmtUptime(estimate)}`}
           </span>
         </div>
-
-        {blockedReason && !running && (
-          <div
-            data-testid="bench-start-blocked"
-            style={{
-              font: "11px Inter, system-ui, sans-serif",
-              color: "var(--warning)",
-              marginTop: 6,
-            }}
-          >
-            {blockedReason}
-            {!readiness.ready && (
-              <>
-                {" "}
-                Start a model on the llama.cpp page, or point --url at a
-                mockserver.
-              </>
-            )}
-          </div>
-        )}
       </div>
     </Card>
   );
@@ -1160,20 +1357,33 @@ function RunSetupCard({
 
 export default function BenchPage() {
   const bench = useBenchData();
-  const { detail, check, runs, storedDetails } = bench;
+  const { detail, check, runs, storedDetails, current } = bench;
   const { addAlert } = useAlertsContext();
   // Same source as the llama.cpp page's Sampling tile, so Run Setup's
   // temperature follows the model that is actually loaded.
   const { aiCurrentMetrics } = useMetricsContext();
   const activeTemperature = aiCurrentMetrics?.temperature ?? null;
+  // What the server actually has loaded — the hero's primary name while a
+  // run is live, since bench.py records only an expectation and a label.
+  const activeModel = activeModelName(
+    aiCurrentMetrics?.model_path,
+    aiCurrentMetrics?.model_alias,
+  );
   const [now, setNow] = useState(() => Date.now());
 
   const records = useMemo(() => detail?.records ?? [], [detail]);
   // Either source proves a run is live: the spawned child, or a results.json
   // that still carries a non-empty `live` (a CLI-started run).
-  const running = isRunning(detail) || bench.current.running;
+  const running = isRunning(detail) || current.running;
   const live = detail?.live ?? {};
   const truncation = useMemo(() => truncationState(records), [records]);
+  // Computed ONCE and shared: the hero and Progress disagreeing about which
+  // run is on screen is exactly the split-brain that let Progress keep
+  // showing a finished run's numbers under a newly started one.
+  const identity = useMemo(
+    () => heroIdentity(detail, current, runs, activeModel),
+    [detail, current, runs, activeModel],
+  );
 
   // The heartbeat is only meaningful against the current clock, so staleness
   // is re-evaluated on a timer even when no new sample has landed.
@@ -1183,7 +1393,14 @@ export default function BenchPage() {
     return () => clearInterval(id);
   }, [running]);
 
-  const donePct = computeDonePct(live, detail);
+  const donePct = computeDonePct(live, detail, identity.warming);
+  // ONE clock. The hero, Progress and the footer all render this same
+  // number — two elapsed values that can disagree is worse than one shown
+  // three times. While warming, only the live counter is trustworthy:
+  // `detail` is still the previous run.
+  const elapsedSeconds = identity.warming
+    ? (live.run_elapsed ?? null)
+    : (live.run_elapsed ?? detail?.summary?.seconds ?? null);
   const median = useMemo(
     () =>
       live.current_task
@@ -1244,14 +1461,15 @@ export default function BenchPage() {
         >
           <PanelErrorBoundary panelName="Bench Run">
             <HeroCard
+              identity={identity}
               detail={detail}
               check={check}
-              runs={runs}
               live={live}
               running={running}
               stale={isHeartbeatStale(live.heartbeat, now)}
               beatAge={heartbeatAgeMs(live.heartbeat, now)}
               truncationWarned={truncation.warned}
+              elapsedSeconds={elapsedSeconds}
               current={bench.current}
               defaultUrl={bench.defaultUrl}
               targetUrl={bench.targetUrl}
@@ -1268,6 +1486,8 @@ export default function BenchPage() {
               detail={detail}
               live={live}
               running={running}
+              warming={identity.warming}
+              elapsedSeconds={elapsedSeconds}
               donePct={donePct}
               median={median}
             />
@@ -1309,6 +1529,8 @@ export default function BenchPage() {
                 setTargetUrl={bench.setTargetUrl}
                 defaultUrl={bench.defaultUrl}
                 readiness={bench.readiness}
+                mockReadiness={bench.mockReadiness}
+                knownModels={bench.knownModels}
                 activeTemperature={activeTemperature}
                 storedDetails={storedDetails}
                 taskCount={
@@ -1321,11 +1543,20 @@ export default function BenchPage() {
           </div>
 
           <PanelErrorBoundary panelName="Bench Tasks and Runs">
-            <TasksAndRuns bench={bench} now={now} running={running} />
+            <TasksAndRuns
+              bench={bench}
+              now={now}
+              running={running}
+              outputFolder={identity.folder}
+            />
           </PanelErrorBoundary>
         </div>
       </div>
-      <BenchFooter detail={detail} />
+      <BenchFooter
+        detail={identity.warming ? null : detail}
+        elapsedSeconds={elapsedSeconds}
+        running={running}
+      />
     </main>
   );
 }

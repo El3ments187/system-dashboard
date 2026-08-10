@@ -1921,6 +1921,16 @@ main {
   gap: 10px;
   align-items: center;
 }
+/* An address inside a banner sentence, set apart from the prose around it. */
+.bench-code {
+  font:
+    11px "JetBrains Mono",
+    "Fira Code",
+    monospace;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
 .bench-cut {
   display: flex;
   align-items: center;

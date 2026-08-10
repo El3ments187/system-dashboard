@@ -84,9 +84,26 @@ function FooterStat({
   );
 }
 
-export function BenchFooter({ detail }: { detail: BenchRunDetail | null }) {
+export function BenchFooter({
+  detail,
+  elapsedSeconds,
+  running,
+}: {
+  detail: BenchRunDetail | null;
+  /**
+   * The page's single elapsed clock, shared with the hero and Progress. Not
+   * recomputed here: two clocks that can disagree is worse than one shown
+   * twice.
+   */
+  elapsedSeconds: number | null;
+  running: boolean;
+}) {
   const records = detail?.records ?? [];
   const graded = gradedRecords(records);
+  // Nothing running and nothing selected means there is nothing to report.
+  // Carrying the last run's figures here would be the stale-Progress bug in
+  // a new location.
+  const idle = !running && records.length === 0;
 
   const rates = graded.map(genRate);
   const meanRate =
@@ -112,8 +129,7 @@ export function BenchFooter({ detail }: { detail: BenchRunDetail | null }) {
     records.map((r) => (r.status === "server" ? 1 : 0)),
   );
   const serverTotal = serverSeries[serverSeries.length - 1] ?? 0;
-  const totalSeconds =
-    detail?.summary?.seconds ?? elapsedSeries[elapsedSeries.length - 1] ?? 0;
+  const totalSeconds = elapsedSeconds ?? 0;
   const samplesPerHour =
     totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null;
 
@@ -130,28 +146,34 @@ export function BenchFooter({ detail }: { detail: BenchRunDetail | null }) {
     >
       <FooterStat
         label="Gen speed"
-        value={meanRate === null ? "—" : `${fmtNum(Math.round(meanRate))} t/s`}
-        data={series(rates)}
+        value={
+          idle || meanRate === null
+            ? "—"
+            : `${fmtNum(Math.round(meanRate))} t/s`
+        }
+        data={idle ? [] : series(rates)}
       />
       <FooterStat
         label="Samples/hr"
-        value={samplesPerHour === null ? "—" : samplesPerHour.toFixed(1)}
-        data={series(elapsedSeries)}
+        value={
+          idle || samplesPerHour === null ? "—" : samplesPerHour.toFixed(1)
+        }
+        data={idle ? [] : series(elapsedSeries)}
       />
       <FooterStat
         label="Pass rate"
-        value={passRate === null ? "—" : `${Math.round(passRate)}%`}
-        data={series(passSeries)}
+        value={idle || passRate === null ? "—" : `${Math.round(passRate)}%`}
+        data={idle ? [] : series(passSeries)}
       />
       <FooterStat
         label="Elapsed"
-        value={fmtUptime(totalSeconds)}
-        data={series(elapsedSeries)}
+        value={idle && elapsedSeconds === null ? "—" : fmtUptime(totalSeconds)}
+        data={idle ? [] : series(elapsedSeries)}
       />
       <FooterStat
         label="Server errors"
-        value={String(serverTotal)}
-        data={series(serverSeries)}
+        value={idle ? "—" : String(serverTotal)}
+        data={idle ? [] : series(serverSeries)}
       />
     </div>
   );

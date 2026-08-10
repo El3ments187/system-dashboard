@@ -332,3 +332,73 @@ test.describe("T32 prefers-reduced-motion", () => {
     expect(result.arcFilter).toContain("drop-shadow");
   });
 });
+
+// ── T53 — the toolbar has no spacer between the title and the path chip ─────
+//
+// CardHeader(compact) lays its children out with space-between, so anything
+// handed to `right` is pushed to the far edge. The design's toolbar is one
+// flex row with margin-left:auto on the SEARCH alone. A layout assertion, not
+// a snapshot, so a reintroduced spacer fails loudly rather than silently
+// rebaselining.
+test("T53 the runs-path chip sits beside the title, not at the far right", async ({
+  page,
+}) => {
+  // The gap only opens when the card is wide enough to have slack — at a
+  // narrow viewport the toolbar's own contents fill the row and hide it.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await gotoBench(page);
+
+  const gap = await page.evaluate(() => {
+    const chip = document.querySelector('[data-testid="bench-runs-path"]');
+    if (!chip) return null;
+    const card = chip.closest('[data-testid="bench-tasks-card"], .card, div');
+    const header = chip.parentElement?.parentElement;
+    const title = header?.querySelector("div");
+    if (!title) return null;
+    const t = title.getBoundingClientRect();
+    const c = chip.getBoundingClientRect();
+    return {
+      gap: Math.round(c.left - t.right),
+      cardWidth: Math.round(
+        (card as HTMLElement).getBoundingClientRect().width,
+      ),
+    };
+  });
+
+  expect(
+    gap,
+    "the path chip should be findable next to the title",
+  ).not.toBeNull();
+  // A small fixed gap (the toolbar's own gap:8 plus the header's padding),
+  // not a large auto-computed one. 60px is generous for the fixed case and
+  // far below what space-between produced.
+  expect(
+    gap!.gap,
+    `path chip is ${gap!.gap}px from the title — a spacer has crept back in`,
+  ).toBeLessThan(60);
+});
+
+// ── T62 — the refusal's link actually goes there ────────────────────────────
+//
+// "Start a model on the llama.cpp page" was instructional prose naming a
+// page. Asserting the text exists would pass for prose too, so this asserts
+// the navigation.
+test("T62 the readiness banner's llama.cpp link navigates", async ({
+  page,
+}) => {
+  await gotoBench(page);
+
+  const link = page.locator('[data-testid="bench-llamacpp-link"]');
+  if ((await link.count()) === 0) {
+    // A server IS answering, so the banner is correctly absent. Assert that
+    // rather than skipping silently.
+    await expect(
+      page.locator('[data-testid="bench-start-blocked"]'),
+    ).toHaveCount(0);
+    return;
+  }
+
+  await link.click();
+  await page.waitForURL(/\/llama-cpp$/, { timeout: 5000 });
+  expect(new URL(page.url()).pathname).toBe("/llama-cpp");
+});
