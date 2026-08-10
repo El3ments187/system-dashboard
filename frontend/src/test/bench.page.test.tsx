@@ -150,6 +150,8 @@ interface MockOpts {
   profiles?: unknown[];
   /** Override the --check payload (per-language availability). */
   check?: unknown;
+  /** Override the --list payload (the task roster). */
+  taskList?: unknown;
   /** Process state from POST /api/bench/start, before any results.json. */
   current?: { running: boolean; run: unknown };
   /** Simulate results.json not existing yet. */
@@ -177,7 +179,7 @@ function installFetch(opts: MockOpts = {}) {
         return Promise.resolve({ ok: false, status: 500 } as Response);
       return ok(opts.check ?? CHECK);
     }
-    if (url.includes("/api/bench/tasks")) return ok(TASK_LIST);
+    if (url.includes("/api/bench/tasks")) return ok(opts.taskList ?? TASK_LIST);
     if (url.includes("/api/launch/profiles"))
       return ok({
         profiles: opts.profiles ?? [
@@ -394,8 +396,16 @@ describe("T10 live and pending strip cells", () => {
     await waitFor(() =>
       expect(screen.queryAllByTestId("bench-cell-live")).toHaveLength(1),
     );
-    // n=3, one recorded sample, one live → exactly one still pending.
-    expect(screen.queryAllByTestId("bench-cell-pending")).toHaveLength(1);
+    // Scoped to the in-flight task's OWN row: since T80 the table renders
+    // the whole roster, so every queued task contributes pending cells too
+    // and a page-wide count no longer isolates this strip.
+    const liveRow = screen
+      .getByTestId("bench-cell-live")
+      .closest('[data-testid="bench-task-row"]')!;
+    // n=3, one recorded sample, one live → exactly one still pending here.
+    expect(
+      liveRow.querySelectorAll('[data-testid="bench-cell-pending"]'),
+    ).toHaveLength(1);
   });
 
   it("shows no live cell once the run has finished", async () => {
@@ -542,8 +552,12 @@ describe("T34/T35 hero liveness", () => {
     installFetch({ detail, current: { running: false, run: null } });
     render(<BenchPage />);
 
+    // The status element replaced the heartbeat label in T74; a CLI-started
+    // run must still read as running.
     await waitFor(() =>
-      expect(screen.getByTestId("bench-heartbeat")).toBeTruthy(),
+      expect(
+        screen.getByTestId("bench-run-status").getAttribute("data-status"),
+      ).toBe("running"),
     );
     expect(screen.queryByTestId("bench-warming")).toBeNull();
   });
@@ -1256,10 +1270,25 @@ describe("T23/T24 drilldown", () => {
   async function openFirstTask(detail: unknown) {
     installFetch({ detail });
     render(<BenchPage />);
+    // Wait for the run's DATA, not merely for rows: since T80 the roster
+    // renders rows before the detail arrives, and clicking that early means
+    // the drilldown is opened against runKey "none" and is then correctly
+    // closed by T64's scoping when the real run loads.
     await waitFor(() =>
-      expect(screen.getAllByTestId("bench-task-row").length).toBeGreaterThan(0),
+      expect(
+        screen
+          .queryAllByTestId("bench-task-mean")
+          .some((c) => /\d/.test(c.textContent ?? "")),
+      ).toBe(true),
     );
-    fireEvent.click(screen.getAllByTestId("bench-task-row")[0]);
+    // The first RECORDED task, not the first row: since T80 the table also
+    // renders queued roster rows, which have no drilldown to open.
+    const task = (detail as { records: Array<{ task: string }> }).records[0]
+      .task;
+    const row = screen
+      .getAllByTestId("bench-task-row")
+      .find((r) => r.textContent?.includes(task))!;
+    fireEvent.click(row);
   }
 
   it("labels completion tokens as a SUM and total_tokens as the largest single request", async () => {
@@ -1614,7 +1643,7 @@ describe("T59 footer is single-source", () => {
       "bench-footer-gen-speed",
       "bench-footer-samples-hr",
       "bench-footer-pass-rate",
-      "bench-footer-server-errors",
+      "bench-footer-remaining",
     ]) {
       expect(
         screen.getByTestId(id).textContent,
@@ -1712,13 +1741,18 @@ describe("T64 drilldown is scoped to the current run", () => {
     await waitFor(() =>
       expect(screen.getByTestId("bench-warming")).toBeTruthy(),
     );
-    expect(
-      screen.queryAllByTestId("bench-task-row"),
-      "a warming run has no samples — the previous run's tasks must not fill its table",
-    ).toHaveLength(0);
-    expect(screen.getByTestId("bench-this-run-empty").textContent).toMatch(
-      /no samples recorded yet/i,
-    );
+    // T80 changed the warming state from an empty pane to the run's full
+    // queue, so the guard is now "no RESULTS from run A" rather than "no
+    // rows" — every row must be queued, with no scored figure anywhere.
+    const rows = screen.queryAllByTestId("bench-task-row");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const cell of screen.queryAllByTestId("bench-task-mean")) {
+      expect(
+        cell.textContent,
+        "the previous run's scores must not appear under a warming run",
+      ).toMatch(/queued|skipped|—/);
+    }
+    expect(screen.queryAllByTestId("bench-cell-solved")).toHaveLength(0);
     // The Score card is the same class of surface: it means "this run".
     expect(
       screen.getByTestId("bench-task-avg").textContent,
@@ -1730,9 +1764,20 @@ describe("T64 drilldown is scoped to the current run", () => {
     installFetch();
     const { rerender } = render(<BenchPage />);
 
-    // Open a drilldown under run A and capture something only A shows.
-    const row = await screen.findAllByTestId("bench-task-row");
-    fireEvent.click(row[0]);
+    // Open a drilldown under run A on a RECORDED task (queued roster rows
+    // have nothing to expand), and only once A's data has actually loaded.
+    await waitFor(() =>
+      expect(
+        screen
+          .queryAllByTestId("bench-task-mean")
+          .some((c) => /\d/.test(c.textContent ?? "")),
+      ).toBe(true),
+    );
+    const rowsA = await screen.findAllByTestId("bench-task-row");
+    const recorded = rowsA.find((r) =>
+      r.textContent?.includes(benchRun.records[0].task),
+    )!;
+    fireEvent.click(recorded);
     await waitFor(() =>
       expect(screen.getByTestId("bench-canary")).toBeTruthy(),
     );
@@ -1742,16 +1787,21 @@ describe("T64 drilldown is scoped to the current run", () => {
     rerender(<BenchPage />);
 
     // The process-state probe runs on its own interval, so run B's arrival
-    // is not synchronous with the rerender.
+    // is not synchronous with the rerender. Since T80, run B shows its full
+    // queue rather than an empty pane, so the assertion is that A's expanded
+    // FAILURE DETAIL is gone — not that the table is empty.
     await waitFor(
-      () => expect(screen.queryAllByTestId("bench-task-row")).toHaveLength(0),
-      { timeout: 6000 },
+      () =>
+        expect(
+          screen.queryByTestId("bench-canary"),
+          "run A's drilldown content must not survive into run B",
+        ).toBeNull(),
+      { timeout: 8000 },
     );
-    expect(
-      screen.queryByTestId("bench-canary"),
-      "run A's drilldown content must not survive into run B",
-    ).toBeNull();
-  });
+    for (const cell of screen.queryAllByTestId("bench-task-mean")) {
+      expect(cell.textContent).toMatch(/queued|skipped|—/);
+    }
+  }, 15000);
 });
 
 // T63 — UI copy is sentence-cased.
@@ -1762,14 +1812,12 @@ describe("T64 drilldown is scoped to the current run", () => {
 // never appeared in it — so the rendered page is the reference.
 describe("T63a copy is sentence-cased (byte-exact)", () => {
   const cases: Array<[string, RegExp]> = [
-    [
-      "Model ID hint",
-      /^Which model this run expects — leave blank to trust whatever the server reports$/,
-    ],
-    [
-      "Benchmark Alias hint",
-      /^Optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded$/,
-    ],
+    // Shortened by T84: at 3 and 4 wrapped lines these two hints were half
+    // the card's height and pushed Start off a 1080p viewport. The full
+    // wording moved to each field's tooltip; the sentence-casing T63 guards
+    // is unchanged.
+    ["Model ID hint", /^Blank = trust the server$/],
+    ["Benchmark Alias hint", /^Optional — names this run$/],
     ["URL hint", /^Defaults to the configured llama-server$/],
     [
       "Languages hint",
@@ -1802,7 +1850,7 @@ describe("T63a copy is sentence-cased (byte-exact)", () => {
     render(<BenchPage />);
     await waitFor(() =>
       expect(
-        screen.getByText(/^No active model to inherit from — sent explicitly$/),
+        screen.getByText(/^No active model — sent explicitly$/),
       ).toBeTruthy(),
     );
   });
@@ -1863,7 +1911,9 @@ describe("T63b no unexpected lowercase-first copy", () => {
     /^x̄/, // the task-mean symbol
     /^(of|edition|localbench|tasks?|on task|set it in Settings)$/,
     /^est\. /, // "est. 3m 17s" — a value annotation, not a sentence
+    /^(queued|skipped)$/, // roster-row state labels, not sentences
     /^(solved|failed|in progress|timeout\/format|on retry|server —)/, // strip legend fragments
+    /^crashed \/ nothing runnable$/, // T70's legend entry, same class
     /^(current|previous) edition$/, // section headings (CSS-uppercased)
     /^mock \/ other server$/, // badge (CSS-uppercased)
     /^inspect prompt$/, // lead pill label
@@ -2254,13 +2304,18 @@ describe("T75 the live view populates without a manual refresh", () => {
       expect(screen.getByTestId("bench-warming")).toBeTruthy(),
     );
 
-    // …then, with no remount and no Refresh click, the run's own rows arrive.
+    // …then, with no remount and no Refresh click, the run's own RESULTS
+    // arrive. Row count no longer proves this: since T80 the roster renders
+    // rows immediately, all of them queued. A scored figure only appears
+    // once the spawned run's detail has actually been loaded.
     await waitFor(
       () =>
         expect(
-          screen.queryAllByTestId("bench-task-row").length,
-          "a run started after mount must appear on its own",
-        ).toBeGreaterThan(0),
+          screen
+            .queryAllByTestId("bench-task-mean")
+            .some((c) => /\d/.test(c.textContent ?? "")),
+          "a run started after mount must load its own results unaided",
+        ).toBe(true),
       { timeout: 15000 },
     );
     expect(
@@ -2404,17 +2459,20 @@ describe("T83 footer sparklines", () => {
   it("renders one bar per data point, not a path", async () => {
     installFetch({ detail: withRecords(5) });
     render(<BenchPage />);
+    // Addressed by series name, not index: an index silently follows any
+    // reordering of the strip (T90 replaced one slot) and the failure then
+    // looks like a data bug rather than a moved column.
+    const spark = (name: string) =>
+      document.querySelector(`[data-series="${name}"]`);
     await waitFor(() =>
-      expect(
-        document.querySelectorAll('[data-testid="bench-spark-bar"]').length,
-      ).toBeGreaterThan(0),
+      expect(spark("Elapsed")?.querySelectorAll("i")).toHaveLength(5),
     );
     const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
     expect(sparks).toHaveLength(5); // one per footer stat
-    // One bar per record in the series. (data-points counts only the FINITE
-    // values — the mock fixture's gen_seconds are ~0, so most rates are null
-    // and would understate the bar count.)
-    expect(sparks[3].querySelectorAll("i")).toHaveLength(5);
+    // One bar per record. data-points counts only the FINITE values — the
+    // mock fixture's gen_seconds are ~0, so most rates are null and would
+    // understate the bar count.
+    expect(spark("Elapsed")?.querySelectorAll("i")).toHaveLength(5);
   });
 
   it("draws nothing rather than a misleading shape with no points", async () => {
@@ -2450,5 +2508,626 @@ describe("T83 footer sparklines", () => {
       heights(sparks[1]).join(","),
       "Samples/hr must not be a copy of the Elapsed series",
     ).not.toBe(heights(sparks[3]).join(","));
+  });
+});
+
+// T85 — the selected run's detail must keep polling across a failed read.
+//
+// The reported cause (fetched once, never re-polled) did NOT match source:
+// the effect already recurses at RUN_POLL_MS and already stops on
+// `live == {}`. The real freeze is the error path — the old catch returned
+// without rescheduling, so one slow read (results.json grows through a run,
+// and getJson aborts at 8s) permanently ended the recursion while the run
+// carried on.
+describe("T85 detail polling survives a transient read failure", () => {
+  const liveDetail = (done: number, task: string) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: task,
+      current_attempt: 1,
+      done,
+      total: 27,
+      run_elapsed: done * 60,
+      heartbeat: new Date().toISOString(),
+    };
+    return d;
+  };
+
+  it("recovers and keeps advancing after a failed detail fetch", async () => {
+    let detailCalls = 0;
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "", reason: "", models: [] });
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) {
+        detailCalls += 1;
+        // 1st ok, 2nd fails (the slow-read abort), 3rd shows progress.
+        if (detailCalls === 2) return Promise.reject(new Error("aborted"));
+        return okJson(liveDetail(detailCalls === 1 ? 15 : 16, "java/x"));
+      }
+      if (url.includes("/api/bench/runs")) return okJson([runRow()]);
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    // Reaching 16/27 REQUIRES surviving the failed second fetch: the third
+    // response is the only one that reports it. Asserting the intermediate
+    // 15/27 would just race the 2s poll.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("bench-progress-tiles").textContent,
+          "a transient read failure must not stop the detail poll",
+        ).toContain("16/27"),
+      { timeout: 15000 },
+    );
+    expect(
+      detailCalls,
+      "the failed read must have been passed through, not skipped",
+    ).toBeGreaterThan(2);
+  }, 20000);
+
+  it("stops polling once the payload reports the run finished", async () => {
+    const calls = installFetch(); // fixture has live == {}
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/runs/"))).toBe(true),
+    );
+    const settled = calls.filter((c) => c.includes("/api/bench/runs/")).length;
+    await new Promise((r) => setTimeout(r, 2600)); // > RUN_POLL_MS
+    expect(
+      calls.filter((c) => c.includes("/api/bench/runs/")).length,
+      "a finished run must not be re-read forever",
+    ).toBe(settled);
+  });
+});
+
+// T79 — a warning about the PREVIOUS run is worse than a stale number.
+//
+// T64 scoped the drilldown and the ScoreCard to the current run; the
+// record-derived WARNINGS were not reached. A fresh run showed "5 samples
+// were cut off" from its predecessor while reporting 0 samples of its own.
+describe("T79 record-derived warnings are scoped to the current run", () => {
+  const withBudgetStops = () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    [0, 2, 4].forEach((i) => {
+      if (recs[i]) recs[i].stopped_at_budget = true;
+    });
+    return d;
+  };
+  const SPAWNED_B = {
+    running: true,
+    run: {
+      pid: 9100,
+      folder: "runB_20260810-110000",
+      model: "Qwen3.6-35B",
+      label: null,
+      langs: "js",
+      attempts: 1,
+      n: 1,
+      temperature: 0.2,
+      started: new Date().toISOString(),
+      url: "http://localhost:8081",
+    },
+  };
+
+  it("shows no budget banner while a new run has no records of its own", async () => {
+    // Run A (loaded, has budget stops) + run B just spawned.
+    installFetch({ detail: withBudgetStops(), current: SPAWNED_B });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-budget-banner"),
+      "the previous run's budget stops are not this run's problem",
+    ).toBeNull();
+  });
+
+  it("still shows it for the run that actually hit the budget", async () => {
+    installFetch({ detail: withBudgetStops() });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-budget-banner");
+    expect(banner.textContent).toContain("3");
+  });
+
+  // The siblings that share the same source.
+  it("suppresses the truncation banner during warming too", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    [0, 1, 2].forEach((i) => {
+      if (recs[i]) recs[i].truncated = true;
+    });
+    installFetch({ detail: d, current: SPAWNED_B });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-truncation-banner")).toBeNull();
+  });
+
+  it("suppresses a carried-over server-error banner during warming", async () => {
+    // An INTERRUPTED previous run keeps a non-empty `live`, so its
+    // consecutive_server_errors would otherwise leak into the new run.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/x",
+      done: 3,
+      total: 27,
+      consecutive_server_errors: 2,
+    };
+    installFetch({ detail: d, current: SPAWNED_B });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-server-banner")).toBeNull();
+  });
+});
+
+// T80 — the table shows the whole roster from the first render.
+//
+// It used to grow row by row out of `groupByTask(records)`, so a 27-task run
+// displayed 1 row at 45s while the hero already said "27 of 27" — two
+// surfaces disagreeing about the same fact. `pending` was already a defined
+// CellState with no producer.
+describe("T80 Tasks & Runs renders the full task roster", () => {
+  it("renders every task in the run's scope before any record exists", async () => {
+    // A spawned run, warming: no results.json of its own yet.
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          pid: 9200,
+          folder: "roster_20260810-120000",
+          model: "Qwen3.6-35B",
+          label: null,
+          langs: "js",
+          attempts: 1,
+          n: 1,
+          temperature: 0.2,
+          started: new Date().toISOString(),
+          url: "http://localhost:8081",
+        },
+      },
+      noDetail: true,
+      runs: [],
+    });
+    render(<BenchPage />);
+
+    // TASK_LIST declares 4 js tasks; the run selected js only.
+    await waitFor(() =>
+      expect(screen.queryAllByTestId("bench-task-row")).toHaveLength(4),
+    );
+    // Queued, not zeroed — a 0.00 reads as a scored result.
+    const means = screen.queryAllByTestId("bench-task-mean");
+    for (const m of means) {
+      expect(m.textContent).toMatch(/queued|skipped/);
+      expect(m.textContent).not.toContain("0.00");
+    }
+    expect(
+      screen.queryAllByTestId("bench-cell-pending").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps the row count stable as records arrive", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen
+          .queryAllByTestId("bench-task-mean")
+          .some((c) => /\d/.test(c.textContent ?? "")),
+      ).toBe(true),
+    );
+    // The fixture's run covers js; its rows are the roster's, not the
+    // records' — so scored and queued rows coexist at a constant count.
+    expect(screen.queryAllByTestId("bench-task-row")).toHaveLength(4);
+  });
+
+  it("marks a task whose toolchain is missing as skipped, not queued", async () => {
+    // CHECK reports gdscript unavailable.
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          pid: 9201,
+          folder: "gd_20260810-130000",
+          model: "m",
+          label: null,
+          langs: "gdscript",
+          attempts: 1,
+          n: 1,
+          temperature: 0.2,
+          started: new Date().toISOString(),
+          url: "http://localhost:8081",
+        },
+      },
+      noDetail: true,
+      runs: [],
+      taskList: {
+        tasks: [
+          { id: "gdscript/turn_queue", lang: "gdscript" },
+          { id: "gdscript/cooldowns", lang: "gdscript" },
+        ],
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryAllByTestId("bench-task-row")).toHaveLength(2),
+    );
+    for (const m of screen.queryAllByTestId("bench-task-mean")) {
+      expect(m.textContent).toBe("skipped");
+    }
+  });
+});
+
+// T74 — plain-language status. "Heartbeat" is polling vocabulary: it says how
+// the page knows, not what is happening.
+describe("T74 run status in plain language", () => {
+  const liveDetail = (heartbeatAgeMs: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/formula_engine",
+      current_attempt: 1,
+      done: 3,
+      total: 12,
+      run_elapsed: 120,
+      heartbeat: new Date(Date.now() - heartbeatAgeMs).toISOString(),
+    };
+    return d;
+  };
+
+  it("running: green dot, and the label says so", async () => {
+    installFetch({ detail: liveDetail(4000) });
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() => expect(el.getAttribute("data-status")).toBe("running"));
+    expect(el.textContent).toMatch(/^Running · updated \d+s ago$/);
+  });
+
+  it("stalled: says the run may be stuck, not 'stale'", async () => {
+    installFetch({ detail: liveDetail(106_000) });
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() => expect(el.getAttribute("data-status")).toBe("stalled"));
+    expect(el.textContent).toMatch(/No update for \d+s — the run may be stuck/);
+  });
+
+  it("finished: reports what happened", async () => {
+    installFetch(); // fixture's live == {}
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() =>
+      expect(el.getAttribute("data-status")).toBe("finished"),
+    );
+    expect(el.textContent).toMatch(/^Run finished · \d+ samples in /);
+  });
+
+  it("idle is grey and normal, never an error", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() => expect(el.getAttribute("data-status")).toBe("idle"));
+    expect(el.textContent).toBe("Not running");
+  });
+
+  // Backstop, on RENDERED OUTPUT ONLY. A source-text assertion would flag the
+  // data contract's own field name and would be the wrong test.
+  it("no user-visible text or tooltip says 'heartbeat'", async () => {
+    installFetch({ detail: liveDetail(4000) });
+    const { container } = render(<BenchPage />);
+    // Wait for the PACING branch that carried the jargon. Waiting only for
+    // the status element made this vacuous: it exists before the detail
+    // loads, so the median-based health line never rendered and the sweep
+    // walked a DOM that could not contain the string it was looking for.
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-pacing").textContent).toMatch(
+        /Median for this task/,
+      ),
+    );
+
+    const offenders: string[] = [];
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      if (/heartbeat/i.test(n.textContent ?? ""))
+        offenders.push((n.textContent ?? "").trim().slice(0, 60));
+    }
+    container.querySelectorAll("[title]").forEach((e) => {
+      if (/heartbeat/i.test(e.getAttribute("title") ?? ""))
+        offenders.push(
+          "TITLE: " + (e.getAttribute("title") ?? "").slice(0, 60),
+        );
+    });
+    expect(offenders, "polling vocabulary must not reach the user").toEqual([]);
+  });
+});
+
+// T82 — ON TASK must not name a task that has already finished.
+//
+// bench.py sets current_task when a sample STARTS (1769) and writes
+// results.json when it ENDS (1874), so at save time the field names the
+// sample that just completed. Option 1 was chosen: show it only when a
+// sample is genuinely in flight, matching this page's honest-unknown
+// pattern — a live monitoring page exists to say what is happening NOW.
+describe("T82 ON TASK reflects what is actually running", () => {
+  const detailWith = (currentTask: string) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: currentTask,
+      current_attempt: 1,
+      done: 2,
+      total: 27,
+      run_elapsed: 162,
+      heartbeat: new Date().toISOString(),
+    };
+    return d;
+  };
+
+  it("does not present a task that already has a completed record", async () => {
+    const finished = benchRun.records[0].task; // has a record in the fixture
+    installFetch({ detail: detailWith(finished) });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain("Between samples"));
+    expect(
+      tiles.textContent,
+      "a scored task cannot also be in flight",
+    ).not.toContain(`On task${finished}`);
+  });
+
+  it("still names a genuinely in-flight task", async () => {
+    // A roster task with no record yet.
+    installFetch({ detail: detailWith("js/interval_set_unrecorded") });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain("On task"));
+    expect(tiles.textContent).toContain("js/interval_set_unrecorded");
+  });
+});
+
+// T86 — a run that is still going is not "interrupted".
+describe("T86 History distinguishes running from interrupted", () => {
+  const unfinished = () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/unrecorded",
+      done: 15,
+      total: 27,
+      heartbeat: new Date().toISOString(),
+    };
+    return d;
+  };
+
+  it("shows the live run as running, with no Resume", async () => {
+    const d = unfinished();
+    installFetch({ detail: d, runs: [runRow({ finished: false })] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-run-running")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-resume"),
+      "resuming a live run would spawn a second process on the same directory",
+    ).toBeNull();
+    expect(screen.queryByTestId("bench-interrupted")).toBeNull();
+  });
+
+  it("shows the same file as interrupted, with Resume, once it is not live", async () => {
+    // Identical shape, no liveness: live == {} and no process state.
+    installFetch({
+      runs: [runRow({ finished: false })],
+      current: { running: false, run: null },
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-interrupted")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-resume")).toBeTruthy();
+  });
+});
+
+// T90 — the footer's fifth slot reports something that moves.
+describe("T90 footer shows Remaining, not an always-zero error count", () => {
+  it("replaces the Server errors slot", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-footer-server-errors")).toBeNull();
+  });
+
+  it("dashes rather than guessing when no run is active", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-remaining").textContent).toBe(
+        "—",
+      ),
+    );
+  });
+
+  it("leaves the server-excluded tile and hero banner alone", async () => {
+    // Regression guard: this was a footer swap, not a removal of the count.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/x",
+      done: 1,
+      total: 27,
+      consecutive_server_errors: 2,
+      heartbeat: new Date().toISOString(),
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-server-banner")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-server-excluded")).toBeTruthy();
+  });
+});
+
+// ── T92 — Compare's per-slot dropdowns ──────────────────────────────────────
+//
+// Supersedes the chip cloud (T88 desync, T91 dead end). The chips drew from
+// `runs` while the columns came from `storedDetails`, and only the 8 most
+// recent runs got a chip — so a selection outside that window had no control
+// to undo it. These assert the control and the columns are the same thing.
+describe("T92 Compare per-slot dropdowns", () => {
+  const openCompare = async (runs: unknown[]) => {
+    installFetch({ runs });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+  };
+  const slot = (i: number) =>
+    screen.getByTestId(`bench-compare-slot-${i}`) as HTMLSelectElement;
+  const columnIds = () =>
+    screen
+      .queryAllByTestId("bench-compare-col")
+      .map((el) => el.getAttribute("data-run-id"));
+  const selections = () => [0, 1, 2].map((i) => slot(i).value).filter(Boolean);
+  const threeRuns = () => [
+    runRow(),
+    runRow({ run_id: "r2" }),
+    runRow({ run_id: "r3" }),
+  ];
+
+  it("renders exactly the columns the dropdowns select", async () => {
+    await openCompare(threeRuns());
+    await waitFor(() => expect(columnIds().length).toBeGreaterThan(0));
+    // Set equality, not a count: the desync showed the right NUMBER of
+    // columns for the wrong runs.
+    expect(new Set(columnIds())).toEqual(new Set(selections()));
+  });
+
+  it("shows the default selection in the dropdowns, never as hidden state", async () => {
+    await openCompare(threeRuns());
+    await waitFor(() => expect(selections().length).toBeGreaterThanOrEqual(2));
+    expect(new Set(columnIds())).toEqual(new Set(selections()));
+  });
+
+  it("'— none —' empties that slot and removes its column", async () => {
+    await openCompare(threeRuns());
+    await waitFor(() => expect(columnIds()).toHaveLength(3));
+    const removed = slot(2).value;
+
+    fireEvent.change(slot(2), { target: { value: "" } });
+
+    await waitFor(() => expect(columnIds()).not.toContain(removed));
+    expect(new Set(columnIds())).toEqual(new Set(selections()));
+  });
+
+  it("disables an option whose --attempts conflicts, and gives the reason", async () => {
+    await openCompare([
+      runRow(),
+      runRow({ run_id: "r2" }),
+      runRow({
+        run_id: "odd",
+        config: { ...benchRun.config, attempts: 99 },
+      }),
+    ]);
+    await waitFor(() => expect(selections().length).toBeGreaterThanOrEqual(2));
+
+    const opt = [...slot(0).options].find((o) => o.value === "odd");
+    expect(opt, "the conflicting run should still be listed").toBeDefined();
+    expect(opt!.disabled).toBe(true);
+    expect(opt!.textContent).toContain("different --attempts");
+  });
+
+  it("stays changeable while a refusal is displayed", async () => {
+    // T91: an ineligible selection became a dead end needing a page reload.
+    await openCompare(threeRuns());
+    await waitFor(() => expect(columnIds()).toHaveLength(3));
+
+    fireEvent.change(slot(2), { target: { value: "" } });
+    fireEvent.change(slot(1), { target: { value: "" } });
+    await screen.findByTestId("bench-compare-refusal");
+
+    const back = [...slot(1).options].find(
+      (o) => o.value && o.value !== slot(0).value,
+    );
+    fireEvent.change(slot(1), { target: { value: back!.value } });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-compare-refusal")).toBeNull(),
+    );
+  });
+
+  it("still refuses an ineligible selection that reaches the table (T87)", async () => {
+    // Disabled options make this rare, not impossible — restored state or a
+    // deep link can still arrive ineligible, so the backstop must remain.
+    await openCompare([
+      runRow(),
+      runRow({ run_id: "x", suite_hash: "other99" }),
+    ]);
+
+    fireEvent.change(slot(1), { target: { value: "x" } });
+
+    const refusal = await screen.findByTestId("bench-compare-refusal");
+    expect(refusal.textContent).toMatch(/suite editions/);
+  });
+});
+
+// ── Regression — a poll must not close an open drilldown ────────────────────
+//
+// Roster rows (T80) render BEFORE the run's detail exists, so a click can be
+// keyed to the placeholder run ("none"). When the real run id arrived the
+// drilldown was dropped as though the run had changed, collapsing an
+// expanded task under the user. Gated rather than timing-dependent: the
+// canary tests hit this intermittently, which is not a guard.
+describe("an open drilldown survives its own run's data arriving", () => {
+  it("keeps the expanded task when detail lands after the click", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const rec = (d as { records: Record<string, unknown>[] }).records[0];
+    rec.status = "fail";
+    rec.tests_total = 32;
+    rec.tests_expected = 35;
+    rec.solved = false;
+
+    installFetch({ detail: d });
+    const inner = global.fetch as unknown as (
+      i: RequestInfo | URL,
+    ) => Promise<Response>;
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (/\/api\/bench\/runs\/[^/?]+$/.test(String(input))) await gate;
+      return inner(input);
+    }) as unknown as typeof global.fetch;
+
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+
+    release();
+
+    // Assert the drilldown's CONTENT, not merely that a node exists: the
+    // canary is what the expanded row was opened to show.
+    const canary = await screen.findByTestId("bench-canary");
+    expect(
+      canary.textContent,
+      "the run's own detail arriving is not a run change — the drilldown must survive it",
+    ).toMatch(/SUITE DRIFT/);
   });
 });

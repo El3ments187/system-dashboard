@@ -2006,3 +2006,24 @@ main {
   border: 1.5px dotted var(--danger);
   opacity: 0.85;
 }
+
+/* Run status dot (T74). Colour is a second signal only — the label beside it
+   always states the state in words. Idle is grey, not red: nothing running is
+   a normal condition, and amber is reserved for "should be progressing and
+   isn't". */
+.bench-pulse.running .bench-dot {
+  background: var(--success);
+}
+.bench-pulse.stalled .bench-dot {
+  background: var(--warning);
+  animation: none;
+}
+.bench-pulse.finished .bench-dot {
+  background: var(--text-muted);
+  animation: none;
+}
+.bench-pulse.idle .bench-dot {
+  background: transparent;
+  border: 1.5px solid var(--text-muted);
+  animation: none;
+}

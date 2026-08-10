@@ -175,6 +175,10 @@ export function useBenchData(): BenchData {
   const [runs, setRuns] = useState<BenchRunRow[]>([]);
   const [detail, setDetail] = useState<BenchRunDetail | null>(null);
   const [storedDetails, setStoredDetails] = useState<BenchRunDetail[]>([]);
+  // The stored-detail loader's own cache. Written only by that effect, which
+  // is also the only writer of `storedDetails`, so it never needs to be
+  // touched during render.
+  const storedDetailsRef = useRef<BenchRunDetail[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -368,12 +372,26 @@ export function useBenchData(): BenchData {
 
   // Full detail for stored runs: History medians, Leads and Compare all need
   // records, which the cheap list deliberately omits.
+  //
+  // A FINISHED run's results.json does not change, so its detail is fetched
+  // once and reused. The runs poll returns a fresh array every 5s, which used
+  // to refetch every stored run's detail on every poll — with 32 runs that is
+  // ~8 requests/second, forever, and it got worse with each run ever
+  // recorded. That load is what made the page slow enough to time e2e out.
   useEffect(() => {
     let cancelled = false;
     if (runs.length === 0) return;
     void (async () => {
+      const cached = new Map(
+        storedDetailsRef.current.map((d) => [d.run_id, d]),
+      );
       const loaded: BenchRunDetail[] = [];
       for (const row of runs) {
+        const hit = row.finished ? cached.get(row.run_id) : undefined;
+        if (hit) {
+          loaded.push(hit);
+          continue;
+        }
         try {
           const d = await getJson<BenchRunDetail>(
             `/api/bench/runs/${encodeURIComponent(row.run_id)}`,
@@ -384,7 +402,16 @@ export function useBenchData(): BenchData {
         }
         if (cancelled) return;
       }
-      if (!cancelled) setStoredDetails(loaded);
+      if (cancelled) return;
+      // Keep the previous array when nothing changed: a new identity every
+      // poll re-runs every downstream memo for no new information.
+      const prev = storedDetailsRef.current;
+      const unchanged =
+        prev.length === loaded.length && prev.every((d, i) => d === loaded[i]);
+      if (!unchanged) {
+        storedDetailsRef.current = loaded;
+        setStoredDetails(loaded);
+      }
     })();
     return () => {
       cancelled = true;
@@ -398,6 +425,10 @@ export function useBenchData(): BenchData {
     let cancelled = false;
     if (!selectedRunId) return;
 
+    // Assumed live until a payload says otherwise, so the very first fetch
+    // failing still retries rather than freezing the page before it starts.
+    let lastKnownLive = true;
+
     const tick = async () => {
       try {
         const d = await getJson<BenchRunDetail>(
@@ -405,13 +436,21 @@ export function useBenchData(): BenchData {
         );
         if (cancelled) return;
         setDetail(d);
-        // `live == {}` means FINISHED — stop here, do not reschedule.
-        if (Object.keys(d.live ?? {}).length > 0) {
-          timerRef.current = setTimeout(() => void tick(), RUN_POLL_MS);
-        }
+        lastKnownLive = Object.keys(d.live ?? {}).length > 0;
       } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "bench run fetch failed");
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "bench run fetch failed");
+        // Deliberately fall through to the reschedule below. Returning here
+        // is what froze the page mid-run: results.json grows as a run
+        // proceeds, one slow read trips getJson's 8s abort, and the old
+        // catch ended the recursion — so SAMPLES/ON TASK stayed pinned at
+        // whatever the last good fetch saw while the run carried on. A
+        // transient read failure must not permanently stop the poll.
+      }
+      // `live == {}` means FINISHED — stop, so a stored run left open in a
+      // tab is not re-read every 2s forever.
+      if (!cancelled && lastKnownLive) {
+        timerRef.current = setTimeout(() => void tick(), RUN_POLL_MS);
       }
     };
 

@@ -5,7 +5,9 @@ import benchAllServer from "./fixtures/benchAllServer.json";
 import {
   cellState,
   compareEligibility,
+  compareNotation,
   compareRows,
+  compareSlotOptions,
   deltaSpread,
   flakyTasks,
   greedyInterlock,
@@ -718,5 +720,89 @@ describe("T76 pacing median is scoped to the target class", () => {
   it("still pools everything when no target is supplied", () => {
     const history = [runWith(MOCK, 10), runWith(REAL, 20)];
     expect(historicalTaskMedian(history, "js/a")).toBe(15);
+  });
+});
+
+// ── T92 — per-slot dropdown options ─────────────────────────────────────────
+//
+// The chips judged every run against the WHOLE selection including itself,
+// so an ineligible pick disabled its own way out. These assert the option
+// set a slot offers, which is what makes the dead end unreachable.
+describe("T92 compareSlotOptions", () => {
+  const row = (over: Record<string, unknown> = {}) =>
+    ({
+      run_id: "r1",
+      suite_hash: "e293ad7",
+      created: "2026-08-10T10:00:00Z",
+      folder: "f",
+      models: ["qwen"],
+      summary: null,
+      config: { attempts: 3, n: 1, url: "http://localhost:8081" },
+      finished: true,
+      ...over,
+    }) as unknown as Parameters<typeof compareSlotOptions>[0][number];
+
+  const D = "http://localhost:8081";
+
+  it("offers every run when nothing else is selected", () => {
+    const runs = [row(), row({ run_id: "r2" })];
+    const opts = compareSlotOptions(runs, ["", "", ""], 0, D);
+    expect(opts.map((o) => o.runId)).toEqual(["r1", "r2"]);
+    expect(opts.every((o) => !o.disabled)).toBe(true);
+  });
+
+  it("disables a run whose --attempts differs, and says why", () => {
+    const runs = [
+      row(),
+      row({ run_id: "r2", config: { attempts: 1, n: 1, url: D } }),
+    ];
+    const opts = compareSlotOptions(runs, ["r1", "", ""], 1, D);
+    const other = opts.find((o) => o.runId === "r2")!;
+    expect(other.disabled).toBe(true);
+    expect(other.reason).toBe("different --attempts");
+    expect(other.label).toContain("different --attempts");
+  });
+
+  it("disables a run from another suite edition, naming the edition", () => {
+    const runs = [row(), row({ run_id: "r2", suite_hash: "beef123" })];
+    const opts = compareSlotOptions(runs, ["r1", "", ""], 1, D);
+    const other = opts.find((o) => o.runId === "r2")!;
+    expect(other.disabled).toBe(true);
+    expect(other.reason).toContain("beef123");
+  });
+
+  it("never disables the option this slot already holds", () => {
+    // The dead end: judged against a selection containing itself, the current
+    // pick went disabled and there was no way back to a valid comparison.
+    const runs = [
+      row(),
+      row({ run_id: "r2", config: { attempts: 1, n: 1, url: D } }),
+    ];
+    const opts = compareSlotOptions(runs, ["r1", "r2", ""], 1, D);
+    expect(opts.find((o) => o.runId === "r2")!.disabled).toBe(false);
+  });
+
+  it("disables a run already held by another slot", () => {
+    const runs = [row(), row({ run_id: "r2" })];
+    const opts = compareSlotOptions(runs, ["r1", "", ""], 1, D);
+    expect(opts.find((o) => o.runId === "r1")!.reason).toBe(
+      "already in another slot",
+    );
+  });
+
+  it("marks a mock target with the badge's own wording", () => {
+    const runs = [
+      row({ config: { attempts: 3, n: 1, url: "http://127.0.0.1:8123" } }),
+    ];
+    expect(compareSlotOptions(runs, ["", "", ""], 0, D)[0].label).toContain(
+      "mock / other server",
+    );
+  });
+
+  it("states attempts and samples in one notation", () => {
+    expect(compareNotation({ attempts: 3, n: 1 })).toBe("a3 n1");
+    expect(compareSlotOptions([row()], ["", "", ""], 0, D)[0].label).toContain(
+      "a3 n1",
+    );
   });
 });

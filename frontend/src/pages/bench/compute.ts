@@ -11,6 +11,7 @@
  */
 import type {
   BenchConfig,
+  BenchLive,
   BenchRecord,
   BenchRunDetail,
   BenchRunRow,
@@ -305,12 +306,99 @@ export function compareEligibility(runs: BenchRunRow[]): CompareEligibility {
       message: `Refused: these runs span ${editions.size} suite editions (${[...editions].join(", ")}). Cross-edition scores are not comparable — the benchmark itself changed.`,
     };
   const attempts = new Set(runs.map((r) => r.config?.attempts ?? 0));
-  if (attempts.size > 1)
+  if (attempts.size > 1) {
+    // Same `aN` notation the dropdown and the column header use.
+    const listed = [...attempts].map((a) => `a${a}`).join(", ");
     return {
       eligible: false,
-      message: `Refused: --attempts differs across these runs (${[...attempts].join(", ")}). Points are denominated in attempts, so these are not the same scale.`,
+      message: `Refused: --attempts differs across these runs (${listed}). Points are denominated in attempts, so these are not the same scale.`,
     };
+  }
   return { eligible: true };
+}
+
+/**
+ * One notation for how a run was sampled. Compare used to state this three
+ * ways in a single view — `a3 n1` on the chips, `x̄ over --n 3` in the column
+ * header, `--attempts` in the refusal — so a reader could not tell whether
+ * they described the same thing. The dropdown, the header and the refusal
+ * all use this.
+ */
+export function compareNotation(
+  config: BenchConfig | null | undefined,
+): string {
+  return `a${config?.attempts ?? "?"} n${config?.n ?? 1}`;
+}
+
+export interface CompareSlotOption {
+  runId: string;
+  label: string;
+  disabled: boolean;
+  /** Why it cannot join the current selection. Shown, never silent. */
+  reason: string | null;
+}
+
+/**
+ * The options for ONE comparison slot.
+ *
+ * Eligibility is computed against the OTHER slots only. Judging a candidate
+ * against a selection that includes itself is what produced the dead end:
+ * every option went ineligible and nothing could be changed back.
+ */
+export function compareSlotOptions(
+  candidates: BenchRunRow[],
+  selected: Array<string | null>,
+  slotIndex: number,
+  defaultUrl: string | null | undefined,
+): CompareSlotOption[] {
+  const others = selected
+    .filter((_, i) => i !== slotIndex)
+    .map((id) => candidates.find((r) => r.run_id === id))
+    .filter((r): r is BenchRunRow => Boolean(r));
+  const anchor = others[0] ?? null;
+
+  return candidates.map((r) => {
+    let reason: string | null = null;
+    // The value this slot already holds is never judged: disabling it
+    // prevents nothing (the pair exists already) and leaves the control
+    // displaying its own selection as forbidden.
+    if (r.run_id !== selected[slotIndex]) {
+      if (others.some((o) => o.run_id === r.run_id)) {
+        reason = "already in another slot";
+      } else if (anchor) {
+        if (r.suite_hash !== anchor.suite_hash) {
+          reason = `different suite edition (${r.suite_hash})`;
+        } else if (
+          (r.config?.attempts ?? 0) !== (anchor.config?.attempts ?? 0)
+        ) {
+          reason = "different --attempts";
+        }
+      }
+    }
+
+    const naming = runNaming(r.models, r.config);
+    const name = naming.alias
+      ? `${naming.primary} (alias ${naming.alias})`
+      : naming.primary;
+    const day = new Date(r.created).toLocaleDateString(undefined, {
+      month: "numeric",
+      day: "numeric",
+    });
+    // A <select> option cannot host the TargetBadge element, so it carries
+    // the badge's own wording rather than inventing a second vocabulary.
+    const mock = isNonDefaultTarget(r.config?.url, defaultUrl)
+      ? " · mock / other server"
+      : "";
+
+    return {
+      runId: r.run_id,
+      label:
+        `${day}  ${name}  ·  ${compareNotation(r.config)}${mock}` +
+        (reason ? `  (${reason})` : ""),
+      disabled: reason !== null,
+      reason,
+    };
+  });
 }
 
 /** Δ = max − min of the per-run task means; the tasks that discriminate. */
@@ -327,15 +415,28 @@ export interface CompareRow {
   delta: number | null;
 }
 
-/** Default sort is Δ descending: disagreement first. */
-export function compareRows(details: BenchRunDetail[]): CompareRow[] {
+/**
+ * Default sort is Δ descending: disagreement first.
+ *
+ * A null entry is a chosen run whose detail could not be read. It keeps its
+ * column and scores blank — dropping the column instead would make the table
+ * disagree with the selection that produced it.
+ */
+export function compareRows(
+  details: Array<BenchRunDetail | null>,
+): CompareRow[] {
   const tasks = new Set<string>();
-  for (const d of details) for (const r of d.records) tasks.add(r.task);
+  for (const d of details) if (d) for (const r of d.records) tasks.add(r.task);
   const rows: CompareRow[] = [];
   for (const task of tasks) {
     const means: Array<number | null> = [];
     const cells: CellState[][] = [];
     for (const d of details) {
+      if (!d) {
+        means.push(null);
+        cells.push([]);
+        continue;
+      }
       const rs = d.records
         .filter((r) => r.task === task)
         .sort((a, b) => a.sample - b.sample);
@@ -583,13 +684,86 @@ export function activeModelName(
   return file.replace(/\.gguf$/i, "") || null;
 }
 
+export type RunStatusKind = "running" | "stalled" | "idle" | "finished";
+
+export interface RunStatus {
+  kind: RunStatusKind;
+  /** Always states the state in words: colour is never the only signal. */
+  label: string;
+}
+
+/**
+ * The run's status in plain language.
+ *
+ * "Heartbeat" describes HOW the page knows something, not WHAT is happening —
+ * it is polling vocabulary and means nothing outside this codebase. The
+ * underlying field keeps its name everywhere it is data (results.json, the
+ * data contract, the polling code); only what a person reads changes.
+ *
+ * Idle is grey, not red: nothing running is normal, not an error. Amber is
+ * reserved for "should be progressing and isn't".
+ */
+export function runStatus(opts: {
+  running: boolean;
+  stale: boolean;
+  ageMs: number | null;
+  finishedSamples: number | null;
+  finishedSeconds: number | null;
+  fmtDuration: (s: number | null) => string;
+}): RunStatus {
+  if (opts.running) {
+    if (opts.stale && opts.ageMs !== null)
+      return {
+        kind: "stalled",
+        label: `No update for ${Math.round(opts.ageMs / 1000)}s — the run may be stuck`,
+      };
+    return {
+      kind: "running",
+      label:
+        opts.ageMs === null
+          ? "Running · waiting for the first result"
+          : `Running · updated ${Math.round(opts.ageMs / 1000)}s ago`,
+    };
+  }
+  if (opts.finishedSamples !== null && opts.finishedSamples > 0)
+    return {
+      kind: "finished",
+      label: `Run finished · ${opts.finishedSamples} samples in ${opts.fmtDuration(opts.finishedSeconds)}`,
+    };
+  return { kind: "idle", label: "Not running" };
+}
+
+/**
+ * What the run is actually working on, if anything.
+ *
+ * `live.current_task` is set when a sample STARTS (bench.py:1769) and
+ * results.json is written when that same sample ENDS (1874), so at save time
+ * the field names the sample that just finished. Reading it as "running now"
+ * is true only in the instant after a save; for the rest of each sample it
+ * names the previous one — which is how a task appeared as in-flight while
+ * the table already showed its completed score.
+ *
+ * The test is per-task completeness, not "is it the newest record": with
+ * `--n 3`, a task with 1 of 3 samples saved genuinely IS still in flight.
+ */
+export function onTaskDisplay(
+  live: BenchLive,
+  records: BenchRecord[],
+  samplesPerTask: number,
+): { task: string | null; inFlight: boolean } {
+  const task = live.current_task ?? null;
+  if (!task) return { task: null, inFlight: false };
+  const done = records.filter((r) => r.task === task).length;
+  return { task, inFlight: done < Math.max(1, samplesPerTask) };
+}
+
 /**
  * The Progress card's health line, which has THREE states, not two.
  *
  * Only "healthy heartbeat" and "stale heartbeat" were ever specified, so a
  * finished run fell through to the live pacing copy and told the reader the
  * heartbeat was its only health signal — with no heartbeat and nothing
- * running. Pacing itself stays heartbeat-and-median: some tasks legitimately
+ * running. Pacing itself stays update-and-median: some tasks legitimately
  * run over an hour, so elapsed time alone proves nothing.
  */
 export function healthStripText(opts: {
@@ -607,15 +781,15 @@ export function healthStripText(opts: {
     const samples = opts.samples ?? 0;
     return `Run stopped — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${
       samples === 1 ? "sample" : "samples"
-    } recorded. No heartbeat: nothing is running.`;
+    } recorded. Nothing is running now.`;
   }
   if (opts.warming)
     return "Warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
   if (opts.median === null)
-    return "No stored median for this task yet — the heartbeat is the only health signal";
+    return "No comparable history for this task yet — progress updates are the only health signal so far";
   const verdict =
     (opts.taskElapsed ?? 0) <= opts.median ? "on pace" : "over median";
-  return `Median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Heartbeat and median decide health; elapsed alone proves nothing.`;
+  return `Median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Progress and timing together tell you if a run is healthy; elapsed time by itself doesn't.`;
 }
 
 /**
@@ -729,6 +903,27 @@ export interface TaskScope {
  * availability count belongs to Run Setup's Toolchains row; the hero reports
  * scope, which is a different question.
  */
+/**
+ * The task ids a run covers, IN EXECUTION ORDER.
+ *
+ * Order matters: rows are rendered before any of them have results, so a
+ * roster in the wrong order makes the "on task" position appear to jump
+ * around. Verified by comparing `bench.py --list --json` against a completed
+ * run's record order — they match exactly. Note that results.json's own
+ * `tasks[]` field does NOT: it is sorted alphabetically (gdscript first),
+ * so it is the wrong source for this.
+ */
+export function runTaskRoster(
+  tasks: Array<{ id: string; lang: string }> | null | undefined,
+  langs: string[] | null | undefined,
+): Array<{ id: string; lang: string }> {
+  if (!tasks || tasks.length === 0) return [];
+  const selected = (langs ?? []).filter(Boolean);
+  if (selected.length === 0) return tasks;
+  const set = new Set(selected);
+  return tasks.filter((t) => set.has(t.lang));
+}
+
 export function runTaskScope(
   tasks: Array<{ id: string; lang: string }> | null | undefined,
   langs: string[] | null | undefined,

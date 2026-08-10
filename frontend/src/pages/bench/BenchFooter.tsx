@@ -32,11 +32,25 @@ function cumulative(values: number[]): number[] {
  * because that component has other callers and this is the only one the
  * design draws as bars.
  */
-function BarSpark({ values }: { values: Array<number | null> }) {
+function BarSpark({
+  values,
+  label,
+}: {
+  values: Array<number | null>;
+  label: string;
+}) {
   const real = values.filter((v): v is number => v !== null && isFinite(v));
-  // Nothing to say yet — say nothing, rather than draw a shape.
+  // Nothing to say yet — hold the slot, draw no shape. Still tagged, so the
+  // strip has one spark per stat whether or not it has data yet.
   if (real.length === 0)
-    return <span style={{ flex: 1, minWidth: 0, height: 18 }} />;
+    return (
+      <span
+        data-testid="bench-spark"
+        data-series={label}
+        data-points={0}
+        style={{ flex: 1, minWidth: 0, height: 18 }}
+      />
+    );
   const max = Math.max(...real);
   const min = Math.min(...real, 0);
   const span = max - min || 1;
@@ -44,6 +58,7 @@ function BarSpark({ values }: { values: Array<number | null> }) {
   return (
     <span
       data-testid="bench-spark"
+      data-series={label}
       data-points={real.length}
       style={{
         display: "flex",
@@ -124,40 +139,29 @@ function FooterStat({
       >
         {value}
       </span>
-      <BarSpark values={data} />
+      <BarSpark values={data} label={label} />
     </div>
   );
 }
 
-export function BenchFooter({
-  detail,
-  elapsedSeconds,
-  running,
-}: {
-  detail: BenchRunDetail | null;
-  /**
-   * The page's single elapsed clock, shared with the hero and Progress. Not
-   * recomputed here: two clocks that can disagree is worse than one shown
-   * twice.
-   */
-  elapsedSeconds: number | null;
-  running: boolean;
-}) {
-  const records = detail?.records ?? [];
+/**
+ * Every figure the footer draws, derived in one place so the component is
+ * layout only. All of them are null/empty when idle rather than carrying the
+ * previous run's numbers — that was the stale-Progress bug, and it would be
+ * no better here.
+ */
+function footerFigures(
+  records: BenchRunDetail["records"],
+  elapsedSeconds: number | null,
+  running: boolean,
+  remainingSeconds: number | null,
+) {
   const graded = gradedRecords(records);
-  // Nothing running and nothing selected means there is nothing to report.
-  // Carrying the last run's figures here would be the stale-Progress bug in
-  // a new location.
-  const idle = !running && records.length === 0;
 
   const rates = graded.map(genRate);
+  const known = rates.filter((r): r is number => r !== null);
   const meanRate =
-    rates.filter((r): r is number => r !== null).length > 0
-      ? rates
-          .filter((r): r is number => r !== null)
-          .reduce((a, b) => a + b, 0) /
-        rates.filter((r): r is number => r !== null).length
-      : null;
+    known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : null;
 
   // Cumulative pass rate, so the line shows how the run trended rather than
   // repeating the headline figure.
@@ -170,19 +174,71 @@ export function BenchFooter({
       : null;
 
   const elapsedSeries = cumulative(records.map((r) => r.seconds));
-  const serverSeries = cumulative(
-    records.map((r) => (r.status === "server" ? 1 : 0)),
-  );
-  const serverTotal = serverSeries[serverSeries.length - 1] ?? 0;
   const totalSeconds = elapsedSeconds ?? 0;
-  const samplesPerHour =
-    totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null;
-  // Its OWN series: samples completed per elapsed hour, as it evolved.
-  // Previously this reused elapsedSeries, so Samples/hr and Elapsed were
-  // mathematically guaranteed to draw the same shape.
-  const ratePerHourSeries = elapsedSeries.map((cum, i) =>
-    cum > 0 ? ((i + 1) / cum) * 3600 : null,
-  );
+  const perSample = records.length > 0 ? totalSeconds / records.length : 0;
+  // Counts down as samples land: what is left of the estimate at each point.
+  const remainingSeries =
+    remainingSeconds === null
+      ? []
+      : records.map(
+          (_, i) => remainingSeconds + (records.length - 1 - i) * perSample,
+        );
+
+  return {
+    // Nothing running and nothing selected means there is nothing to report.
+    idle: !running && records.length === 0,
+    totalSeconds,
+    rates,
+    meanRate,
+    passSeries,
+    passRate,
+    elapsedSeries,
+    remainingSeries,
+    samplesPerHour:
+      totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null,
+    // Its OWN series: samples completed per elapsed hour, as it evolved.
+    // Previously this reused elapsedSeries, so Samples/hr and Elapsed were
+    // mathematically guaranteed to draw the same shape.
+    ratePerHourSeries: elapsedSeries.map((cum, i) =>
+      cum > 0 ? ((i + 1) / cum) * 3600 : null,
+    ),
+  };
+}
+
+export function BenchFooter({
+  detail,
+  elapsedSeconds,
+  running,
+  remainingSeconds,
+}: {
+  detail: BenchRunDetail | null;
+  /**
+   * The page's single elapsed clock, shared with the hero and Progress. Not
+   * recomputed here: two clocks that can disagree is worse than one shown
+   * twice.
+   */
+  elapsedSeconds: number | null;
+  running: boolean;
+  /**
+   * Estimated seconds left, from the same same-target-class pacing the
+   * duration estimate uses. Null when there is no comparable history — a
+   * dash, never a guess.
+   */
+  remainingSeconds: number | null;
+}) {
+  const records = detail?.records ?? [];
+  const {
+    idle,
+    totalSeconds,
+    rates,
+    meanRate,
+    passSeries,
+    passRate,
+    elapsedSeries,
+    remainingSeries,
+    samplesPerHour,
+    ratePerHourSeries,
+  } = footerFigures(records, elapsedSeconds, running, remainingSeconds);
 
   return (
     <div
@@ -221,10 +277,16 @@ export function BenchFooter({
         value={idle && elapsedSeconds === null ? "—" : fmtUptime(totalSeconds)}
         data={idle ? [] : elapsedSeries}
       />
+      {/* Swapped from SERVER ERRORS, which read 0 for two entire real runs —
+          the only stat on a live strip that never moved. The count is still
+          carried by the SERVER EXCL. tile and the hero banner, both of which
+          are better placed for it. */}
       <FooterStat
-        label="Server errors"
-        value={idle ? "—" : String(serverTotal)}
-        data={idle ? [] : serverSeries}
+        label="Remaining"
+        value={
+          idle || remainingSeconds === null ? "—" : fmtUptime(remainingSeconds)
+        }
+        data={idle ? [] : remainingSeries}
       />
     </div>
   );

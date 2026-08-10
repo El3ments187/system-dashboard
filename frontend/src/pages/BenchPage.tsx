@@ -36,6 +36,8 @@ import {
   isNonDefaultTarget,
   roundTemperature,
   runNaming,
+  onTaskDisplay,
+  runStatus,
   runTaskScope,
   startDisabledReason,
   greedyInterlock,
@@ -49,6 +51,7 @@ import {
 import type { TruncationState } from "./bench/compute";
 import type {
   BenchCheck,
+  BenchRecord,
   BenchCurrent,
   BenchLive,
   BenchRunDetail,
@@ -299,10 +302,14 @@ function HeroCard({
   );
   const serverErrors = live.consecutive_server_errors ?? 0;
   const heroTarget = runTargetUrl(current, detail, targetUrl);
-  const heartbeatText =
-    beatAge === null
-      ? "No heartbeat yet"
-      : `Heartbeat ${Math.round(beatAge / 1000)}s ago`;
+  const status = runStatus({
+    running,
+    stale,
+    ageMs: beatAge,
+    finishedSamples: detail?.summary?.samples ?? null,
+    finishedSeconds: elapsedSeconds,
+    fmtDuration: fmtUptime,
+  });
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -406,16 +413,18 @@ function HeroCard({
           </div>
         )}
 
-        {running && !warming && (
+        {/* T74 — plain language, and the label always states the state, so
+            it survives greyscale and a screenshot. */}
+        {!warming && (
           <div style={{ margin: "0 0 8px" }}>
             <span
-              className={stale ? "bench-pulse stale" : "bench-pulse"}
-              data-testid="bench-heartbeat"
+              className={`bench-pulse ${status.kind}`}
+              data-testid="bench-run-status"
+              data-status={status.kind}
               style={{ font: `600 10.5px ${MONO}` }}
             >
               <span className="bench-dot" />
-              {heartbeatText}
-              {stale ? " — stale" : ""}
+              {status.label}
             </span>
           </div>
         )}
@@ -679,6 +688,7 @@ function ScoreCard({
 function ProgressCard({
   detail,
   live,
+  records,
   running,
   warming,
   elapsedSeconds,
@@ -687,6 +697,8 @@ function ProgressCard({
 }: {
   detail: BenchRunDetail | null;
   live: BenchLive;
+  /** Scoped to the current run, for T82's in-flight test. */
+  records: BenchRecord[];
   running: boolean;
   /** A spawned run whose results.json does not exist yet. */
   warming: boolean;
@@ -700,6 +712,8 @@ function ProgressCard({
   // Reading it here is how Progress came to describe the previous run while
   // the hero correctly described the new one. Nothing file-derived is
   // trustworthy until the spawned run's own file lands.
+  const onTask = onTaskDisplay(live, records, detail?.config?.n ?? 1);
+
   const samplesValue = (() => {
     if (live.total) return `${live.done ?? 0}/${live.total}`;
     if (warming) return "0";
@@ -756,11 +770,14 @@ function ProgressCard({
               value={fmtUptime(elapsedSeconds)}
               valueSize={14}
             />
+            {/* T82 — only when a sample is genuinely in flight. `live` is
+                written at sample END, so between samples current_task names
+                the one that just finished. */}
             <MetricTile
               accent
               mono
-              label="On task"
-              value={live.current_task ?? "—"}
+              label={onTask.inFlight ? "On task" : "Between samples"}
+              value={onTask.inFlight ? onTask.task : "—"}
               valueSize={11}
             />
             <MetricTile
@@ -996,7 +1013,7 @@ function RunSetupCard({
   if (temperatureInherited)
     temperatureHint = "Inherited from the active model · click to override";
   else if (activeTemperature === null)
-    temperatureHint = "No active model to inherit from — sent explicitly";
+    temperatureHint = "No active model — sent explicitly";
 
   const set = <K extends keyof RunForm>(key: K, value: RunForm[K]) =>
     setOverride((o) => ({ ...o, [key]: value }));
@@ -1103,7 +1120,11 @@ function RunSetupCard({
   });
 
   return (
-    <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
+    <Card
+      role={null}
+      baseClass=""
+      style={{ ...PANEL_CARD_STYLE, flexShrink: 0 }}
+    >
       <CardHeader
         compact
         icon={<SlidersHorizontal size={13} />}
@@ -1123,10 +1144,7 @@ function RunSetupCard({
               anything. bench.py's own help says to omit it and use whatever
               the server reports. The dropdown is an autocomplete for stating
               an expectation, not a picker. */}
-          <Field
-            label="Model ID"
-            hint="Which model this run expects — leave blank to trust whatever the server reports"
-          >
+          <Field label="Model ID" hint="Blank = trust the server">
             {/* A datalist, not a <select>: it gives the dropdown while
                 leaving the field free-text, so a model Run Models has never
                 seen (a differently-named mock, say) stays enterable rather
@@ -1140,6 +1158,7 @@ function RunSetupCard({
               value={form.model}
               spellCheck={false}
               placeholder="auto-detect from the server"
+              title="The model id this run expects. bench.py passes it through without checking it, so leave it blank to use whatever the server reports."
               onChange={(e) => set("model", e.target.value)}
             />
             <datalist
@@ -1155,10 +1174,7 @@ function RunSetupCard({
             </datalist>
           </Field>
 
-          <Field
-            label="Benchmark Alias"
-            hint="Optional — names this run in the results; useful when the server reports a bare id, not which quantisation you loaded"
-          >
+          <Field label="Benchmark Alias" hint="Optional — names this run">
             <input
               data-testid="bench-field-label"
               id="bench-label"
@@ -1287,10 +1303,7 @@ function RunSetupCard({
             />
           </Field>
 
-          <Field
-            label="Max tokens"
-            hint="0 leaves bench.py's default — the server-side ceiling"
-          >
+          <Field label="Max tokens" hint="0 = bench.py's default">
             <input
               data-testid="bench-field-max-tokens"
               id="bench-max-tokens"
@@ -1304,10 +1317,7 @@ function RunSetupCard({
             />
           </Field>
 
-          <Field
-            label="Nudge at"
-            hint="bench.py's own cutoff · 0 disables streaming"
-          >
+          <Field label="Nudge at" hint="bench.py's own cutoff">
             <input
               data-testid="bench-field-nudge-at"
               id="bench-nudge-at"
@@ -1377,37 +1387,6 @@ function RunSetupCard({
             identical — {form.n} times the wait for one sample of information.
           </div>
         )}
-
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
-            alignItems: "center",
-            marginTop: 10,
-          }}
-        >
-          {/* The tool-level diagnostic row moved to Settings, beside the
-              existing connection-status fields — it answers "which BINARY
-              is missing", a different question from "which tasks do I want
-              this time", which the language toggles above now answer with
-              the same availability data. */}
-          <a
-            href="/settings"
-            data-testid="bench-toolchains-link"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateTo("/settings");
-            }}
-            style={{
-              fontSize: 9.5,
-              color: "var(--text-muted)",
-              textDecoration: "underline",
-            }}
-          >
-            Toolchains: Settings →
-          </a>
-        </div>
 
         {/* The readiness refusal, in the same banner idiom as the hero's
             server-error strip. The raw transport error is deliberately NOT
@@ -1519,12 +1498,9 @@ export default function BenchPage() {
   );
   const [now, setNow] = useState(() => Date.now());
 
-  const records = useMemo(() => detail?.records ?? [], [detail]);
   // Either source proves a run is live: the spawned child, or a results.json
   // that still carries a non-empty `live` (a CLI-started run).
   const running = isRunning(detail) || current.running;
-  const live = detail?.live ?? {};
-  const truncation = useMemo(() => truncationState(records), [records]);
   // Computed ONCE and shared: the hero and Progress disagreeing about which
   // run is on screen is exactly the split-brain that let Progress keep
   // showing a finished run's numbers under a newly started one.
@@ -1540,6 +1516,39 @@ export default function BenchPage() {
     const id = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(id);
   }, [running]);
+
+  // ONE scoping decision for everything file-derived. While a spawned run is
+  // warming, `detail` is still the PREVIOUS run — and its records drive the
+  // budget and truncation WARNINGS, which is how a brand-new run displayed
+  // "5 samples were cut off" belonging to its predecessor. A stale warning is
+  // worse than a stale number: it reports a problem the run has not had.
+  const scopedDetail = identity.warming ? null : detail;
+  const records = useMemo(() => scopedDetail?.records ?? [], [scopedDetail]);
+  // Memoised: `?? {}` allocates a new object every render, which made every
+  // useMemo depending on `live` recompute unconditionally.
+  const live = useMemo(() => scopedDetail?.live ?? {}, [scopedDetail]);
+  const truncation = useMemo(() => truncationState(records), [records]);
+
+  // Same same-target-class pacing the Run Setup estimate uses, applied to
+  // the samples this run has left.
+  const remainingSeconds = useMemo(() => {
+    const left = (live.total ?? 0) - (live.done ?? 0);
+    if (!running || left <= 0) return null;
+    return estimatedRunSeconds(
+      storedDetails,
+      left,
+      runTargetUrl(current, detail, bench.targetUrl),
+      bench.defaultUrl,
+    );
+  }, [
+    running,
+    live,
+    storedDetails,
+    current,
+    detail,
+    bench.targetUrl,
+    bench.defaultUrl,
+  ]);
 
   const donePct = computeDonePct(live, detail, identity.warming);
   // ONE clock. The hero, Progress and the footer all render this same
@@ -1638,11 +1647,8 @@ export default function BenchPage() {
           </PanelErrorBoundary>
 
           <PanelErrorBoundary panelName="Bench Score">
-            {/* Same run-scoping rule as the footer and the task table: while
-                a spawned run warms, `detail` is the PREVIOUS run, and its
-                score is not this run's score. */}
             <ScoreCard
-              detail={identity.warming ? null : detail}
+              detail={scopedDetail}
               spawnedAttempts={
                 current.running ? (current.run?.attempts ?? null) : null
               }
@@ -1653,6 +1659,7 @@ export default function BenchPage() {
             <ProgressCard
               detail={detail}
               live={live}
+              records={records}
               running={running}
               warming={identity.warming}
               elapsedSeconds={elapsedSeconds}
@@ -1687,6 +1694,14 @@ export default function BenchPage() {
               overflow: "auto",
             }}
           >
+            {/* flexShrink:0 is load-bearing, and the reason this column's
+                overflow:auto looked broken. A flex child shrinks by default,
+                so the card was squashed to the column's height — and cards
+                carry overflow:hidden for their rounded corners and spine, so
+                it silently clipped its own last 130px instead of overflowing.
+                The column then saw scrollHeight === clientHeight and had
+                nothing to scroll. Keeping the card at its natural height is
+                what gives the column something to reveal. */}
             <PanelErrorBoundary panelName="Bench Run Setup">
               <RunSetupCard
                 detail={detail}
@@ -1723,9 +1738,10 @@ export default function BenchPage() {
         </div>
       </div>
       <BenchFooter
-        detail={identity.warming ? null : detail}
+        detail={scopedDetail}
         elapsedSeconds={elapsedSeconds}
         running={running}
+        remainingSeconds={remainingSeconds}
       />
     </main>
   );

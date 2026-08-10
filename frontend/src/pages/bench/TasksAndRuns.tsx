@@ -23,8 +23,11 @@ import {
 import {
   assertionCanary,
   compareEligibility,
+  compareNotation,
   compareRows,
+  compareSlotOptions,
   gradedRecords,
+  runTaskRoster,
   groupByEdition,
   groupByTask,
   isBudgetTainted,
@@ -38,9 +41,64 @@ import {
   truncationState,
 } from "./compute";
 import type { BenchData } from "./useBenchData";
-import type { BenchRecord, BenchRunDetail } from "./types";
+import type { BenchRecord, BenchRunDetail, BenchRunRow } from "./types";
 
 const MONO = '"JetBrains Mono", "Fira Code", monospace';
+
+/** Compare renders at most three columns, so it offers exactly three slots. */
+const COMPARE_SLOTS = 3;
+
+/**
+ * A run whose identity is not known yet: no detail has loaded ("none"), or a
+ * spawned run has no results.json ("warming:<folder>"). These become a real
+ * run id when the SAME run's data arrives — which is not a run change.
+ */
+const isPlaceholderRunKey = (key: string) =>
+  key === "none" || key.startsWith("warming:");
+
+/** A task with no record is queued or skipped — never 0.00, which reads as
+ *  a scored result. */
+function pendingLabel(skipped: boolean, queued: boolean): string {
+  if (skipped) return "skipped";
+  if (queued) return "queued";
+  return "—";
+}
+
+/** History's outcome cell: still running, interrupted, or a final score. */
+function RunOutcome({
+  isLiveRun,
+  interrupted,
+  samples,
+  avg,
+  maxPoints,
+}: {
+  isLiveRun: boolean;
+  interrupted: boolean;
+  samples: number;
+  avg: number | null;
+  maxPoints: number | string;
+}) {
+  if (isLiveRun)
+    return (
+      <span data-testid="bench-run-running" style={{ color: "var(--success)" }}>
+        running · {samples} samples so far
+      </span>
+    );
+  if (interrupted)
+    return (
+      <span
+        data-testid="bench-interrupted"
+        style={{ color: "var(--text-muted)" }}
+      >
+        interrupted · {samples} samples
+      </span>
+    );
+  return (
+    <span style={{ fontWeight: 700 }}>
+      {avg === null ? "—" : avg.toFixed(2)}/{maxPoints}
+    </span>
+  );
+}
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   position: "relative",
@@ -63,6 +121,11 @@ const TH: React.CSSProperties = {
   position: "sticky",
   top: 0,
   background: "var(--bg-card)",
+  // Sticky alone does not win paint order against cells that come later in
+  // the DOM — an opaque background is necessary but not sufficient, so
+  // scrolling rows rendered over the header text. The spine sits at 3 and
+  // stays above this.
+  zIndex: 2,
 };
 
 const TD: React.CSSProperties = {
@@ -153,6 +216,25 @@ export function TasksAndRuns({
   const { detail, runs, storedDetails, selectRun, refresh } = bench;
   // While a spawned run is warming, `detail` is still the PREVIOUS run, so
   // that is the identity this pane must refuse to draw as "this run".
+  // Execution order, from --list — results.json's own tasks[] is sorted
+  // alphabetically and would make the live row appear to jump around.
+  const runLangs = warming
+    ? (bench.current.run?.langs?.split(",") ?? null)
+    : (detail?.config?.langs ?? null);
+  const roster = useMemo(
+    () => runTaskRoster(bench.taskList?.tasks, runLangs),
+    [bench.taskList, runLangs],
+  );
+  const unavailableLangs = useMemo(
+    () =>
+      new Set(
+        (bench.check?.tracks ?? [])
+          .filter((t) => !t.available)
+          .map((t) => t.lang),
+      ),
+    [bench.check],
+  );
+
   const runKey = warming
     ? `warming:${bench.current.run?.folder ?? ""}`
     : (detail?.run_id ?? "none");
@@ -166,6 +248,17 @@ export function TasksAndRuns({
     task: string;
   } | null>(null);
   const [compareIds, setCompareIds] = useState<string[] | null>(null);
+
+  // Roster rows render before the run's detail exists, so a click can be
+  // keyed to a placeholder. Migrate it when the real id arrives — dropping it
+  // collapsed an expanded task the moment the poll landed. A real id becoming
+  // a DIFFERENT real id is still a run change and still closes it (T64).
+  // Adjusted during render, not in an effect: an effect would paint the
+  // collapsed row first and then re-render.
+  if (openTask && openTask.runKey !== runKey) {
+    if (isPlaceholderRunKey(openTask.runKey))
+      setOpenTask({ runKey, task: openTask.task });
+  }
 
   const currentEdition = detail?.suite_hash ?? runs[0]?.suite_hash ?? "";
 
@@ -275,6 +368,8 @@ export function TasksAndRuns({
       {tab === "tasks" && (
         <ThisRunPane
           detail={detail}
+          roster={roster}
+          unavailableLangs={unavailableLangs}
           query={query}
           warming={warming}
           openTask={openTask?.runKey === runKey ? openTask.task : null}
@@ -284,6 +379,7 @@ export function TasksAndRuns({
       {tab === "hist" && (
         <HistoryPane
           bench={bench}
+          running={running}
           onSelect={selectRun}
           storedDetails={storedDetails}
           now={now}
@@ -324,6 +420,8 @@ export function TasksAndRuns({
 function ThisRunPane({
   detail,
   warming,
+  roster,
+  unavailableLangs,
   query,
   openTask,
   setOpenTask,
@@ -331,6 +429,10 @@ function ThisRunPane({
   detail: BenchRunDetail | null;
   /** A spawned run whose results.json does not exist yet. */
   warming: boolean;
+  /** Every task this run covers, in execution order. */
+  roster: Array<{ id: string; lang: string }>;
+  /** Languages whose toolchain is missing — their tasks never run. */
+  unavailableLangs: Set<string>;
   query: string;
   openTask: string | null;
   setOpenTask: (t: string | null) => void;
@@ -346,22 +448,21 @@ function ThisRunPane({
   const byTask = useMemo(() => groupByTask(records), [records]);
   const expectedSamples = detail?.config?.n ?? 1;
 
-  const rows = [...byTask.entries()].filter(([task]) =>
+  // Rows come from the ROSTER, not from the records, so every task this run
+  // covers is visible from the first render instead of the table growing one
+  // row at a time while the hero already says "27 of 27". A task with no
+  // record yet renders queued — never zeros, which read as a scored result.
+  const rows: Array<[string, typeof records]> =
+    roster.length > 0
+      ? roster.map((t) => [t.id, byTask.get(t.id) ?? []])
+      : [...byTask.entries()];
+  const visible = rows.filter(([task]) =>
     task.toLowerCase().includes(query.toLowerCase()),
   );
 
-  if (warming)
-    return (
-      <div
-        data-testid="bench-this-run-empty"
-        style={{ padding: 16, color: "var(--text-muted)" }}
-      >
-        No samples recorded yet for this run. bench.py writes results.json when
-        the first sample completes; task rows appear then.
-      </div>
-    );
-
-  if (!detail)
+  // With a roster there is always something to show — a warming run displays
+  // its whole queue. The empty state is only for having neither.
+  if (!detail && roster.length === 0)
     return (
       <div
         data-testid="bench-this-run-empty"
@@ -401,7 +502,10 @@ function ThisRunPane({
             </tr>
           </thead>
           <tbody>
-            {rows.map(([task, rs]) => {
+            {visible.map(([task, rs]) => {
+              const lang = task.split("/")[0];
+              const skipped = rs.length === 0 && unavailableLangs.has(lang);
+              const queued = rs.length === 0 && !skipped;
               const graded = gradedRecords(rs);
               const mean = taskMean(rs);
               const solved = graded.filter((r) => r.solved).length;
@@ -447,35 +551,42 @@ function ThisRunPane({
                           color: "var(--text-secondary)",
                         }}
                       >
-                        {rs[0]?.lang}
+                        {rs[0]?.lang ?? lang}
                       </span>
                     </td>
                     <td style={TD}>
                       <AttemptStrip
                         records={rs}
                         expectedSamples={expectedSamples}
-                        live={task === detail.live?.current_task}
+                        live={task === detail?.live?.current_task}
                       />
                     </td>
                     <td
                       style={{ ...TD, textAlign: "right", fontWeight: 700 }}
                       data-testid="bench-task-mean"
                     >
+                      {/* A task with no record is queued or skipped — never
+                          0.00, which reads as a scored result. */}
                       {mean === null ? (
                         <span
+                          data-testid="bench-task-pending"
                           style={{
                             color: "var(--text-muted)",
                             fontWeight: 400,
                           }}
                         >
-                          —
+                          {pendingLabel(skipped, queued)}
                         </span>
                       ) : (
                         mean.toFixed(2)
                       )}
                     </td>
                     <td style={{ ...TD, textAlign: "right" }}>
-                      <KOfN solved={solved} of={graded.length} />
+                      {rs.length === 0 ? (
+                        <span style={{ color: "var(--text-muted)" }}>—</span>
+                      ) : (
+                        <KOfN solved={solved} of={graded.length} />
+                      )}
                     </td>
                     <td style={{ ...TD, textAlign: "right" }}>
                       {genMean === null ? "—" : fmtUptime(genMean)}
@@ -711,10 +822,13 @@ function FlagChip({ label, title }: { label: string; title: string }) {
 
 function HistoryPane({
   bench,
+  running,
   onSelect,
   storedDetails,
 }: {
   bench: BenchData;
+  /** The page's liveness signal — the same one the hero and Start/Stop use. */
+  running: boolean;
   onSelect: (id: string) => void;
   storedDetails: BenchRunDetail[];
   now: number;
@@ -788,7 +902,18 @@ function HistoryPane({
                     },
                   )
                 : null;
-            const interrupted = !run.finished;
+            // T86 — "not finished" is true of a run that is STILL GOING as
+            // well as one that stopped, and the two were conflated: the live
+            // run showed as "interrupted" with a Resume button. Resuming a
+            // live run is not a no-op — it would spawn a second process
+            // against the same run directory. Liveness comes from the same
+            // signal driving the hero and Start/Stop, not a second rule.
+            const isLiveRun = running && run.run_id === bench.detail?.run_id;
+            const interrupted = !run.finished && !isLiveRun;
+            // Chips compare solved-state between two runs; against a run
+            // still in progress that is a partial score, so a task not yet
+            // reached reads as a regression. Suppressed until it finishes.
+            const showChips = chips && run.finished;
             const avg = b ? runTaskAvg(b.records) : null;
             return (
               <div
@@ -838,19 +963,13 @@ function HistoryPane({
                     </span>
                   )}
                 </span>
-                {interrupted ? (
-                  <span
-                    data-testid="bench-interrupted"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    interrupted · {run.summary?.samples ?? 0} samples
-                  </span>
-                ) : (
-                  <span style={{ fontWeight: 700 }}>
-                    {avg === null ? "—" : avg.toFixed(2)}/
-                    {run.summary?.max_points ?? "?"}
-                  </span>
-                )}
+                <RunOutcome
+                  isLiveRun={isLiveRun}
+                  interrupted={interrupted}
+                  samples={run.summary?.samples ?? 0}
+                  avg={avg}
+                  maxPoints={run.summary?.max_points ?? "?"}
+                />
                 <span
                   style={{
                     font: "11px Inter, system-ui, sans-serif",
@@ -863,7 +982,8 @@ function HistoryPane({
                   <span data-testid="bench-provenance">
                     {sampleLabel(run.config)}
                   </span>
-                  {chips?.comparable &&
+                  {showChips &&
+                    chips?.comparable &&
                     (chips.up.length > 0 || chips.down.length > 0) && (
                       <span
                         data-testid="bench-regression-chips"
@@ -940,13 +1060,46 @@ function ComparePane({
   setSelected: (ids: string[]) => void;
 }) {
   const { runs, storedDetails } = bench;
-  const chosenRows = runs.filter((r) => selected.includes(r.run_id));
+
+  // One source of truth: the columns ARE the slots. The chip cloud drew from
+  // `runs` while the columns came from `storedDetails`, so a selected run
+  // whose detail was missing silently vanished from the table and the two
+  // sets disagreed with no way to tell which was authoritative. A column now
+  // exists for every chosen run; an unreadable detail shows as blank cells,
+  // which is visible, rather than as a missing column, which is not.
+  const detailById = useMemo(() => {
+    const m = new Map<string, BenchRunDetail>();
+    for (const d of storedDetails) m.set(d.run_id, d);
+    return m;
+  }, [storedDetails]);
+
+  const slots = useMemo(
+    () => Array.from({ length: COMPARE_SLOTS }, (_, i) => selected[i] ?? ""),
+    [selected],
+  );
+  const chosen = useMemo(() => slots.filter(Boolean), [slots]);
+  const chosenRows = useMemo(
+    () =>
+      chosen
+        .map((id) => runs.find((r) => r.run_id === id))
+        .filter((r): r is BenchRunRow => Boolean(r)),
+    [chosen, runs],
+  );
+  const details = useMemo(
+    () => chosenRows.map((r) => detailById.get(r.run_id) ?? null),
+    [chosenRows, detailById],
+  );
   const eligibility = compareEligibility(chosenRows);
-  const details = storedDetails.filter((d) => selected.includes(d.run_id));
   const rows = useMemo(
     () => (eligibility.eligible ? compareRows(details) : []),
     [details, eligibility.eligible],
   );
+
+  const setSlot = (index: number, runId: string) => {
+    const next = [...slots];
+    next[index] = runId;
+    setSelected(next.filter(Boolean));
+  };
 
   return (
     <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
@@ -958,32 +1111,57 @@ function ComparePane({
           flexWrap: "wrap",
         }}
       >
-        {runs.slice(0, 8).map((r) => {
-          const on = selected.includes(r.run_id);
+        {slots.map((slotValue, i) => {
+          const options = compareSlotOptions(runs, slots, i, bench.defaultUrl);
           return (
-            <button
-              key={r.run_id}
-              type="button"
-              onClick={() =>
-                setSelected(
-                  on
-                    ? selected.filter((id) => id !== r.run_id)
-                    : [...selected, r.run_id],
-                )
-              }
-              style={{
-                font: `10px ${MONO}`,
-                border: `1px solid ${on ? "var(--accent-tint-40)" : "var(--border-color)"}`,
-                background: on ? "var(--accent-tint-10)" : "none",
-                color: "var(--text-secondary)",
-                borderRadius: 6,
-                padding: "2px 8px",
-                cursor: "pointer",
-              }}
+            <label
+              key={i}
+              style={{ display: "flex", flexDirection: "column", gap: 3 }}
             >
-              {r.models.join(",")} · a{r.config?.attempts ?? "?"} n
-              {r.config?.n ?? 1}
-            </button>
+              <span
+                style={{
+                  font: "600 9px Inter, system-ui, sans-serif",
+                  letterSpacing: "0.6px",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Column {i + 1}
+              </span>
+              <select
+                data-testid={`bench-compare-slot-${i}`}
+                // A form field without id/name is reported by the browser's
+                // own issue panel and is not addressable by assistive tech.
+                id={`bench-compare-slot-${i}`}
+                name={`bench-compare-slot-${i}`}
+                aria-label={`Comparison column ${i + 1}`}
+                value={slotValue}
+                onChange={(e) => setSlot(i, e.target.value)}
+                style={{
+                  font: `10px ${MONO}`,
+                  border: "1px solid var(--border-color)",
+                  background: "var(--bg-secondary)",
+                  color: "var(--text-secondary)",
+                  borderRadius: 6,
+                  padding: "3px 6px",
+                  maxWidth: 320,
+                }}
+              >
+                {/* Always reachable, including while a refusal is shown —
+                    this is the deselect path the chips never had. */}
+                <option value="">— none —</option>
+                {options.map((o) => (
+                  <option
+                    key={o.runId}
+                    value={o.runId}
+                    disabled={o.disabled}
+                    title={o.reason ?? undefined}
+                  >
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           );
         })}
       </div>
@@ -1006,11 +1184,11 @@ function ComparePane({
               color: "var(--text-secondary)",
             }}
           >
-            Comparing <b>{details.length} runs</b> · edition{" "}
-            <b style={{ fontFamily: MONO }}>{chosenRows[0]?.suite_hash}</b> ·
-            --attempts <b>{chosenRows[0]?.config?.attempts}</b>. Each cell is
-            one square per sample and the task's x̄ over samples; Δ is the spread
-            of those x̄s.
+            Comparing <b>{chosenRows.length} runs</b> · edition{" "}
+            <b style={{ fontFamily: MONO }}>{chosenRows[0]?.suite_hash}</b> ·{" "}
+            <b>{compareNotation(chosenRows[0]?.config)}</b>. Each cell is one
+            square per sample and the task's x̄ over samples; Δ is the spread of
+            those x̄s.
           </div>
           <table
             style={{
@@ -1022,8 +1200,13 @@ function ComparePane({
             <thead>
               <tr>
                 <th style={TH}>Task</th>
-                {details.map((d) => (
-                  <th key={d.run_id} data-testid="bench-compare-col" style={TH}>
+                {chosenRows.map((d) => (
+                  <th
+                    key={d.run_id}
+                    data-testid="bench-compare-col"
+                    data-run-id={d.run_id}
+                    style={TH}
+                  >
                     {isNonDefaultTarget(d.config?.url, bench.defaultUrl) && (
                       <span style={{ marginRight: 5 }}>
                         <TargetBadge url={d.config?.url ?? ""} />
@@ -1034,7 +1217,7 @@ function ComparePane({
                     {runNaming(d.models, d.config).alias
                       ? ` (alias ${runNaming(d.models, d.config).alias})`
                       : ""}{" "}
-                    · {sampleLabel(d.config)}
+                    · {compareNotation(d.config)}
                   </th>
                 ))}
                 <th style={{ ...TH, textAlign: "right" }}>Δ spread</th>

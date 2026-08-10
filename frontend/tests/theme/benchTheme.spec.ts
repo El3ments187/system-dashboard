@@ -402,3 +402,81 @@ test("T62 the readiness banner's llama.cpp link navigates", async ({
   await page.waitForURL(/\/llama-cpp$/, { timeout: 5000 });
   expect(new URL(page.url()).pathname).toBe("/llama-cpp");
 });
+
+// ── T89 — trailing tab content is reachable, not clipped ────────────────────
+//
+// The obvious assertion here is a false green: scrollTop works on an
+// overflow:hidden element, so "scroll to the bottom, then check the rect"
+// PASSES against a clipping container. Verified by injecting
+// overflow:hidden — the naive form stayed green, the form below went red.
+// Reachability therefore requires a *user*-scrollable ancestor whenever the
+// content overflows.
+async function trailingContentReachable(page: Page, tab: RegExp) {
+  await page.getByRole("button", { name: tab }).click();
+  await page.waitForTimeout(400);
+  return page.evaluate(() => {
+    const panes = [...document.querySelectorAll("div")].filter((d) =>
+      /(auto|scroll)/.test(getComputedStyle(d).overflowY),
+    );
+    const pane = panes.sort(
+      (a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth,
+    )[0];
+    if (!pane) return { found: false, pass: false, tail: null };
+    const last = pane.lastElementChild as HTMLElement | null;
+    if (!last) return { found: false, pass: false, tail: null };
+
+    const needsScroll = pane.scrollHeight > pane.clientHeight + 1;
+    const userScrollable = /(auto|scroll)/.test(
+      getComputedStyle(pane).overflowY,
+    );
+    pane.scrollTop = pane.scrollHeight;
+    const lr = last.getBoundingClientRect();
+    const pr = pane.getBoundingClientRect();
+    const inView =
+      lr.bottom <= pr.bottom + 2 && lr.bottom <= window.innerHeight;
+    return {
+      found: true,
+      pass: inView && (!needsScroll || userScrollable),
+      tail: (last.textContent || "").trim().slice(-40),
+    };
+  });
+}
+
+test("T89 no tab clips its trailing content at the card's bottom edge", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await gotoBench(page);
+
+  for (const tab of [
+    /^This run/,
+    /^History/,
+    /^Compare/,
+    /^Leads/,
+    /^Console/,
+  ]) {
+    const r = await trailingContentReachable(page, tab);
+    expect(r.found, `${tab} has no scroll pane to check`).toBe(true);
+    expect(
+      r.pass,
+      `${tab}: trailing content is not reachable (tail: ${r.tail})`,
+    ).toBe(true);
+  }
+});
+
+test("T89 the Compare footnote's final words are readable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await gotoBench(page);
+  await page.getByRole("button", { name: /^Compare/ }).click();
+
+  // The clipped half is the useful half — assert the sentence that tells the
+  // reader how to avoid needing Compare at all, not merely that a <p> exists.
+  const foot = page.getByText(/^Sorted by/);
+  await expect(foot).toContainText(
+    "several models in ONE run (-m repeated) shares edition, sweep and server session by construction.",
+  );
+  await foot.scrollIntoViewIfNeeded();
+  await expect(foot).toBeInViewport();
+});
