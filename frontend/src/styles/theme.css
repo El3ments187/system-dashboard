@@ -1996,3 +1996,13 @@ main {
 .bench-page .card-accent-spine {
   z-index: 3;
 }
+
+/* An `error` sample never produced runnable code — a crash, or a missing
+   export. Distinct from `miss` (it ran and got answers wrong): amber-red
+   dotted rather than the solid red outline, so the two are separable at a
+   glance without inventing a new hue. */
+.bench-att.error {
+  background: none;
+  border: 1.5px dotted var(--danger);
+  opacity: 0.85;
+}

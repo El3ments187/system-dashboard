@@ -42,7 +42,8 @@ async function getJson<T>(url: string, timeoutMs = 8000): Promise<T> {
 
 /** One probe of the target server, shaped so the poll stays trivial. */
 async function probeReadiness(targetUrl: string): Promise<BenchReadiness> {
-  if (!targetUrl) return { ready: false, url: "", reason: "no url configured" };
+  if (!targetUrl)
+    return { ready: false, url: "", reason: "No url configured", models: [] };
   try {
     return await getJson<BenchReadiness>(
       `/api/bench/ready?url=${encodeURIComponent(targetUrl)}`,
@@ -52,7 +53,8 @@ async function probeReadiness(targetUrl: string): Promise<BenchReadiness> {
     return {
       ready: false,
       url: targetUrl,
-      reason: e instanceof Error ? e.message : "probe failed",
+      reason: e instanceof Error ? e.message : "Probe failed",
+      models: [],
     };
   }
 }
@@ -148,12 +150,14 @@ export function useBenchData(): BenchData {
   const [readiness, setReadiness] = useState<BenchReadiness>({
     ready: false,
     url: "",
-    reason: "checking…",
+    reason: "Checking…",
+    models: [],
   });
   const [mockReadiness, setMockReadiness] = useState<BenchReadiness>({
     ready: false,
     url: MOCK_URL,
-    reason: "checking…",
+    reason: "Checking…",
+    models: [],
   });
   const [knownModels, setKnownModels] = useState<string[]>([]);
   const [check, setCheck] = useState<BenchCheck | null>(null);

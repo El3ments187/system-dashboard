@@ -37,7 +37,6 @@ import {
   roundTemperature,
   runNaming,
   runTaskScope,
-  sentenceCase,
   startDisabledReason,
   greedyInterlock,
   heartbeatAgeMs,
@@ -47,6 +46,7 @@ import {
   serverExcludedCount,
   truncationState,
 } from "./bench/compute";
+import type { TruncationState } from "./bench/compute";
 import type {
   BenchCheck,
   BenchCurrent,
@@ -248,7 +248,7 @@ function HeroCard({
   running,
   stale,
   beatAge,
-  truncationWarned,
+  truncation,
   elapsedSeconds,
   current,
   defaultUrl,
@@ -262,7 +262,8 @@ function HeroCard({
   running: boolean;
   stale: boolean;
   beatAge: number | null;
-  truncationWarned: boolean;
+  /** Both cut-off mechanisms, each with its own remedy. */
+  truncation: TruncationState;
   /** The page's single elapsed clock. */
   elapsedSeconds: number | null;
   current: BenchCurrent;
@@ -422,7 +423,11 @@ function HeroCard({
           </div>
         )}
 
-        {truncationWarned && (
+        {/* Two mechanisms, two remedies. `truncated` is the SERVER stopping
+            at finish_reason "length"; `stopped_at_budget` is bench.py's own
+            client-side cutoff at --nudge-at. Raising --max-tokens does
+            nothing for the second, so the remedies must not be shared. */}
+        {truncation.warned && (
           <div
             className="bench-banner"
             data-testid="bench-truncation-banner"
@@ -430,12 +435,31 @@ function HeroCard({
           >
             <TriangleAlert size={13} />
             <span>
-              Three replies in a row hit the token ceiling — results from that
-              point are not a measure of skill. The run continues; this is a
-              warning, not an abort. Raise <b>--max-tokens</b> and start the
-              server with at least that much context (<b>-c</b>). If it fires on
-              short tasks, suspect a chat-template mismatch rather than a low
-              ceiling.
+              Three replies in a row hit the server's token ceiling — results
+              from that point measure the ceiling, not the model. The run
+              continues; this is a warning, not an abort. Raise{" "}
+              <b>--max-tokens</b> and start the server with at least that much
+              context (<b>-c</b>). If it fires on short tasks, suspect a
+              chat-template mismatch rather than a low ceiling.
+            </span>
+          </div>
+        )}
+
+        {truncation.budgetStops > 0 && (
+          <div
+            className="bench-banner"
+            data-testid="bench-budget-banner"
+            style={{ margin: "0 0 10px", padding: "5px 10px", fontSize: 11 }}
+          >
+            <TriangleAlert size={13} />
+            <span>
+              <b>{truncation.budgetStops}</b>{" "}
+              {truncation.budgetStops === 1 ? "sample was" : "samples were"} cut
+              off by bench.py itself at the <b>--nudge-at</b> budget — the
+              server was still generating. Those scores measure the budget, not
+              the model. Raise <b>--nudge-at</b> (Run Setup, default 16384) or{" "}
+              <b>--max-nudges</b>. Raising --max-tokens does not help here: the
+              server was never asked to stop.
             </span>
           </div>
         )}
@@ -519,6 +543,7 @@ function BannerTile({
 }
 
 function ScoreCard({ detail }: { detail: BenchRunDetail | null }) {
+  const samplesPerTask = detail?.config?.n ?? 1;
   const records = useMemo(() => detail?.records ?? [], [detail]);
   const taskAvg = useMemo(() => runTaskAvg(records), [records]);
   const flaky = useMemo(() => flakyTasks(records), [records]);
@@ -580,12 +605,16 @@ function ScoreCard({ detail }: { detail: BenchRunDetail | null }) {
             valueSize={12}
             style={{ opacity: 0.85 }}
           />
+          {/* T71 — at --n 1 there is only one sample per task, so flakiness
+              cannot be observed at all. Rendering 0 claims it was measured
+              and came back clean, which is a stronger statement than the
+              data supports. */}
           <MetricTile
             accent
             mono
             testId="bench-flaky"
-            label="Flaky solves"
-            value={flaky.tasks.length}
+            label={samplesPerTask < 2 ? "Flaky solves (n/a)" : "Flaky solves"}
+            value={samplesPerTask < 2 ? null : flaky.tasks.length}
             valueSize={15}
           />
           <MetricTile
@@ -804,6 +833,10 @@ function ActionButton({
 }
 
 interface RunForm {
+  /** `--max-tokens`: the server-side ceiling. 0 leaves bench.py's default. */
+  maxTokens: number;
+  /** `--nudge-at`: bench.py's OWN cutoff. 0 disables streaming entirely. */
+  nudgeAt: number;
   /** `--model`: the id this run EXPECTS, not a picker. Blank trusts the server. */
   model: string;
   /** `--label`: names the run in the results. Cosmetic, and it masks `model`. */
@@ -874,6 +907,7 @@ function RunSetupCard({
   mockReadiness,
   knownModels,
   activeTemperature,
+  activeModel,
   storedDetails,
   taskCount,
 }: {
@@ -888,6 +922,8 @@ function RunSetupCard({
   mockReadiness: BenchReadiness;
   knownModels: string[];
   activeTemperature: number | null;
+  /** The loaded model's real name, from /props — not the shared alias. */
+  activeModel: string | null;
   storedDetails: BenchRunDetail[];
   taskCount: number;
 }) {
@@ -900,8 +936,19 @@ function RunSetupCard({
     .join(",");
 
   const form: RunForm = {
-    model: override.model ?? detail?.config?.model ?? "",
+    // T65 — the ACTIVE model, never the previously selected run's.
+    //
+    // Inheriting a prior run's value is how a real 35-minute run came to be
+    // recorded as "looping-model". "Blank, trust the server" was the first
+    // choice here and real data killed it: every launch profile on this
+    // machine sets --alias coder, so /v1/models answers "coder" whichever
+    // model is loaded, and blank would file every run under that. The only
+    // attributable name is the one /props reports as model_path, which is
+    // what the llama.cpp page already shows and what activeModelName derives.
+    model: override.model ?? activeModel ?? "",
     label: override.label ?? "",
+    maxTokens: override.maxTokens ?? detail?.config?.max_tokens ?? 0,
+    nudgeAt: override.nudgeAt ?? detail?.config?.nudge_at ?? 16384,
     langs: override.langs ?? detail?.config?.langs?.join(",") ?? availableLangs,
     attempts: override.attempts ?? detail?.config?.attempts ?? 3,
     n: override.n ?? detail?.config?.n ?? 1,
@@ -980,6 +1027,8 @@ function RunSetupCard({
       attempts: form.attempts,
       n: form.n,
       temperature: form.temperature,
+      max_tokens: form.maxTokens || undefined,
+      nudge_at: form.nudgeAt,
       url,
     });
 
@@ -997,8 +1046,27 @@ function RunSetupCard({
     haveFlags: true,
   });
 
+  // What the TARGET reports, not what the dashboard's llama.cpp page sees:
+  // Run Setup's url can point somewhere else entirely.
+  // Accepts either what /v1/models reports (often just a shared alias) or
+  // the real loaded model. Warning on "not the alias" alone would fire on
+  // every correctly-named run.
+  const knownIds = [
+    ...(readiness.models ?? []),
+    ...(activeModel ? [activeModel] : []),
+  ];
+  const modelMismatch =
+    form.model.trim() !== "" &&
+    knownIds.length > 0 &&
+    !knownIds.includes(form.model.trim());
+
   const greedy = greedyInterlock(form.n, form.temperature);
-  const estimate = estimatedRunSeconds(storedDetails, taskCount * form.n);
+  const estimate = estimatedRunSeconds(
+    storedDetails,
+    taskCount * form.n,
+    targetUrl,
+    defaultUrl,
+  );
   const blockedReason = startDisabledReason({
     running,
     serverReady: readiness.ready,
@@ -1192,6 +1260,40 @@ function RunSetupCard({
           </Field>
 
           <Field
+            label="Max tokens"
+            hint="0 leaves bench.py's default — the server-side ceiling"
+          >
+            <input
+              data-testid="bench-field-max-tokens"
+              id="bench-max-tokens"
+              name="bench-max-tokens"
+              type="number"
+              min={0}
+              style={FIELD_INPUT}
+              title="--max-tokens. The ceiling the SERVER is asked to respect; a reply stopped here is recorded as truncated."
+              value={form.maxTokens}
+              onChange={(e) => set("maxTokens", Number(e.target.value))}
+            />
+          </Field>
+
+          <Field
+            label="Nudge at"
+            hint="bench.py's own cutoff · 0 disables streaming"
+          >
+            <input
+              data-testid="bench-field-nudge-at"
+              id="bench-nudge-at"
+              name="bench-nudge-at"
+              type="number"
+              min={0}
+              style={FIELD_INPUT}
+              title="--nudge-at. Where bench.py stops reading a streaming reply of its own accord; a sample stopped here is recorded as stopped_at_budget, and raising --max-tokens does not affect it."
+              value={form.nudgeAt}
+              onChange={(e) => set("nudgeAt", Number(e.target.value))}
+            />
+          </Field>
+
+          <Field
             label="Temperature"
             hintAccent={temperatureInherited}
             hint={temperatureHint}
@@ -1216,6 +1318,23 @@ function RunSetupCard({
             />
           </Field>
         </div>
+
+        {modelMismatch && (
+          <div
+            data-testid="bench-model-mismatch"
+            style={{
+              font: "11px Inter, system-ui, sans-serif",
+              color: "var(--warning)",
+              marginTop: 8,
+            }}
+          >
+            Model ID <b>{form.model}</b> is not what {targetUrl} reports (
+            {knownIds.slice(0, 3).join(", ")}
+            {knownIds.length > 3 ? ", …" : ""}). bench.py records this name
+            without checking it, so the run would be filed under a model that
+            never produced it. Clear the field to trust the server.
+          </div>
+        )}
 
         {greedy && (
           <div
@@ -1270,7 +1389,7 @@ function RunSetupCard({
           <div
             className="bench-banner"
             data-testid="bench-start-blocked"
-            title={sentenceCase(readiness.reason)}
+            title={readiness.reason}
             style={{ margin: "10px 0 0", padding: "7px 12px", fontSize: 12 }}
           >
             <TriangleAlert size={13} />
@@ -1469,7 +1588,7 @@ export default function BenchPage() {
               running={running}
               stale={isHeartbeatStale(live.heartbeat, now)}
               beatAge={heartbeatAgeMs(live.heartbeat, now)}
-              truncationWarned={truncation.warned}
+              truncation={truncation}
               elapsedSeconds={elapsedSeconds}
               current={bench.current}
               defaultUrl={bench.defaultUrl}
@@ -1536,6 +1655,7 @@ export default function BenchPage() {
                 mockReadiness={bench.mockReadiness}
                 knownModels={bench.knownModels}
                 activeTemperature={activeTemperature}
+                activeModel={activeModel}
                 storedDetails={storedDetails}
                 taskCount={
                   check?.tracks

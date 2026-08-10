@@ -141,6 +141,13 @@ export interface BenchReadiness {
   /** Shown verbatim next to a disabled Start button. */
   reason: string;
   probe?: string;
+  /**
+   * The ids the target itself reports. bench.py passes `--model` through
+   * without checking it, so this is the only thing that can catch a stale
+   * Model ID before a long run records the wrong name. Optional: an older
+   * backend, or a test double, simply names nothing to compare against.
+   */
+  models?: string[];
 }
 
 export interface BenchTrack {
@@ -176,4 +183,11 @@ export interface BenchTaskList {
  * it can be rendered as excluded rather than as a failure.
  */
 export type CellState =
-  "solved" | "solved-late" | "miss" | "timeout" | "server" | "live" | "pending";
+  | "solved"
+  | "solved-late"
+  | "miss"
+  | "error"
+  | "timeout"
+  | "server"
+  | "live"
+  | "pending";

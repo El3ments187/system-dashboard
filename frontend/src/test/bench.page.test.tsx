@@ -1214,7 +1214,7 @@ describe("T49/T50/T51 Dry run", () => {
           ready: !down,
           url: down ? "http://127.0.0.1:8123" : "http://localhost:8081",
           reason: down
-            ? "no server answering at http://127.0.0.1:8123: connection refused"
+            ? "No server answering at http://127.0.0.1:8123: connection refused"
             : "",
         });
       }
@@ -1638,13 +1638,14 @@ describe("T61 readiness refusal copy", () => {
     });
     render(<BenchPage />);
     const banner = await screen.findByTestId("bench-start-blocked");
+    // Wait on the TITLE: the sentence can already match from the url field
+    // while the probe is still in flight, so asserting it first would race.
     await waitFor(() =>
-      expect(banner.textContent).toBe(
-        serverUnreachableCopy("http://localhost:8081"),
-      ),
+      expect(banner.getAttribute("title")).toContain("error sending request"),
     );
-    // The technical detail is still reachable, just not in the sentence.
-    expect(banner.getAttribute("title")).toContain("error sending request");
+    expect(banner.textContent).toBe(
+      serverUnreachableCopy("http://localhost:8081"),
+    );
     expect(banner.textContent).not.toContain("error sending request");
     expect(
       screen.getByTestId("bench-llamacpp-link").getAttribute("href"),
@@ -1896,5 +1897,286 @@ describe("T63b no unexpected lowercase-first copy", () => {
       [...new Set(offenders)],
       "lowercase-first copy that is not an allowlisted exception",
     ).toEqual([]);
+  });
+});
+
+// ── Findings from the first real 35B run (T65-T71) ──────────────────────────
+
+describe("T65 Model ID does not inherit a stale run's model", () => {
+  it("defaults to the ACTIVE model, never the selected run's", async () => {
+    // The loaded run's config.model is "buggy-model"; inheriting it is how a
+    // real run came to be filed under a mock's name.
+    setActiveModel({ model_path: "/m/Qwen3.6-35B-APEX-ICompact-Q3_K_L.gguf" });
+    installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    await waitFor(() =>
+      expect(field.value).toBe("Qwen3.6-35B-APEX-ICompact-Q3_K_L"),
+    );
+    expect(
+      field.value,
+      "a leftover value from an unrelated prior run must not be the default",
+    ).not.toBe("buggy-model");
+  });
+
+  it("falls back to blank when no model is loaded", async () => {
+    setActiveModel({ model_path: null, model_alias: null });
+    installFetch();
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg").textContent).not.toContain(
+        "—",
+      ),
+    );
+    expect(field.value).toBe("");
+  });
+
+  it("accepts the real model name even when the server reports only an alias", async () => {
+    // Every launch profile here sets --alias coder, so /v1/models names
+    // nothing useful; warning on "not the alias" would fire on every
+    // correctly-named run.
+    setActiveModel({ model_path: "/m/Qwen3.6-35B-APEX-ICompact-Q3_K_L.gguf" });
+    installFetch({
+      ready: {
+        ready: true,
+        url: "http://localhost:8081",
+        reason: "",
+        models: ["coder"],
+      },
+    });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-model");
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-field-model") as HTMLInputElement).value,
+      ).toBe("Qwen3.6-35B-APEX-ICompact-Q3_K_L"),
+    );
+    expect(screen.queryByTestId("bench-model-mismatch")).toBeNull();
+  });
+
+  it("warns when Model ID is not what the target reports", async () => {
+    installFetch({
+      ready: {
+        ready: true,
+        url: "http://localhost:8081",
+        reason: "",
+        models: ["Qwen3.6-35B-APEX"],
+      },
+    });
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: "looping-model" } });
+
+    const warn = await screen.findByTestId("bench-model-mismatch");
+    expect(warn.textContent).toContain("looping-model");
+    expect(warn.textContent).toContain("Qwen3.6-35B-APEX");
+  });
+
+  it("stays quiet when the id matches, and when the field is blank", async () => {
+    installFetch({
+      ready: {
+        ready: true,
+        url: "http://localhost:8081",
+        reason: "",
+        models: ["Qwen3.6-35B-APEX"],
+      },
+    });
+    render(<BenchPage />);
+    const field = (await screen.findByTestId(
+      "bench-field-model",
+    )) as HTMLInputElement;
+    expect(screen.queryByTestId("bench-model-mismatch")).toBeNull();
+    fireEvent.change(field, { target: { value: "Qwen3.6-35B-APEX" } });
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-model-mismatch")).toBeNull(),
+    );
+  });
+});
+
+describe("T66 budget banner covers both cut-off mechanisms", () => {
+  const withFlags = (
+    shape: Array<{ truncated?: boolean; stopped_at_budget?: boolean }>,
+  ) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    shape.forEach((f, i) => {
+      if (!recs[i]) return;
+      recs[i].truncated = !!f.truncated;
+      recs[i].stopped_at_budget = !!f.stopped_at_budget;
+    });
+    return d;
+  };
+
+  it("fires on stopped_at_budget with the nudge-at remedy, not max-tokens", async () => {
+    // The real run's shape: three budget cutoffs, NOT consecutive, and zero
+    // `truncated`. A three-in-a-row rule over the combined flags would still
+    // have shown nothing.
+    installFetch({
+      detail: withFlags([
+        {},
+        {},
+        {},
+        { stopped_at_budget: true },
+        {},
+        {},
+        {},
+        {},
+        {},
+        { stopped_at_budget: true },
+        {},
+        { stopped_at_budget: true },
+      ]),
+    });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-budget-banner");
+    expect(banner.textContent).toContain("--nudge-at");
+    expect(
+      banner.textContent,
+      "raising --max-tokens does nothing for a client-side cutoff",
+    ).not.toMatch(/Raise <?-?-?max-tokens/);
+    expect(banner.textContent).toContain("3");
+    expect(screen.queryByTestId("bench-truncation-banner")).toBeNull();
+  });
+
+  it("still fires the max-tokens remedy for server-side truncation", async () => {
+    installFetch({
+      detail: withFlags([
+        { truncated: true },
+        { truncated: true },
+        { truncated: true },
+      ]),
+    });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-truncation-banner");
+    expect(banner.textContent).toContain("--max-tokens");
+    expect(screen.queryByTestId("bench-budget-banner")).toBeNull();
+  });
+
+  it("shows each remedy when both mechanisms occurred", async () => {
+    installFetch({
+      detail: withFlags([
+        { truncated: true },
+        { truncated: true },
+        { truncated: true },
+        { stopped_at_budget: true },
+      ]),
+    });
+    render(<BenchPage />);
+    expect(
+      (await screen.findByTestId("bench-truncation-banner")).textContent,
+    ).toContain("--max-tokens");
+    expect(
+      (await screen.findByTestId("bench-budget-banner")).textContent,
+    ).toContain("--nudge-at");
+  });
+});
+
+describe("T69 both remedies name a control this page has", () => {
+  it("exposes --max-tokens and --nudge-at as real fields", async () => {
+    installFetch();
+    render(<BenchPage />);
+    for (const id of ["bench-field-max-tokens", "bench-field-nudge-at"]) {
+      const el = (await screen.findByTestId(id)) as HTMLInputElement;
+      expect(el.tagName).toBe("INPUT");
+      expect(el.readOnly).toBe(false);
+    }
+    const nudge = screen.getByTestId(
+      "bench-field-nudge-at",
+    ) as HTMLInputElement;
+    expect(nudge.value, "bench.py's own default").toBe("16384");
+  });
+});
+
+describe("T67 the suite-drift canary ignores crashed records", () => {
+  const asStatus = (status: string, ran: number, expected: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const r = (d as { records: Record<string, unknown>[] }).records[0];
+    r.status = status;
+    r.tests_total = ran;
+    r.tests_expected = expected;
+    r.solved = false;
+    return d;
+  };
+
+  it("says nothing when a crash cut the assertion count short", async () => {
+    // The real run: java/glob_matcher errored after 59 of 128 assertions and
+    // was reported as SUITE DRIFT. A crash explains the low count by itself.
+    installFetch({ detail: asStatus("error", 59, 128) });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    const canary = await screen.findByTestId("bench-canary");
+    expect(
+      canary.textContent,
+      "a crashed record's count is evidence of the crash, not of drift",
+    ).not.toMatch(/SUITE DRIFT/);
+  });
+
+  it("still shouts when a completed record disagrees with the suite", async () => {
+    installFetch({ detail: asStatus("fail", 32, 35) });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    const canary = await screen.findByTestId("bench-canary");
+    expect(canary.textContent).toMatch(/SUITE DRIFT/);
+  });
+});
+
+describe("T70 error is distinguishable from fail", () => {
+  it("renders its own cell state and legend entry", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    recs[0].status = "error";
+    recs[0].solved = false;
+    recs[1].status = "fail";
+    recs[1].solved = false;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('[data-cell-state="error"]').length,
+      ).toBeGreaterThan(0),
+    );
+    expect(
+      document.querySelectorAll('[data-cell-state="miss"]').length,
+    ).toBeGreaterThan(0);
+    // Both appear in the legend, so the distinction is readable.
+    expect(screen.getByText("crashed / nothing runnable")).toBeTruthy();
+    expect(screen.getByText("failed")).toBeTruthy();
+  });
+});
+
+describe("T71 flaky is unmeasurable at --n 1", () => {
+  it("renders a dash, not a zero, when there is one sample per task", async () => {
+    // The shared fixture is --n 3; this case needs a single-sample run.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { config: Record<string, unknown> }).config.n = 1;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg").textContent).not.toContain(
+        "—",
+      ),
+    );
+    expect(
+      screen.getByTestId("bench-flaky").textContent,
+      "one sample per task cannot disagree with itself",
+    ).toContain("—");
+  });
+
+  it("computes a real count when --n is 2 or more", async () => {
+    installFetch(); // the shared fixture is --n 3
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-flaky").textContent).not.toContain("—"),
+    );
   });
 });

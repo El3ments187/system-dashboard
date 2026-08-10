@@ -31,6 +31,10 @@ export function cellState(record: BenchRecord): CellState {
   if (record.solved) return record.first_try ? "solved" : "solved-late";
   if (record.status === "timeout" || record.status === "format")
     return "timeout";
+  // `error` is the code never running — a crash, or a missing export. `fail`
+  // is code that ran and got answers wrong. Different problems, different
+  // fixes; the first real run was 12 of the former and 10 of the latter.
+  if (record.status === "error") return "error";
   return "miss";
 }
 
@@ -137,6 +141,25 @@ export interface TruncationState {
   triggerIndex: number | null;
   /** The streak as it stands at the end of the record list. */
   currentStreak: number;
+  /**
+   * How many samples bench.py cut off ITSELF, at `--nudge-at` tokens.
+   *
+   * A DIFFERENT mechanism from `truncated`, not a second name for it:
+   * `truncated` is the server reporting finish_reason "length" (capped by
+   * --max-tokens or its own context), while `stopped_at_budget` is bench
+   * giving up on reading further from a reply the server was still happy to
+   * continue. Raising --max-tokens does nothing for this one.
+   *
+   * No three-in-a-row rule here, deliberately. That rule mirrors bench.py's
+   * own warn-once-on-three-consecutive for truncation; nothing upstream
+   * applies it to the budget cutoff, and the first real run put its three
+   * hits at records 3, 9 and 17 — a streak rule would have stayed silent
+   * through all of them. Every cut-off sample scored the budget, not the
+   * model, so each one counts.
+   */
+  budgetStops: number;
+  /** Index of the first budget cutoff, for marking samples from there on. */
+  budgetTriggerIndex: number | null;
 }
 
 /**
@@ -151,6 +174,8 @@ export function truncationState(records: BenchRecord[]): TruncationState {
   let streak = 0;
   let warned = false;
   let triggerIndex: number | null = null;
+  let budgetStops = 0;
+  let budgetTriggerIndex: number | null = null;
   records.forEach((r, i) => {
     if (r.truncated) {
       streak += 1;
@@ -161,8 +186,18 @@ export function truncationState(records: BenchRecord[]): TruncationState {
     } else {
       streak = 0;
     }
+    if (r.stopped_at_budget) {
+      budgetStops += 1;
+      if (budgetTriggerIndex === null) budgetTriggerIndex = i;
+    }
   });
-  return { warned, triggerIndex, currentStreak: streak };
+  return {
+    warned,
+    triggerIndex,
+    currentStreak: streak,
+    budgetStops,
+    budgetTriggerIndex,
+  };
 }
 
 /** Samples at or after the trigger are measuring the cap, not the model. */
@@ -170,6 +205,8 @@ export function isBudgetTainted(
   index: number,
   state: TruncationState,
 ): boolean {
+  if (state.budgetTriggerIndex !== null && index >= state.budgetTriggerIndex)
+    return true;
   return state.triggerIndex !== null && index >= state.triggerIndex;
 }
 
@@ -468,12 +505,6 @@ export function classifyBenchLine(line: string): BenchLogLevel {
  * up after three server errors. Returning the reason rather than a boolean
  * is what lets the UI say WHY.
  */
-/** First letter upper-cased, for strings composed elsewhere (the backend's
- *  readiness reason) that still have to read as sentences here. */
-export function sentenceCase(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
-
 export function startDisabledReason(opts: {
   running: boolean;
   serverReady: boolean;
@@ -483,10 +514,8 @@ export function startDisabledReason(opts: {
   if (opts.running)
     return "A run is active — Start enables when it finishes or is stopped";
   if (!opts.serverReady)
-    return (
-      sentenceCase(opts.serverReason) ||
-      "No server answering at the configured url"
-    );
+    // The backend composes this sentence-cased at its source.
+    return opts.serverReason || "No server answering at the configured url";
   if (!opts.haveFlags)
     return "No previous run to take flags from — run bench.py once from the CLI first";
   return null;
@@ -614,8 +643,23 @@ function normalizeTarget(url: string | null | undefined): string {
 export function estimatedRunSeconds(
   details: BenchRunDetail[],
   plannedSamples: number,
+  /** The target this estimate is for, and the default to judge it against. */
+  targetUrl?: string,
+  defaultUrl?: string,
 ): number | null {
-  const graded = details.flatMap((d) => gradedRecords(d.records));
+  // Pooling mock and real history makes the figure meaningless: the first
+  // real run was estimated at 3m 17s against a history of mockserver runs
+  // and took 35m 46s. Same-class runs only.
+  const wantMock = isNonDefaultTarget(targetUrl ?? "", defaultUrl ?? "");
+  const sameClass =
+    targetUrl === undefined
+      ? details
+      : details.filter(
+          (d) =>
+            isNonDefaultTarget(d.config?.url ?? "", defaultUrl ?? "") ===
+            wantMock,
+        );
+  const graded = sameClass.flatMap((d) => gradedRecords(d.records));
   if (graded.length === 0 || plannedSamples <= 0) return null;
   const mean = graded.reduce((s, r) => s + r.seconds, 0) / graded.length;
   return mean * plannedSamples;
@@ -671,10 +715,19 @@ export function assertionCanary(record: BenchRecord): {
   ok: boolean;
   ran: number;
   expected: number;
+  /** False when the record crashed, so the count proves nothing either way. */
+  applicable: boolean;
 } {
+  // Only a record that RAN TO COMPLETION can say anything about the suite.
+  // A crash stops the grader part way, so a low count is the expected
+  // consequence of the crash — the first real run had 4 of its 5 mismatches
+  // on errored records, which made the loudest warning on the drilldown the
+  // wrong one almost every time.
+  const completed = record.status === "pass" || record.status === "fail";
   return {
-    ok: record.tests_total === record.tests_expected,
+    ok: !completed || record.tests_total === record.tests_expected,
     ran: record.tests_total,
     expected: record.tests_expected,
+    applicable: completed,
   };
 }

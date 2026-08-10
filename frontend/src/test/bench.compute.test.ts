@@ -20,6 +20,8 @@ import {
   serverExcludedCount,
   taskMean,
   truncationState,
+  estimatedRunSeconds,
+  assertionCanary,
 } from "../pages/bench/compute";
 import type {
   BenchRecord,
@@ -123,8 +125,14 @@ describe("T10 strip cell mapping", () => {
     expect(state).toBe("server");
     expect(state).not.toBe("miss");
   });
-  it("maps an error status to miss", () => {
-    expect(cellState(rec({ status: "error", solved: false }))).toBe("miss");
+  // T70 — this asserted `error` maps to "miss", which was true and is now
+  // deliberately not. Real data made the conflation costly: the first 35B run
+  // was 12 `error` (code that never ran — crashes, missing exports) against
+  // 10 `fail` (code that ran and answered wrongly), shown identically. The
+  // fail mapping below still guards that half of the distinction.
+  it("maps an error status to its own state, distinct from miss", () => {
+    expect(cellState(rec({ status: "error", solved: false }))).toBe("error");
+    expect(cellState(rec({ status: "fail", solved: false }))).toBe("miss");
   });
 });
 
@@ -542,5 +550,128 @@ describe("real fixture sanity", () => {
     expect(avg).not.toBeNull();
     expect(avg as number).toBeGreaterThanOrEqual(0);
     expect(avg as number).toBeLessThanOrEqual(detail.summary.max_points);
+  });
+});
+
+// T68 — pace estimated from same-target-class history only.
+describe("T68 duration estimate is not diluted by mock runs", () => {
+  const runWith = (url: string, seconds: number) =>
+    ({
+      run_id: url + seconds,
+      suite_hash: "e293ad7",
+      created: "2026-08-09T00:00:00",
+      models: ["m"],
+      tasks: ["js/a"],
+      config: { url, attempts: 1, n: 1 },
+      summary: {},
+      live: {},
+      records: [
+        {
+          ...(benchRun.records[0] as unknown as BenchRecord),
+          status: "pass",
+          seconds,
+        },
+      ],
+    }) as unknown as Parameters<typeof estimatedRunSeconds>[0][number];
+
+  const REAL = "http://localhost:8081";
+  const MOCK = "http://127.0.0.1:8123";
+
+  it("draws only on real-target history when estimating a real run", () => {
+    // The first real run was estimated at 3m 17s from mock history and took
+    // 35m 46s — a ~10x error, entirely from pooling the two classes.
+    const history = [
+      runWith(MOCK, 1),
+      runWith(MOCK, 1),
+      runWith(MOCK, 1),
+      runWith(REAL, 100),
+    ];
+    expect(estimatedRunSeconds(history, 10, REAL, REAL)).toBe(1000);
+  });
+
+  it("and only on mock history when estimating a mock run", () => {
+    const history = [runWith(MOCK, 1), runWith(REAL, 100)];
+    expect(estimatedRunSeconds(history, 10, MOCK, REAL)).toBe(10);
+  });
+
+  it("returns nothing rather than guessing when that class has no history", () => {
+    expect(estimatedRunSeconds([runWith(MOCK, 1)], 10, REAL, REAL)).toBeNull();
+  });
+});
+
+// T66 — two cut-off mechanisms, tracked separately.
+describe("T66 budget cutoffs are counted apart from truncation", () => {
+  const r = (flags: Partial<BenchRecord>) =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      truncated: false,
+      stopped_at_budget: false,
+      ...flags,
+    }) as BenchRecord;
+
+  it("counts non-consecutive budget stops that a streak rule would miss", () => {
+    // Exactly the real run's shape: indices 3, 9 and 17, never adjacent.
+    const records = Array.from({ length: 20 }, (_, i) =>
+      r({ stopped_at_budget: i === 3 || i === 9 || i === 17 }),
+    );
+    const s = truncationState(records);
+    expect(s.budgetStops).toBe(3);
+    expect(s.budgetTriggerIndex).toBe(3);
+    expect(
+      s.warned,
+      "the three-in-a-row rule belongs to truncation, and none of these were truncated",
+    ).toBe(false);
+  });
+
+  it("keeps the three-in-a-row rule for server-side truncation", () => {
+    expect(
+      truncationState([r({ truncated: true }), r({ truncated: true })]).warned,
+    ).toBe(false);
+    expect(
+      truncationState([
+        r({ truncated: true }),
+        r({ truncated: true }),
+        r({ truncated: true }),
+      ]).warned,
+    ).toBe(true);
+  });
+
+  it("taints from whichever cutoff came first", () => {
+    const records = [
+      r({}),
+      r({ stopped_at_budget: true }),
+      r({}),
+      r({ truncated: true }),
+      r({ truncated: true }),
+      r({ truncated: true }),
+    ];
+    const s = truncationState(records);
+    expect(isBudgetTainted(0, s)).toBe(false);
+    expect(isBudgetTainted(1, s)).toBe(true);
+    expect(isBudgetTainted(4, s)).toBe(true);
+  });
+});
+
+// T67 — the canary only speaks for records that finished.
+describe("T67 assertion canary ignores crashed records", () => {
+  const rec = (status: string, ran: number, expected: number) =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      status,
+      tests_total: ran,
+      tests_expected: expected,
+    }) as BenchRecord;
+
+  it("treats a crash's short count as inapplicable, not as drift", () => {
+    const c = assertionCanary(rec("error", 59, 128));
+    expect(c.ok).toBe(true);
+    expect(c.applicable).toBe(false);
+  });
+
+  it("still reports a genuine mismatch on a completed record", () => {
+    const c = assertionCanary(rec("fail", 32, 35));
+    expect(c.ok).toBe(false);
+    expect(c.applicable).toBe(true);
+    expect(assertionCanary(rec("pass", 35, 35)).ok).toBe(true);
   });
 });
