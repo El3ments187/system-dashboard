@@ -427,8 +427,15 @@ export function isHeartbeatStale(
 export function historicalTaskMedian(
   details: BenchRunDetail[],
   task: string,
+  /** Scoped like the duration estimate: a mock median is not a real one. */
+  targetUrl?: string,
+  defaultUrl?: string,
 ): number | null {
-  const values = details
+  // Same disease the estimate had: a mock run finishes a task in ~0s, so a
+  // pooled median reported "0s — over median" for every task of a real run.
+  // With no same-class history this returns null, and the caller says so
+  // honestly rather than showing a 0 that reads as "instant".
+  const values = sameTargetClass(details, targetUrl, defaultUrl)
     .flatMap((d) => d.records)
     .filter((r) => r.task === task && r.status !== "server")
     .map((r) => r.seconds)
@@ -453,6 +460,12 @@ export function greedyInterlock(
 }
 
 export interface RunNaming {
+  /** The --label, when one was given and differs from the model. */
+  alias: string | null;
+  /** What belongs in the primary position: the real model when known. */
+  primary: string;
+  /** True when the alias is the only name recorded anywhere. */
+  aliasIsAllWeHave: boolean;
   /** What the run is called — the label when one was given. */
   name: string;
   /**
@@ -467,11 +480,31 @@ export function runNaming(
   models: string[],
   config: BenchConfig | null | undefined,
 ): RunNaming {
-  const name = models.join(", ");
+  // `--label` replaces the model everywhere in results.json EXCEPT
+  // config.model, so models[] is the alias whenever a label was given.
+  const recorded = models.join(", ");
   const actual = config?.model?.trim();
-  // No label, or a label that matches the model: one name, as before.
-  if (!actual || actual === name) return { name, model: null };
-  return { name, model: actual };
+
+  // No label, or one that matches the model: a single name.
+  if (!actual || actual === recorded)
+    return {
+      name: recorded,
+      model: null,
+      alias: null,
+      primary: recorded,
+      aliasIsAllWeHave: false,
+    };
+
+  // Labelled. The REAL model leads, the alias follows and is labelled as
+  // one — the same order the hero uses. Two surfaces showing these two
+  // facts in opposite orders is worse than either order chosen once.
+  return {
+    name: recorded,
+    model: actual,
+    alias: recorded,
+    primary: actual,
+    aliasIsAllWeHave: false,
+  };
 }
 
 export type BenchLogLevel = "info" | "warn" | "error";
@@ -640,6 +673,26 @@ function normalizeTarget(url: string | null | undefined): string {
  * would drag the estimate down. Returns null rather than a guess when there
  * is no history to reason from.
  */
+/**
+ * Runs whose target is the same CLASS as this one — mock or real.
+ *
+ * A mockserver run answers in milliseconds and a real model in minutes, so
+ * any figure averaged across both describes neither. Shared by the duration
+ * estimate and the pacing median so the two cannot drift apart.
+ */
+export function sameTargetClass(
+  details: BenchRunDetail[],
+  targetUrl: string | undefined,
+  defaultUrl: string | undefined,
+): BenchRunDetail[] {
+  if (targetUrl === undefined) return details;
+  const wantMock = isNonDefaultTarget(targetUrl, defaultUrl ?? "");
+  return details.filter(
+    (d) =>
+      isNonDefaultTarget(d.config?.url ?? "", defaultUrl ?? "") === wantMock,
+  );
+}
+
 export function estimatedRunSeconds(
   details: BenchRunDetail[],
   plannedSamples: number,
@@ -650,16 +703,9 @@ export function estimatedRunSeconds(
   // Pooling mock and real history makes the figure meaningless: the first
   // real run was estimated at 3m 17s against a history of mockserver runs
   // and took 35m 46s. Same-class runs only.
-  const wantMock = isNonDefaultTarget(targetUrl ?? "", defaultUrl ?? "");
-  const sameClass =
-    targetUrl === undefined
-      ? details
-      : details.filter(
-          (d) =>
-            isNonDefaultTarget(d.config?.url ?? "", defaultUrl ?? "") ===
-            wantMock,
-        );
-  const graded = sameClass.flatMap((d) => gradedRecords(d.records));
+  const graded = sameTargetClass(details, targetUrl, defaultUrl).flatMap((d) =>
+    gradedRecords(d.records),
+  );
   if (graded.length === 0 || plannedSamples <= 0) return null;
   const mean = graded.reduce((s, r) => s + r.seconds, 0) / graded.length;
   return mean * plannedSamples;

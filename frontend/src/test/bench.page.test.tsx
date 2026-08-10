@@ -2180,3 +2180,275 @@ describe("T71 flaky is unmeasurable at --n 1", () => {
     );
   });
 });
+
+// T75 — a run started after mount must appear on its own.
+//
+// The runs list was fetched once per mount, and auto-select searches that
+// list for the spawned run's folder, so it searched a list that could never
+// grow. On a real 33-minute run the page sat at "No samples recorded yet"
+// with a dashed footer the whole way, until someone pressed Refresh.
+describe("T75 the live view populates without a manual refresh", () => {
+  const SPAWNED = {
+    running: true,
+    run: {
+      pid: 7001,
+      folder: "late_20260810-010000",
+      model: "Qwen3.6-35B",
+      label: null,
+      langs: "js",
+      attempts: 1,
+      n: 1,
+      temperature: 0.2,
+      started: new Date().toISOString(),
+      url: "http://localhost:8081",
+    },
+  };
+
+  it("picks up a run that only appears in a LATER poll of the list", async () => {
+    // The list is empty at mount and gains the spawned run afterwards —
+    // exactly what happens when you click Start and bench.py writes its
+    // first sample minutes later.
+    let listCalls = 0;
+    const late = runRow({
+      run_id: "late-run",
+      folder: SPAWNED.run.folder,
+    });
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({
+          ready: true,
+          url: "http://localhost:8081",
+          reason: "",
+          models: [],
+        });
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current")) return okJson(SPAWNED);
+      if (url.includes("/api/bench/runs/")) {
+        // The detail must carry the SAME run_id the list row has, or the
+        // page cannot tell that what it loaded is the spawned run.
+        const d = JSON.parse(JSON.stringify(benchRun)) as { run_id: string };
+        d.run_id = "late-run";
+        return okJson(d);
+      }
+      if (url.includes("/api/bench/runs")) {
+        listCalls += 1;
+        // Empty on the first read, present from the second onwards.
+        return okJson(listCalls === 1 ? [] : [late]);
+      }
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+
+    // Warming first: nothing of its own on disk yet.
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+
+    // …then, with no remount and no Refresh click, the run's own rows arrive.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByTestId("bench-task-row").length,
+          "a run started after mount must appear on its own",
+        ).toBeGreaterThan(0),
+      { timeout: 15000 },
+    );
+    expect(
+      listCalls,
+      "the list must be re-read, not fetched once",
+    ).toBeGreaterThan(1);
+    // The list poll is 5s, so this test must outlive vitest's 5s default.
+  }, 20000);
+
+  it("stops polling the list on unmount", async () => {
+    const calls = installFetch();
+    const { unmount } = render(<BenchPage />);
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/runs"))).toBe(true),
+    );
+    unmount();
+    const after = calls.filter((c) => c.includes("/api/bench/runs")).length;
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(
+      calls.filter((c) => c.includes("/api/bench/runs")).length,
+      "an unmounted hook must not keep polling",
+    ).toBe(after);
+  });
+});
+
+// T77 — points are denominated in attempts, so a guessed denominator states
+// something about the run that nothing has established yet.
+describe("T77 warming-phase denominator comes from the run's own config", () => {
+  it("shows the spawned run's attempts, not a default of 3", async () => {
+    installFetch({
+      current: {
+        running: true,
+        run: {
+          pid: 8001,
+          folder: "att1_20260810-020000",
+          model: "Qwen3.6-35B",
+          label: null,
+          langs: "js",
+          attempts: 1,
+          n: 1,
+          temperature: 0.2,
+          started: new Date().toISOString(),
+          url: "http://localhost:8081",
+        },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-warming")).toBeTruthy(),
+    );
+    const avg = screen.getByTestId("bench-task-avg").textContent ?? "";
+    expect(avg, "a --attempts 1 run is scored out of 1").toContain("/ 1");
+    expect(avg).not.toContain("/ 3");
+  });
+
+  it("renders a dash rather than guessing when nothing knows the attempts", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg").textContent).toContain("—"),
+    );
+    expect(screen.getByTestId("bench-task-avg").textContent).not.toContain(
+      "/ 3",
+    );
+  });
+});
+
+// T78 — one alias/model convention across every surface.
+//
+// History put the ALIAS in the primary position and the real model in an
+// unlabelled secondary; the hero does the opposite. Two surfaces showing the
+// same two facts in opposite orders is worse than either order chosen once.
+describe("T78 hero, History and Compare agree on alias vs model", () => {
+  const labelled = () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { models: string[] }).models = ["livecap"];
+    (d as { config: { model: string } }).config.model = "Qwen3.6-35B-APEX";
+    return d;
+  };
+
+  it("puts the real model first and labels the alias, in hero AND History", async () => {
+    const d = labelled();
+    installFetch({
+      detail: d,
+      runs: [runRow({ models: ["livecap"], config: d.config })],
+    });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "Qwen3.6-35B-APEX",
+      ),
+    );
+    expect(screen.getByTestId("bench-hero-alias").textContent).toContain(
+      "Benchmark Alias",
+    );
+
+    fireEvent.click(screen.getByTestId("bench-tab-hist"));
+    const name = await screen.findByTestId("bench-run-name");
+    // Real model leads.
+    expect(name.textContent).toMatch(/^Qwen3\.6-35B-APEX/);
+    // Alias follows, and says what it is.
+    expect(screen.getByTestId("bench-run-alias").textContent).toContain(
+      "Benchmark Alias: livecap",
+    );
+    expect(
+      name.textContent,
+      "the alias must not occupy the primary position",
+    ).not.toMatch(/^livecap/);
+  });
+
+  it("renders one value with no dangling separator when there is no alias", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { models: string[] }).models = ["buggy-model"];
+    (d as { config: { model: string } }).config.model = "buggy-model";
+    installFetch({ detail: d, runs: [runRow({ models: ["buggy-model"] })] });
+    render(<BenchPage />);
+
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    const name = await screen.findByTestId("bench-run-name");
+    await waitFor(() => expect(name.textContent).toContain("buggy-model"));
+    expect(screen.queryByTestId("bench-run-alias")).toBeNull();
+    expect(name.textContent).not.toContain("·");
+  });
+});
+
+// T83 — the footer draws the design's bars, not a line.
+//
+// A line through the 1-2 points a run has early on is one long diagonal
+// across the whole strip, which is what the screenshots showed. Bars degrade
+// honestly. Also guards the shared-series bug found here: Samples/hr and
+// Elapsed were plotting the identical array.
+describe("T83 footer sparklines", () => {
+  const withRecords = (n: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    (d as { records: unknown[] }).records = recs.slice(0, n);
+    return d;
+  };
+
+  it("renders one bar per data point, not a path", async () => {
+    installFetch({ detail: withRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('[data-testid="bench-spark-bar"]').length,
+      ).toBeGreaterThan(0),
+    );
+    const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
+    expect(sparks).toHaveLength(5); // one per footer stat
+    // One bar per record in the series. (data-points counts only the FINITE
+    // values — the mock fixture's gen_seconds are ~0, so most rates are null
+    // and would understate the bar count.)
+    expect(sparks[3].querySelectorAll("i")).toHaveLength(5);
+  });
+
+  it("draws nothing rather than a misleading shape with no points", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-gen-speed").textContent).toBe(
+        "—",
+      ),
+    );
+    expect(
+      document.querySelectorAll('[data-testid="bench-spark-bar"]').length,
+      "an empty series must not draw bars",
+    ).toBe(0);
+  });
+
+  it("gives Samples/hr its own series, not a copy of Elapsed's", async () => {
+    installFetch({ detail: withRecords(6) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('[data-testid="bench-spark-bar"]').length,
+      ).toBeGreaterThan(0),
+    );
+    const sparks = [
+      ...document.querySelectorAll('[data-testid="bench-spark"]'),
+    ];
+    const heights = (el: Element) =>
+      [...el.querySelectorAll("i")].map((i) => (i as HTMLElement).style.height);
+    // index 1 = Samples/hr, index 3 = Elapsed. Elapsed is cumulative and so
+    // monotonically rising; samples-per-hour is a rate and is not.
+    expect(
+      heights(sparks[1]).join(","),
+      "Samples/hr must not be a copy of the Elapsed series",
+    ).not.toBe(heights(sparks[3]).join(","));
+  });
+});

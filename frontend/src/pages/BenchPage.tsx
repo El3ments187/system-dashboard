@@ -185,6 +185,24 @@ export interface HeroIdentity {
   warming: boolean;
 }
 
+/**
+ * What a run points at: the url it was spawned with while it is live, the url
+ * preserved in its own config once stored, and Run Setup's field before any
+ * run exists. Shared so the hero's badge and the pacing median cannot
+ * disagree about which class of target this is.
+ */
+export function runTargetUrl(
+  current: BenchCurrent,
+  detail: BenchRunDetail | null,
+  fallback: string,
+): string {
+  return (
+    (current.running ? current.run?.url : null) ??
+    detail?.config?.url ??
+    fallback
+  );
+}
+
 function heroIdentity(
   detail: BenchRunDetail | null,
   current: BenchCurrent,
@@ -192,9 +210,7 @@ function heroIdentity(
   activeModel: string | null,
 ): HeroIdentity {
   const spawned = current.running ? current.run : null;
-  const naming = detail
-    ? runNaming(detail.models, detail.config)
-    : { name: "No run selected", model: null };
+  const naming = detail ? runNaming(detail.models, detail.config) : null;
 
   // The primary name is the model, never the label. `--model` states an
   // expectation and `--label` overwrites the recorded name outright
@@ -207,8 +223,10 @@ function heroIdentity(
     realModel = activeModel ?? spawned.model ?? null;
     alias = spawned.label ?? null;
   } else {
-    realModel = naming.model ?? (detail ? naming.name : null);
-    alias = naming.model ? naming.name : null;
+    // Stored runs go through the same helper History and Compare use, so
+    // the three surfaces cannot drift into different orders again.
+    realModel = naming?.model ?? (naming ? naming.primary : null);
+    alias = naming?.alias ?? null;
   }
   // Model ID blank AND a label set leaves nothing recording the real model.
   // Showing the label as if it were one would be the original bug, so it is
@@ -226,7 +244,7 @@ function heroIdentity(
   if (realModel) displayName = realModel;
   else if (alias) displayName = alias;
   else if (spawned) displayName = "starting…";
-  else if (detail) displayName = naming.name;
+  else if (naming) displayName = naming.primary;
 
   return {
     displayName,
@@ -280,13 +298,7 @@ function HeroCard({
     liveLangs ? liveLangs.split(",") : detail?.config?.langs,
   );
   const serverErrors = live.consecutive_server_errors ?? 0;
-  // While a run is live the target is the one it was spawned with; for a
-  // stored run it is the url preserved in its own config; before any run
-  // it is whatever Run Setup currently shows.
-  const heroTarget =
-    (current.running ? current.run?.url : null) ??
-    detail?.config?.url ??
-    targetUrl;
+  const heroTarget = runTargetUrl(current, detail, targetUrl);
   const heartbeatText =
     beatAge === null
       ? "No heartbeat yet"
@@ -542,15 +554,29 @@ function BannerTile({
   );
 }
 
-function ScoreCard({ detail }: { detail: BenchRunDetail | null }) {
+function ScoreCard({
+  detail,
+  spawnedAttempts,
+}: {
+  detail: BenchRunDetail | null;
+  /**
+   * The spawned run's --attempts, known from process state before its file
+   * exists. Points are denominated in attempts, so during warming the
+   * denominator has to come from the run that is actually starting — it read
+   * "/ 3" on a --attempts 1 run otherwise.
+   */
+  spawnedAttempts: number | null;
+}) {
   const samplesPerTask = detail?.config?.n ?? 1;
   const records = useMemo(() => detail?.records ?? [], [detail]);
   const taskAvg = useMemo(() => runTaskAvg(records), [records]);
   const flaky = useMemo(() => flakyTasks(records), [records]);
   const graded = useMemo(() => gradedRecords(records), [records]);
   const serverExcluded = serverExcludedCount(records);
+  // No 3 fallback: guessing a denominator states something about the run
+  // that nothing has established yet.
   const maxPoints =
-    detail?.summary?.max_points ?? detail?.config?.attempts ?? 3;
+    detail?.summary?.max_points ?? detail?.config?.attempts ?? spawnedAttempts;
   const solvedSamples = graded.filter((r) => r.solved).length;
   const firstTrySamples = graded.filter((r) => r.first_try).length;
 
@@ -569,8 +595,10 @@ function ScoreCard({ detail }: { detail: BenchRunDetail | null }) {
           title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced."
           testId="bench-task-avg"
           value={taskAvg === null ? "—" : taskAvg.toFixed(2)}
-          suffix={`/ ${maxPoints}`}
-          percent={taskAvg === null ? 0 : (taskAvg / maxPoints) * 100}
+          suffix={`/ ${maxPoints ?? "—"}`}
+          percent={
+            taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
+          }
         />
         <BannerTile
           label="Solved — samples"
@@ -1524,9 +1552,21 @@ export default function BenchPage() {
   const median = useMemo(
     () =>
       live.current_task
-        ? historicalTaskMedian(storedDetails, live.current_task)
+        ? historicalTaskMedian(
+            storedDetails,
+            live.current_task,
+            runTargetUrl(current, detail, bench.targetUrl),
+            bench.defaultUrl,
+          )
         : null,
-    [storedDetails, live.current_task],
+    [
+      storedDetails,
+      live.current_task,
+      current,
+      detail,
+      bench.targetUrl,
+      bench.defaultUrl,
+    ],
   );
 
   // A multi-hour run nobody is watching is the point of this page, so the end
@@ -1601,7 +1641,12 @@ export default function BenchPage() {
             {/* Same run-scoping rule as the footer and the task table: while
                 a spawned run warms, `detail` is the PREVIOUS run, and its
                 score is not this run's score. */}
-            <ScoreCard detail={identity.warming ? null : detail} />
+            <ScoreCard
+              detail={identity.warming ? null : detail}
+              spawnedAttempts={
+                current.running ? (current.run?.attempts ?? null) : null
+              }
+            />
           </PanelErrorBoundary>
 
           <PanelErrorBoundary panelName="Bench Progress">

@@ -675,3 +675,48 @@ describe("T67 assertion canary ignores crashed records", () => {
     expect(assertionCanary(rec("pass", 35, 35)).ok).toBe(true);
   });
 });
+
+// T76 — the pacing median had the same mock dilution T68 fixed for the
+// estimate: a mock run finishes a task in ~0s, so a pooled median reported
+// "0s — over median" for every task of a real run.
+describe("T76 pacing median is scoped to the target class", () => {
+  const REAL = "http://localhost:8081";
+  const MOCK = "http://127.0.0.1:8123";
+  const runWith = (url: string, seconds: number) =>
+    ({
+      run_id: url + seconds,
+      suite_hash: "e293ad7",
+      created: "2026-08-09T00:00:00",
+      models: ["m"],
+      tasks: ["js/a"],
+      config: { url, attempts: 1, n: 1 },
+      summary: {},
+      live: {},
+      records: [
+        {
+          ...(benchRun.records[0] as unknown as BenchRecord),
+          task: "js/a",
+          status: "pass",
+          seconds,
+        },
+      ],
+    }) as unknown as Parameters<typeof historicalTaskMedian>[0][number];
+
+  it("draws only on real history for a real run", () => {
+    const history = [runWith(MOCK, 0), runWith(MOCK, 0), runWith(REAL, 90)];
+    expect(historicalTaskMedian(history, "js/a", REAL, REAL)).toBe(90);
+  });
+
+  it("returns null, NOT zero, when that class has no history for the task", () => {
+    // 0 would render as "median 0s — over median", which reads as though the
+    // task is normally instant.
+    expect(
+      historicalTaskMedian([runWith(MOCK, 0)], "js/a", REAL, REAL),
+    ).toBeNull();
+  });
+
+  it("still pools everything when no target is supplied", () => {
+    const history = [runWith(MOCK, 10), runWith(REAL, 20)];
+    expect(historicalTaskMedian(history, "js/a")).toBe(15);
+  });
+});

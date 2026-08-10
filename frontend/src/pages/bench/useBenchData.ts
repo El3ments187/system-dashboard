@@ -99,6 +99,16 @@ export const CURRENT_POLL_MS = 3000;
 /** How often the target server is re-probed, so a model started elsewhere
  *  flips the Start gate without a reload. */
 export const READY_POLL_MS = 5000;
+/**
+ * How often the runs LIST is re-read.
+ *
+ * Slower than RUN_POLL_MS on purpose: the backend opens and parses every
+ * runs/*_/results.json to build this list, so the cost grows with history,
+ * while the thing it is watching for — a spawned run's file appearing — is
+ * minutes away (bench.py writes results.json when the first sample
+ * completes, not at spawn). Five seconds is far inside that window.
+ */
+export const RUNS_LIST_POLL_MS = 5000;
 
 export interface BenchData {
   /**
@@ -320,14 +330,26 @@ export function useBenchData(): BenchData {
   }, [nonce]);
 
   // The run list is cheap (summaries only) and drives History.
+  //
+  // POLLED, not fetched once. Fetching once per mount meant a run started
+  // after mount never entered this list — and the auto-select below reads
+  // `runsRef.current` to find the spawned run, so it searched a list that
+  // could never grow. The whole live view stayed empty for an entire
+  // 33-minute run until someone pressed Refresh.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
       try {
         const list = await getJson<BenchRunRow[]>("/api/bench/runs");
         if (cancelled) return;
         setRuns(list);
+        // Updated on EVERY poll: this ref is what auto-select searches.
         runsRef.current = list;
+        // Still `??`: a run the user explicitly selected must not be
+        // clobbered by a later poll. A newly spawned run is picked up by the
+        // auto-select effect instead, which is what makes Start work without
+        // stealing an existing selection.
         setSelectedRunId((current) => current ?? list[0]?.run_id ?? null);
       } catch (e) {
         if (!cancelled)
@@ -335,9 +357,12 @@ export function useBenchData(): BenchData {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+      if (!cancelled) timer = setTimeout(() => void tick(), RUNS_LIST_POLL_MS);
+    };
+    void tick();
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [nonce]);
 

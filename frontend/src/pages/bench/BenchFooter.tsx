@@ -5,12 +5,10 @@
  * Every series is derived from the run's own ordered records, so the strip
  * describes the selected run rather than the machine.
  */
-import Sparkline from "../../components/shared/Sparkline";
 import { fmtUptime } from "../llamaCppUtils";
 import { fmtNum } from "../llamacpp/parts";
 import { gradedRecords } from "./compute";
 import type { BenchRecord, BenchRunDetail } from "./types";
-import type { MetricHistoryPoint } from "../../types/metrics";
 
 const MONO = '"JetBrains Mono", "Fira Code", monospace';
 
@@ -22,12 +20,61 @@ function cumulative(values: number[]): number[] {
   );
 }
 
-function series(values: Array<number | null>): MetricHistoryPoint[] {
-  return values.map((value, slot) => ({
-    slot,
-    timestamp: new Date(slot * 1000),
-    value,
-  }));
+/**
+ * The design's sparkline is discrete BARS, not a line
+ * (bench-page-design-7.html:388-390 — `.fspark i`, 3px wide, own height).
+ * The shared `Sparkline` is line/area-only, and a line through the 1-2
+ * points a run has early on is by definition one long diagonal across the
+ * whole strip, which is exactly what it drew. Bars degrade honestly: two
+ * points look like two bars.
+ *
+ * Rendered locally rather than by teaching the shared component a bar mode,
+ * because that component has other callers and this is the only one the
+ * design draws as bars.
+ */
+function BarSpark({ values }: { values: Array<number | null> }) {
+  const real = values.filter((v): v is number => v !== null && isFinite(v));
+  // Nothing to say yet — say nothing, rather than draw a shape.
+  if (real.length === 0)
+    return <span style={{ flex: 1, minWidth: 0, height: 18 }} />;
+  const max = Math.max(...real);
+  const min = Math.min(...real, 0);
+  const span = max - min || 1;
+  // Newest last, and only as many bars as there are points.
+  return (
+    <span
+      data-testid="bench-spark"
+      data-points={real.length}
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 1.5,
+        height: 18,
+        flex: 1,
+        minWidth: 0,
+        justifyContent: "flex-end",
+        overflow: "hidden",
+      }}
+    >
+      {values.map((v, i) => (
+        <i
+          key={i}
+          data-testid="bench-spark-bar"
+          style={{
+            width: 3,
+            flex: "0 0 3px",
+            borderRadius: 1.5,
+            // A flat series (server errors at 0) draws a visible floor
+            // rather than nothing, without implying a slope.
+            height: `${v === null ? 0 : Math.max(8, ((v - min) / span) * 100)}%`,
+            background:
+              "linear-gradient(180deg, var(--accent-primary), var(--accent-tint-15))",
+            opacity: 0.8,
+          }}
+        />
+      ))}
+    </span>
+  );
 }
 
 /**
@@ -47,7 +94,7 @@ function FooterStat({
 }: {
   label: string;
   value: string;
-  data: MetricHistoryPoint[];
+  data: Array<number | null>;
 }) {
   return (
     <div
@@ -77,9 +124,7 @@ function FooterStat({
       >
         {value}
       </span>
-      <span style={{ flex: 1, minWidth: 0, height: 18 }}>
-        <Sparkline data={data} stretch height={18} />
-      </span>
+      <BarSpark values={data} />
     </div>
   );
 }
@@ -132,6 +177,12 @@ export function BenchFooter({
   const totalSeconds = elapsedSeconds ?? 0;
   const samplesPerHour =
     totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null;
+  // Its OWN series: samples completed per elapsed hour, as it evolved.
+  // Previously this reused elapsedSeries, so Samples/hr and Elapsed were
+  // mathematically guaranteed to draw the same shape.
+  const ratePerHourSeries = elapsedSeries.map((cum, i) =>
+    cum > 0 ? ((i + 1) / cum) * 3600 : null,
+  );
 
   return (
     <div
@@ -151,29 +202,29 @@ export function BenchFooter({
             ? "—"
             : `${fmtNum(Math.round(meanRate))} t/s`
         }
-        data={idle ? [] : series(rates)}
+        data={idle ? [] : rates}
       />
       <FooterStat
         label="Samples/hr"
         value={
           idle || samplesPerHour === null ? "—" : samplesPerHour.toFixed(1)
         }
-        data={idle ? [] : series(elapsedSeries)}
+        data={idle ? [] : ratePerHourSeries}
       />
       <FooterStat
         label="Pass rate"
         value={idle || passRate === null ? "—" : `${Math.round(passRate)}%`}
-        data={idle ? [] : series(passSeries)}
+        data={idle ? [] : passSeries}
       />
       <FooterStat
         label="Elapsed"
         value={idle && elapsedSeconds === null ? "—" : fmtUptime(totalSeconds)}
-        data={idle ? [] : series(elapsedSeries)}
+        data={idle ? [] : elapsedSeries}
       />
       <FooterStat
         label="Server errors"
         value={idle ? "—" : String(serverTotal)}
-        data={idle ? [] : series(serverSeries)}
+        data={idle ? [] : serverSeries}
       />
     </div>
   );

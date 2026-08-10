@@ -814,23 +814,27 @@ function HistoryPane({
                   style={{ overflow: "hidden", textOverflow: "ellipsis" }}
                   data-testid="bench-run-name"
                 >
-                  {runNaming(run.models, run.config).name}
+                  {/* Real model first, alias second and LABELLED — the same
+                      order the hero uses. A bare "· looping-model" left the
+                      reader guessing which of the two facts it was. */}
+                  {runNaming(run.models, run.config).primary}
                   {isNonDefaultTarget(run.config?.url, bench.defaultUrl) && (
                     <span style={{ marginLeft: 6 }}>
                       <TargetBadge url={run.config?.url ?? ""} />
                     </span>
                   )}
-                  {runNaming(run.models, run.config).model && (
+                  {runNaming(run.models, run.config).alias && (
                     <span
-                      data-testid="bench-run-real-model"
-                      title="--label replaced the model name in this run's records; the real model is shown here."
+                      data-testid="bench-run-alias"
+                      title="--label names a run in the results; it does not select or describe the model. The model above is the one actually benchmarked."
                       style={{
                         color: "var(--text-muted)",
                         fontSize: 10.5,
                         marginLeft: 6,
                       }}
                     >
-                      · {runNaming(run.models, run.config).model}
+                      · Benchmark Alias:{" "}
+                      {runNaming(run.models, run.config).alias}
                     </span>
                   )}
                 </span>
@@ -1025,9 +1029,10 @@ function ComparePane({
                         <TargetBadge url={d.config?.url ?? ""} />
                       </span>
                     )}
-                    {runNaming(d.models, d.config).name}
-                    {runNaming(d.models, d.config).model
-                      ? ` (${runNaming(d.models, d.config).model})`
+                    {/* Same convention as the hero and History. */}
+                    {runNaming(d.models, d.config).primary}
+                    {runNaming(d.models, d.config).alias
+                      ? ` (alias ${runNaming(d.models, d.config).alias})`
                       : ""}{" "}
                     · {sampleLabel(d.config)}
                   </th>
