@@ -1538,22 +1538,19 @@ describe("T58 language toggles", () => {
       },
     });
     render(<BenchPage />);
-    // Wait for the SELECTED RUN's flags to land: before its detail arrives
-    // the form defaults to every available language, so asserting earlier
-    // would be racing the fetch rather than testing the toggles.
+    // Amended by T99. This used to wait for the SELECTED RUN's flags to land
+    // and asserted "the run used --langs js, so js starts on". Run Setup no
+    // longer seeds from the selected run at all — it opens on localbench's
+    // defaults — so that starting state no longer exists. What this test is
+    // actually for, and what it still asserts, is that two toggles in one
+    // render are both applied and that exactly what is left on is submitted.
     await waitFor(() =>
       expect(
         (screen.getByTestId("bench-lang-ts") as HTMLButtonElement).getAttribute(
           "aria-pressed",
         ),
-      ).toBe("false"),
+      ).toBe("true"),
     );
-    expect(
-      (screen.getByTestId("bench-lang-js") as HTMLButtonElement).getAttribute(
-        "aria-pressed",
-      ),
-      "the run used --langs js, so js starts on",
-    ).toBe("true");
 
     // Two toggles back to back: batched into one render, so both must be
     // applied — the first must not be lost to a stale read.
@@ -1568,6 +1565,12 @@ describe("T58 language toggles", () => {
     );
     expect(
       (screen.getByTestId("bench-lang-ts") as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+      "the second click must not be lost to a stale read of the first",
+    ).toBe("false");
+    expect(
+      (screen.getByTestId("bench-lang-java") as HTMLButtonElement).getAttribute(
         "aria-pressed",
       ),
     ).toBe("true");
@@ -1588,7 +1591,7 @@ describe("T58 language toggles", () => {
       ).mock.calls.find(([u]) => String(u).includes("/api/bench/start"))![1]
         .body as string,
     ) as { langs: string };
-    expect(body.langs).toBe("ts");
+    expect(body.langs).toBe("java");
   });
 
   it("cannot switch on a language whose toolchain is missing", async () => {
@@ -2799,8 +2802,13 @@ describe("T74 run status in plain language", () => {
     expect(el.textContent).toMatch(/^Running · updated \d+s ago$/);
   });
 
+  // Amended by T94. This used a 106s-old heartbeat, which was "stale" only
+  // under the superseded 90s constant. The heartbeat is refreshed when a
+  // sample is saved, so 106s is an ordinary task in progress, not a wedged
+  // run. The stalled STATE is still asserted — with an age past any plausible
+  // sample — and T94's own tests assert the healthy-slow direction.
   it("stalled: says the run may be stuck, not 'stale'", async () => {
-    installFetch({ detail: liveDetail(106_000) });
+    installFetch({ detail: liveDetail(1_800_000) });
     render(<BenchPage />);
     const el = await screen.findByTestId("bench-run-status");
     await waitFor(() => expect(el.getAttribute("data-status")).toBe("stalled"));
@@ -2878,12 +2886,19 @@ describe("T82 ON TASK reflects what is actually running", () => {
     return d;
   };
 
+  // Amended by T98. This asserted the literal "Between samples" — a label
+  // that named nothing and, at `--n 1` (the default and the reported case),
+  // was the tile's PERMANENT state, because `inFlight` can never be true
+  // there. Meanwhile the line below it claimed "5m 27s on task", so the card
+  // told two opposite stories. The invariant T82 actually protects is that a
+  // task the table has already scored is not presented as running, and that
+  // is what is asserted here now.
   it("does not present a task that already has a completed record", async () => {
     const finished = benchRun.records[0].task; // has a record in the fixture
     installFetch({ detail: detailWith(finished) });
     render(<BenchPage />);
     const tiles = await screen.findByTestId("bench-progress-tiles");
-    await waitFor(() => expect(tiles.textContent).toContain("Between samples"));
+    await waitFor(() => expect(tiles.textContent).toContain("Last completed"));
     expect(
       tiles.textContent,
       "a scored task cannot also be in flight",
@@ -3129,5 +3144,766 @@ describe("an open drilldown survives its own run's data arriving", () => {
       canary.textContent,
       "the run's own detail arriving is not a run change — the drilldown must survive it",
     ).toMatch(/SUITE DRIFT/);
+  });
+});
+
+// ── T96 — resume must reproduce the run's recorded conditions ───────────────
+//
+// bench.py's `_check_resume_compatible` exits when the resumed run's
+// temperature differs from the recorded one, and since localbench -129 `None`
+// is one of the values it compares. Sending no temperature therefore killed
+// every resume of a dashboard-started run, all of which record a concrete
+// value because the backend's validate() demands one.
+describe("T96 resume forwards the conditions bench.py compares", () => {
+  const resumeBody = () => {
+    const calls = (
+      global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+    ).mock.calls;
+    const call = calls.find(([u]) => String(u).includes("/api/bench/resume"));
+    return call ? JSON.parse(String(call[1].body)) : null;
+  };
+
+  const resumeRunWith = async (config: Record<string, unknown>) => {
+    installFetch({
+      runs: [runRow({ run_id: "r1", finished: false, config })],
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    fireEvent.click(await screen.findByTestId("bench-resume"));
+    await waitFor(() => expect(resumeBody()).not.toBeNull());
+    return resumeBody();
+  };
+
+  it("sends the temperature the run recorded", async () => {
+    const body = await resumeRunWith({
+      ...benchRun.config,
+      temperature: 0.2,
+    });
+    expect(
+      body.temperature,
+      "bench.py exits if the resumed temperature differs from the recorded one",
+    ).toBe(0.2);
+  });
+
+  it("keeps a run recorded WITHOUT a temperature distinct from one at 0", async () => {
+    // The inverse bug: collapsing null to 0 refuses just as hard, because
+    // bench.py treats unset and greedy as different conditions.
+    const body = await resumeRunWith({
+      ...benchRun.config,
+      temperature: null,
+    });
+    expect(body.temperature).toBeNull();
+    expect(body.temperature).not.toBe(0);
+  });
+
+  it("sends a deliberate 0 as 0, not as absent", async () => {
+    const body = await resumeRunWith({ ...benchRun.config, temperature: 0 });
+    expect(body.temperature).toBe(0);
+    expect(body.temperature).not.toBeNull();
+  });
+
+  it("also forwards the time settings the same guard compares", async () => {
+    const body = await resumeRunWith({
+      ...benchRun.config,
+      temperature: 0.2,
+      time_budget: 15,
+      time_step: 30,
+    });
+    expect(body.time_budget).toBe(15);
+    expect(body.time_step).toBe(30);
+  });
+});
+
+// A resume bench.py refuses must say so. The response used to be discarded,
+// so the run simply never appeared and the reason stayed in the Console tab.
+describe("T96 a refused resume surfaces bench.py's reason", () => {
+  it("raises an alert carrying the exit text", async () => {
+    installFetch({
+      runs: [runRow({ run_id: "r1", finished: false })],
+    });
+    const inner = global.fetch as unknown as (
+      i: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/bench/resume")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: false,
+              error:
+                "--resume: that run used --temperature 0.2, this one has no --temperature.",
+            }),
+        } as Response);
+      }
+      return inner(input, init);
+    }) as unknown as typeof global.fetch;
+
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    fireEvent.click(await screen.findByTestId("bench-resume"));
+
+    await waitFor(() =>
+      expect(
+        addAlert.mock.calls.some(([, , msg]) =>
+          String(msg).includes("--temperature 0.2"),
+        ),
+        "the user must see why bench.py refused, not a run that never appears",
+      ).toBe(true),
+    );
+  });
+});
+
+// ── T93 — an unfiltered run must not read as "no languages selected" ────────
+//
+// bench.py records a no-filter run as `config.langs: []`, and `[].join(",")`
+// is `""` — which `??` accepts. The form therefore read a full-suite run as
+// nothing selected, painted every toggle off, and then sent no filter, which
+// bench.py treats as "every language" (bench.py:233). The loop closed: a
+// full-suite run produced another full-suite run while claiming to be
+// filtered.
+describe("T93 languages seeded from an unfiltered run", () => {
+  const FOUR_TRACKS = {
+    ...CHECK,
+    tracks: [
+      { lang: "js", tasks: 4, available: true, reason: "" },
+      { lang: "ts", tasks: 7, available: true, reason: "" },
+      { lang: "java", tasks: 8, available: true, reason: "" },
+      {
+        lang: "gdscript",
+        tasks: 8,
+        available: false,
+        reason: "godot not on PATH",
+      },
+    ],
+  };
+  const unfilteredRun = () => ({
+    ...benchRun,
+    config: { ...benchRun.config, langs: [] as string[] },
+  });
+  const pressed = (lang: string) =>
+    screen.getByTestId(`bench-lang-${lang}`).getAttribute("aria-pressed");
+
+  const mountUnfiltered = async () => {
+    installFetch({ detail: unfilteredRun(), check: FOUR_TRACKS });
+    render(<BenchPage />);
+    // This used to wait for the selected run's config to land — the fixture's
+    // `n: 3` against the form's default of 1 — because the seeding bug only
+    // appeared once `detail` was in play. T99 removed the run's config from
+    // the startup chain entirely, so there is nothing to wait for: the
+    // toggles are seeded from the available languages and cannot be darkened
+    // by a stored run at all. The user-visible guarantee this file exists to
+    // protect — an unfiltered run never reads as "no languages selected" —
+    // is still asserted below; the pathway that broke it is gone.
+    await screen.findByTestId("bench-lang-js");
+  };
+
+  it("renders every available toggle pressed, not dark", async () => {
+    await mountUnfiltered();
+    expect(pressed("js")).toBe("true");
+    expect(pressed("ts")).toBe("true");
+    expect(pressed("java")).toBe("true");
+  });
+
+  it("deselecting one leaves the others pressed", async () => {
+    // The absence half: the fix must not simply force every toggle on.
+    await mountUnfiltered();
+    fireEvent.click(screen.getByTestId("bench-lang-ts"));
+    await waitFor(() => expect(pressed("ts")).toBe("false"));
+    expect(pressed("js")).toBe("true");
+    expect(pressed("java")).toBe("true");
+  });
+
+  it("sends exactly the selected languages", async () => {
+    await mountUnfiltered();
+    fireEvent.click(screen.getByTestId("bench-lang-ts"));
+    await waitFor(() => expect(pressed("ts")).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: /Start run/ }));
+
+    await waitFor(() => {
+      const calls = (
+        global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+      ).mock.calls;
+      const start = calls.find(([u]) => String(u).includes("/api/bench/start"));
+      expect(start, "Start must have posted").toBeTruthy();
+      const sent = JSON.parse(String(start![1].body)).langs as string;
+      expect(sent.split(",").sort()).toEqual(["java", "js"]);
+    });
+  });
+
+  it("refuses to start with nothing selected, visibly", async () => {
+    // An empty --langs would run the WHOLE suite, so this must never reach
+    // the wire.
+    await mountUnfiltered();
+    for (const l of ["js", "ts", "java"]) {
+      fireEvent.click(screen.getByTestId(`bench-lang-${l}`));
+    }
+    await waitFor(() => expect(pressed("js")).toBe("false"));
+
+    expect(screen.getByTestId("bench-no-langs")).toBeTruthy();
+    const start = screen.getByRole("button", {
+      name: /Start run/,
+    }) as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+
+    fireEvent.click(start);
+    const calls = (
+      global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
+    ).mock.calls;
+    expect(
+      calls.some(([u]) => String(u).includes("/api/bench/start")),
+      "an empty filter must never be sent",
+    ).toBe(false);
+  });
+});
+
+// ── T94 — a slow task is not a stuck run ───────────────────────────────────
+//
+// bench.py refreshes the heartbeat only when a sample is SAVED, so its age is
+// the in-flight sample's duration. The old 90s constant therefore fired on
+// every task slower than 90s — most of this suite — while the Progress card
+// on the same screen called the run merely "over median".
+describe("T94 stuck detection paces against the task", () => {
+  const runningDetail = (heartbeatAgeMs: number, taskSeconds: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    // Give the task a history so the median is real, the same source the
+    // Progress card compares against.
+    (d as { records: Record<string, unknown>[] }).records = (
+      d as { records: Record<string, unknown>[] }
+    ).records.map((r) => ({
+      ...r,
+      task: "js/formula_engine",
+      seconds: taskSeconds,
+    }));
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/formula_engine",
+      current_attempt: 1,
+      done: 16,
+      total: 27,
+      run_elapsed: 3000,
+      task_elapsed: 327,
+      heartbeat: new Date(Date.now() - heartbeatAgeMs).toISOString(),
+    };
+    return d;
+  };
+
+  it("a healthy run slower than the old constant reads as running", async () => {
+    // The reported case: 150s since the last sample, on a ~200s task.
+    installFetch({ detail: runningDetail(150_000, 200) });
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() => expect(el.getAttribute("data-status")).toBe("running"));
+    expect(
+      el.textContent,
+      "a task slower than the threshold is not evidence of a wedged run",
+    ).not.toMatch(/may be stuck/);
+  });
+
+  it("a genuinely wedged run is still called out", async () => {
+    // Half an hour without a sample on a ~200s task is not slowness.
+    installFetch({ detail: runningDetail(1_800_000, 200) });
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-run-status");
+    await waitFor(() => expect(el.getAttribute("data-status")).toBe("stalled"));
+    expect(el.textContent).toMatch(/may be stuck/);
+  });
+
+  it("never says 'stuck' while Progress says the task is merely over median", async () => {
+    // One fixture, both surfaces: this is the contradiction T94 reported.
+    installFetch({ detail: runningDetail(150_000, 200) });
+    render(<BenchPage />);
+    const status = await screen.findByTestId("bench-run-status");
+    await waitFor(() =>
+      expect(status.getAttribute("data-status")).toBe("running"),
+    );
+    const overMedian = screen.queryByText(/over median/);
+    if (overMedian) {
+      expect(
+        status.textContent,
+        "Progress and the status line must not give opposite verdicts",
+      ).not.toMatch(/may be stuck/);
+    }
+  });
+});
+
+// ── T95 — BUDGET must not be stamped on a truncation-tainted sample ────────
+//
+// The banner counts samples bench.py actually stopped at --nudge-at; the
+// badges mark every sample from the first trigger onward. Both are correct,
+// but labelling a server-truncated sample BUDGET sends the reader to
+// --nudge-at when --max-tokens is the flag that matters.
+describe("T95 taint badges name their own mechanism", () => {
+  const ROSTER_TASKS = TASK_LIST.tasks.map((t) => t.id);
+  const withRecords = (over: Array<Record<string, unknown>>) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    (d as { records: Record<string, unknown>[] }).records = over.map(
+      (o, i) => ({
+        ...recs[Math.min(i, recs.length - 1)],
+        // Roster-driven rows (T80): a record for a task the roster does not
+        // list renders no row, and therefore no badge.
+        task: ROSTER_TASKS[i],
+        sample: 1,
+        truncated: false,
+        stopped_at_budget: false,
+        ...o,
+      }),
+    );
+    return d;
+  };
+  const badges = () => screen.queryAllByTestId("bench-taint-badge");
+
+  it("labels a truncation-only run TRUNCATED, never BUDGET", async () => {
+    installFetch({
+      detail: withRecords([
+        {},
+        { truncated: true },
+        { truncated: true },
+        { truncated: true },
+      ]),
+    });
+    render(<BenchPage />);
+    await waitFor(() => expect(badges().length).toBeGreaterThan(0));
+
+    for (const b of badges()) {
+      expect(
+        b.textContent,
+        "a server-truncated sample is not a budget stop",
+      ).not.toBe("BUDGET");
+      expect(b.getAttribute("data-taint")).toBe("truncation");
+    }
+    expect(badges()[0].getAttribute("title")).toMatch(/--max-tokens/);
+  });
+
+  it("labels a budget stop BUDGET, with its own remedy", async () => {
+    installFetch({
+      detail: withRecords([{}, { stopped_at_budget: true }, {}]),
+    });
+    render(<BenchPage />);
+    await waitFor(() => expect(badges().length).toBeGreaterThan(0));
+
+    const budget = badges().filter(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budget.length).toBeGreaterThan(0);
+    expect(budget[0].textContent).toBe("BUDGET");
+    const title = budget[0].getAttribute("title") ?? "";
+    expect(title).toMatch(/--nudge-at/);
+    expect(title, "the budget remedy must not point at --max-tokens").toMatch(
+      /--max-tokens does not affect this/,
+    );
+  });
+
+  it("leaves rows before any trigger unbadged", async () => {
+    installFetch({ detail: withRecords([{}, {}, {}]) });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    expect(badges()).toHaveLength(0);
+  });
+
+  it("banner counts stops while badges count everything scored under the cap", async () => {
+    // The reported 7-vs-15 gap, in miniature: one stop, three marked rows.
+    installFetch({
+      detail: withRecords([{}, { stopped_at_budget: true }, {}, {}]),
+    });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-budget-banner");
+
+    expect(banner.textContent).toMatch(/\b1\b/);
+    await waitFor(() => expect(badges()).toHaveLength(3));
+    expect(
+      banner.textContent,
+      "the gap between the two numbers must be explained on screen",
+    ).toMatch(/every task from the first stop onward/i);
+  });
+});
+
+// ── T97 — the footer's two numbers must be reconcilable ────────────────────
+//
+// REMAINING 23m 51s beside SAMPLES/HR 16.5 with 11 samples left implied ~40m:
+// the bar contradicted itself. NOTE: this is an invariant guard, not the
+// red-first one — `installFetch` serves the same detail for every run id, so
+// a fixture's live run and its own history cannot diverge here. The
+// red-first proof for the estimator lives in bench.compute.test.ts (T97).
+describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
+  // Parsed by hand rather than by pattern: "12m 30s" is two tokens, and every
+  // regex spelling of it trips the super-linear-backtracking rule.
+  const secondsFromLabel = (text: string) => {
+    let total = 0;
+    for (const token of text.split(" ")) {
+      const value = parseInt(token, 10);
+      if (Number.isNaN(value)) continue;
+      if (token.endsWith("m")) total += value * 60;
+      else if (token.endsWith("s")) total += value;
+    }
+    return total;
+  };
+
+  it("the two agree within a stated tolerance on a live run", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const ids = TASK_LIST.tasks.map((t) => t.id);
+    (d as { records: Record<string, unknown>[] }).records = ids
+      .slice(0, 3)
+      .map((task) => ({
+        ...(d as { records: Record<string, unknown>[] }).records[0],
+        task,
+        sample: 1,
+        status: "pass",
+        seconds: 30,
+        truncated: false,
+        stopped_at_budget: false,
+      }));
+    (d as { config: Record<string, unknown> }).config = {
+      ...(d as { config: Record<string, unknown> }).config,
+      langs: ["js", "java"],
+      n: 1,
+    };
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: ids[3],
+      current_attempt: 1,
+      done: 3,
+      total: ids.length,
+      run_elapsed: 90,
+      heartbeat: new Date().toISOString(),
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+
+    const remaining = await screen.findByTestId("bench-footer-remaining");
+    const rate = await screen.findByTestId("bench-footer-samples-hr");
+    await waitFor(() =>
+      expect(secondsFromLabel(remaining.textContent ?? "")).toBeGreaterThan(0),
+    );
+
+    const left = TASK_LIST.tasks.length - 3;
+    const perHour = Number(/[\d.]+/.exec(rate.textContent ?? "")?.[0] ?? 0);
+    expect(
+      perHour,
+      "the footer must report a rate to compare against",
+    ).toBeGreaterThan(0);
+    const impliedSeconds = (left / perHour) * 3600;
+    const shown = secondsFromLabel(remaining.textContent ?? "");
+
+    // Tolerance, and why: the remaining tasks are the slow tail, so REMAINING
+    // may legitimately exceed the flat rate's implication — what it must not
+    // do is fall far BELOW it, which is the contradiction that was reported.
+    expect(
+      shown,
+      `REMAINING ${shown}s is far below the run's own pace (${Math.round(impliedSeconds)}s)`,
+    ).toBeGreaterThanOrEqual(impliedSeconds * 0.75);
+  });
+});
+
+// ── T98 — the two Progress elements must tell one story ────────────────────
+//
+// Cadence, verified against a RUNNING benchmark and not only from source:
+// over 90 seconds of active generation, current_task, task_elapsed, done,
+// current_attempt and heartbeat were all frozen. results.json is written once
+// per sample, at its end (bench.py:1775), so nothing in `live` moves between
+// saves and no surface may claim live knowledge of the sample in progress.
+describe("T98 the on-task tiles agree", () => {
+  const RUNNING = {
+    running: true,
+    run: {
+      pid: 4242,
+      // Must match the runs-list row for the selected detail, or the page
+      // treats this as a freshly spawned run still warming up (T79) and
+      // scopes the live blob away.
+      folder: "seedA_20260808-223558",
+      model: "qwen",
+      label: null,
+      langs: "js,ts,java,gdscript",
+      attempts: 3,
+      n: 1,
+      started: new Date().toISOString(),
+    },
+  };
+
+  // One saved record for `task`, so per-task completeness is unambiguous.
+  const liveAt = (task: string, n = 1) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const first = (d as { records: Record<string, unknown>[] }).records[0];
+    (d as { records: Record<string, unknown>[] }).records = [
+      { ...first, task, sample: 1, status: "pass", seconds: 327 },
+    ];
+    (d as { config: Record<string, unknown> }).config = {
+      ...(d as { config: Record<string, unknown> }).config,
+      n,
+    };
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: task,
+      current_attempt: 1,
+      done: 1,
+      total: 27,
+      run_elapsed: 400,
+      task_elapsed: 327,
+      heartbeat: new Date().toISOString(),
+    };
+    return d;
+  };
+
+  it("at --n 1 does not say 'on task' about a finished sample", async () => {
+    // The reported contradiction: "Between samples —" beside "5m 27s on task".
+    installFetch({ detail: liveAt("js/retry_backoff"), current: RUNNING });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain("Last completed"));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/last sample took/)).toBeTruthy(),
+    );
+    expect(
+      screen.queryByText(/on task/),
+      "the card must not claim a live position it cannot know",
+    ).toBeNull();
+  });
+
+  it("names the task it last completed rather than nothing at all", async () => {
+    installFetch({ detail: liveAt("js/retry_backoff"), current: RUNNING });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    // Wait on the VALUE, not the label: "Last completed" is also the label
+    // before any detail has loaded, so waiting on it races the fixture.
+    await waitFor(() =>
+      expect(
+        tiles.textContent,
+        "the tile had no true value to show at --n 1; it must show what IS known",
+      ).toContain("js/retry_backoff"),
+    );
+  });
+
+  it("at --n 3 a task with 1 of 3 samples saved still reads as in flight", async () => {
+    // T82's original case, which must stay green: per-task completeness, not
+    // "is it the newest record".
+    installFetch({ detail: liveAt("js/retry_backoff", 3), current: RUNNING });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain("On task"));
+    expect(tiles.textContent).toContain("js/retry_backoff");
+    expect(screen.queryByText(/on task/)).toBeTruthy();
+  });
+
+  it("says nothing at all when the run has not reported a task yet", async () => {
+    const d = liveAt("js/retry_backoff");
+    (d as { live: Record<string, unknown> }).live = {
+      ...(d as { live: Record<string, unknown> }).live,
+      current_task: "",
+    };
+    installFetch({ detail: d, current: RUNNING });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain("Last completed"));
+    expect(tiles.textContent).toContain("\u2014");
+  });
+});
+
+// ── T100 — the panel explains the failure instead of showing its passes ────
+describe("T100 the why-it-failed panel states the mode", () => {
+  const cutOff = (over: Record<string, unknown> = {}) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const first = (d as { records: Record<string, unknown>[] }).records[0];
+    (d as { records: Record<string, unknown>[] }).records = [
+      {
+        ...first,
+        task: "js/retry_backoff",
+        sample: 1,
+        status: "error",
+        solved: false,
+        first_failed: [],
+        tests_passed: 28,
+        tests_failed: 0,
+        tests_total: 28,
+        tests_expected: 77,
+        truncated: false,
+        stopped_at_budget: true,
+        detail: "PASS left ass\nPASS right\nPASS third",
+        ...over,
+      },
+    ];
+    return d;
+  };
+
+  const openDrilldown = async () => {
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+  };
+
+  it("gives a reason rather than a window of PASS lines", async () => {
+    installFetch({ detail: cutOff() });
+    render(<BenchPage />);
+    await openDrilldown();
+
+    const reason = await screen.findByTestId("bench-failure-reason");
+    expect(reason.textContent).toMatch(/crashed before the tests finished/i);
+    // 77 declared, 28 ran: the single most explanatory number available.
+    expect(
+      (await screen.findByTestId("bench-unreached")).textContent,
+    ).toContain("49");
+  });
+
+  it("labels the excerpt as the start of the log, not the explanation", async () => {
+    installFetch({ detail: cutOff() });
+    render(<BenchPage />);
+    await openDrilldown();
+    const label = await screen.findByTestId("bench-detail-excerpt-label");
+    expect(label.textContent).toMatch(/start of the log/i);
+  });
+
+  it("names --nudge-at, not --max-tokens, for a budget stop", async () => {
+    installFetch({ detail: cutOff() });
+    render(<BenchPage />);
+    await openDrilldown();
+    const history = await screen.findByTestId("bench-failure-history");
+    expect(history.textContent).toMatch(/--nudge-at/);
+    expect(history.textContent).toMatch(/--max-tokens does not affect this/);
+  });
+
+  it("STICKY FLAG: a real failure list is still shown, with no cut-off message", async () => {
+    installFetch({
+      detail: cutOff({
+        status: "fail",
+        first_failed: ["expects 2 + 2 to equal 4"],
+        stopped_at_budget: true,
+      }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+
+    await waitFor(() =>
+      expect(screen.queryByText(/expects 2 \+ 2 to equal 4/)).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-failure-reason"),
+      "a sample that failed on merit must not be reported as cut off",
+    ).toBeNull();
+  });
+
+  it("leaves the canary alone: a crashed record stays green", async () => {
+    installFetch({ detail: cutOff() });
+    render(<BenchPage />);
+    await openDrilldown();
+    const canary = await screen.findByTestId("bench-canary");
+    expect(canary.textContent).not.toMatch(/SUITE DRIFT/);
+  });
+});
+
+// ── T99 — Run Setup opens on localbench's defaults ─────────────────────────
+//
+// The form was `override ?? detail?.config?.<field> ?? literal`, and a run is
+// selected by default, so the middle tier won on every fresh mount: the form
+// opened on whatever the last run happened to use.
+describe("T99 Run Setup defaults and reset", () => {
+  const DIVERGENT = {
+    ...benchRun.config,
+    label: "seedZ",
+    attempts: 9,
+    n: 7,
+    max_tokens: 999,
+    nudge_at: 42,
+    langs: ["gdscript"],
+  };
+  const divergentRun = () => ({ ...benchRun, config: DIVERGENT });
+  const val = (id: string) =>
+    (screen.getByTestId(id) as HTMLInputElement).value;
+
+  const mountWithDivergentRun = async () => {
+    const calls = installFetch({ detail: divergentRun() });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-attempts");
+    // The run's detail must actually have been fetched before asserting, or
+    // this would pass against the old chain simply by running first.
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes("/api/bench/runs/"))).toBe(true),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+  };
+
+  it("shows the defaults, not the selected run's settings", async () => {
+    await mountWithDivergentRun();
+    expect(val("bench-field-attempts"), "bench.py --attempts default").toBe(
+      "3",
+    );
+    expect(val("bench-field-n"), "bench.py --n default").toBe("1");
+    expect(val("bench-field-max-tokens")).toBe("0");
+    expect(val("bench-field-nudge-at")).toBe("16384");
+    expect(val("bench-field-label")).toBe("");
+  });
+
+  it("restores every field, not just one", async () => {
+    // A reset that misses a field is the likely failure, so each is asserted.
+    await mountWithDivergentRun();
+    fireEvent.change(screen.getByTestId("bench-field-attempts"), {
+      target: { value: "8" },
+    });
+    fireEvent.change(screen.getByTestId("bench-field-n"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByTestId("bench-field-max-tokens"), {
+      target: { value: "512" },
+    });
+    fireEvent.change(screen.getByTestId("bench-field-nudge-at"), {
+      target: { value: "99" },
+    });
+    fireEvent.change(screen.getByTestId("bench-field-label"), {
+      target: { value: "mine" },
+    });
+    fireEvent.click(screen.getByTestId("bench-lang-js"));
+    await waitFor(() => expect(val("bench-field-attempts")).toBe("8"));
+
+    fireEvent.click(screen.getByTestId("bench-action-reset-to-defaults"));
+
+    await waitFor(() => expect(val("bench-field-attempts")).toBe("3"));
+    expect(val("bench-field-n")).toBe("1");
+    expect(val("bench-field-max-tokens")).toBe("0");
+    expect(val("bench-field-nudge-at")).toBe("16384");
+    expect(val("bench-field-label")).toBe("");
+    expect(
+      screen.getByTestId("bench-lang-js").getAttribute("aria-pressed"),
+      "the language toggles are part of the form and must reset too",
+    ).toBe("true");
+  });
+
+  it("keeps the three documented exceptions after a reset", async () => {
+    // Reverting these to bench.py's table would re-open closed bugs: a blank
+    // model filed a 35-minute run under the wrong name (T65), and the
+    // dashboard knows the real server address where bench.py only guesses.
+    await mountWithDivergentRun();
+    fireEvent.click(screen.getByTestId("bench-action-reset-to-defaults"));
+
+    await waitFor(() =>
+      expect(val("bench-field-temperature"), "from the active model").toBe(
+        "0.6",
+      ),
+    );
+    expect(val("bench-url-field"), "the configured llama-server").toContain(
+      "8081",
+    );
+  });
+
+  it("cannot be reset while a run is active", async () => {
+    installFetch({
+      detail: divergentRun(),
+      current: {
+        running: true,
+        run: {
+          pid: 1,
+          folder: "seedA_20260808-223558",
+          model: "m",
+          label: null,
+          langs: "js",
+          attempts: 3,
+          n: 1,
+          started: new Date().toISOString(),
+        },
+      },
+    });
+    render(<BenchPage />);
+    const btn = (await screen.findByTestId(
+      "bench-action-reset-to-defaults",
+    )) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
   });
 });

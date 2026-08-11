@@ -8,6 +8,7 @@ import { Fragment, useMemo, useState } from "react";
 import { List, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { BenchConsole } from "./BenchConsole";
 import { TargetBadge } from "../BenchPage";
+import { AlertSeverity, useAlertsContext } from "../../context/AlertsContext";
 import { Card, CardHeader } from "../../components/shared/CardComponents";
 import MetricTile from "../../components/shared/MetricTile";
 import { fmtNum } from "../llamacpp/parts";
@@ -30,7 +31,8 @@ import {
   runTaskRoster,
   groupByEdition,
   groupByTask,
-  isBudgetTainted,
+  failureExplanation,
+  rowTaint,
   leadsFromRuns,
   regressionChips,
   isNonDefaultTarget,
@@ -47,6 +49,20 @@ const MONO = '"JetBrains Mono", "Fira Code", monospace';
 
 /** Compare renders at most three columns, so it offers exactly three slots. */
 const COMPARE_SLOTS = 3;
+
+/**
+ * Each cutoff names its OWN remedy. They are not interchangeable: raising
+ * `--max-tokens` does nothing for a bench.py budget stop, and `--nudge-at`
+ * does nothing for a server-side truncation. Both tooltips also state the
+ * contagion, because the badge marks every sample from the trigger onward,
+ * not only the one that was cut.
+ */
+const TAINT_TOOLTIP: Record<"budget" | "truncation", string> = {
+  budget:
+    "Recorded at or after bench.py stopped a reply at its own --nudge-at budget, so this score measures the cutoff rather than the model. Raise --nudge-at or --max-nudges; --max-tokens does not affect this.",
+  truncation:
+    "Recorded at or after three consecutive replies the server cut short (finish_reason: length), so this score measures the token cap rather than the model. Raise --max-tokens; --nudge-at does not affect this.",
+};
 
 /**
  * A run whose identity is not known yet: no detail has loaded ("none"), or a
@@ -514,8 +530,9 @@ function ThisRunPane({
                   ? null
                   : graded.reduce((s, r) => s + r.gen_seconds, 0) /
                     graded.length;
-              const tainted = rs.some((r) =>
-                isBudgetTainted(records.indexOf(r), trunc),
+              const tainted = rowTaint(
+                rs.map((r) => records.indexOf(r)),
+                trunc,
               );
               return (
                 <Fragment key={task}>
@@ -529,7 +546,9 @@ function ThisRunPane({
                       {tainted && (
                         <span
                           className="bench-tainted"
-                          title="Recorded after three consecutive truncated replies — measuring the token cap, not the model."
+                          data-taint={tainted}
+                          data-testid="bench-taint-badge"
+                          title={TAINT_TOOLTIP[tainted]}
                           style={{
                             marginLeft: 6,
                             font: `8.5px ${MONO}`,
@@ -537,7 +556,7 @@ function ThisRunPane({
                             padding: "0 4px",
                           }}
                         >
-                          BUDGET
+                          {tainted === "budget" ? "BUDGET" : "TRUNCATED"}
                         </span>
                       )}
                     </td>
@@ -621,6 +640,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
   const worst =
     records.find((r) => !r.solved && r.status !== "server") ?? records[0];
   if (!worst) return null;
+  const explanation = failureExplanation(worst);
   const canary = assertionCanary(worst);
   // completion_tokens is a SUM over the sample's attempts; total_tokens is the
   // LARGEST SINGLE request. Different units — labelled as such so they are
@@ -687,6 +707,47 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               ✗ {a}
             </div>
           ))}
+          {/* A cut-off sample has NO failed assertions — nothing failed, the
+              run was amputated — so without this the panel fell through to a
+              head window of the log, which shows passes and only passes. */}
+          {explanation.reason && (
+            <div
+              data-testid="bench-failure-reason"
+              style={{
+                font: `11px ${MONO}`,
+                color: "var(--warning)",
+                padding: "1px 0",
+              }}
+            >
+              {explanation.reason}
+            </div>
+          )}
+          {explanation.unreached > 0 && (
+            <div
+              data-testid="bench-unreached"
+              style={{
+                font: `11px ${MONO}`,
+                color: "var(--text-secondary)",
+                padding: "1px 0",
+              }}
+            >
+              {explanation.unreached} of{" "}
+              {worst.tests_expected || worst.tests_total} assertions never ran
+            </div>
+          )}
+          {explanation.history && (
+            <div
+              data-testid="bench-failure-history"
+              style={{
+                font: `10.5px ${MONO}`,
+                color: "var(--text-muted)",
+                padding: "1px 0",
+              }}
+            >
+              {explanation.history}
+              {explanation.remedy ? ` ${explanation.remedy}` : ""}
+            </div>
+          )}
           {worst.detail && (
             <blockquote
               style={{
@@ -702,9 +763,16 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               }}
             >
               {worst.detail.slice(0, 260)}
-              <span style={{ color: "var(--text-muted)" }}>
+              {/* This is the START of the log, not the failure: bench.py
+                  stores `detail[:400]` (`bench.py:1726`) and test runners
+                  print passes first, so for a cut-off sample the failure is
+                  not in these bytes at all. Labelled for what it is. */}
+              <span
+                data-testid="bench-detail-excerpt-label"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {" "}
-                (excerpt · full text in raw/)
+                (start of the log · full text in raw/)
               </span>
             </blockquote>
           )}
@@ -833,12 +901,36 @@ function HistoryPane({
   storedDetails: BenchRunDetail[];
   now: number;
 }) {
+  const { addAlert } = useAlertsContext();
   const groups = useMemo(() => groupByEdition(bench.runs), [bench.runs]);
   const detailById = useMemo(() => {
     const m = new Map<string, BenchRunDetail>();
     for (const d of storedDetails) m.set(d.run_id, d);
     return m;
   }, [storedDetails]);
+
+  // bench.py refuses a resume whose conditions differ from the recorded run by
+  // exiting on launch. The response was previously discarded, so the run
+  // simply never appeared and the reason stayed in the Console tab.
+  const resumeRun = async (init: RequestInit) => {
+    try {
+      const res = await fetch("/api/bench/resume", init);
+      const body = (await res.json()) as { success?: boolean; error?: string };
+      if (!body.success) {
+        addAlert(
+          AlertSeverity.Error,
+          "bench",
+          `Resume refused: ${body.error ?? "bench.py did not start"}`,
+        );
+      }
+    } catch {
+      addAlert(
+        AlertSeverity.Error,
+        "bench",
+        "Resume failed: the dashboard could not be reached",
+      );
+    }
+  };
 
   return (
     <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
@@ -1014,14 +1106,24 @@ function HistoryPane({
                       data-testid="bench-resume"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void fetch("/api/bench/resume", {
+                        void resumeRun({
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
+                          // Every setting bench.py's resume guard compares.
+                          // Omitting one does not inherit the run's value —
+                          // bench.py checks it against its own default and
+                          // exits, which killed every resume of a
+                          // dashboard-started run. `temperature` is sent even
+                          // when null: null means "the flag was omitted", and
+                          // the backend forwards no flag for it.
                           body: JSON.stringify({
                             folder: run.folder,
                             attempts: run.config?.attempts,
                             n: run.config?.n,
                             url: run.config?.url,
+                            temperature: run.config?.temperature ?? null,
+                            time_budget: run.config?.time_budget,
+                            time_step: run.config?.time_step,
                           }),
                         });
                       }}

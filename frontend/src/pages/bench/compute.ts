@@ -201,14 +201,124 @@ export function truncationState(records: BenchRecord[]): TruncationState {
   };
 }
 
-/** Samples at or after the trigger are measuring the cap, not the model. */
-export function isBudgetTainted(
-  index: number,
-  state: TruncationState,
-): boolean {
+/**
+ * Which cutoff a sample's score is measuring, if any.
+ *
+ * Two different mechanisms with two different remedies, and they were both
+ * being labelled BUDGET:
+ *   - `budget` — bench.py's OWN client-side stop at `--nudge-at`. Raising
+ *     `--max-tokens` does nothing for it; `--nudge-at`/`--max-nudges` is the
+ *     remedy.
+ *   - `truncation` — the SERVER cutting the reply short
+ *     (`finish_reason: "length"`) three times running. `--max-tokens` is the
+ *     remedy; `--nudge-at` is not.
+ *
+ * A reader shown BUDGET on a truncation-tainted sample reaches for the wrong
+ * flag, and the banner above the table tells them to.
+ *
+ * Taint is contagious forward by design: from the first trigger on, every
+ * sample is scored under that cap. Budget takes precedence when both are in
+ * play, because it stops generation outright.
+ */
+export type TaintKind = "budget" | "truncation" | null;
+
+export function taintKind(index: number, state: TruncationState): TaintKind {
   if (state.budgetTriggerIndex !== null && index >= state.budgetTriggerIndex)
-    return true;
-  return state.triggerIndex !== null && index >= state.triggerIndex;
+    return "budget";
+  if (state.triggerIndex !== null && index >= state.triggerIndex)
+    return "truncation";
+  return null;
+}
+
+/** The kind for a whole task row, which holds several samples. */
+export function rowTaint(indexes: number[], state: TruncationState): TaintKind {
+  let sawTruncation = false;
+  for (const i of indexes) {
+    const kind = taintKind(i, state);
+    if (kind === "budget") return "budget";
+    if (kind === "truncation") sawTruncation = true;
+  }
+  return sawTruncation ? "truncation" : null;
+}
+
+export interface FailureExplanation {
+  /** Null when the assertion list already tells the story. */
+  reason: string | null;
+  /** Assertions that never executed. bench.py: expected − passed − failed. */
+  unreached: number;
+  /** The flag that actually helps, for the mode that actually happened. */
+  remedy: string | null;
+  /**
+   * Derived from the STICKY flags, so it is phrased as history. bench.py
+   * accumulates `stopped_at_budget`/`truncated` across attempts
+   * (`bench.py:1691-1692`), deliberately: taking the last attempt's value
+   * made a run report 2 stopped replies when 9 had been stopped. So the flag
+   * means "some attempt was cut off", never "this result was".
+   */
+  history: string | null;
+}
+
+/**
+ * Why a sample scored nothing, when the assertion list cannot say.
+ *
+ * `first_failed` is bench.py's `fail_labels()`, which excludes "the test
+ * stopped before finishing" — so a sample that was cut off has NO failed
+ * assertions, correctly, and the panel fell through to a head-window excerpt
+ * of the log. Test runners print passes first, so that excerpt showed twelve
+ * PASS lines under the heading "why it failed".
+ *
+ * The mode names mirror bench.py's own `explain()` (`:556`) and
+ * `_failure_headline()` (`:621`) rather than inventing a third vocabulary.
+ */
+export function failureExplanation(
+  r: BenchRecord,
+  timeoutSeconds?: number,
+): FailureExplanation {
+  const expected = r.tests_expected || r.tests_total || 0;
+  // A `server` sample never reached the model, so "0/35 passed" would read as
+  // a score for work that never started.
+  const unreached =
+    r.status === "server"
+      ? 0
+      : Math.max(0, expected - (r.tests_passed ?? 0) - (r.tests_failed ?? 0));
+
+  const hasLabels = (r.first_failed ?? []).length > 0;
+  if (hasLabels || r.status === "pass")
+    return { reason: null, unreached, remedy: null, history: null };
+
+  let reason: string;
+  if (r.status === "format") {
+    reason = "No fenced code block in the reply, so nothing could be tested.";
+  } else if (r.status === "timeout") {
+    reason = timeoutSeconds
+      ? `Did not finish within ${timeoutSeconds}s, usually an endless loop.`
+      : "Did not finish in time, usually an endless loop.";
+  } else if (r.status === "server") {
+    reason = "Could not reach the model.";
+  } else if (r.status === "error") {
+    reason = (r.detail ?? "").trimStart().startsWith("compile:")
+      ? "Did not compile, so the tests never ran."
+      : "Crashed before the tests finished.";
+  } else {
+    reason = "Compiled and ran, but some tests failed.";
+  }
+
+  // The remedies are not interchangeable, which is the whole point: raising
+  // --max-tokens does nothing for a bench.py budget stop.
+  let remedy: string | null = null;
+  let history: string | null = null;
+  if (r.stopped_at_budget) {
+    history =
+      "An attempt was stopped at the --nudge-at budget (the flag is set if any attempt was, not only the last).";
+    remedy =
+      "Raise --nudge-at or --max-nudges; --max-tokens does not affect this.";
+  } else if (r.truncated) {
+    history =
+      "An attempt hit the server's token limit (the flag is set if any attempt did, not only the last).";
+    remedy = "Raise --max-tokens.";
+  }
+
+  return { reason, unreached, remedy, history };
 }
 
 export interface RegressionChips {
@@ -316,6 +426,32 @@ export function compareEligibility(runs: BenchRunRow[]): CompareEligibility {
   }
   return { eligible: true };
 }
+
+/**
+ * localbench's own defaults, read from bench.py's argparse table in
+ * `2026.08.07-129` and verified against the checkout:
+ *
+ *   --attempts 3 (:2810) · -n/--n 1 (:2785) · --max-tokens 0 (:2821)
+ *   --nudge-at 16384 (:2795) · --label "" (:2894) · --langs "" (:2850)
+ *
+ * Named once so four literals cannot drift from upstream independently. The
+ * three fields NOT here are deliberate: the model comes from the loaded
+ * server (T65 — every profile aliases to "coder", and a blank model filed a
+ * 35-minute run under the wrong name), the URL from the dashboard's own
+ * configuration rather than bench.py's guess, and the temperature from the
+ * active model because the backend requires an explicit value (T96).
+ *
+ * `--langs ""` is NOT reproduced: an empty value means EVERY language to
+ * bench.py (`:233`), so the dashboard's default is the languages whose
+ * toolchain is actually present.
+ */
+export const LOCALBENCH_DEFAULTS = {
+  label: "",
+  attempts: 3,
+  n: 1,
+  maxTokens: 0,
+  nudgeAt: 16384,
+} as const;
 
 /**
  * One notation for how a run was sampled. Compare used to state this three
@@ -498,8 +634,39 @@ export function leadsFromRuns(
   return rows;
 }
 
-/** Heartbeat older than this means the run is not reporting health. */
-export const STALE_HEARTBEAT_MS = 90_000;
+/**
+ * bench.py refreshes the heartbeat when a SAMPLE IS SAVED, not on a timer —
+ * its docstring says so (`bench.py:1289`) and there is exactly one write, at
+ * the end of a sample (`bench.py:1775`). The heartbeat's age is therefore the
+ * elapsed time of the sample currently in flight, not evidence of ill health.
+ *
+ * A fixed threshold consequently reports every task slower than itself as
+ * stuck. On this suite the median task runs ~200s, so a 90s constant fired on
+ * essentially every task, while the Progress card on the same screen called
+ * the same run merely "over median". The alarming surface was the wrong one.
+ *
+ * "Too long" is a property of the task, so the threshold scales off the same
+ * historical median Progress compares against — one source, so the two cannot
+ * disagree. The floor covers the no-history case, where a slow first run must
+ * not be accused of being wedged.
+ */
+export const STALE_HEARTBEAT_FLOOR_MS = 600_000;
+export const STALE_HEARTBEAT_MEDIAN_MULTIPLE = 3;
+
+export function staleHeartbeatThresholdMs(
+  medianSeconds: number | null | undefined,
+): number {
+  if (
+    medianSeconds === null ||
+    medianSeconds === undefined ||
+    medianSeconds <= 0
+  )
+    return STALE_HEARTBEAT_FLOOR_MS;
+  return Math.max(
+    STALE_HEARTBEAT_FLOOR_MS,
+    medianSeconds * 1000 * STALE_HEARTBEAT_MEDIAN_MULTIPLE,
+  );
+}
 
 export function heartbeatAgeMs(
   heartbeat: string | undefined,
@@ -519,9 +686,15 @@ export function heartbeatAgeMs(
 export function isHeartbeatStale(
   heartbeat: string | undefined,
   now: number,
+  /**
+   * Median seconds for the task in flight — the SAME value Progress shows as
+   * "median for this task". Omitted only where no task is known, which falls
+   * back to the floor.
+   */
+  medianSeconds?: number | null,
 ): boolean {
   const age = heartbeatAgeMs(heartbeat, now);
-  return age !== null && age > STALE_HEARTBEAT_MS;
+  return age !== null && age > staleHeartbeatThresholdMs(medianSeconds);
 }
 
 /** Median seconds for a task across stored runs — the pacing comparison. */
@@ -539,13 +712,11 @@ export function historicalTaskMedian(
   const values = sameTargetClass(details, targetUrl, defaultUrl)
     .flatMap((d) => d.records)
     .filter((r) => r.task === task && r.status !== "server")
-    .map((r) => r.seconds)
-    .sort((a, b) => a - b);
-  if (values.length === 0) return null;
-  const mid = Math.floor(values.length / 2);
-  return values.length % 2 === 1
-    ? values[mid]
-    : (values[mid - 1] + values[mid]) / 2;
+    .map((r) => r.seconds);
+  // Same statistic as the run estimate, deliberately: two medians computed
+  // two ways over the same records is how "over median" and the remaining
+  // estimate came to disagree.
+  return medianOf(values);
 }
 
 /**
@@ -644,6 +815,8 @@ export function startDisabledReason(opts: {
   serverReady: boolean;
   serverReason: string;
   haveFlags: boolean;
+  /** False when every language toggle is off. */
+  anyLanguage?: boolean;
 }): string | null {
   if (opts.running)
     return "A run is active — Start enables when it finishes or is stopped";
@@ -652,6 +825,12 @@ export function startDisabledReason(opts: {
     return opts.serverReason || "No server answering at the configured url";
   if (!opts.haveFlags)
     return "No previous run to take flags from — run bench.py once from the CLI first";
+  // bench.py cannot be told "no languages": an empty `--langs` is an empty
+  // set, which is falsy, so the filter is skipped and the FULL suite runs
+  // (`bench.py:233`). Starting with nothing selected would therefore run
+  // everything while the form claimed otherwise, so it is refused here.
+  if (opts.anyLanguage === false)
+    return "No languages selected — an empty filter would run the whole suite, so pick at least one";
   return null;
 }
 
@@ -736,25 +915,50 @@ export function runStatus(opts: {
 /**
  * What the run is actually working on, if anything.
  *
- * `live.current_task` is set when a sample STARTS (bench.py:1769) and
- * results.json is written when that same sample ENDS (1874), so at save time
- * the field names the sample that just finished. Reading it as "running now"
- * is true only in the instant after a save; for the rest of each sample it
- * names the previous one — which is how a task appeared as in-flight while
- * the table already showed its completed score.
+ * `live.current_task` is set when a sample STARTS (`bench.py:1808` in -129)
+ * and results.json is written when that sample ENDS — a single write, at
+ * `bench.py:1775`. So at save time the field names the sample that just
+ * finished. Reading it as "running now" is true only in the instant after a
+ * save; for the rest of each sample it names the previous one — which is how
+ * a task appeared as in-flight while the table already showed its score.
+ *
+ * NOTHING in the live blob moves between saves. Verified against a running
+ * benchmark: over 90 seconds `current_task`, `task_elapsed`, `done`,
+ * `current_attempt` and `heartbeat` were all unchanged. So no surface may
+ * claim live knowledge of the sample in progress — the honest statement is
+ * what last completed, and the tiles derive it from here so they cannot tell
+ * two different stories.
  *
  * The test is per-task completeness, not "is it the newest record": with
  * `--n 3`, a task with 1 of 3 samples saved genuinely IS still in flight.
  */
+export interface OnTask {
+  task: string | null;
+  /** True only where the file gives positive evidence a sample is running. */
+  inFlight: boolean;
+  /**
+   * `live.task_elapsed` — the duration of the sample the file describes. NOT
+   * a running clock: verified against a live run, it held at 104.5 for 90
+   * seconds while the run generated, because the whole blob is rewritten only
+   * when a sample is saved.
+   */
+  tookSeconds: number | null;
+}
+
 export function onTaskDisplay(
   live: BenchLive,
   records: BenchRecord[],
   samplesPerTask: number,
-): { task: string | null; inFlight: boolean } {
+): OnTask {
   const task = live.current_task ?? null;
-  if (!task) return { task: null, inFlight: false };
+  const tookSeconds = live.task_elapsed ?? null;
+  if (!task) return { task: null, inFlight: false, tookSeconds };
   const done = records.filter((r) => r.task === task).length;
-  return { task, inFlight: done < Math.max(1, samplesPerTask) };
+  return {
+    task,
+    inFlight: done < Math.max(1, samplesPerTask),
+    tookSeconds,
+  };
 }
 
 /**
@@ -873,16 +1077,96 @@ export function estimatedRunSeconds(
   /** The target this estimate is for, and the default to judge it against. */
   targetUrl?: string,
   defaultUrl?: string,
+  opts?: {
+    remainingTasks?: string[];
+    samplesPerTask?: number;
+    liveRecords?: BenchRecord[];
+  },
 ): number | null {
   // Pooling mock and real history makes the figure meaningless: the first
   // real run was estimated at 3m 17s against a history of mockserver runs
   // and took 35m 46s. Same-class runs only.
-  const graded = sameTargetClass(details, targetUrl, defaultUrl).flatMap((d) =>
-    gradedRecords(d.records),
-  );
-  if (graded.length === 0 || plannedSamples <= 0) return null;
-  const mean = graded.reduce((s, r) => s + r.seconds, 0) / graded.length;
-  return mean * plannedSamples;
+  return runEstimate(details, plannedSamples, targetUrl, defaultUrl, opts)
+    .seconds;
+}
+
+/** Median of a list, or null when empty. One statistic for every surface. */
+export function medianOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const xs = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(xs.length / 2);
+  return xs.length % 2 === 1 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
+}
+
+export interface RunEstimate {
+  seconds: number | null;
+  /** "per-task" when the remaining ids were priced individually. */
+  basis: "per-task" | "pooled" | "none";
+  /** Distinct runs the figure rests on, the live one included. */
+  runsUsed: number;
+}
+
+/**
+ * What the work that REMAINS is worth, not what the work already done was.
+ *
+ * Three faults lived in the old one-line mean, and they compounded:
+ *
+ *  1. The live run's own completed samples were discarded in favour of
+ *     history, though they are the best evidence of this run's pace.
+ *  2. A flat mean ignores WHICH samples remain. Tasks run in ladder order
+ *     (`bench.py:60`), easy first, and gdscript sorts last (`:55`), so the
+ *     remaining set is systematically slower than the run's own average —
+ *     and the error grows the further the run gets.
+ *  3. Mean, where Progress reports a median, so the same data gave two
+ *     answers and the mean was the one skewed by budget-cut outliers.
+ *
+ * `sameTargetClass` fixed WHICH runs are pooled after a 3m-17s estimate took
+ * 35m 46s. It did not fix how they are combined; this does.
+ */
+export function runEstimate(
+  details: BenchRunDetail[],
+  plannedSamples: number,
+  targetUrl?: string,
+  defaultUrl?: string,
+  opts?: {
+    /** Remaining task ids, in execution order. */
+    remainingTasks?: string[];
+    /** `--n`: how many samples each remaining task still costs. */
+    samplesPerTask?: number;
+    /** The in-flight run's own completed records. */
+    liveRecords?: BenchRecord[];
+  },
+): RunEstimate {
+  const pool = sameTargetClass(details, targetUrl, defaultUrl);
+  const liveGraded = gradedRecords(opts?.liveRecords ?? []);
+  const graded = [
+    ...pool.flatMap((d) => gradedRecords(d.records)),
+    ...liveGraded,
+  ];
+  const runsUsed = pool.length + (liveGraded.length > 0 ? 1 : 0);
+
+  if (graded.length === 0 || plannedSamples <= 0)
+    return { seconds: null, basis: "none", runsUsed };
+
+  const pooled = medianOf(graded.map((r) => r.seconds)) ?? 0;
+  const remaining = opts?.remainingTasks ?? [];
+  if (remaining.length === 0)
+    return { seconds: pooled * plannedSamples, basis: "pooled", runsUsed };
+
+  const byTask = new Map<string, number[]>();
+  for (const r of graded) {
+    const xs = byTask.get(r.task);
+    if (xs) xs.push(r.seconds);
+    else byTask.set(r.task, [r.seconds]);
+  }
+  // A task with no history of its own falls back to the pooled figure rather
+  // than being priced at zero.
+  const perSample = Math.max(1, opts?.samplesPerTask ?? 1);
+  let total = 0;
+  for (const id of remaining) {
+    total += (medianOf(byTask.get(id) ?? []) ?? pooled) * perSample;
+  }
+  return { seconds: total, basis: "per-task", runsUsed };
 }
 
 export interface TaskScope {

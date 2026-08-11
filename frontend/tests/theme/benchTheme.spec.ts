@@ -471,6 +471,15 @@ test("T89 the Compare footnote's final words are readable", async ({
   await gotoBench(page);
   await page.getByRole("button", { name: /^Compare/ }).click();
 
+  // Compare needs at least two eligible stored runs. With fewer, the refusal
+  // is correct and there is no footnote to read — assert THAT rather than
+  // skipping silently, so a missing table cannot pass as a passing test.
+  const refusal = page.locator('[data-testid="bench-compare-refusal"]');
+  if ((await refusal.count()) > 0) {
+    await expect(refusal).toContainText(/Refused|Select at least two runs/);
+    return;
+  }
+
   // The clipped half is the useful half — assert the sentence that tells the
   // reader how to avoid needing Compare at all, not merely that a <p> exists.
   const foot = page.getByText(/^Sorted by/);

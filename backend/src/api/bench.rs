@@ -421,16 +421,27 @@ pub struct StartRequest {
 }
 
 impl StartRequest {
-    /// bench.py declares `--temperature` with `default=0.0`, so omitting the
-    /// flag silently selects GREEDY decoding rather than leaving the server's
-    /// own default alone. That is a change to what is being measured, not a
-    /// safe fallback — especially with `--n > 1`, where greedy makes every
-    /// sample identical. Refuse the request instead of guessing.
+    /// Since localbench `-129`, `--temperature` has NO default: omitting the
+    /// flag leaves the server's own setting alone and records
+    /// `temperature: null`. That is a real mode, not a trap — but the value
+    /// actually sampled at is then whatever llama-server was launched with,
+    /// which the run does not record and the dashboard cannot recover. Two
+    /// runs could differ in sampling with nothing on record to say so.
+    ///
+    /// So a dashboard-started run carries an explicit value and stays
+    /// self-describing. This is a policy of THIS dashboard, not a bench.py
+    /// default — bench.py no longer has one. Letting the dashboard express
+    /// "the server decides" is a legitimate feature, but it needs a visible
+    /// control that says so; a blank box silently meaning it would be worse
+    /// than requiring the value.
+    ///
+    /// Resume is deliberately different: it must reproduce the recorded run's
+    /// conditions, so `ResumeRequest::temperature = None` forwards no flag.
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.temperature.is_none() {
             return Err(
-                "temperature is required: bench.py defaults --temperature to 0.0 (greedy), \
-                 so omitting it silently changes what the run measures"
+                "temperature is required: bench.py no longer defaults it, so a run started \
+                 without one records null and what it actually sampled at cannot be recovered"
                     .to_string(),
             );
         }
@@ -481,12 +492,62 @@ impl StartRequest {
     }
 }
 
-#[derive(Debug, Deserialize)]
+/// Every setting `bench.py::_check_resume_compatible` treats as fatal when it
+/// differs from the recorded run: `attempts`, `n`, `time_budget`, `time_step`
+/// and `temperature`. A resume that omits one of these does not fall back to
+/// the recorded value — bench.py compares against ITS OWN default and exits.
+///
+/// `temperature: None` is not "unspecified", it is the flag being omitted,
+/// which is what a run recorded with `temperature: null` requires. Since
+/// localbench `-129` that is a distinct value from `0.0`, so the two must not
+/// be collapsed on the way through.
+#[derive(Debug, Deserialize, Default)]
 pub struct ResumeRequest {
     pub folder: String,
     pub attempts: Option<u32>,
     pub n: Option<u32>,
     pub url: Option<String>,
+    pub temperature: Option<f64>,
+    pub time_budget: Option<f64>,
+    pub time_step: Option<f64>,
+}
+
+impl ResumeRequest {
+    /// Flags in bench.py's own spelling, including every setting its resume
+    /// guard compares. Omitting one is not neutral: bench.py compares the
+    /// recorded run against its OWN default and exits on a mismatch.
+    pub(crate) fn to_args(&self, resume_path: &str) -> Vec<String> {
+        // ABSOLUTE: the --resume argument is cwd-resolved by bench.py.
+        let mut a = vec!["--resume".to_string(), resume_path.to_string()];
+        if let Some(v) = self.attempts {
+            a.push("--attempts".into());
+            a.push(v.to_string());
+        }
+        if let Some(v) = self.n {
+            a.push("--n".into());
+            a.push(v.to_string());
+        }
+        if let Some(v) = &self.url {
+            a.push("-u".into());
+            a.push(v.clone());
+        }
+        // Absent temperature is the run having recorded `null` — the flag then
+        // stays off, because since localbench -129 "unset" and "0" are
+        // different conditions and bench.py refuses to mix them.
+        if let Some(v) = self.temperature {
+            a.push("--temperature".into());
+            a.push(v.to_string());
+        }
+        if let Some(v) = self.time_budget {
+            a.push("--time-budget".into());
+            a.push(v.to_string());
+        }
+        if let Some(v) = self.time_step {
+            a.push("--time-step".into());
+            a.push(v.to_string());
+        }
+        a
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -720,20 +781,7 @@ pub async fn resume_handler(
     let dir = bench_dir();
     // ABSOLUTE: the --resume argument is cwd-resolved by bench.py.
     let path = resume_run_path(&dir, &req.folder);
-    let mut args = vec!["--resume".to_string(), path.to_string_lossy().to_string()];
-    // bench.py refuses a resume whose attempts/n differ, so pass them through.
-    if let Some(v) = req.attempts {
-        args.push("--attempts".into());
-        args.push(v.to_string());
-    }
-    if let Some(v) = req.n {
-        args.push("--n".into());
-        args.push(v.to_string());
-    }
-    if let Some(v) = &req.url {
-        args.push("-u".into());
-        args.push(v.clone());
-    }
+    let args = req.to_args(&path.to_string_lossy());
     {
         let mut g = state().write().unwrap();
         g.log.clear();
@@ -741,15 +789,42 @@ pub async fn resume_handler(
     }
     match spawn_bench(args).await {
         Ok(pid) => {
-            let mut g = state().write().unwrap();
-            g.pid = Some(pid);
-            g.run_folder = Some(req.folder.clone());
-            drop(g);
-            axum::response::Json(json!({ "pid": pid, "success": true }))
+            {
+                let mut g = state().write().unwrap();
+                g.pid = Some(pid);
+                g.run_folder = Some(req.folder.clone());
+            }
+            // bench.py refuses an incompatible resume by exiting immediately.
+            // Reporting success here would announce a run that is already
+            // dead and leave the reason visible only to someone who thinks to
+            // open the Console tab.
+            tokio::time::sleep(std::time::Duration::from_millis(RESUME_SETTLE_MS)).await;
+            if a_run_is_live() {
+                return axum::response::Json(json!({ "pid": pid, "success": true }));
+            }
+            let reason = {
+                let g = state().read().unwrap();
+                let (lines, _) = g.log.read_from(0);
+                let start = lines.len().saturating_sub(8);
+                lines[start..].join("\n")
+            };
+            axum::response::Json(json!({
+                "error": if reason.is_empty() {
+                    "bench.py exited immediately without output".to_string()
+                } else {
+                    reason
+                },
+                "success": false
+            }))
         }
         Err(e) => axum::response::Json(json!({ "error": e, "success": false })),
     }
 }
+
+/// Long enough for bench.py to reject a resume and exit, short enough not to
+/// stall the button. A refusal is a `sys.exit` on the first read of the run
+/// file, not work.
+const RESUME_SETTLE_MS: u64 = 900;
 
 pub async fn queue_advance_handler(
     axum::extract::Json(req): axum::extract::Json<QueueAdvanceRequest>,
@@ -921,9 +996,19 @@ mod tests {
         );
     }
 
-    // T45 — the silent-greedy trap: bench.py --temperature defaults to 0.0.
+    // T45, amended by T96. This test used to assert the refusal names GREEDY
+    // decoding, because bench.py declared `--temperature` with `default=0.0`.
+    // localbench -129 removed that default: omitting the flag now leaves the
+    // server's own setting alone, so "omitting it selects greedy" is false and
+    // a test demanding the word "greedy" pinned a rule that no longer exists.
+    //
+    // The REFUSAL still stands, on a reason that is currently true: a run
+    // started without a temperature records `null`, and what it actually
+    // sampled at is then unrecoverable. Both halves are still guarded — the
+    // refusal below, and `t45_temperature_zero_is_a_real_value_not_an_absent_one`
+    // which keeps 0 distinct from absent.
     #[test]
-    fn t45_start_refuses_a_missing_temperature_rather_than_defaulting_to_greedy() {
+    fn t45_start_refuses_a_missing_temperature_because_the_run_cannot_record_it() {
         let mut req = StartRequest {
             model: Some("m".into()),
             ..Default::default()
@@ -932,8 +1017,12 @@ mod tests {
             .validate()
             .expect_err("a missing temperature must be refused");
         assert!(
-            err.contains("greedy"),
-            "the reason must name the trap: {err}"
+            !err.contains("defaults --temperature to 0.0"),
+            "the reason must not cite a bench.py default that no longer exists: {err}"
+        );
+        assert!(
+            err.contains("no longer defaults"),
+            "the reason must be one that is currently true: {err}"
         );
 
         req.temperature = Some(0.6);
@@ -942,6 +1031,61 @@ mod tests {
         assert!(
             joined.contains("--temperature 0.6"),
             "temperature must always be forwarded explicitly: {joined}"
+        );
+    }
+
+    // T96 — the live break. bench.py's `_check_resume_compatible` exits when
+    // the resumed run's temperature differs from the recorded one, and since
+    // -129 `None` is one of the values it compares. A resume that forwards no
+    // `--temperature` therefore kills every dashboard-started run, all of
+    // which record a concrete value because `validate()` demands one.
+    #[test]
+    fn t96_resume_forwards_every_setting_bench_pys_resume_guard_compares() {
+        let req = ResumeRequest {
+            folder: "seedA_20260808".into(),
+            attempts: Some(3),
+            n: Some(1),
+            url: Some("http://localhost:8081".into()),
+            temperature: Some(0.2),
+            time_budget: Some(15.0),
+            time_step: Some(30.0),
+        };
+        let joined = req.to_args("/runs/seedA_20260808").join(" ");
+
+        assert!(
+            joined.contains("--temperature 0.2"),
+            "the recorded temperature must be forwarded or bench.py exits: {joined}"
+        );
+        // The rest of the same fatal comparison in bench.py:1137.
+        for expected in [
+            "--attempts 3",
+            "--n 1",
+            "--time-budget 15",
+            "--time-step 30",
+        ] {
+            assert!(
+                joined.contains(expected),
+                "resume must forward {expected}: {joined}"
+            );
+        }
+    }
+
+    // The absence half, per AGENTS.md: a run recorded with `temperature: null`
+    // must be resumed with NO flag. Sending 0 instead would be the inverse bug
+    // — bench.py treats unset and 0 as different conditions and refuses both
+    // directions of the mismatch.
+    #[test]
+    fn t96_resume_of_a_run_without_a_temperature_sends_no_temperature_flag() {
+        let req = ResumeRequest {
+            folder: "seedB".into(),
+            attempts: Some(3),
+            temperature: None,
+            ..Default::default()
+        };
+        let joined = req.to_args("/runs/seedB").join(" ");
+        assert!(
+            !joined.contains("--temperature"),
+            "unset must stay unset, not become 0: {joined}"
         );
     }
 
@@ -1040,5 +1184,25 @@ mod tests {
         );
         assert!(joined.contains("--temperature 0.6"));
         assert!(joined.contains("-u http://127.0.0.1:8123"));
+    }
+
+    // T93, the absence half. bench.py cannot be told "no languages": an empty
+    // `--langs` is an empty set, which is falsy, so its filter is skipped and
+    // the FULL suite runs (`bench.py:233`). Sending the flag with an empty
+    // value would therefore run everything while claiming to be filtered, so
+    // `None` must omit the flag entirely rather than emit a bare `--langs`.
+    #[test]
+    fn t93_no_langs_omits_the_flag_rather_than_sending_an_empty_one() {
+        let req = StartRequest {
+            model: Some("buggy-model".into()),
+            langs: None,
+            temperature: Some(0.6),
+            ..Default::default()
+        };
+        let joined = req.to_args().join(" ");
+        assert!(
+            !joined.contains("--langs"),
+            "an empty --langs means EVERY language to bench.py: {joined}"
+        );
     }
 }

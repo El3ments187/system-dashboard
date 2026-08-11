@@ -76,7 +76,16 @@ export interface BenchSummary {
 export interface BenchConfig {
   attempts?: number;
   n?: number;
-  temperature?: number;
+  /**
+   * `null` is a real value since localbench -129: the flag was omitted and
+   * llama-server used whatever it was started with. It is NOT 0, which is
+   * greedy chosen deliberately, and bench.py refuses to resume one as the
+   * other. Read it with `??`, never `||`.
+   */
+  temperature?: number | null;
+  /** Both are compared by bench.py's resume guard, so both must round-trip. */
+  time_budget?: number;
+  time_step?: number;
   langs?: string[];
   model?: string;
   models?: string;

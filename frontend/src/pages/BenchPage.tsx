@@ -38,7 +38,9 @@ import {
   runNaming,
   onTaskDisplay,
   runStatus,
+  runTaskRoster,
   runTaskScope,
+  LOCALBENCH_DEFAULTS,
   startDisabledReason,
   greedyInterlock,
   heartbeatAgeMs,
@@ -480,7 +482,9 @@ function HeroCard({
               server was still generating. Those scores measure the budget, not
               the model. Raise <b>--nudge-at</b> (Run Setup, default 16384) or{" "}
               <b>--max-nudges</b>. Raising --max-tokens does not help here: the
-              server was never asked to stop.
+              server was never asked to stop. More rows carry the badge than
+              this number: every task from the first stop onward was scored
+              under the same cap, so it is marked too.
             </span>
           </div>
         )}
@@ -770,14 +774,16 @@ function ProgressCard({
               value={fmtUptime(elapsedSeconds)}
               valueSize={14}
             />
-            {/* T82 — only when a sample is genuinely in flight. `live` is
-                written at sample END, so between samples current_task names
-                the one that just finished. */}
+            {/* T82/T98 — `live` is written only at sample END, so between
+                saves current_task names the one that just finished. The tile
+                said "Between samples —", naming nothing, which at --n 1 was
+                its permanent state: it never had a true value to show. It now
+                reports what is actually known. */}
             <MetricTile
               accent
               mono
-              label={onTask.inFlight ? "On task" : "Between samples"}
-              value={onTask.inFlight ? onTask.task : "—"}
+              label={onTask.inFlight ? "On task" : "Last completed"}
+              value={onTask.task ?? "—"}
               valueSize={11}
             />
             <MetricTile
@@ -800,9 +806,16 @@ function ProgressCard({
             }}
           >
             <span>Task progress</span>
-            {running && live.task_elapsed != null && (
+            {/* Same `onTask` the tile above reads, so the two cannot tell
+                opposite stories again. "on task" is only claimed when a
+                sample is genuinely in flight; otherwise this is the duration
+                of the sample that was last saved, which is all the file
+                knows. */}
+            {running && onTask.tookSeconds != null && (
               <span style={{ color: "var(--success)" }}>
-                ● {fmtUptime(live.task_elapsed)} on task
+                {onTask.inFlight
+                  ? `● ${fmtUptime(onTask.tookSeconds)} on task`
+                  : `last sample took ${fmtUptime(onTask.tookSeconds)}`}
               </span>
             )}
           </div>
@@ -941,7 +954,6 @@ const FIELD_INPUT: React.CSSProperties = {
  * or stomping an edit when a poll lands.
  */
 function RunSetupCard({
-  detail,
   check,
   running,
   onRefresh,
@@ -955,8 +967,8 @@ function RunSetupCard({
   activeModel,
   storedDetails,
   taskCount,
+  tasks,
 }: {
-  detail: BenchRunDetail | null;
   check: BenchCheck | null;
   running: boolean;
   onRefresh: () => void;
@@ -971,6 +983,8 @@ function RunSetupCard({
   activeModel: string | null;
   storedDetails: BenchRunDetail[];
   taskCount: number;
+  /** The suite in execution order, so the estimate can price what will run. */
+  tasks: Array<{ id: string; lang: string }>;
 }) {
   const [override, setOverride] = useState<Partial<RunForm>>({});
   const tracks = check?.tracks ?? [];
@@ -991,12 +1005,21 @@ function RunSetupCard({
     // attributable name is the one /props reports as model_path, which is
     // what the llama.cpp page already shows and what activeModelName derives.
     model: override.model ?? activeModel ?? "",
-    label: override.label ?? "",
-    maxTokens: override.maxTokens ?? detail?.config?.max_tokens ?? 0,
-    nudgeAt: override.nudgeAt ?? detail?.config?.nudge_at ?? 16384,
-    langs: override.langs ?? detail?.config?.langs?.join(",") ?? availableLangs,
-    attempts: override.attempts ?? detail?.config?.attempts ?? 3,
-    n: override.n ?? detail?.config?.n ?? 1,
+    // The SELECTED RUN's config is deliberately absent from this chain. A run
+    // is selected by default, so it used to win on every fresh mount and the
+    // form opened on whatever the last run happened to use — including, for
+    // `langs`, a recorded `[]` that read as "nothing selected" (T93). Run
+    // Setup now opens on localbench's own defaults; a stored run's settings
+    // are visible in History, where they belong.
+    label: override.label ?? LOCALBENCH_DEFAULTS.label,
+    maxTokens: override.maxTokens ?? LOCALBENCH_DEFAULTS.maxTokens,
+    nudgeAt: override.nudgeAt ?? LOCALBENCH_DEFAULTS.nudgeAt,
+    // Not bench.py's `""`, which means EVERY language: the languages this
+    // machine can actually run. Showing a track whose toolchain is missing
+    // would offer work that will only be skipped.
+    langs: override.langs ?? availableLangs,
+    attempts: override.attempts ?? LOCALBENCH_DEFAULTS.attempts,
+    n: override.n ?? LOCALBENCH_DEFAULTS.n,
     // Temperature follows the ACTIVE model unless overridden, so bench
     // measures the model as it is actually configured rather than a value
     // copied from some earlier run. Rounded to the Sampling tile's 2dp
@@ -1028,11 +1051,11 @@ function RunSetupCard({
   // read the same render's value and the first would be lost.
   const toggleLang = (lang: string) =>
     setOverride((o) => {
-      const current = (
-        o.langs ??
-        detail?.config?.langs?.join(",") ??
-        availableLangs
-      )
+      // Same default as the form above. These were two copies of one
+      // expression reading the stored run's `langs`, and both had to be fixed
+      // to stop an unfiltered run reading as "nothing selected" (T93). Now
+      // neither consults the run at all.
+      const current = (o.langs ?? availableLangs)
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
@@ -1106,17 +1129,25 @@ function RunSetupCard({
     !knownIds.includes(form.model.trim());
 
   const greedy = greedyInterlock(form.n, form.temperature);
+  // Priced per task rather than as a flat average: tasks run in ladder order
+  // and gdscript sorts last, so the tail of a run is systematically slower
+  // than its own mean.
+  // Not memoised: a filter over the task list is cheap, and hand-memoising it
+  // made the React Compiler skip optimising this component entirely.
+  const plannedTasks = runTaskRoster(tasks, selectedLangs).map((t) => t.id);
   const estimate = estimatedRunSeconds(
     storedDetails,
-    taskCount * form.n,
+    (plannedTasks.length || taskCount) * form.n,
     targetUrl,
     defaultUrl,
+    { remainingTasks: plannedTasks, samplesPerTask: form.n },
   );
   const blockedReason = startDisabledReason({
     running,
     serverReady: readiness.ready,
     serverReason: readiness.reason,
     haveFlags: true,
+    anyLanguage: selectedLangs.length > 0,
   });
 
   return (
@@ -1272,9 +1303,22 @@ function RunSetupCard({
                 );
               })}
             </div>
-            <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>
-              Click to toggle · struck through = toolchain unavailable
-            </span>
+            {selectedLangs.length === 0 ? (
+              // Visible, not just a disabled button's tooltip: an empty
+              // `--langs` runs the WHOLE suite, so silently sending it would
+              // do the opposite of what the empty row appears to say.
+              <span
+                data-testid="bench-no-langs"
+                style={{ fontSize: 9.5, color: "var(--warning)" }}
+              >
+                No languages selected — an empty filter would run the whole
+                suite, so Start is disabled until you pick one
+              </span>
+            ) : (
+              <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>
+                Click to toggle · struck through = toolchain unavailable
+              </span>
+            )}
           </div>
 
           <Field label="Attempts">
@@ -1460,6 +1504,19 @@ function RunSetupCard({
                 : `Start a normal run against ${MOCK_URL} (tools/mockserver.py) — a full sweep in seconds, without a real model. Your configured url is left unchanged. Bench does not start mockserver itself.`
             }
           />
+          {/* Clearing `override` IS the reset: every field falls back through
+              the chain above to localbench's defaults, so nothing can be
+              missed by listing fields here and forgetting one. */}
+          <ActionButton
+            label="Reset to defaults"
+            disabled={running}
+            onClick={() => setOverride({})}
+            title={
+              running
+                ? "A run is active — Run Setup stages the next one, so reset enables when it finishes."
+                : "Put every field back to localbench's own defaults, with the model and temperature taken from the loaded server and the url from your configuration."
+            }
+          />
           <span
             data-testid="bench-est-duration"
             title="Mean seconds per graded sample across stored runs, times the samples this configuration would run. Server samples are excluded — they cost no model time."
@@ -1534,13 +1591,32 @@ export default function BenchPage() {
   const remainingSeconds = useMemo(() => {
     const left = (live.total ?? 0) - (live.done ?? 0);
     if (!running || left <= 0) return null;
+    // Which samples are left, not how many. Each remaining task is listed
+    // once per sample it still owes, so a half-finished task is priced for
+    // the half that remains rather than the whole.
+    const perTask = Math.max(1, detail?.config?.n ?? 1);
+    const done = new Map<string, number>();
+    for (const r of records) done.set(r.task, (done.get(r.task) ?? 0) + 1);
+    const remainingTasks: string[] = [];
+    for (const t of runTaskRoster(
+      bench.taskList?.tasks,
+      detail?.config?.langs ?? null,
+    )) {
+      for (let i = done.get(t.id) ?? 0; i < perTask; i += 1)
+        remainingTasks.push(t.id);
+    }
     return estimatedRunSeconds(
       storedDetails,
       left,
       runTargetUrl(current, detail, bench.targetUrl),
       bench.defaultUrl,
+      // The run in progress is the best evidence of its own pace, and it was
+      // being ignored in favour of history alone.
+      { remainingTasks, samplesPerTask: 1, liveRecords: records },
     );
   }, [
+    records,
+    bench.taskList,
     running,
     live,
     storedDetails,
@@ -1635,7 +1711,10 @@ export default function BenchPage() {
               check={check}
               live={live}
               running={running}
-              stale={isHeartbeatStale(live.heartbeat, now)}
+              // The same median Progress compares against, so "over median,
+              // that's fine" and "the run may be stuck" cannot be shown for
+              // the same run at the same moment.
+              stale={isHeartbeatStale(live.heartbeat, now, median)}
               beatAge={heartbeatAgeMs(live.heartbeat, now)}
               truncation={truncation}
               elapsedSeconds={elapsedSeconds}
@@ -1704,7 +1783,6 @@ export default function BenchPage() {
                 what gives the column something to reveal. */}
             <PanelErrorBoundary panelName="Bench Run Setup">
               <RunSetupCard
-                detail={detail}
                 check={check}
                 running={running}
                 onRefresh={bench.refresh}
@@ -1722,6 +1800,7 @@ export default function BenchPage() {
                     .filter((t) => t.available)
                     .reduce((a, t) => a + t.tasks, 0) ?? 0
                 }
+                tasks={bench.taskList?.tasks ?? []}
               />
             </PanelErrorBoundary>
           </div>

@@ -4,7 +4,9 @@ import benchTruncated from "./fixtures/benchTruncated.json";
 import benchAllServer from "./fixtures/benchAllServer.json";
 import {
   cellState,
+  LOCALBENCH_DEFAULTS,
   compareEligibility,
+  failureExplanation,
   compareNotation,
   compareRows,
   compareSlotOptions,
@@ -13,7 +15,8 @@ import {
   greedyInterlock,
   groupByEdition,
   historicalTaskMedian,
-  isBudgetTainted,
+  taintKind,
+  rowTaint,
   isHeartbeatStale,
   leadsFromRuns,
   regressionChips,
@@ -23,6 +26,7 @@ import {
   taskMean,
   truncationState,
   estimatedRunSeconds,
+  runEstimate,
   assertionCanary,
 } from "../pages/bench/compute";
 import type {
@@ -394,16 +398,21 @@ describe("T18a truncation streak predicate (records are in execution order)", ()
     expect(s.currentStreak).toBe(0);
   });
 
-  it("marks samples at and after the trigger as budget-tainted", () => {
+  // Renamed and re-pointed by T95. This asserted "budget-tainted" for a
+  // TRUNCATION trigger — the conflation the badge exposed, where a sample the
+  // SERVER cut short was labelled BUDGET and sent the reader to --max-tokens
+  // when --nudge-at was the flag that mattered (or vice versa). The contagion
+  // rule is unchanged; only the label is now correct.
+  it("marks samples at and after a truncation trigger as truncation-tainted", () => {
     const s = truncationState([
       rec({ truncated: true }),
       rec({ truncated: true }),
       rec({ truncated: true }),
       rec({ truncated: false }),
     ]);
-    expect(isBudgetTainted(0, s)).toBe(false);
-    expect(isBudgetTainted(2, s)).toBe(true);
-    expect(isBudgetTainted(3, s)).toBe(true);
+    expect(taintKind(0, s)).toBeNull();
+    expect(taintKind(2, s)).toBe("truncation");
+    expect(taintKind(3, s)).toBe("truncation");
   });
 });
 
@@ -463,8 +472,34 @@ describe("T19b a run that reached nothing at all", () => {
 // T20 — health.
 describe("T20 health signals", () => {
   const now = Date.parse("2026-08-08T23:00:00");
-  it("marks a heartbeat older than 90s as stale", () => {
-    expect(isHeartbeatStale("2026-08-08T22:58:00", now)).toBe(true);
+  // T20, amended by T94. This asserted that a heartbeat older than 90s is
+  // stale, encoding `STALE_HEARTBEAT_MS = 90_000`. The rule was wrong:
+  // bench.py refreshes the heartbeat only when a sample is SAVED
+  // (`bench.py:1289`, single write at `:1775`), so its age is the in-flight
+  // sample's duration. With a median task around 200s the constant fired on
+  // nearly every task, while Progress called the same run "over median" —
+  // two surfaces, opposite verdicts, and the alarming one was wrong.
+  //
+  // The threshold now scales off the task's historical median with a floor.
+  // Both directions are asserted here, so the warning cannot be defanged:
+  // slow-but-healthy is not stale, wedged still is.
+  it("does not accuse a task that is merely slower than a fixed constant", () => {
+    // Two minutes since the last sample, on a task whose median is 200s.
+    expect(isHeartbeatStale("2026-08-08T22:58:00", now, 200)).toBe(false);
+  });
+  it("still flags a run wedged far past any plausible sample", () => {
+    // Forty minutes on that same 200s task is not slowness.
+    expect(isHeartbeatStale("2026-08-08T22:20:00", now, 200)).toBe(true);
+  });
+  it("falls back to the floor when the task has no history", () => {
+    expect(isHeartbeatStale("2026-08-08T22:58:00", now, null)).toBe(false);
+    expect(isHeartbeatStale("2026-08-08T22:40:00", now, null)).toBe(true);
+  });
+  it("scales with the task: the same age is fine for a slower task", () => {
+    // 12 minutes: past the floor, but ordinary for a task whose median is 6m.
+    const age = "2026-08-08T22:48:00";
+    expect(isHeartbeatStale(age, now, 60)).toBe(true);
+    expect(isHeartbeatStale(age, now, 360)).toBe(false);
   });
   it("leaves a fresh heartbeat alone", () => {
     expect(isHeartbeatStale("2026-08-08T22:59:30", now)).toBe(false);
@@ -648,9 +683,11 @@ describe("T66 budget cutoffs are counted apart from truncation", () => {
       r({ truncated: true }),
     ];
     const s = truncationState(records);
-    expect(isBudgetTainted(0, s)).toBe(false);
-    expect(isBudgetTainted(1, s)).toBe(true);
-    expect(isBudgetTainted(4, s)).toBe(true);
+    expect(taintKind(0, s)).toBeNull();
+    expect(taintKind(1, s)).toBe("budget");
+    // Past the budget stop AND inside the truncation streak: budget wins,
+    // because bench.py stopped generation outright.
+    expect(taintKind(4, s)).toBe("budget");
   });
 });
 
@@ -804,5 +841,270 @@ describe("T92 compareSlotOptions", () => {
     expect(compareSlotOptions([row()], ["", "", ""], 0, D)[0].label).toContain(
       "a3 n1",
     );
+  });
+});
+
+// ── T95 — the two cutoffs are different mechanisms ─────────────────────────
+describe("T95 truncation and budget taints are distinct", () => {
+  const r = (over: Record<string, unknown> = {}) =>
+    rec({ truncated: false, stopped_at_budget: false, ...over });
+
+  it("a run tainted ONLY by truncation never reads as budget", () => {
+    // The exact reported defect: BUDGET on a server-truncated sample.
+    const s = truncationState([
+      r(),
+      r({ truncated: true }),
+      r({ truncated: true }),
+      r({ truncated: true }),
+    ]);
+    expect(taintKind(3, s)).toBe("truncation");
+    expect(taintKind(3, s)).not.toBe("budget");
+  });
+
+  it("a budget stop reads as budget", () => {
+    const s = truncationState([r(), r({ stopped_at_budget: true }), r()]);
+    expect(taintKind(1, s)).toBe("budget");
+    expect(taintKind(2, s)).toBe("budget");
+  });
+
+  it("a sample before any trigger carries no taint at all", () => {
+    // The absence half: the badge must not become decoration on every row.
+    const s = truncationState([r(), r(), r({ stopped_at_budget: true })]);
+    expect(taintKind(0, s)).toBeNull();
+    expect(taintKind(1, s)).toBeNull();
+  });
+
+  it("a task row takes the strongest taint among its samples", () => {
+    const s = truncationState([
+      r(),
+      r({ truncated: true }),
+      r({ truncated: true }),
+      r({ truncated: true }),
+      r({ stopped_at_budget: true }),
+    ]);
+    expect(rowTaint([0], s)).toBeNull();
+    expect(rowTaint([3], s)).toBe("truncation");
+    expect(rowTaint([3, 4], s)).toBe("budget");
+  });
+});
+
+// ── T97 — price the work that REMAINS ──────────────────────────────────────
+//
+// Tasks run in ladder order and gdscript sorts last, so what is left of a run
+// is systematically slower than the average of what finished. A flat mean
+// therefore under-predicts every tail, and worse the further the run gets.
+describe("T97 estimates weight the remaining tasks", () => {
+  const REAL = "http://localhost:8081";
+  const MOCK = "http://127.0.0.1:8123";
+  const r = (task: string, seconds: number) =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      status: "pass",
+      task,
+      seconds,
+    }) as BenchRecord;
+  const runOf = (records: BenchRecord[], url = REAL) =>
+    ({
+      run_id: "r",
+      suite_hash: "e293ad7",
+      created: "2026-08-10T10:00:00Z",
+      models: ["m"],
+      config: { url, attempts: 1, n: 1 },
+      summary: {},
+      live: {},
+      records,
+    }) as unknown as Parameters<typeof estimatedRunSeconds>[0][number];
+
+  // Fast head, slow tail — the shape of every real run.
+  const history = [
+    runOf([
+      r("js/easy_a", 10),
+      r("js/easy_b", 10),
+      r("gdscript/hard_a", 100),
+      r("gdscript/hard_b", 100),
+    ]),
+  ];
+
+  it("exceeds the flat mean when the slow tail is what is left", () => {
+    const flatMean = (10 + 10 + 100 + 100) / 4; // 55
+    const remaining = ["gdscript/hard_a", "gdscript/hard_b"];
+    const est = estimatedRunSeconds(history, remaining.length, REAL, REAL, {
+      remainingTasks: remaining,
+      samplesPerTask: 1,
+    });
+    expect(est).toBe(200);
+    expect(
+      est!,
+      "averaging the fast head into the slow tail is the reported defect",
+    ).toBeGreaterThan(flatMean * remaining.length);
+  });
+
+  it("is correspondingly cheaper when only the fast head remains", () => {
+    // The inverse: the fix must not simply inflate every estimate.
+    const est = estimatedRunSeconds(history, 2, REAL, REAL, {
+      remainingTasks: ["js/easy_a", "js/easy_b"],
+      samplesPerTask: 1,
+    });
+    expect(est).toBe(20);
+  });
+
+  it("prices a task with no history at the pooled median", () => {
+    const est = estimatedRunSeconds(history, 1, REAL, REAL, {
+      remainingTasks: ["java/unknown"],
+      samplesPerTask: 1,
+    });
+    // Pooled median of 10,10,100,100 is 55 — not zero, and not a guess of 0s.
+    expect(est).toBe(55);
+  });
+
+  it("counts the live run's own completed samples, not just history", () => {
+    // The run in progress is the best evidence of its own pace.
+    const est = estimatedRunSeconds([], 1, REAL, REAL, {
+      remainingTasks: ["js/easy_a"],
+      samplesPerTask: 1,
+      liveRecords: [r("js/easy_a", 42)],
+    });
+    expect(est).toBe(42);
+  });
+
+  it("reports how thin the evidence is", () => {
+    expect(runEstimate([], 1, REAL, REAL).basis).toBe("none");
+    expect(runEstimate(history, 2, REAL, REAL).basis).toBe("pooled");
+    expect(
+      runEstimate(history, 2, REAL, REAL, { remainingTasks: ["js/easy_a"] })
+        .basis,
+    ).toBe("per-task");
+    expect(runEstimate(history, 2, REAL, REAL).runsUsed).toBe(1);
+  });
+
+  it("still refuses to pool mock history into a real estimate", () => {
+    // sameTargetClass must stay green: a 3m-17s estimate once took 35m 46s.
+    const est = estimatedRunSeconds(
+      [runOf([r("js/easy_a", 1)], MOCK)],
+      10,
+      REAL,
+      REAL,
+      {
+        remainingTasks: ["js/easy_a"],
+        samplesPerTask: 1,
+      },
+    );
+    expect(est).toBeNull();
+  });
+});
+
+// ── T100 — the failure panel must state the mode, not show the passes ──────
+//
+// `first_failed` is bench.py's fail_labels(), which excludes "the test
+// stopped before finishing". A cut-off sample therefore has NO failed
+// assertions — correctly — and the panel fell through to a head window of the
+// log, which for any runner that prints passes first shows passes and only
+// passes under the heading "why it failed".
+describe("T100 failureExplanation", () => {
+  const base = (over: Partial<BenchRecord>) =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      first_failed: [],
+      tests_passed: 28,
+      tests_failed: 0,
+      tests_total: 28,
+      tests_expected: 77,
+      truncated: false,
+      stopped_at_budget: false,
+      detail: "PASS a\nPASS b\nPASS c",
+      solved: false,
+      ...over,
+    }) as BenchRecord;
+
+  it("explains an errored sample instead of leaving the excerpt to speak", () => {
+    // The observed record: js/formula_engine, status error, 28/77.
+    const e = failureExplanation(base({ status: "error" }));
+    expect(e.reason).toBe("Crashed before the tests finished.");
+  });
+
+  it("counts the assertions that never ran", () => {
+    expect(failureExplanation(base({ status: "error" })).unreached).toBe(49);
+  });
+
+  it("suppresses the count when everything ran", () => {
+    // The absence half — the line must not become permanent furniture.
+    const e = failureExplanation(
+      base({ status: "fail", tests_passed: 40, tests_failed: 37 }),
+    );
+    expect(e.unreached).toBe(0);
+  });
+
+  it("STICKY FLAG: a completed attempt with real failures is not a cut-off", () => {
+    // bench.py accumulates stopped_at_budget across attempts, so the flag
+    // means "some attempt was stopped", never "this result was". Keying the
+    // cut-off message on it would tell the reader the code was truncated when
+    // it failed on merit.
+    const e = failureExplanation(
+      base({
+        status: "fail",
+        stopped_at_budget: true,
+        first_failed: ["expects 2 + 2 to equal 4"],
+      }),
+    );
+    expect(e.reason, "the assertion list already tells the story").toBeNull();
+    expect(e.remedy).toBeNull();
+    expect(e.history).toBeNull();
+  });
+
+  it("names each mode in bench.py's own terms", () => {
+    expect(failureExplanation(base({ status: "format" })).reason).toMatch(
+      /no fenced code block/i,
+    );
+    expect(failureExplanation(base({ status: "timeout" })).reason).toMatch(
+      /endless loop/i,
+    );
+    expect(failureExplanation(base({ status: "server" })).reason).toMatch(
+      /could not reach the model/i,
+    );
+    expect(
+      failureExplanation(base({ status: "error", detail: "compile: boom" }))
+        .reason,
+    ).toMatch(/did not compile/i);
+  });
+
+  it("scores nothing for a server sample rather than 0-of-N", () => {
+    expect(failureExplanation(base({ status: "server" })).unreached).toBe(0);
+  });
+
+  it("names the remedy that matches the mechanism", () => {
+    const budget = failureExplanation(
+      base({ status: "error", stopped_at_budget: true }),
+    );
+    expect(budget.remedy).toMatch(/--nudge-at/);
+    expect(budget.remedy, "--max-tokens does not fix a budget stop").toMatch(
+      /--max-tokens does not affect this/,
+    );
+    expect(
+      budget.history,
+      "the flag is history, not a claim about this result",
+    ).toMatch(/any attempt/);
+
+    const trunc = failureExplanation(
+      base({ status: "error", truncated: true }),
+    );
+    expect(trunc.remedy).toBe("Raise --max-tokens.");
+  });
+});
+
+// T99 — the defaults are localbench's, and this is what catches the next
+// upstream bump: bench.py's argparse table is the source, not this file.
+describe("T99 LOCALBENCH_DEFAULTS tracks bench.py", () => {
+  it("matches the -129 argparse table", () => {
+    expect(LOCALBENCH_DEFAULTS.attempts, "bench.py:2810").toBe(3);
+    expect(LOCALBENCH_DEFAULTS.n, "bench.py:2785").toBe(1);
+    expect(LOCALBENCH_DEFAULTS.maxTokens, "bench.py:2821").toBe(0);
+    expect(LOCALBENCH_DEFAULTS.nudgeAt, "bench.py:2795").toBe(16384);
+    expect(LOCALBENCH_DEFAULTS.label, "bench.py:2894").toBe("");
+  });
+
+  it("does not reproduce --langs '' , which means EVERY language", () => {
+    // bench.py:233 — an empty set is falsy, so the filter is skipped. The
+    // dashboard's default is the languages the machine can actually run.
+    expect("langs" in LOCALBENCH_DEFAULTS).toBe(false);
   });
 });
