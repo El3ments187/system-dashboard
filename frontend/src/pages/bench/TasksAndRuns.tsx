@@ -885,7 +885,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
             )}
           </div>
           <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}
           >
             <MetricTile
               accent
@@ -893,13 +893,6 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               testId="bench-gen-tile"
               label="Generation time"
               value={fmtUptime(worst.gen_seconds)}
-              valueSize={12}
-            />
-            <MetricTile
-              accent
-              mono
-              label="Test"
-              value={fmtUptime(worst.test_seconds)}
               valueSize={12}
             />
             <MetricTile

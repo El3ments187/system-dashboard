@@ -132,9 +132,10 @@ function CornerIndex({ n }: { n: string }) {
   );
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+function Chip({ children, testId }: { children: React.ReactNode; testId?: string }) {
   return (
     <span
+      data-testid={testId}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -439,7 +440,7 @@ function HeroCard({
               toolchains are missing) is on Run Setup's language toggles,
               which strike through what this machine cannot run —
               duplicating it here reads as "the whole suite is running". */}
-          <Chip>
+          <Chip testId="bench-hero-scope">
             <b style={{ fontFamily: MONO }} data-testid="bench-hero-taskcount">
               {scope.count}
             </b>{" "}
@@ -1262,13 +1263,17 @@ function RunSetupCard({
     defaultUrl,
     { remainingTasks: plannedTasks, samplesPerTask: form.n },
   );
-  const blockedReason = startDisabledReason({
-    running,
-    serverReady: readiness.ready,
-    serverReason: readiness.reason,
-    haveFlags: true,
-    anyLanguage: selectedLangs.length > 0,
-  });
+  const blockedReason =
+    startDisabledReason({
+      running,
+      serverReady: readiness.ready,
+      serverReason: readiness.reason,
+      haveFlags: true,
+      anyLanguage: selectedLangs.length > 0,
+    }) ??
+    (greedy
+      ? `Temperature 0 with --n ${form.n}: greedy decoding makes every sample identical. Set temperature > 0 or set --n 1.`
+      : null);
 
   return (
     <Card
