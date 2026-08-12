@@ -18,7 +18,6 @@ import MetricTile from "../components/shared/MetricTile";
 import ProgressBar from "../components/shared/ProgressBar";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import { RadialGauge } from "./llamacpp/RadialGauge";
-import { StatusIndicator } from "./llamacpp/StatusIndicator";
 import { fmtNum, middleTruncate } from "./llamacpp/parts";
 import { fmtUptime } from "./llamaCppUtils";
 import { AlertSeverity, useAlertsContext } from "../context/AlertsContext";
@@ -46,11 +45,16 @@ import {
   heartbeatAgeMs,
   historicalTaskMedian,
   isHeartbeatStale,
+  languageBreakdown,
   runTaskAvg,
   serverExcludedCount,
   truncationState,
 } from "./bench/compute";
-import type { TruncationState } from "./bench/compute";
+import type {
+  RunStatus,
+  RunStatusKind,
+  TruncationState,
+} from "./bench/compute";
 import type {
   BenchCheck,
   BenchRecord,
@@ -263,14 +267,71 @@ function heroIdentity(
   };
 }
 
+/**
+ * Bench's own state pill.
+ *
+ * The hero used llama.cpp's StatusIndicator with `running ? "running" :
+ * "stopped"`. That component's vocabulary is SERVER lifecycle — starting,
+ * loading, failed — and its default branch hardcodes "Stopped", so a 27/27
+ * run at 100% announced itself as stopped, and a page with no run selected
+ * looked identical to a completed one. It is shared with the llama.cpp page
+ * and correct there, so it is left alone and Bench maps its own kinds here.
+ */
+function RunStatePill({ kind }: { kind: RunStatusKind }) {
+  const tone: Record<
+    RunStatusKind,
+    { label: string; color: string; bg: string }
+  > = {
+    running: {
+      label: "Running",
+      color: "var(--success)",
+      bg: "rgba(34,197,94,0.12)",
+    },
+    stalled: {
+      label: "Stalled",
+      color: "var(--warning)",
+      bg: "rgba(234,179,8,0.12)",
+    },
+    finished: {
+      label: "Finished",
+      color: "var(--accent-primary)",
+      bg: "rgba(59,130,246,0.12)",
+    },
+    idle: {
+      label: "No run",
+      color: "var(--text-muted)",
+      bg: "rgba(255,255,255,0.06)",
+    },
+  };
+  const t = tone[kind];
+  return (
+    <span
+      data-testid="bench-state-pill"
+      data-kind={kind}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 10,
+        fontWeight: 600,
+        color: t.color,
+        whiteSpace: "nowrap",
+        background: t.bg,
+        borderRadius: 6,
+        padding: "2px 6px",
+      }}
+    >
+      {t.label}
+    </span>
+  );
+}
+
 function HeroCard({
+  status,
   identity,
   detail,
   check,
   live,
-  running,
-  stale,
-  beatAge,
   truncation,
   elapsedSeconds,
   current,
@@ -278,13 +339,11 @@ function HeroCard({
   targetUrl,
   taskList,
 }: {
+  status: RunStatus;
   identity: HeroIdentity;
   detail: BenchRunDetail | null;
   check: BenchCheck | null;
   live: BenchLive;
-  running: boolean;
-  stale: boolean;
-  beatAge: number | null;
   /** Both cut-off mechanisms, each with its own remedy. */
   truncation: TruncationState;
   /** The page's single elapsed clock. */
@@ -304,14 +363,6 @@ function HeroCard({
   );
   const serverErrors = live.consecutive_server_errors ?? 0;
   const heroTarget = runTargetUrl(current, detail, targetUrl);
-  const status = runStatus({
-    running,
-    stale,
-    ageMs: beatAge,
-    finishedSamples: detail?.summary?.samples ?? null,
-    finishedSeconds: elapsedSeconds,
-    fmtDuration: fmtUptime,
-  });
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -367,7 +418,7 @@ function HeroCard({
             margin: "4px 0 8px",
           }}
         >
-          <StatusIndicator status={running ? "running" : "stopped"} />
+          <RunStatePill kind={status.kind} />
           {detail && (
             <Chip>
               edition <b style={{ fontFamily: MONO }}>{detail.suite_hash}</b>
@@ -379,7 +430,8 @@ function HeroCard({
             </Chip>
           )}
           {/* THIS run's scope. Suite-wide availability (and which
-              toolchains are missing) lives in Run Setup's Toolchains row —
+              toolchains are missing) is on Run Setup's language toggles,
+              which strike through what this machine cannot run —
               duplicating it here reads as "the whole suite is running". */}
           <Chip>
             <b style={{ fontFamily: MONO }} data-testid="bench-hero-taskcount">
@@ -581,6 +633,7 @@ function ScoreCard({
   spawnedAttempts: number | null;
 }) {
   const samplesPerTask = detail?.config?.n ?? 1;
+  const langRatios = languageBreakdown(detail?.records ?? []);
   const records = useMemo(() => detail?.records ?? [], [detail]);
   const taskAvg = useMemo(() => runTaskAvg(records), [records]);
   const flaky = useMemo(() => flakyTasks(records), [records]);
@@ -641,6 +694,7 @@ function ScoreCard({
           />
           <MetricTile
             mono
+            title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks."
             label="Raw assertions"
             value={`${fmtNum(detail?.summary?.tests_passed ?? 0)}/${fmtNum(detail?.summary?.tests_expected ?? 0)}`}
             valueSize={12}
@@ -657,6 +711,15 @@ function ScoreCard({
             label={samplesPerTask < 2 ? "Flaky solves (n/a)" : "Flaky solves"}
             value={samplesPerTask < 2 ? null : flaky.tasks.length}
             valueSize={15}
+            // The tile stays rather than disappearing: hiding it would change
+            // the card's shape from run to run, and a reader who knows the
+            // metric would be left wondering where it went. What was missing
+            // was the reason, keyed off the RUN's recorded --n, not the form.
+            title={
+              samplesPerTask < 2
+                ? "Flakiness means the same task solved on one sample and not another, so it needs --n 2 or more. This run recorded --n 1, so there is nothing to measure — not zero flakiness."
+                : `Tasks solved on some samples but not others, across --n ${samplesPerTask}.`
+            }
           />
           <MetricTile
             accent
@@ -665,6 +728,9 @@ function ScoreCard({
             label="Server excl."
             value={serverExcluded}
             valueSize={15}
+            // Unlike Flaky solves, this 0 is a real measurement at any --n:
+            // the endpoint did not fail. It is kept for that reason.
+            title="Samples dropped because the endpoint never answered. They are not a verdict on the model, so they are excluded from every rate; 0 means the server held up."
           />
         </div>
 
@@ -684,12 +750,32 @@ function ScoreCard({
             {` · solid: ${flaky.solidCount}`}
           </div>
         )}
+        {/* Per-language solved ratios. Deliberately a compact line in the
+            existing idiom rather than another tile: this card already carries
+            six, and Run Setup needed T84 once for exactly that kind of
+            crowding. A language the run never touched is absent, not 0/0. */}
+        {langRatios.length > 0 && (
+          <div
+            data-testid="bench-lang-breakdown"
+            style={{
+              font: `9.5px ${MONO}`,
+              color: "var(--text-muted)",
+              marginTop: 5,
+            }}
+          >
+            by language:{" "}
+            {langRatios
+              .map((l) => `${l.lang} ${l.solved}/${l.total}`)
+              .join(" · ")}
+          </div>
+        )}
       </div>
     </Card>
   );
 }
 
 function ProgressCard({
+  status,
   detail,
   live,
   records,
@@ -699,6 +785,7 @@ function ProgressCard({
   donePct,
   median,
 }: {
+  status: RunStatus;
   detail: BenchRunDetail | null;
   live: BenchLive;
   /** Scoped to the current run, for T82's in-flight test. */
@@ -721,11 +808,22 @@ function ProgressCard({
   const samplesValue = (() => {
     if (live.total) return `${live.done ?? 0}/${live.total}`;
     if (warming) return "0";
-    return detail?.summary?.samples ?? null;
+    // A bare count once the run ends changed the tile's shape mid-read: it
+    // showed 26/27 and then, on completion, "27". bench.py empties `live` on
+    // a clean finish, so every planned sample landed and the denominator is
+    // the count itself.
+    const done = detail?.summary?.samples ?? null;
+    return done === null ? null : `${done}/${done}`;
   })();
-  const attemptValue = live.current_attempt
-    ? `${live.current_attempt}/${detail?.config?.attempts ?? "?"}`
-    : "—";
+  // Same live-vs-finished rule as the task tile: once the run ends, what it
+  // spent on its last sample is recorded, not lost.
+  const attemptValue = (() => {
+    const of = detail?.config?.attempts ?? "?";
+    if (live.current_attempt) return `${live.current_attempt}/${of}`;
+    const last = records.length > 0 ? records[records.length - 1] : null;
+    if (last?.attempts_used) return `${last.attempts_used}/${of}`;
+    return "—";
+  })();
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -830,6 +928,7 @@ function ProgressCard({
           >
             {healthStripText({
               running,
+              kind: status.kind,
               warming,
               median,
               taskElapsed: live.task_elapsed,
@@ -1631,9 +1730,20 @@ export default function BenchPage() {
   // number — two elapsed values that can disagree is worse than one shown
   // three times. While warming, only the live counter is trustworthy:
   // `detail` is still the previous run.
-  const elapsedSeconds = identity.warming
-    ? (live.run_elapsed ?? null)
-    : (live.run_elapsed ?? detail?.summary?.seconds ?? null);
+  // ONE clock, computed correctly rather than duplicated. `live.run_elapsed`
+  // only advances when a sample is SAVED — T98 measured the whole live block
+  // frozen for 90s on a running benchmark — so ELAPSED moved in 3-6 minute
+  // jumps and SAMPLES/HR, dividing by an understated figure, read optimistic.
+  // While a run is live the honest number is wall-clock since it started; a
+  // finished run keeps its own recorded total.
+  const elapsedSeconds = (() => {
+    if (running && identity.startedAt) {
+      const started = Date.parse(identity.startedAt);
+      if (Number.isFinite(started)) return Math.max(0, (now - started) / 1000);
+    }
+    if (identity.warming) return live.run_elapsed ?? null;
+    return live.run_elapsed ?? detail?.summary?.seconds ?? null;
+  })();
   const median = useMemo(
     () =>
       live.current_task
@@ -1653,6 +1763,19 @@ export default function BenchPage() {
       bench.defaultUrl,
     ],
   );
+
+  // ONE run state for every surface. The hero pill, the status line and the
+  // health strip each used to decide for themselves what a terminal run was
+  // called, and a completed 27/27 run read "Stopped", "Run finished" and
+  // "Run stopped" simultaneously.
+  const runState = runStatus({
+    running,
+    stale: isHeartbeatStale(live.heartbeat, now, median),
+    ageMs: heartbeatAgeMs(live.heartbeat, now),
+    finishedSamples: detail?.summary?.samples ?? null,
+    finishedSeconds: elapsedSeconds,
+    fmtDuration: fmtUptime,
+  });
 
   // A multi-hour run nobody is watching is the point of this page, so the end
   // of a run rings the header bell exactly once.
@@ -1706,16 +1829,11 @@ export default function BenchPage() {
         >
           <PanelErrorBoundary panelName="Bench Run">
             <HeroCard
+              status={runState}
               identity={identity}
               detail={detail}
               check={check}
               live={live}
-              running={running}
-              // The same median Progress compares against, so "over median,
-              // that's fine" and "the run may be stuck" cannot be shown for
-              // the same run at the same moment.
-              stale={isHeartbeatStale(live.heartbeat, now, median)}
-              beatAge={heartbeatAgeMs(live.heartbeat, now)}
               truncation={truncation}
               elapsedSeconds={elapsedSeconds}
               current={bench.current}
@@ -1736,6 +1854,7 @@ export default function BenchPage() {
 
           <PanelErrorBoundary panelName="Bench Progress">
             <ProgressCard
+              status={runState}
               detail={detail}
               live={live}
               records={records}

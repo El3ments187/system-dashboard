@@ -18,6 +18,8 @@ import {
   taintKind,
   rowTaint,
   isHeartbeatStale,
+  languageBreakdown,
+  leadsCoverage,
   leadsFromRuns,
   regressionChips,
   runTaskAvg,
@@ -1106,5 +1108,215 @@ describe("T99 LOCALBENCH_DEFAULTS tracks bench.py", () => {
     // bench.py:233 — an empty set is falsy, so the filter is skipped. The
     // dashboard's default is the languages the machine can actually run.
     expect("langs" in LOCALBENCH_DEFAULTS).toBe(false);
+  });
+});
+
+// ── T101 — a budget stop is not a truncation ───────────────────────────────
+//
+// bench.py's own summary (`:2652`) says a stopped sample was holding a
+// COMPLETE code block when it was cut: "no answer was lost mid-write — but
+// the code in it may still have been wrong". What the stop cost was the
+// chance to revise (`:2648`). Reporting it beside "crashed" as though the cut
+// caused the crash hands the reader the wrong remedy.
+describe("T101 budget stop branches on cut_mid_block", () => {
+  const rec101 = (over: Partial<BenchRecord>) =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      status: "error",
+      first_failed: [],
+      solved: false,
+      truncated: false,
+      stopped_at_budget: true,
+      cut_mid_block: false,
+      tests_passed: 28,
+      tests_failed: 0,
+      tests_total: 28,
+      tests_expected: 77,
+      ...over,
+    }) as BenchRecord;
+
+  it("a complete block names the revision cost, not a lost answer", () => {
+    const e = failureExplanation(rec101({ cut_mid_block: false }));
+    expect(e.history).toMatch(/complete code block/i);
+    expect(
+      e.history,
+      "bench.py is explicit that nothing was lost mid-write",
+    ).toMatch(/no answer was lost mid-write/i);
+    expect(e.remedy).toMatch(/room to revise/i);
+  });
+
+  it("an unclosed block says more room will NOT help", () => {
+    // bench.py:2669 — "That is the model never finishing the block, not the
+    // context running out — raising the context size will not help."
+    const e = failureExplanation(rec101({ cut_mid_block: true }));
+    expect(e.history).toMatch(/unclosed code block/i);
+    expect(e.remedy).toMatch(/will not help/i);
+    expect(
+      e.remedy,
+      "the two budget cases must not share one remedy",
+    ).not.toMatch(/room to revise/i);
+  });
+
+  it("neither budget case claims the reply was truncated", () => {
+    // `truncated` is the SERVER's finish_reason; a budget stop is bench.py's
+    // own cutoff, and the observed run reported truncated 0.
+    for (const cut of [false, true]) {
+      const e = failureExplanation(rec101({ cut_mid_block: cut }));
+      expect(e.history).not.toMatch(/token limit/i);
+      expect(e.remedy).not.toMatch(/--max-tokens\b(?! does not)/);
+    }
+  });
+
+  it("still phrases both as history, per the sticky-flag rule", () => {
+    for (const cut of [false, true]) {
+      expect(
+        failureExplanation(rec101({ cut_mid_block: cut })).history,
+      ).toMatch(/any attempt/i);
+    }
+  });
+});
+
+// ── T104 — Compare must not ask for something impossible ───────────────────
+//
+// `compareEligibility` saw only the SELECTED rows, so with one stored run it
+// said "Select at least two runs to compare" — asking the reader to pick a
+// second run that does not exist. Every other branch names what it knows;
+// this one is also the empty state, so it fires most often.
+describe("T104 compareEligibility knows the population", () => {
+  const row = (over: Record<string, unknown> = {}) =>
+    ({
+      run_id: "r1",
+      suite_hash: "e293ad7",
+      created: "2026-08-11T10:00:00Z",
+      folder: "f",
+      models: ["m"],
+      summary: null,
+      config: { attempts: 3, n: 1 },
+      finished: true,
+      ...over,
+    }) as unknown as Parameters<typeof compareEligibility>[0][number];
+
+  it("says there is nothing to compare with when only one run exists", () => {
+    const e = compareEligibility([row()], [row()]);
+    expect(e.eligible).toBe(false);
+    expect(e.message).toMatch(/only one stored run/i);
+    expect(
+      e.message,
+      "asking for a second selection is impossible here",
+    ).not.toMatch(/select at least two/i);
+  });
+
+  it("says so plainly when there are no runs at all", () => {
+    expect(compareEligibility([], []).message).toMatch(/no stored runs yet/i);
+  });
+
+  it("still asks for a selection when other runs DO exist", () => {
+    // The absence half: with a population to choose from, the original
+    // message is the right one.
+    const pop = [row(), row({ run_id: "r2" }), row({ run_id: "r3" })];
+    const e = compareEligibility([], pop);
+    expect(e.message).toMatch(/select at least two/i);
+  });
+
+  it("is unchanged when no population is supplied", () => {
+    expect(compareEligibility([row()]).message).toMatch(/select at least two/i);
+  });
+});
+
+// ── T105 — what the lead list cannot see ───────────────────────────────────
+describe("T105 leadsCoverage", () => {
+  const det = (models: string[], records: Partial<BenchRecord>[]) =>
+    ({
+      run_id: "r",
+      suite_hash: "e293ad7",
+      created: "2026-08-11T10:00:00Z",
+      models,
+      config: { attempts: 3, n: 1 },
+      summary: {},
+      live: {},
+      records: records.map((r) => ({
+        ...(benchRun.records[0] as unknown as BenchRecord),
+        status: "fail",
+        solved: false,
+        first_failed: [],
+        ...r,
+      })),
+    }) as unknown as BenchRunDetail;
+
+  it("counts unsolved samples with no failed assertion to report", () => {
+    // Cut-off samples: fail_labels drops "the test stopped before finishing",
+    // so first_failed is empty and Leads iterates nothing.
+    const d = det(
+      ["m"],
+      [
+        { first_failed: ["expects a"] },
+        { first_failed: [] },
+        { first_failed: [] },
+        { solved: true, status: "pass" },
+      ],
+    );
+    expect(leadsCoverage([d], "e293ad7").skipped).toBe(2);
+  });
+
+  it("does not count solved samples or server failures", () => {
+    // The absence half: a passing sample has nothing to report, and a server
+    // sample is the endpoint failing, not the model.
+    const d = det(
+      ["m"],
+      [{ solved: true, status: "pass" }, { status: "server" }],
+    );
+    expect(leadsCoverage([d], "e293ad7").skipped).toBe(0);
+  });
+
+  it("reports how many models the edition holds", () => {
+    const a = det(["m1"], [{ first_failed: ["x"] }]);
+    const b = det(["m2"], [{ first_failed: ["x"] }]);
+    expect(leadsCoverage([a], "e293ad7").models).toBe(1);
+    expect(leadsCoverage([a, b], "e293ad7").models).toBe(2);
+  });
+
+  it("ignores runs from another edition", () => {
+    const other = { ...det(["m"], [{ first_failed: [] }]), suite_hash: "beef" };
+    expect(leadsCoverage([other as BenchRunDetail], "e293ad7").skipped).toBe(0);
+  });
+});
+
+// ── T109 — per-language solved ratios ──────────────────────────────────────
+describe("T109 languageBreakdown", () => {
+  const rec109 = (lang: string, solved: boolean, status = "fail") =>
+    ({
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      lang,
+      solved,
+      status,
+    }) as BenchRecord;
+
+  it("produces the expected ratios per language", () => {
+    const rows = languageBreakdown([
+      rec109("js", true, "pass"),
+      rec109("js", false),
+      rec109("ts", false),
+      rec109("ts", false),
+      rec109("ts", true, "pass"),
+    ]);
+    expect(rows).toEqual([
+      { lang: "js", solved: 1, total: 2 },
+      { lang: "ts", solved: 1, total: 3 },
+    ]);
+  });
+
+  it("omits a language with no samples rather than showing zero", () => {
+    // 0/0 for a track that never ran reads as "attempted and failed".
+    const rows = languageBreakdown([rec109("js", true, "pass")]);
+    expect(rows.map((r) => r.lang)).toEqual(["js"]);
+    expect(rows.some((r) => r.lang === "gdscript")).toBe(false);
+  });
+
+  it("excludes server samples, like every other rate on the page", () => {
+    const rows = languageBreakdown([
+      rec109("js", true, "pass"),
+      rec109("js", false, "server"),
+    ]);
+    expect(rows[0]).toEqual({ lang: "js", solved: 1, total: 1 });
   });
 });

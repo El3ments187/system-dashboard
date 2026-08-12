@@ -476,7 +476,11 @@ test("T89 the Compare footnote's final words are readable", async ({
   // skipping silently, so a missing table cannot pass as a passing test.
   const refusal = page.locator('[data-testid="bench-compare-refusal"]');
   if ((await refusal.count()) > 0) {
-    await expect(refusal).toContainText(/Refused|Select at least two runs/);
+    // T104 gave the population-aware messages: with one stored run Compare
+    // says so rather than asking for a second selection that cannot be made.
+    await expect(refusal).toContainText(
+      /Refused|Select at least two runs|Only one stored run|No stored runs yet/,
+    );
     return;
   }
 

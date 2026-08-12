@@ -40,7 +40,13 @@ export interface BenchRecord {
   /** The LARGEST SINGLE request — a different unit from completion_tokens. */
   total_tokens: number;
   tokens_estimated: boolean;
-  nudged: boolean;
+  /**
+   * A COUNT of continuation prompts, not a flag: bench.py writes
+   * `"nudged": sam.nudges_total` (`:1760`). Declared boolean, it was rendered
+   * with a bare `&&`, and `0 && …` evaluates to `0` — which React prints, so
+   * an unlabelled digit appeared in the drilldown's flag row.
+   */
+  nudged: number;
   truncated: boolean;
   cut_mid_block: boolean;
   stopped_at_budget: boolean;

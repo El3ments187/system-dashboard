@@ -1339,11 +1339,18 @@ describe("T23/T24 drilldown", () => {
 // T52 — the health strip has THREE states. Only two were ever specified, so
 // a finished run fell through to live pacing copy with no heartbeat behind it.
 describe("T52 health strip states", () => {
+  // Amended by T103. This asserted "Run stopped" for a run that FINISHED —
+  // the fixture's live block is empty, which is how bench.py records a clean
+  // completion. The strip, the hero pill and the status line each decided for
+  // themselves what a terminal run was called, so a completed 27/27 run read
+  // "Stopped", "Run finished" and "Run stopped" at once. All three now take
+  // the same `runStatus` kind; an INTERRUPTED run still reads stopped, and
+  // that direction is asserted in T103's own tests.
   it("reports a finished run instead of live pacing copy", async () => {
     installFetch();
     render(<BenchPage />);
     const strip = await screen.findByTestId("bench-pacing");
-    await waitFor(() => expect(strip.textContent).toMatch(/run stopped/i));
+    await waitFor(() => expect(strip.textContent).toMatch(/run finished/i));
     expect(
       strip.textContent,
       "a stopped run has no heartbeat to call a health signal",
@@ -1858,11 +1865,13 @@ describe("T63a copy is sentence-cased (byte-exact)", () => {
     );
   });
 
+  // Byte-exact copy, amended by T103: a finished run says so. The stopped
+  // wording still exists and is asserted for a run that ended mid-flight.
   it("health strip, finished-run state", async () => {
     installFetch();
     render(<BenchPage />);
     const strip = await screen.findByTestId("bench-pacing");
-    await waitFor(() => expect(strip.textContent).toMatch(/^Run stopped — /));
+    await waitFor(() => expect(strip.textContent).toMatch(/^Run finished — /));
   });
 
   it("hero warming text", async () => {
@@ -3559,6 +3568,12 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
       langs: ["js", "java"],
       n: 1,
     };
+    // `created` drives wall-clock elapsed for a live run since T106, so a
+    // fixture dated days ago would report an elapsed measured in days and a
+    // rate of ~0. A live run's created stamp is by definition recent.
+    (d as { created: string }).created = new Date(
+      Date.now() - 90_000,
+    ).toISOString();
     (d as { live: Record<string, unknown> }).live = {
       current_task: ids[3],
       current_attempt: 1,
@@ -3684,8 +3699,14 @@ describe("T98 the on-task tiles agree", () => {
     expect(screen.queryByText(/on task/)).toBeTruthy();
   });
 
-  it("says nothing at all when the run has not reported a task yet", async () => {
+  // Amended by T107. This used a populated run with `current_task: ""` and
+  // expected "—". A finished run's live block is empty, and blanking the tile
+  // then hid the most certain fact on the card — the last completed task is
+  // simply the final record. The dash now means what it says: nothing has
+  // been recorded at all.
+  it("says nothing at all when the run has recorded nothing", async () => {
     const d = liveAt("js/retry_backoff");
+    (d as { records: unknown[] }).records = [];
     (d as { live: Record<string, unknown> }).live = {
       ...(d as { live: Record<string, unknown> }).live,
       current_task: "",
@@ -3905,5 +3926,419 @@ describe("T99 Run Setup defaults and reset", () => {
       "bench-action-reset-to-defaults",
     )) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
+  });
+});
+
+// ── T102 — `nudged` is a COUNT, so a bare `&&` renders the digit ───────────
+//
+// bench.py writes `"nudged": sam.nudges_total` (`:1760`), but types.ts
+// declared it boolean. `0 && <FlagChip/>` evaluates to `0`, which React
+// prints — an unlabelled digit beside STOPPED AT BUDGET.
+describe("T102 the nudged flag chip", () => {
+  const withNudged = (nudged: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const first = (d as { records: Record<string, unknown>[] }).records[0];
+    (d as { records: Record<string, unknown>[] }).records = [
+      {
+        ...first,
+        task: "js/retry_backoff",
+        sample: 1,
+        status: "fail",
+        solved: false,
+        first_failed: ["expects 2 + 2 to equal 4"],
+        nudged,
+      },
+    ];
+    return d;
+  };
+  const flagRow = async () => {
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    return (await screen.findByTestId("bench-drill-flags")).textContent ?? "";
+  };
+
+  it("renders no digit and no chip at zero", async () => {
+    installFetch({ detail: withNudged(0) });
+    render(<BenchPage />);
+    const text = await flagRow();
+    expect(text, "0 must not leak into the flag row").not.toMatch(/0/);
+    expect(text).not.toMatch(/NUDGED/);
+  });
+
+  it("renders the chip when the model actually was nudged", async () => {
+    // The absence half: suppressing the digit must not suppress the flag.
+    installFetch({ detail: withNudged(2) });
+    render(<BenchPage />);
+    expect(await flagRow()).toMatch(/NUDGED/);
+  });
+});
+
+// ── T103 — one run state, one name ─────────────────────────────────────────
+//
+// A completed 27/27 run showed "Stopped" (hero pill), "Run finished" (status
+// line) and "Run stopped" (health strip) at the same time. The pill came from
+// llama.cpp's StatusIndicator driven by a boolean, and a boolean cannot say
+// "finished" — nor tell an idle page from a completed run.
+describe("T103 terminal run states agree across surfaces", () => {
+  const finishedRun = () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {}; // bench.py: clean end
+    return d;
+  };
+  const interruptedRun = () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    // A live block that survived the end means it stopped mid-flight.
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/retry_backoff",
+      done: 3,
+      total: 27,
+      run_elapsed: 120,
+      heartbeat: new Date().toISOString(),
+    };
+    return d;
+  };
+
+  it("a completed run reads finished on all three surfaces", async () => {
+    installFetch({ detail: finishedRun() });
+    render(<BenchPage />);
+    const pill = await screen.findByTestId("bench-state-pill");
+    await waitFor(() =>
+      expect(pill.getAttribute("data-kind")).toBe("finished"),
+    );
+    expect(pill.textContent).toBe("Finished");
+    expect((await screen.findByTestId("bench-run-status")).textContent).toMatch(
+      /Run finished/,
+    );
+    expect((await screen.findByTestId("bench-pacing")).textContent).toMatch(
+      /Run finished/,
+    );
+  });
+
+  it("a run with a live block still reads running, not finished", async () => {
+    // The likely regression is making every terminal run read "finished".
+    // Note what the page CAN and cannot tell apart: `isRunning` treats any
+    // populated live block as running (T35 — a CLI-started run known only
+    // through results.json must read as running), and bench.py empties that
+    // block on a clean finish. So "aborted" is not a state the hero can
+    // detect; History draws it, by comparing a stored row against the run
+    // actually in flight (T86). What is asserted here is that a run still
+    // holding a live block is never called finished.
+    installFetch({ detail: interruptedRun() });
+    render(<BenchPage />);
+    const pill = await screen.findByTestId("bench-state-pill");
+    await waitFor(() =>
+      expect(["running", "stalled"]).toContain(pill.getAttribute("data-kind")),
+    );
+    expect(pill.textContent).not.toMatch(/finished/i);
+    expect((await screen.findByTestId("bench-pacing")).textContent).not.toMatch(
+      /Run finished/,
+    );
+  });
+
+  it("an idle page reads neither finished nor stopped", async () => {
+    // The distinction the boolean collapsed: no run selected is not a run
+    // that ended.
+    installFetch({
+      runs: [],
+      detail: { ...benchRun, summary: null, live: {} },
+    });
+    render(<BenchPage />);
+    const pill = await screen.findByTestId("bench-state-pill");
+    await waitFor(() => expect(pill.getAttribute("data-kind")).toBe("idle"));
+    expect(pill.textContent).not.toMatch(/finished|stopped/i);
+  });
+
+  it("leaves the llama.cpp StatusIndicator out of it", async () => {
+    // That component is shared with the server page, where its vocabulary is
+    // correct. Bench maps its own kinds instead of widening it.
+    installFetch({ detail: finishedRun() });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-state-pill");
+    expect(document.body.textContent).not.toMatch(/\bStarting\b|\bLoading\b/);
+  });
+});
+
+// ── T104 — the cross-edition banner only when editions are crossed ─────────
+describe("T104 History cross-edition banner", () => {
+  const runAt = (hash: string, id: string) =>
+    runRow({ run_id: id, suite_hash: hash, folder: `f_${id}` });
+
+  it("stays silent when every run is one edition", async () => {
+    installFetch({ runs: [runAt("e293ad7", "r1"), runAt("e293ad7", "r2")] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    // Wait for the pane to actually render its rows before asserting the
+    // banner's absence — `length >= 0` is true of every array and proves
+    // nothing.
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-run-row").length).toBeGreaterThan(0),
+    );
+    expect(
+      screen.queryByTestId("bench-cross-edition"),
+      "warning about mixed editions when there is only one is a false alarm",
+    ).toBeNull();
+  });
+
+  it("warns, and names them, when editions really are mixed", async () => {
+    installFetch({ runs: [runAt("e293ad7", "r1"), runAt("beef123", "r2")] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    const banner = await screen.findByTestId("bench-cross-edition");
+    expect(banner.textContent).toMatch(/2 suite editions/);
+    expect(banner.textContent).toMatch(/e293ad7/);
+    expect(banner.textContent).toMatch(/beef123/);
+  });
+});
+
+// The call site must actually pass the population — a compute-level test
+// cannot see that, because it supplies the argument itself.
+describe("T104 Compare's refusal reflects what history holds", () => {
+  it("says there is no second run, not 'select two', when only one exists", async () => {
+    installFetch({ runs: [runRow({ run_id: "solo", folder: "f_solo" })] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    const refusal = await screen.findByTestId("bench-compare-refusal");
+    await waitFor(() =>
+      expect(refusal.textContent).toMatch(/only one stored run/i),
+    );
+    expect(
+      refusal.textContent,
+      "the reader cannot select a run that does not exist",
+    ).not.toMatch(/select at least two/i);
+  });
+});
+
+// ── T105 — Leads says what it cannot see, and stops pretending to rank ─────
+describe("T105 the Leads header", () => {
+  const leadsDetail = (records: Array<Record<string, unknown>>) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const first = (d as { records: Record<string, unknown>[] }).records[0];
+    (d as { records: Record<string, unknown>[] }).records = records.map(
+      (r, i) => ({
+        ...first,
+        task: `js/task_${i}`,
+        sample: 1,
+        status: "fail",
+        solved: false,
+        first_failed: [],
+        ...r,
+      }),
+    );
+    return d;
+  };
+  const openLeads = async () => {
+    fireEvent.click(await screen.findByTestId("bench-tab-leads"));
+  };
+
+  it("reports HOW MANY records it could not see", async () => {
+    installFetch({
+      detail: leadsDetail([{ first_failed: ["expects a"] }, {}, {}, {}]),
+    });
+    render(<BenchPage />);
+    await openLeads();
+    const note = await screen.findByTestId("bench-leads-skipped");
+    // Three unsolved samples carry no failed assertion.
+    expect(note.textContent).toMatch(/\b3\b/);
+  });
+
+  it("says nothing about exclusions when there are none", async () => {
+    // The absence half: the caveat must not be permanent furniture.
+    installFetch({
+      detail: leadsDetail([
+        { first_failed: ["expects a"] },
+        { solved: true, status: "pass" },
+      ]),
+    });
+    render(<BenchPage />);
+    await openLeads();
+    await screen.findByTestId("bench-tab-leads");
+    expect(screen.queryByTestId("bench-leads-skipped")).toBeNull();
+  });
+
+  it("does not present a ranking built from one model", async () => {
+    installFetch({ detail: leadsDetail([{ first_failed: ["expects a"] }]) });
+    render(<BenchPage />);
+    await openLeads();
+    expect(
+      (await screen.findByTestId("bench-leads-unranked")).textContent,
+    ).toMatch(/not a ranking yet/i);
+  });
+
+  it("keeps the original discriminating-vs-defective reasoning", async () => {
+    // Extend, do not replace: that sentence was well judged and is why the
+    // list is called a lead list rather than a leaderboard.
+    installFetch({ detail: leadsDetail([{ first_failed: ["expects a"] }]) });
+    render(<BenchPage />);
+    await openLeads();
+    await waitFor(() =>
+      expect(document.body.textContent).toMatch(
+        /lead list, not a leaderboard/i,
+      ),
+    );
+  });
+});
+
+// ── T106 + T107 — the live-vs-finished boundary ────────────────────────────
+//
+// `live.run_elapsed` only advances when a sample is saved, so ELAPSED moved
+// in 3-6 minute jumps and everything derived from it inherited the staleness.
+// The same boundary blanks LAST COMPLETED and ATTEMPT the moment a run ends,
+// which is when both become most certain.
+describe("T106 elapsed counts the time since the run started", () => {
+  const liveRun = (savedSecondsAgo: number, runElapsed: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { created: string }).created = new Date(
+      Date.now() - (runElapsed + savedSecondsAgo) * 1000,
+    ).toISOString();
+    (d as { live: Record<string, unknown> }).live = {
+      current_task: "js/retry_backoff",
+      current_attempt: 2,
+      done: 3,
+      total: 27,
+      run_elapsed: runElapsed,
+      task_elapsed: 40,
+      heartbeat: new Date(Date.now() - savedSecondsAgo * 1000).toISOString(),
+    };
+    return d;
+  };
+
+  it("includes the time since the last save, not just up to it", async () => {
+    // 600s of saved progress, then 150s generating with nothing written.
+    installFetch({ detail: liveRun(150, 600) });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    // 12m 30s, not the frozen 10m.
+    await waitFor(() =>
+      expect(
+        tiles.textContent,
+        "elapsed must not freeze between sample saves",
+      ).toMatch(/12m/),
+    );
+  });
+
+  it("a finished run keeps its own recorded total", async () => {
+    // The absence half: wall-clock must not keep running after the end.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {};
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toMatch(/Elapsed/));
+    // No regex: every spelling of "a digit followed by d" trips the
+    // super-linear-backtracking rule, and "Elapsed" itself contains a d.
+    const text = tiles.textContent ?? "";
+    const showsDays = [...text].some(
+      (ch, i) => ch === "d" && !Number.isNaN(Number.parseInt(text[i - 1], 10)),
+    );
+    expect(showsDays, "wall-clock must stop at the end of the run").toBe(false);
+  });
+});
+
+describe("T107 terminal tiles keep reporting what is known", () => {
+  it("a finished run still names its last completed task and attempt", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {};
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    const lastTask = recs[recs.length - 1].task as string;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    await waitFor(() => expect(tiles.textContent).toContain(lastTask));
+    expect(
+      tiles.textContent,
+      "the last task is MORE certain once the run ends, not less",
+    ).not.toMatch(/Last completed—/);
+  });
+});
+
+// ── T108 — a tile that cannot be measured says why ─────────────────────────
+//
+// Decision: KEEP both tiles and explain the inert one, rather than hiding it.
+// Hiding would change the card's shape from run to run, and `Server excl.`
+// reading 0 is a REAL measurement at any --n — unlike T90's always-zero slot.
+// Keyed off the run's recorded --n, so a stored --n 3 run still shows both.
+describe("T108 unmeasurable tiles explain themselves", () => {
+  const runAtN = (n: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { config: Record<string, unknown> }).config = {
+      ...(d as { config: Record<string, unknown> }).config,
+      n,
+    };
+    return d;
+  };
+
+  it("at --n 1 the flaky tile says WHY it is n/a", async () => {
+    installFetch({ detail: runAtN(1) });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-flaky");
+    await waitFor(() => expect(tile.textContent).toMatch(/n\/a/i));
+    expect(tile.getAttribute("title")).toMatch(/--n 2 or more/);
+    expect(
+      tile.getAttribute("title"),
+      "an absent measurement is not a measurement of zero",
+    ).toMatch(/not zero flakiness/);
+  });
+
+  it("at --n 3 it measures, and drops the caveat", async () => {
+    // The absence half, keyed off the RUN's config: a stored --n 3 run must
+    // still show the metric even though the form may now say something else.
+    installFetch({ detail: runAtN(3) });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-flaky");
+    await waitFor(() => expect(tile.textContent).not.toMatch(/n\/a/i));
+    expect(tile.getAttribute("title")).not.toMatch(/--n 2 or more/);
+  });
+
+  it("keeps Server excl., whose 0 is a real result", async () => {
+    installFetch({ detail: runAtN(1) });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-server-excluded");
+    expect(tile.getAttribute("title")).toMatch(/never answered/);
+  });
+});
+
+// ── Consistency items ──────────────────────────────────────────────────────
+describe("Bench consistency items", () => {
+  it("SAMPLES keeps its n/total shape once the run ends", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { live: Record<string, unknown> }).live = {};
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-progress-tiles");
+    // Not a bare count: the tile changed shape mid-read, 26/27 then "27".
+    await waitFor(() => expect(tiles.textContent).toMatch(/Samples\d+\/\d+/));
+  });
+
+  it("dates read the same way everywhere", async () => {
+    // 8/11/2026 is ambiguous outside the US, and the header already used ISO.
+    installFetch({ runs: [runRow()] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    const rows = await screen.findAllByTestId("bench-run-row");
+    await waitFor(() =>
+      expect(rows[0].textContent).toMatch(/\d{4}-\d{2}-\d{2}/),
+    );
+    expect(
+      rows[0].textContent,
+      "the ambiguous M/D/YYYY form should be gone",
+    ).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
+  });
+
+  it("History says so when there are no runs, instead of showing a blank panel", async () => {
+    installFetch({ runs: [] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    const empty = await screen.findByTestId("bench-empty-pane");
+    expect(empty.textContent).toMatch(/No stored runs yet/i);
+  });
+
+  it("Raw assertions says which unit it counts", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const tile = await screen.findByText("Raw assertions");
+    const owner = tile.closest("[title]");
+    expect(owner?.getAttribute("title")).toMatch(
+      /different unit from Pass rate/i,
+    );
   });
 });

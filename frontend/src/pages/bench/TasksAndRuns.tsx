@@ -33,6 +33,7 @@ import {
   groupByTask,
   failureExplanation,
   rowTaint,
+  leadsCoverage,
   leadsFromRuns,
   regressionChips,
   isNonDefaultTarget,
@@ -78,6 +79,26 @@ function pendingLabel(skipped: boolean, queued: boolean): string {
   if (skipped) return "skipped";
   if (queued) return "queued";
   return "—";
+}
+
+/**
+ * What a pane says when it has nothing to show. A large blank panel reads as
+ * a failure to load; this says which of the two it is.
+ */
+function EmptyPane({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      data-testid="bench-empty-pane"
+      style={{
+        margin: "14px 12px",
+        font: "11px Inter, system-ui, sans-serif",
+        color: "var(--text-muted)",
+        maxWidth: "70ch",
+      }}
+    >
+      {children}
+    </p>
+  );
 }
 
 /** History's outcome cell: still running, interrupted, or a final score. */
@@ -779,6 +800,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
         </div>
         <div>
           <div
+            data-testid="bench-drill-flags"
             style={{
               marginBottom: 7,
               display: "flex",
@@ -798,7 +820,9 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
                 title="The reply hit the token ceiling."
               />
             )}
-            {worst.nudged && (
+            {/* `> 0`, not a bare `&&`: this is a count, and `0 && …` renders
+                the digit 0 rather than nothing. */}
+            {worst.nudged > 0 && (
               <FlagChip
                 label="NUDGED"
                 title="Generation stalled and needed a continuation prompt."
@@ -932,18 +956,40 @@ function HistoryPane({
     }
   };
 
+  if (bench.runs.length === 0)
+    return (
+      <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
+        <EmptyPane>
+          No stored runs yet. Every finished run is written to the runs folder
+          and appears here — start one from Run Setup.
+        </EmptyPane>
+      </div>
+    );
+
   return (
     <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
-      <div
-        className="bench-banner"
-        style={{ margin: "10px 12px", fontSize: 12 }}
-      >
-        <TriangleAlert size={13} />
-        <span>
-          Cross-edition scores are not comparable — the benchmark itself
-          changed.
-        </span>
-      </div>
+      {/* Only when there IS more than one edition. Unconditional, it warned
+          about mixed editions on a history containing exactly one — and the
+          block below already tests `gi > 0` before drawing an edition cut, so
+          the count was available all along. Naming them matches what
+          `compareEligibility` tells the reader in the same situation. */}
+      {groups.length > 1 && (
+        <div
+          className="bench-banner"
+          data-testid="bench-cross-edition"
+          style={{ margin: "10px 12px", fontSize: 12 }}
+        >
+          <TriangleAlert size={13} />
+          <span>
+            These runs span {groups.length} suite editions (
+            <b style={{ fontFamily: MONO }}>
+              {groups.map((g) => g.suiteHash).join(", ")}
+            </b>
+            ) — cross-edition scores are not comparable, because the benchmark
+            itself changed.
+          </span>
+        </div>
+      )}
       {groups.map((g, gi) => (
         <div key={g.suiteHash}>
           {gi > 0 && (
@@ -1025,7 +1071,9 @@ function HistoryPane({
                 }}
               >
                 <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-                  {new Date(run.created).toLocaleDateString()}
+                  {/* ISO, like the header: 8/11/2026 is ambiguous outside
+                      the US and the two surfaces disagreed. */}
+                  {new Date(run.created).toISOString().slice(0, 10)}
                 </span>
                 <span
                   style={{ overflow: "hidden", textOverflow: "ellipsis" }}
@@ -1191,7 +1239,7 @@ function ComparePane({
     () => chosenRows.map((r) => detailById.get(r.run_id) ?? null),
     [chosenRows, detailById],
   );
-  const eligibility = compareEligibility(chosenRows);
+  const eligibility = compareEligibility(chosenRows, runs);
   const rows = useMemo(
     () => (eligibility.eligible ? compareRows(details) : []),
     [details, eligibility.eligible],
@@ -1392,6 +1440,10 @@ function LeadsPane({
     () => leadsFromRuns(details, edition),
     [details, edition],
   );
+  const coverage = useMemo(
+    () => leadsCoverage(details, edition),
+    [details, edition],
+  );
   return (
     <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
       <p
@@ -1407,7 +1459,41 @@ function LeadsPane({
         cannot tell them apart. Treat this as a lead list, not a leaderboard.
         Fed by first_failed[] across stored runs, current edition{" "}
         <b style={{ fontFamily: MONO }}>{edition}</b> only.
+        {/* What the list CANNOT see. A cut-off sample has no failed
+            assertion — nothing failed, the run was amputated — so it
+            contributes nothing here, and the remaining rows look like one
+            uniquely broken task rather than the few that failed by
+            assertion. */}
+        {coverage.skipped > 0 && (
+          <>
+            {" "}
+            <b data-testid="bench-leads-skipped">
+              {coverage.skipped} unsolved{" "}
+              {coverage.skipped === 1 ? "sample is" : "samples are"} missing
+              from it
+            </b>
+            : a sample cut off before it finished has no failed assertion to
+            report, so whatever went wrong there cannot appear in this list.
+          </>
+        )}
+        {coverage.models < 2 && (
+          <>
+            {" "}
+            <b data-testid="bench-leads-unranked">
+              Only one model is in history, so every row ties at 1/1 and this is
+              not a ranking yet
+            </b>{" "}
+            — it needs a second model before the order means anything.
+          </>
+        )}
       </p>
+      {rows.length === 0 && (
+        <EmptyPane>
+          Nothing to lead on yet: no assertion has failed on attempt 1 in this
+          edition. That is not the same as a clean run — a sample cut off before
+          it finished reports no failed assertion at all.
+        </EmptyPane>
+      )}
       <table
         style={{
           width: "100%",

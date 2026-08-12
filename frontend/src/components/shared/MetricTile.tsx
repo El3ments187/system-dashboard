@@ -13,6 +13,8 @@ interface MetricTileProps {
   icon?: ReactNode;
   valueSize?: number;
   labelSize?: number;
+  /** Hover text. Used where a tile's value needs a reason, not just a number. */
+  title?: string;
 }
 
 export default function MetricTile({
@@ -28,6 +30,7 @@ export default function MetricTile({
   icon,
   valueSize = 13,
   labelSize = 9,
+  title,
 }: MetricTileProps) {
   const displayValue =
     value !== null && value !== undefined ? `${value}${unit}` : "\u2014";
@@ -40,6 +43,7 @@ export default function MetricTile({
   return (
     <div
       className="metric-tile"
+      {...(title !== undefined ? { title } : {})}
       {...(accentElVal !== undefined ? { "data-accent-el": accentElVal } : {})}
       {...(testId !== undefined ? { "data-testid": testId } : {})}
       style={{

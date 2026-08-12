@@ -307,11 +307,23 @@ export function failureExplanation(
   // --max-tokens does nothing for a bench.py budget stop.
   let remedy: string | null = null;
   let history: string | null = null;
-  if (r.stopped_at_budget) {
+  if (r.stopped_at_budget && r.cut_mid_block) {
+    // bench.py:2669 — `cut_mid_block` accumulates `aborted_mid_block`
+    // (`:1691`), which is set ONLY when the cut landed inside an unclosed
+    // block (`:1508`). More room buys more of the same.
     history =
-      "An attempt was stopped at the --nudge-at budget (the flag is set if any attempt was, not only the last).";
+      "An attempt was cut at the --nudge-at budget while still inside an unclosed code block (the flag is set if any attempt was, not only the last).";
     remedy =
-      "Raise --nudge-at or --max-nudges; --max-tokens does not affect this.";
+      "That is the model never finishing the block, not the budget being too small — raising it will not help.";
+  } else if (r.stopped_at_budget) {
+    // bench.py:2652 and its comment at :2644 — "Not a failure: the answer
+    // was complete before the cut, so the score stands." What the stop cost
+    // was the chance to REVISE, not the answer. Reporting it as a
+    // truncation, next to a crash, argued the cut caused the failure.
+    history =
+      "An attempt was stopped at the --nudge-at budget while holding a complete code block, so no answer was lost mid-write — the code in it may simply have been wrong (the flag is set if any attempt was, not only the last).";
+    remedy =
+      "Raise --nudge-at only to give the model room to revise; --max-tokens does not affect this.";
   } else if (r.truncated) {
     history =
       "An attempt hit the server's token limit (the flag is set if any attempt did, not only the last).";
@@ -406,9 +418,28 @@ export interface CompareEligibility {
  * are not on the same scale, and runs from different editions are not the
  * same benchmark. Both are refused rather than silently normalized.
  */
-export function compareEligibility(runs: BenchRunRow[]): CompareEligibility {
-  if (runs.length < 2)
+export function compareEligibility(
+  runs: BenchRunRow[],
+  /**
+   * Every stored run, not just the chosen ones. Without it this branch asked
+   * for a second run even when history held exactly one — the only branch
+   * that did not tell the reader what it knew, and the empty state, so the
+   * one that fires most often.
+   */
+  population?: BenchRunRow[],
+): CompareEligibility {
+  if (runs.length < 2) {
+    const total = population?.length ?? null;
+    if (total !== null && total < 2)
+      return {
+        eligible: false,
+        message:
+          total === 0
+            ? "No stored runs yet — Compare needs two, so run the benchmark twice."
+            : "Only one stored run — Compare needs two, so there is nothing to compare it with yet.",
+      };
     return { eligible: false, message: "Select at least two runs to compare." };
+  }
   const editions = new Set(runs.map((r) => r.suite_hash));
   if (editions.size > 1)
     return {
@@ -601,6 +632,71 @@ export interface LeadRow {
  * Restricted to the current edition: a `first_failed` from another edition
  * may refer to a prompt that has since been corrected.
  */
+export interface LanguageRatio {
+  lang: string;
+  solved: number;
+  total: number;
+}
+
+/**
+ * Solved samples per language, in the order they were run.
+ *
+ * The console has this and nothing aggregated it: on the observed run the
+ * model was more than twice as weak in TypeScript as in gdscript, and no
+ * surface said so. Grouped on the record's own `lang` rather than by parsing
+ * task ids, so it cannot disagree with the runner that produced it.
+ *
+ * A language with no samples in the run is ABSENT, not zero — a zero would
+ * read as "attempted and failed everything" for a track that never ran.
+ */
+export function languageBreakdown(records: BenchRecord[]): LanguageRatio[] {
+  const byLang = new Map<string, { solved: number; total: number }>();
+  for (const r of records) {
+    // A server sample is the endpoint failing, not the model — the same
+    // exclusion every other rate on this page makes.
+    if (r.status === "server" || !r.lang) continue;
+    const entry = byLang.get(r.lang) ?? { solved: 0, total: 0 };
+    entry.total += 1;
+    if (r.solved) entry.solved += 1;
+    byLang.set(r.lang, entry);
+  }
+  return [...byLang.entries()].map(([lang, v]) => ({ lang, ...v }));
+}
+
+export interface LeadsCoverage {
+  /**
+   * Unsolved samples that contribute NOTHING to the lead list. `fail_labels`
+   * (`bench.py:611`) filters out "the test stopped before finishing" as
+   * `_NOT_AN_ASSERTION`, so a sample that was cut off has an empty
+   * `first_failed` — nothing failed, the run was amputated. Leads iterates
+   * exactly that array, so those failures are structurally invisible, and on
+   * a run where most failures are cut-offs the list looks like one task is
+   * uniquely broken when it is merely the one that failed by assertion.
+   */
+  skipped: number;
+  /** Distinct models in this edition. Below two, nothing can be ranked. */
+  models: number;
+}
+
+export function leadsCoverage(
+  details: BenchRunDetail[],
+  currentEdition: string,
+): LeadsCoverage {
+  const inEdition = details.filter((d) => d.suite_hash === currentEdition);
+  const models = new Set<string>();
+  let skipped = 0;
+  for (const d of inEdition) {
+    models.add(d.models.join(", "));
+    for (const r of d.records) {
+      // Same exclusion Leads itself makes: a server sample is the endpoint
+      // failing, not the model.
+      if (r.status === "server" || r.solved) continue;
+      if ((r.first_failed ?? []).length === 0) skipped += 1;
+    }
+  }
+  return { skipped, models: models.size };
+}
+
 export function leadsFromRuns(
   details: BenchRunDetail[],
   currentEdition: string,
@@ -863,6 +959,19 @@ export function activeModelName(
   return file.replace(/\.gguf$/i, "") || null;
 }
 
+/**
+ * Four states, not a boolean. The hero pill used `running ? "running" :
+ * "stopped"`, which collapsed two distinctions: a completed 27/27 run and a
+ * page with no run selected both read "Stopped".
+ *
+ * There is deliberately no "aborted" kind. `isRunning` treats any populated
+ * live block as running (T35: a CLI-started run known only through
+ * results.json must read as running), and bench.py empties that block on a
+ * clean finish — so a run either looks live or looks finished, and the page
+ * has no signal that separates "still going" from "died leaving its live
+ * block behind". History draws that distinction, where a stored row can be
+ * compared against the run actually in flight.
+ */
 export type RunStatusKind = "running" | "stalled" | "idle" | "finished";
 
 export interface RunStatus {
@@ -904,11 +1013,12 @@ export function runStatus(opts: {
           : `Running · updated ${Math.round(opts.ageMs / 1000)}s ago`,
     };
   }
-  if (opts.finishedSamples !== null && opts.finishedSamples > 0)
+  if (opts.finishedSamples !== null && opts.finishedSamples > 0) {
     return {
       kind: "finished",
       label: `Run finished · ${opts.finishedSamples} samples in ${opts.fmtDuration(opts.finishedSeconds)}`,
     };
+  }
   return { kind: "idle", label: "Not running" };
 }
 
@@ -950,9 +1060,20 @@ export function onTaskDisplay(
   records: BenchRecord[],
   samplesPerTask: number,
 ): OnTask {
-  const task = live.current_task ?? null;
+  // `||`, not `??`: an empty `current_task` means unset here, not a value.
+  const task = live.current_task || null;
   const tookSeconds = live.task_elapsed ?? null;
-  if (!task) return { task: null, inFlight: false, tookSeconds };
+  const last = records.length > 0 ? records[records.length - 1] : null;
+  if (!task) {
+    // A finished run's live block is `{}`, which blanked these tiles exactly
+    // when the answer became MOST certain: the last completed task is simply
+    // the final record, and its duration is recorded rather than inferred.
+    return {
+      task: last?.task ?? null,
+      inFlight: false,
+      tookSeconds: tookSeconds ?? last?.seconds ?? null,
+    };
+  }
   const done = records.filter((r) => r.task === task).length;
   return {
     task,
@@ -972,6 +1093,8 @@ export function onTaskDisplay(
  */
 export function healthStripText(opts: {
   running: boolean;
+  /** From the one `runStatus` the page computes, not a second derivation. */
+  kind: RunStatusKind;
   warming: boolean;
   median: number | null;
   taskElapsed: number | undefined;
@@ -983,9 +1106,10 @@ export function healthStripText(opts: {
     if (opts.elapsed === null && opts.samples === null)
       return "No run selected — pick one from History to see its result.";
     const samples = opts.samples ?? 0;
-    return `Run stopped — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${
-      samples === 1 ? "sample" : "samples"
-    } recorded. Nothing is running now.`;
+    const plural = samples === 1 ? "sample" : "samples";
+    // The same kind the hero pill and the status line use, so a completed run
+    // cannot read "finished" in one place and "stopped" in another.
+    return `Run finished — ${opts.fmtDuration(opts.elapsed)} elapsed, ${samples} ${plural} recorded. Nothing is running now.`;
   }
   if (opts.warming)
     return "Warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
@@ -1184,7 +1308,7 @@ export interface TaskScope {
  * Derived from the language filter over the full task list, NOT from
  * `results.json.tasks` — that array holds only the tasks that actually ran,
  * so an interrupted run would under-report its own scope. The suite-wide
- * availability count belongs to Run Setup's Toolchains row; the hero reports
+ * availability count belongs to Run Setup's language toggles; the hero reports
  * scope, which is a different question.
  */
 /**
