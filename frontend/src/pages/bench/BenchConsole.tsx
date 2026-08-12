@@ -55,6 +55,8 @@ export function BenchConsole({
 
   // Polls regardless of `active` — a background process keeps producing
   // output whether or not anyone is looking at this tab.
+  // When not running: one fetch to collect any tail output, then stop.
+  // When running: poll every second until the effect is torn down.
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -75,7 +77,13 @@ export function BenchConsole({
       }
     };
     void tick();
-    const id = setInterval(() => void tick(), running ? 1000 : 5000);
+    if (!running) {
+      // Single fetch is enough once idle — the log won't change.
+      return () => {
+        cancelled = true;
+      };
+    }
+    const id = setInterval(() => void tick(), 1000);
     return () => {
       cancelled = true;
       clearInterval(id);

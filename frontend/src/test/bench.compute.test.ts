@@ -1320,3 +1320,80 @@ describe("T109 languageBreakdown", () => {
     expect(rows[0]).toEqual({ lang: "js", solved: 1, total: 1 });
   });
 });
+
+// ── T117 — compareRows respects suite task order ──────────────────────────────
+//
+// Default sort was Δ descending. The taskOrder parameter changes it to suite
+// position so the table reads in the same order as the task list.
+describe("T117 compareRows sort order", () => {
+  function mkDetail(tasks: { id: string; points: number }[]): BenchRunDetail {
+    return detailOf(
+      tasks.map(({ id, points }) =>
+        rec({ task: id, points, max_points: points, solved: points > 0 }),
+      ),
+    );
+  }
+
+  it("defaults to Δ descending when taskOrder is absent", () => {
+    const d1 = mkDetail([
+      { id: "js/a", points: 0 },
+      { id: "js/b", points: 3 },
+    ]);
+    const d2 = mkDetail([
+      { id: "js/a", points: 3 },
+      { id: "js/b", points: 3 },
+    ]);
+    const rows = compareRows([d1, d2]);
+    // js/a has Δ=3, js/b has Δ=0 — js/a must come first.
+    expect(rows[0].task).toBe("js/a");
+  });
+
+  it("sorts by taskOrder position when provided", () => {
+    const d1 = mkDetail([
+      { id: "js/a", points: 0 },
+      { id: "js/b", points: 3 },
+    ]);
+    const d2 = mkDetail([
+      { id: "js/a", points: 3 },
+      { id: "js/b", points: 3 },
+    ]);
+    // Suite order: js/b first, js/a second.
+    const taskOrder = [{ id: "js/b" }, { id: "js/a" }];
+    const rows = compareRows([d1, d2], taskOrder);
+    expect(rows[0].task).toBe("js/b");
+    expect(rows[1].task).toBe("js/a");
+  });
+
+  it("puts tasks absent from taskOrder at the end", () => {
+    const d1 = mkDetail([
+      { id: "js/known", points: 0 },
+      { id: "js/unknown", points: 3 },
+    ]);
+    const d2 = mkDetail([
+      { id: "js/known", points: 3 },
+      { id: "js/unknown", points: 0 },
+    ]);
+    const taskOrder = [{ id: "js/known" }];
+    const rows = compareRows([d1, d2], taskOrder);
+    expect(rows[0].task).toBe("js/known");
+    expect(rows[1].task).toBe("js/unknown");
+  });
+});
+
+// ── T125 — compareRows emits genMeans ─────────────────────────────────────────
+describe("T125 compareRows genMeans", () => {
+  it("includes mean gen_seconds per run column", () => {
+    const d1 = detailOf([rec({ task: "js/a", gen_seconds: 2 })]);
+    const d2 = detailOf([rec({ task: "js/a", gen_seconds: 4 })]);
+    const [row] = compareRows([d1, d2]);
+    expect(row.genMeans[0]).toBeCloseTo(2);
+    expect(row.genMeans[1]).toBeCloseTo(4);
+  });
+
+  it("emits null for a detail slot that is null", () => {
+    const d1 = detailOf([rec({ task: "js/a", gen_seconds: 1 })]);
+    const [row] = compareRows([d1, null]);
+    expect(row.genMeans[0]).toBeCloseTo(1);
+    expect(row.genMeans[1]).toBeNull();
+  });
+});

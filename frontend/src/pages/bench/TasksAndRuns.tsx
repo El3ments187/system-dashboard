@@ -58,12 +58,25 @@ const COMPARE_SLOTS = 3;
  * contagion, because the badge marks every sample from the trigger onward,
  * not only the one that was cut.
  */
+// Shared tail: the badge marks every task from the trigger onward, not only
+// the one that was actually cut. Moved here from the banner (T111) so the
+// explanation lives beside the badge it describes, not beside the count.
+const BUDGET_CONTAGION =
+  " More rows carry the badge than the banner's count: every task from the first stop onward was scored under the same cap.";
+
 const TAINT_TOOLTIP: Record<"budget" | "truncation", string> = {
   budget:
-    "Recorded at or after bench.py stopped a reply at its own --nudge-at budget, so this score measures the cutoff rather than the model. Raise --nudge-at or --max-nudges; --max-tokens does not affect this.",
+    "Recorded at or after bench.py stopped a reply at its own --nudge-at budget, so this score measures the cutoff rather than the model. Raise --nudge-at or --max-nudges; --max-tokens does not affect this." +
+    BUDGET_CONTAGION,
   truncation:
     "Recorded at or after three consecutive replies the server cut short (finish_reason: length), so this score measures the token cap rather than the model. Raise --max-tokens; --nudge-at does not affect this.",
 };
+
+// T114 — a tainted task that scored full marks: the cap was in effect but
+// nothing in the data shows it changed the result. Weaker claim than budget.
+const TAINT_BUDGET_PASS =
+  "Ran under the --nudge-at budget cap and scored full marks — the cap was in effect during this task, so its score is not directly comparable with pre-trigger runs, but nothing here shows the cap changed the result." +
+  BUDGET_CONTAGION;
 
 /**
  * A run whose identity is not known yet: no detail has loaded ("none"), or a
@@ -555,6 +568,16 @@ function ThisRunPane({
                 rs.map((r) => records.indexOf(r)),
                 trunc,
               );
+              const budgetHarmed =
+                tainted === "budget" && graded.some((r) => !r.solved);
+              const taintTitle =
+                tainted === null
+                  ? undefined
+                  : tainted === "truncation"
+                    ? TAINT_TOOLTIP.truncation
+                    : budgetHarmed
+                      ? TAINT_TOOLTIP.budget
+                      : TAINT_BUDGET_PASS;
               return (
                 <Fragment key={task}>
                   <tr
@@ -569,7 +592,7 @@ function ThisRunPane({
                           className="bench-tainted"
                           data-taint={tainted}
                           data-testid="bench-taint-badge"
-                          title={TAINT_TOOLTIP[tainted]}
+                          title={taintTitle}
                           style={{
                             marginLeft: 6,
                             font: `8.5px ${MONO}`,
@@ -658,8 +681,11 @@ function ThisRunPane({
 }
 
 function Drilldown({ records }: { records: BenchRecord[] }) {
-  const worst =
-    records.find((r) => !r.solved && r.status !== "server") ?? records[0];
+  // T112 — keep worst selection correct; branch the HEADER separately.
+  const failingRecord = records.find((r) => !r.solved && r.status !== "server");
+  const serverOnly =
+    records.length > 0 && records.every((r) => r.status === "server");
+  const worst = failingRecord ?? records[0];
   if (!worst) return null;
   const explanation = failureExplanation(worst);
   const canary = assertionCanary(worst);
@@ -689,7 +715,12 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
             color: "var(--text-muted)",
           }}
         >
-          {worst.task} — why it failed
+          {worst.task}
+          {failingRecord
+            ? " — why it failed"
+            : serverOnly
+              ? " — endpoint did not answer"
+              : " — attempt detail"}
         </span>
         <span
           data-testid="bench-canary"
@@ -769,34 +800,51 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               {explanation.remedy ? ` ${explanation.remedy}` : ""}
             </div>
           )}
-          {worst.detail && (
-            <blockquote
-              style={{
-                margin: "7px 0 0",
-                padding: "7px 10px",
-                background:
-                  "color-mix(in srgb, var(--bg-secondary) 70%, black)",
-                borderLeft: "2px solid var(--danger)",
-                borderRadius: "0 6px 6px 0",
-                font: `11px/1.5 ${MONO}`,
-                color: "var(--text-secondary)",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {worst.detail.slice(0, 260)}
-              {/* This is the START of the log, not the failure: bench.py
-                  stores `detail[:400]` (`bench.py:1726`) and test runners
-                  print passes first, so for a cut-off sample the failure is
-                  not in these bytes at all. Labelled for what it is. */}
-              <span
+          {worst.detail &&
+            ((worst.first_failed ?? []).length > 0 ? (
+              /* T113 — the failure list already shows what went wrong.
+                 bench.py stores detail[:400], which is the HEAD of the log;
+                 test runners print passes first, so the failing assertion is
+                 never in these bytes. Suppress the blockquote; keep the
+                 raw/ pointer because it is the reader's route to the full log. */
+              <div
                 data-testid="bench-detail-excerpt-label"
-                style={{ color: "var(--text-muted)" }}
+                style={{
+                  font: `10px ${MONO}`,
+                  color: "var(--text-muted)",
+                  marginTop: 6,
+                }}
               >
-                {" "}
-                (start of the log · full text in raw/)
-              </span>
-            </blockquote>
-          )}
+                Full log in raw/
+              </div>
+            ) : (
+              <blockquote
+                style={{
+                  margin: "7px 0 0",
+                  padding: "7px 10px",
+                  background:
+                    "color-mix(in srgb, var(--bg-secondary) 70%, black)",
+                  borderLeft: "2px solid var(--danger)",
+                  borderRadius: "0 6px 6px 0",
+                  font: `11px/1.5 ${MONO}`,
+                  color: "var(--text-secondary)",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {worst.detail.slice(0, 260)}
+                {/* This is the START of the log, not the failure: bench.py
+                    stores `detail[:400]` (`bench.py:1726`) and test runners
+                    print passes first, so for a cut-off sample the failure is
+                    not in these bytes at all. Labelled for what it is. */}
+                <span
+                  data-testid="bench-detail-excerpt-label"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {" "}
+                  (start of the log · full text in raw/)
+                </span>
+              </blockquote>
+            ))}
         </div>
         <div>
           <div
@@ -926,6 +974,7 @@ function HistoryPane({
   now: number;
 }) {
   const { addAlert } = useAlertsContext();
+  const [resumingFolder, setResumingFolder] = useState<string | null>(null);
   const groups = useMemo(() => groupByEdition(bench.runs), [bench.runs]);
   const detailById = useMemo(() => {
     const m = new Map<string, BenchRunDetail>();
@@ -936,7 +985,8 @@ function HistoryPane({
   // bench.py refuses a resume whose conditions differ from the recorded run by
   // exiting on launch. The response was previously discarded, so the run
   // simply never appeared and the reason stayed in the Console tab.
-  const resumeRun = async (init: RequestInit) => {
+  const resumeRun = async (folder: string, init: RequestInit) => {
+    setResumingFolder(folder);
     try {
       const res = await fetch("/api/bench/resume", init);
       const body = (await res.json()) as { success?: boolean; error?: string };
@@ -953,6 +1003,8 @@ function HistoryPane({
         "bench",
         "Resume failed: the dashboard could not be reached",
       );
+    } finally {
+      setResumingFolder(null);
     }
   };
 
@@ -1082,26 +1134,32 @@ function HistoryPane({
                   {/* Real model first, alias second and LABELLED — the same
                       order the hero uses. A bare "· looping-model" left the
                       reader guessing which of the two facts it was. */}
-                  {runNaming(run.models, run.config).primary}
-                  {isNonDefaultTarget(run.config?.url, bench.defaultUrl) && (
-                    <span style={{ marginLeft: 6 }}>
-                      <TargetBadge url={run.config?.url ?? ""} />
-                    </span>
-                  )}
-                  {runNaming(run.models, run.config).alias && (
-                    <span
-                      data-testid="bench-run-alias"
-                      title="--label names a run in the results; it does not select or describe the model. The model above is the one actually benchmarked."
-                      style={{
-                        color: "var(--text-muted)",
-                        fontSize: 10.5,
-                        marginLeft: 6,
-                      }}
-                    >
-                      · Benchmark Alias:{" "}
-                      {runNaming(run.models, run.config).alias}
-                    </span>
-                  )}
+                  {(() => {
+                    const naming = runNaming(run.models, run.config);
+                    return (
+                      <>
+                        {naming.primary}
+                        {isNonDefaultTarget(run.config?.url, bench.defaultUrl) && (
+                          <span style={{ marginLeft: 6 }}>
+                            <TargetBadge url={run.config?.url ?? ""} />
+                          </span>
+                        )}
+                        {naming.alias && (
+                          <span
+                            data-testid="bench-run-alias"
+                            title="--label names a run in the results; it does not select or describe the model. The model above is the one actually benchmarked."
+                            style={{
+                              color: "var(--text-muted)",
+                              fontSize: 10.5,
+                              marginLeft: 6,
+                            }}
+                          >
+                            · Benchmark Alias: {naming.alias}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </span>
                 <RunOutcome
                   isLiveRun={isLiveRun}
@@ -1152,9 +1210,10 @@ function HistoryPane({
                     <button
                       type="button"
                       data-testid="bench-resume"
+                      disabled={resumingFolder === run.folder}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void resumeRun({
+                        void resumeRun(run.folder, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           // Every setting bench.py's resume guard compares.
@@ -1182,10 +1241,11 @@ function HistoryPane({
                         color: "var(--text-secondary)",
                         borderRadius: "var(--radius-sm)",
                         padding: "2px 10px",
-                        cursor: "pointer",
+                        cursor: resumingFolder === run.folder ? "not-allowed" : "pointer",
+                        opacity: resumingFolder === run.folder ? 0.6 : 1,
                       }}
                     >
-                      Resume
+                      {resumingFolder === run.folder ? "Resuming…" : "Resume"}
                     </button>
                   )}
                 </span>
@@ -1240,10 +1300,24 @@ function ComparePane({
     [chosenRows, detailById],
   );
   const eligibility = compareEligibility(chosenRows, runs);
+  const taskOrder = bench.taskList?.tasks;
   const rows = useMemo(
-    () => (eligibility.eligible ? compareRows(details) : []),
-    [details, eligibility.eligible],
+    () => (eligibility.eligible ? compareRows(details, taskOrder) : []),
+    [details, eligibility.eligible, taskOrder],
   );
+
+  // T115: tasks present in some runs but not all
+  const coverageNote = useMemo(() => {
+    if (!eligibility.eligible || details.length < 2) return null;
+    const taskSets = details.map(
+      (d) => new Set(d?.records.map((r) => r.task) ?? []),
+    );
+    const allTasks = new Set(taskSets.flatMap((s) => [...s]));
+    const partial = [...allTasks].filter((t) =>
+      taskSets.some((s) => !s.has(t)),
+    );
+    return partial.length > 0 ? partial : null;
+  }, [details, eligibility.eligible]);
 
   const setSlot = (index: number, runId: string) => {
     const next = [...slots];
@@ -1340,6 +1414,24 @@ function ComparePane({
             square per sample and the task's x̄ over samples; Δ is the spread of
             those x̄s.
           </div>
+          {coverageNote && (
+            <div
+              className="bench-banner"
+              data-testid="bench-compare-coverage"
+              style={{ margin: "0 12px 10px", fontSize: 11 }}
+            >
+              <TriangleAlert size={13} />
+              <span>
+                {coverageNote.length}{" "}
+                {coverageNote.length === 1 ? "task appears" : "tasks appear"}{" "}
+                in some runs but not all — those rows will show blanks for the
+                missing runs:{" "}
+                <span style={{ fontFamily: MONO }}>
+                  {coverageNote.join(", ")}
+                </span>
+              </span>
+            </div>
+          )}
           <table
             style={{
               width: "100%",
@@ -1350,27 +1442,29 @@ function ComparePane({
             <thead>
               <tr>
                 <th style={TH}>Task</th>
-                {chosenRows.map((d) => (
-                  <th
-                    key={d.run_id}
-                    data-testid="bench-compare-col"
-                    data-run-id={d.run_id}
-                    style={TH}
-                  >
-                    {isNonDefaultTarget(d.config?.url, bench.defaultUrl) && (
-                      <span style={{ marginRight: 5 }}>
-                        <TargetBadge url={d.config?.url ?? ""} />
-                      </span>
-                    )}
-                    {/* Same convention as the hero and History. */}
-                    {runNaming(d.models, d.config).primary}
-                    {runNaming(d.models, d.config).alias
-                      ? ` (alias ${runNaming(d.models, d.config).alias})`
-                      : ""}{" "}
-                    · {compareNotation(d.config)}
-                  </th>
-                ))}
+                {chosenRows.map((d) => {
+                  const naming = runNaming(d.models, d.config);
+                  return (
+                    <th
+                      key={d.run_id}
+                      data-testid="bench-compare-col"
+                      data-run-id={d.run_id}
+                      style={TH}
+                    >
+                      {isNonDefaultTarget(d.config?.url, bench.defaultUrl) && (
+                        <span style={{ marginRight: 5 }}>
+                          <TargetBadge url={d.config?.url ?? ""} />
+                        </span>
+                      )}
+                      {/* Same convention as the hero and History. */}
+                      {naming.primary}
+                      {naming.alias ? ` (alias ${naming.alias})` : ""}{" "}
+                      · {compareNotation(d.config)}
+                    </th>
+                  );
+                })}
                 <th style={{ ...TH, textAlign: "right" }}>Δ spread</th>
+                <th style={{ ...TH, textAlign: "right" }}>Gen x̄ (s)</th>
               </tr>
             </thead>
             <tbody>
@@ -1403,6 +1497,16 @@ function ComparePane({
                   >
                     {row.delta === null ? "—" : row.delta.toFixed(2)}
                   </td>
+                  <td
+                    style={{ ...TD, textAlign: "right", color: "var(--text-muted)" }}
+                    data-testid="bench-gen-mean"
+                  >
+                    {row.genMeans.every((g) => g === null)
+                      ? "—"
+                      : row.genMeans
+                          .map((g) => (g === null ? "—" : g.toFixed(1)))
+                          .join(" / ")}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1415,11 +1519,12 @@ function ComparePane({
               maxWidth: "70ch",
             }}
           >
-            Sorted by Δ: the tasks where runs disagree most are the ones that
-            discriminate between these models — or indict a prompt. The
-            strongest comparison needs none of this machinery: several models in
-            ONE run (-m repeated) shares edition, sweep and server session by
-            construction.
+            {taskOrder
+              ? "Sorted by suite task order."
+              : "Sorted by Δ: the tasks where runs disagree most are the ones that discriminate between these models."}{" "}
+            The strongest comparison needs none of this machinery: several
+            models in ONE run (-m repeated) shares edition, sweep and server
+            session by construction.
           </p>
         </>
       )}

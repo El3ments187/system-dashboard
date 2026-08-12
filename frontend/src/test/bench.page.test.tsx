@@ -3521,9 +3521,15 @@ describe("T95 taint badges name their own mechanism", () => {
 
     expect(banner.textContent).toMatch(/\b1\b/);
     await waitFor(() => expect(badges()).toHaveLength(3));
+    // Contagion explanation moved from banner to badge tooltip (T111) so it
+    // lives beside the badge it describes. Verify it is still on screen.
+    const budgetBadge = await screen.findAllByTestId("bench-taint-badge");
+    const budgetTitle = budgetBadge.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
     expect(
-      banner.textContent,
-      "the gap between the two numbers must be explained on screen",
+      budgetTitle?.getAttribute("title"),
+      "the gap between the two numbers must be explained in the badge tooltip",
     ).toMatch(/every task from the first stop onward/i);
   });
 });
@@ -3714,7 +3720,9 @@ describe("T98 the on-task tiles agree", () => {
     installFetch({ detail: d, current: RUNNING });
     render(<BenchPage />);
     const tiles = await screen.findByTestId("bench-progress-tiles");
-    await waitFor(() => expect(tiles.textContent).toContain("Last completed"));
+    // "Last completed" only shows after something completes. With no records
+    // the label is the neutral "Task" and the value is em-dash (T98).
+    await waitFor(() => expect(tiles.textContent).toContain("Task"));
     expect(tiles.textContent).toContain("\u2014");
   });
 });
@@ -4340,5 +4348,206 @@ describe("Bench consistency items", () => {
     expect(owner?.getAttribute("title")).toMatch(
       /different unit from Pass rate/i,
     );
+  });
+});
+
+// ── T112 — Drilldown header branches correctly ─────────────────────────────
+//
+// The old code picked `records[0]` as "worst" regardless of status. If the
+// first sample was a server error, the header said "why it failed" and the
+// body showed server-error text — a non-sequitur. Now the header matches
+// whichever branch applies.
+describe("T112 drilldown header branch", () => {
+  const TASK = "js/retry_backoff";
+
+  const drilldownDetail = (rec: Record<string, unknown>) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as typeof benchRun;
+    (d as { records: unknown[] }).records = [
+      {
+        ...(d as { records: Record<string, unknown>[] }).records[0],
+        task: TASK,
+        sample: 1,
+        ...rec,
+      },
+    ];
+    return d;
+  };
+
+  const openDrilldown = async () => {
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+  };
+
+  it("says 'why it failed' when a non-server failing record exists", async () => {
+    installFetch({
+      detail: drilldownDetail({ status: "fail", solved: false, first_failed: ["assert x"] }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+    const header = await screen.findByText(/why it failed/i);
+    expect(header).toBeTruthy();
+  });
+
+  it("says 'endpoint did not answer' when all records are server errors", async () => {
+    installFetch({
+      detail: drilldownDetail({ status: "server", solved: false }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+    const header = await screen.findByText(/endpoint did not answer/i);
+    expect(header).toBeTruthy();
+  });
+
+  it("says 'attempt detail' when all records pass", async () => {
+    installFetch({
+      detail: drilldownDetail({ status: "pass", solved: true }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+    const header = await screen.findByText(/attempt detail/i);
+    expect(header).toBeTruthy();
+  });
+});
+
+// ── T113 — passes-only blockquote suppressed when first_failed is non-empty ─
+//
+// bench.py stores detail[:400] (head of log); test runners print passes first,
+// so the excerpt never contains the failing assertion. Suppress the blockquote
+// when first_failed is non-empty; keep the raw/ pointer.
+describe("T113 drilldown blockquote suppression", () => {
+  const TASK = "js/retry_backoff";
+
+  const drilldownDetail = (rec: Record<string, unknown>) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as typeof benchRun;
+    (d as { records: unknown[] }).records = [
+      {
+        ...(d as { records: Record<string, unknown>[] }).records[0],
+        task: TASK,
+        sample: 1,
+        status: "fail",
+        solved: false,
+        detail: "PASS a\nPASS b\nPASS c",
+        ...rec,
+      },
+    ];
+    return d;
+  };
+
+  const openDrilldown = async () => {
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+  };
+
+  it("shows raw/ pointer instead of blockquote when first_failed is non-empty", async () => {
+    installFetch({
+      detail: drilldownDetail({ first_failed: ["assert x === y"] }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+    const label = await screen.findByTestId("bench-detail-excerpt-label");
+    expect(label.textContent).toMatch(/Full log in raw/i);
+    // The blockquote with passes must not appear.
+    expect(screen.queryByRole("blockquote")).toBeNull();
+  });
+
+  it("shows the blockquote when first_failed is empty", async () => {
+    installFetch({
+      detail: drilldownDetail({ first_failed: [] }),
+    });
+    render(<BenchPage />);
+    await openDrilldown();
+    // blockquote is rendered when first_failed is empty.
+    await waitFor(() =>
+      expect(document.querySelector("blockquote")).toBeTruthy(),
+    );
+  });
+});
+
+// ── T114 — BUDGET badge uses weaker tooltip when task still solved ──────────
+//
+// A task scored under the budget cap that still achieved full marks should get
+// TAINT_BUDGET_PASS ("cap was in effect but nothing shows it changed the
+// result") rather than the stronger "measures the cutoff" claim.
+describe("T114 budget badge tooltip strength", () => {
+  const ROSTER_TASKS = TASK_LIST.tasks.map((t) => t.id);
+
+  const withBudget = (over: Record<string, unknown>[]) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as typeof benchRun;
+    (d as { records: Record<string, unknown>[] }).records = over.map(
+      (o, i) => ({
+        ...(d as { records: Record<string, unknown>[] }).records[
+          Math.min(i, (d as { records: unknown[] }).records.length - 1)
+        ],
+        task: ROSTER_TASKS[i],
+        sample: 1,
+        stopped_at_budget: true,
+        truncated: false,
+        ...o,
+      }),
+    );
+    return d;
+  };
+
+  it("uses the weaker tooltip when all budget-tainted rows still solved", async () => {
+    installFetch({
+      detail: withBudget([
+        { solved: true, status: "pass" },
+        { solved: true, status: "pass" },
+      ]),
+    });
+    render(<BenchPage />);
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    const budgetBadge = badges.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budgetBadge?.getAttribute("title")).toMatch(/scored full marks/i);
+    expect(budgetBadge?.getAttribute("title")).not.toMatch(/measures the cutoff/i);
+  });
+
+  it("uses the stronger tooltip when some budget-tainted rows did not solve", async () => {
+    installFetch({
+      detail: withBudget([
+        { solved: false, status: "fail" },
+        { solved: false, status: "fail" },
+      ]),
+    });
+    render(<BenchPage />);
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    const budgetBadge = badges.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budgetBadge?.getAttribute("title")).toMatch(/measures the cutoff/i);
+  });
+});
+
+// ── T119 — controlAction surfaces failures via addAlert ────────────────────
+//
+// The old post() discarded the response body, so a refused action (e.g., a
+// bench.py skip on a finished run) was invisible. controlAction reads the JSON
+// and calls addAlert when success is false.
+describe("T119 controlAction error surfacing", () => {
+  it("calls addAlert when a control endpoint returns success:false", async () => {
+    // Install the full base mock, then intercept only the skip endpoint.
+    const baseFetch = installFetch({ current: { running: true, run: null } });
+    void baseFetch; // unused — we just need the side-effect of setting global.fetch
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/bench/skip")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ success: false, error: "no active run" }),
+        } as Response);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    const skipBtn = await screen.findByText("Skip task");
+    fireEvent.click(skipBtn);
+    await waitFor(() => expect(addAlert).toHaveBeenCalled());
+    const [, , msg] = addAlert.mock.calls[0] as [unknown, unknown, string];
+    expect(msg).toMatch(/no active run/i);
   });
 });

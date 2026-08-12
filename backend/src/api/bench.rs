@@ -282,7 +282,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 fn a_run_is_live() -> bool {
-    let guard = state().read().unwrap();
+    let guard = state().read().unwrap_or_else(|e| e.into_inner());
     match guard.pid {
         Some(pid) => !guard.exited && pid_alive(pid),
         None => false,
@@ -330,7 +330,7 @@ async fn bench_json(args: &[&str]) -> Result<Value, String> {
 }
 
 fn push_log(line: String) {
-    let mut g = state().write().unwrap();
+    let mut g = state().write().unwrap_or_else(|e| e.into_inner());
     g.log.append(line);
 }
 
@@ -362,7 +362,7 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
             while let Ok(Some(line)) = lines.next_line().await {
                 push_log(line);
             }
-            state().write().unwrap().exited = true;
+            state().write().unwrap_or_else(|e| e.into_inner()).exited = true;
         });
     }
     if let Some(h) = stderr {
@@ -378,6 +378,12 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
 
 /// Newest run folder, used to attach a freshly started run to its output
 /// directory (bench.py names the folder itself, from label + timestamp).
+///
+/// bench.py does not emit the folder name in stdout (T122), so after spawning
+/// we sleep 600 ms and pick whatever the filesystem just created. The gap is
+/// wide enough for bench.py to mkdir but narrow enough that a second run
+/// cannot race in. Two simultaneous starts are blocked by `a_run_is_live()`,
+/// so the heuristic is safe in normal operation.
 fn newest_run_folder() -> Option<String> {
     let mut entries: Vec<(std::time::SystemTime, String)> = std::fs::read_dir(runs_dir())
         .ok()?
@@ -513,6 +519,24 @@ pub struct ResumeRequest {
 }
 
 impl ResumeRequest {
+    /// Reject folder values that could escape the runs directory.
+    /// Accepts only single-component names with no path separators or leading dots.
+    pub(crate) fn validate_folder(&self) -> Result<(), &'static str> {
+        if self.folder.is_empty() {
+            return Err("folder must not be empty");
+        }
+        if self.folder.starts_with('/') || self.folder.starts_with('\\') {
+            return Err("absolute paths are not allowed");
+        }
+        if self.folder.contains('/') || self.folder.contains('\\') {
+            return Err("folder must be a single directory name, not a path");
+        }
+        if self.folder.contains("..") {
+            return Err("path traversal sequences are not allowed");
+        }
+        Ok(())
+    }
+
     /// Flags in bench.py's own spelling, including every setting its resume
     /// guard compares. Omitting one is not neutral: bench.py compares the
     /// recorded run against its OWN default and exits on a mismatch.
@@ -590,7 +614,7 @@ pub async fn start_handler(
         }));
     }
     {
-        let mut g = state().write().unwrap();
+        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
         g.log.clear();
         g.exited = false;
         g.pid = None;
@@ -616,7 +640,7 @@ pub async fn start_handler(
                 started: chrono::Utc::now().to_rfc3339(),
             };
             {
-                let mut g = state().write().unwrap();
+                let mut g = state().write().unwrap_or_else(|e| e.into_inner());
                 g.pid = Some(pid);
                 g.run_folder = folder.clone();
                 g.current = Some(current.clone());
@@ -694,7 +718,11 @@ pub async fn ready_handler(
 /// is why `run` is nullable rather than an error.
 pub async fn current_handler() -> axum::response::Json<Value> {
     let live = a_run_is_live();
-    let run = state().read().unwrap().current.clone();
+    let run = state()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .current
+        .clone();
     axum::response::Json(json!({
         "data": { "running": live, "run": if live { run } else { None } },
         "success": true
@@ -702,7 +730,7 @@ pub async fn current_handler() -> axum::response::Json<Value> {
 }
 
 pub async fn stop_handler() -> axum::response::Json<Value> {
-    let pid = state().read().unwrap().pid;
+    let pid = state().read().unwrap_or_else(|e| e.into_inner()).pid;
     match pid {
         Some(pid) if pid_alive(pid) => {
             sigterm_only(pid);
@@ -716,7 +744,11 @@ pub async fn stop_handler() -> axum::response::Json<Value> {
 }
 
 pub async fn skip_handler() -> axum::response::Json<Value> {
-    let folder = state().read().unwrap().run_folder.clone();
+    let folder = state()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .run_folder
+        .clone();
     match folder {
         Some(f) => {
             let marker = runs_dir().join(&f).join("skip");
@@ -742,26 +774,41 @@ pub async fn runs_handler() -> axum::response::Json<Value> {
 pub async fn run_by_id_handler(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> axum::response::Json<Value> {
-    let files = tokio::task::spawn_blocking(read_run_files)
-        .await
-        .unwrap_or_default();
     // Matched on run_id, never folder name — folders can be renamed.
-    for (folder, text) in &files {
-        if let Ok(s) = parse_run_summary(text, folder)
-            && s.run_id == id
-            && let Ok(v) = serde_json::from_str::<Value>(text)
-        {
-            return axum::response::Json(json!({ "data": v, "success": true }));
-        }
+    // Iterates lazily and stops at the first match rather than reading every
+    // file upfront.
+    let id_clone = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let Ok(rd) = std::fs::read_dir(runs_dir()) else {
+            return None;
+        };
+        rd.filter_map(|e| e.ok()).find_map(|e| {
+            let folder = e.file_name().to_string_lossy().to_string();
+            let text = std::fs::read_to_string(e.path().join("results.json")).ok()?;
+            let s = parse_run_summary(&text, &folder).ok()?;
+            if s.run_id != id_clone {
+                return None;
+            }
+            let v = serde_json::from_str::<Value>(&text).ok()?;
+            Some(v)
+        })
+    })
+    .await
+    .ok()
+    .flatten();
+    match result {
+        Some(v) => axum::response::Json(json!({ "data": v, "success": true })),
+        None => axum::response::Json(
+            json!({ "error": format!("no run with run_id {id}"), "success": false }),
+        ),
     }
-    axum::response::Json(json!({ "error": format!("no run with run_id {id}"), "success": false }))
 }
 
 pub async fn log_handler(
     axum::extract::Query(q): axum::extract::Query<LogQuery>,
 ) -> axum::response::Json<Value> {
     let (lines, next) = {
-        let g = state().read().unwrap();
+        let g = state().read().unwrap_or_else(|e| e.into_inner());
         g.log.read_from(q.offset.unwrap_or(0))
     };
     let live = a_run_is_live();
@@ -773,6 +820,9 @@ pub async fn log_handler(
 pub async fn resume_handler(
     axum::extract::Json(req): axum::extract::Json<ResumeRequest>,
 ) -> axum::response::Json<Value> {
+    if let Err(reason) = req.validate_folder() {
+        return axum::response::Json(json!({ "error": reason, "success": false }));
+    }
     if should_refuse_start(a_run_is_live()) {
         return axum::response::Json(json!({
             "error": "a bench run is already active", "success": false
@@ -783,14 +833,14 @@ pub async fn resume_handler(
     let path = resume_run_path(&dir, &req.folder);
     let args = req.to_args(&path.to_string_lossy());
     {
-        let mut g = state().write().unwrap();
+        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
         g.log.clear();
         g.exited = false;
     }
     match spawn_bench(args).await {
         Ok(pid) => {
             {
-                let mut g = state().write().unwrap();
+                let mut g = state().write().unwrap_or_else(|e| e.into_inner());
                 g.pid = Some(pid);
                 g.run_folder = Some(req.folder.clone());
             }
@@ -803,7 +853,7 @@ pub async fn resume_handler(
                 return axum::response::Json(json!({ "pid": pid, "success": true }));
             }
             let reason = {
-                let g = state().read().unwrap();
+                let g = state().read().unwrap_or_else(|e| e.into_inner());
                 let (lines, _) = g.log.read_from(0);
                 let start = lines.len().saturating_sub(8);
                 lines[start..].join("\n")
@@ -1204,5 +1254,51 @@ mod tests {
             !joined.contains("--langs"),
             "an empty --langs means EVERY language to bench.py: {joined}"
         );
+    }
+
+    // T118 — validate_folder blocks path traversal and absolute paths.
+    #[test]
+    fn t118_validate_folder_accepts_plain_name() {
+        let req = ResumeRequest {
+            folder: "seedA_20260808-223558".into(),
+            ..Default::default()
+        };
+        assert!(req.validate_folder().is_ok());
+    }
+
+    #[test]
+    fn t118_validate_folder_rejects_absolute_path() {
+        let req = ResumeRequest {
+            folder: "/etc/passwd".into(),
+            ..Default::default()
+        };
+        assert!(req.validate_folder().is_err());
+    }
+
+    #[test]
+    fn t118_validate_folder_rejects_path_separator() {
+        let req = ResumeRequest {
+            folder: "runs/../../etc".into(),
+            ..Default::default()
+        };
+        assert!(req.validate_folder().is_err());
+    }
+
+    #[test]
+    fn t118_validate_folder_rejects_dotdot() {
+        let req = ResumeRequest {
+            folder: "..".into(),
+            ..Default::default()
+        };
+        assert!(req.validate_folder().is_err());
+    }
+
+    #[test]
+    fn t118_validate_folder_rejects_empty() {
+        let req = ResumeRequest {
+            folder: "".into(),
+            ..Default::default()
+        };
+        assert!(req.validate_folder().is_err());
     }
 }

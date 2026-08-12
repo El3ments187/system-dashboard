@@ -356,7 +356,7 @@ function HeroCard({
   const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
 
   // A live run's own flags win; otherwise the selected run's stored config.
-  const liveLangs = current.running ? current.run?.langs : null;
+  const liveLangs = current.running && !warming ? current.run?.langs : null;
   const scope = runTaskScope(
     taskList?.tasks,
     liveLangs ? liveLangs.split(",") : detail?.config?.langs,
@@ -376,6 +376,7 @@ function HeroCard({
       <div style={BODY_STYLE}>
         <div
           data-testid="bench-hero-model"
+          title={displayName}
           style={{
             font: `700 22px ${MONO}`,
             letterSpacing: "-1px",
@@ -529,14 +530,11 @@ function HeroCard({
             <TriangleAlert size={13} />
             <span>
               <b>{truncation.budgetStops}</b>{" "}
-              {truncation.budgetStops === 1 ? "sample was" : "samples were"} cut
-              off by bench.py itself at the <b>--nudge-at</b> budget — the
-              server was still generating. Those scores measure the budget, not
-              the model. Raise <b>--nudge-at</b> (Run Setup, default 16384) or{" "}
-              <b>--max-nudges</b>. Raising --max-tokens does not help here: the
-              server was never asked to stop. More rows carry the badge than
-              this number: every task from the first stop onward was scored
-              under the same cap, so it is marked too.
+              {truncation.budgetStops === 1 ? "sample was" : "samples were"}{" "}
+              cut by bench.py at the <b>--nudge-at</b> budget — the server was
+              still generating. Raise <b>--nudge-at</b> (default 16384) or{" "}
+              <b>--max-nudges</b>. Hover the BUDGET badge on any row for
+              details.
             </span>
           </div>
         )}
@@ -561,7 +559,7 @@ function HeroCard({
             accent
             mono
             label="Started"
-            value={startedAt ? new Date(startedAt).toLocaleTimeString() : null}
+            value={startedAt ? new Date(startedAt).toISOString().slice(11, 19) : null}
             valueSize={14}
           />
           <MetricTile
@@ -880,7 +878,7 @@ function ProgressCard({
             <MetricTile
               accent
               mono
-              label={onTask.inFlight ? "On task" : "Last completed"}
+              label={onTask.inFlight ? "On task" : onTask.task ? "Last completed" : "Task"}
               value={onTask.task ?? "—"}
               valueSize={11}
             />
@@ -1086,6 +1084,7 @@ function RunSetupCard({
   tasks: Array<{ id: string; lang: string }>;
 }) {
   const [override, setOverride] = useState<Partial<RunForm>>({});
+  const { addAlert } = useAlertsContext();
   const tracks = check?.tracks ?? [];
 
   const availableLangs = tracks
@@ -1170,16 +1169,28 @@ function RunSetupCard({
       };
     });
 
-  const post = (path: string, body?: unknown) => {
-    fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body ?? {}),
-    })
-      .then(() => setTimeout(onRefresh, 900))
-      // A failed control action must not take the page down with it.
-      .catch(() => setTimeout(onRefresh, 900));
+  const controlAction = async (path: string, body?: unknown) => {
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+      });
+      const json = (await res.json()) as { success?: boolean; error?: string };
+      if (!json.success) {
+        addAlert(
+          AlertSeverity.Error,
+          "bench",
+          `Action failed: ${json.error ?? res.statusText}`,
+        );
+      }
+    } catch {
+      addAlert(AlertSeverity.Error, "bench", "Action failed: network error");
+    } finally {
+      setTimeout(onRefresh, 900);
+    }
   };
+  const post = (path: string, body?: unknown) => void controlAction(path, body);
 
   // Started from the form's own values against the CURRENTLY configured url
   // — not the url an older run happened to use, which is how a stale mock
@@ -1417,6 +1428,21 @@ function RunSetupCard({
               <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>
                 Click to toggle · struck through = toolchain unavailable
               </span>
+            )}
+            {tracks.some((t) => !t.available) && (
+              <div
+                data-testid="bench-unavailable-reasons"
+                style={{ fontSize: 9.5, color: "var(--text-muted)", marginTop: 2 }}
+              >
+                {tracks
+                  .filter((t) => !t.available)
+                  .map((t) => (
+                    <div key={t.lang}>
+                      <span style={{ textDecoration: "line-through" }}>{t.lang}</span>
+                      {t.reason ? `: ${t.reason}` : ""}
+                    </div>
+                  ))}
+              </div>
             )}
           </div>
 

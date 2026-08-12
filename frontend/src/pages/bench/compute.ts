@@ -578,12 +578,20 @@ export function deltaSpread(means: Array<number | null>): number | null {
 export interface CompareRow {
   task: string;
   means: Array<number | null>;
+  genMeans: Array<number | null>;
   cells: CellState[][];
   delta: number | null;
 }
 
+/** Mean generation time (seconds) across graded records for one task/run. */
+function taskGenMean(rs: BenchRecord[]): number | null {
+  const graded = gradedRecords(rs);
+  if (graded.length === 0) return null;
+  return graded.reduce((s, r) => s + r.gen_seconds, 0) / graded.length;
+}
+
 /**
- * Default sort is Δ descending: disagreement first.
+ * Sorts by suite task order when provided, Δ descending otherwise.
  *
  * A null entry is a chosen run whose detail could not be read. It keeps its
  * column and scores blank — dropping the column instead would make the table
@@ -591,16 +599,19 @@ export interface CompareRow {
  */
 export function compareRows(
   details: Array<BenchRunDetail | null>,
+  taskOrder?: Array<{ id: string }>,
 ): CompareRow[] {
   const tasks = new Set<string>();
   for (const d of details) if (d) for (const r of d.records) tasks.add(r.task);
   const rows: CompareRow[] = [];
   for (const task of tasks) {
     const means: Array<number | null> = [];
+    const genMeans: Array<number | null> = [];
     const cells: CellState[][] = [];
     for (const d of details) {
       if (!d) {
         means.push(null);
+        genMeans.push(null);
         cells.push([]);
         continue;
       }
@@ -608,11 +619,22 @@ export function compareRows(
         .filter((r) => r.task === task)
         .sort((a, b) => a.sample - b.sample);
       means.push(taskMean(rs));
+      genMeans.push(taskGenMean(rs));
       cells.push(rs.map(cellState));
     }
-    rows.push({ task, means, cells, delta: deltaSpread(means) });
+    rows.push({ task, means, genMeans, cells, delta: deltaSpread(means) });
   }
-  rows.sort((a, b) => (b.delta ?? -1) - (a.delta ?? -1));
+  if (taskOrder && taskOrder.length > 0) {
+    const pos = new Map(taskOrder.map((t, i) => [t.id, i]));
+    rows.sort((a, b) => {
+      const pa = pos.get(a.task) ?? Infinity;
+      const pb = pos.get(b.task) ?? Infinity;
+      if (pa !== pb) return pa - pb;
+      return a.task.localeCompare(b.task);
+    });
+  } else {
+    rows.sort((a, b) => (b.delta ?? -1) - (a.delta ?? -1));
+  }
   return rows;
 }
 
