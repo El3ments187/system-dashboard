@@ -385,32 +385,48 @@ export function useBenchData(): BenchData {
       const cached = new Map(
         storedDetailsRef.current.map((d) => [d.run_id, d]),
       );
-      const loaded: BenchRunDetail[] = [];
       for (const row of runs) {
         const hit = row.finished ? cached.get(row.run_id) : undefined;
-        if (hit) {
-          loaded.push(hit);
-          continue;
-        }
+        if (hit) continue;
         try {
           const d = await getJson<BenchRunDetail>(
             `/api/bench/runs/${encodeURIComponent(row.run_id)}`,
           );
-          loaded.push(d);
+          if (cancelled) return;
+          cached.set(row.run_id, d);
+          // T132: write immediately so a mid-pass cancellation (from the 5 s
+          // runs-list poll producing a new array) doesn't discard already-
+          // fetched data — the next pass finds it in the cached map and skips.
+          const snap = runs.flatMap((r) => {
+            const x = cached.get(r.run_id);
+            return x ? [x] : [];
+          });
+          const prev = storedDetailsRef.current;
+          if (
+            !(
+              prev.length === snap.length && prev.every((x, i) => x === snap[i])
+            )
+          ) {
+            storedDetailsRef.current = snap;
+            setStoredDetails(snap);
+          }
         } catch {
-          // A single unreadable run must not blank the whole view.
+          if (cancelled) return;
         }
-        if (cancelled) return;
       }
       if (cancelled) return;
-      // Keep the previous array when nothing changed: a new identity every
-      // poll re-runs every downstream memo for no new information.
+      // Final flush: keeps the list in sync when all runs were cache-hits
+      // (no per-run write happened above) and trims runs removed from the list.
+      const snap = runs.flatMap((r) => {
+        const x = cached.get(r.run_id);
+        return x ? [x] : [];
+      });
       const prev = storedDetailsRef.current;
-      const unchanged =
-        prev.length === loaded.length && prev.every((d, i) => d === loaded[i]);
-      if (!unchanged) {
-        storedDetailsRef.current = loaded;
-        setStoredDetails(loaded);
+      if (
+        !(prev.length === snap.length && prev.every((d, i) => d === snap[i]))
+      ) {
+        storedDetailsRef.current = snap;
+        setStoredDetails(snap);
       }
     })();
     return () => {

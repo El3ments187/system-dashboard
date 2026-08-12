@@ -252,7 +252,7 @@ export function BenchFooter({
       }}
     >
       <FooterStat
-        label="Gen speed"
+        label="Generation speed"
         value={
           idle || meanRate === null
             ? "—"

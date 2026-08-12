@@ -4,7 +4,7 @@
  * Every number here is derived in `compute.ts` so the semantics can be
  * tested without rendering; this file is layout and wording.
  */
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useState } from "react";
 import { List, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { BenchConsole } from "./BenchConsole";
 import { TargetBadge } from "../BenchPage";
@@ -250,13 +250,11 @@ function RunsPathChip({ benchDir }: { benchDir: string | null }) {
 
 export function TasksAndRuns({
   bench,
-  now,
   running,
   warming,
   outputFolder,
 }: {
   bench: BenchData;
-  now: number;
   running: boolean;
   /** A spawned run whose results.json does not exist yet. */
   warming: boolean;
@@ -303,12 +301,15 @@ export function TasksAndRuns({
   // keyed to a placeholder. Migrate it when the real id arrives — dropping it
   // collapsed an expanded task the moment the poll landed. A real id becoming
   // a DIFFERENT real id is still a run change and still closes it (T64).
-  // Adjusted during render, not in an effect: an effect would paint the
-  // collapsed row first and then re-render.
-  if (openTask && openTask.runKey !== runKey) {
-    if (isPlaceholderRunKey(openTask.runKey))
+  // T141: useLayoutEffect fires before paint so there is no visual flash,
+  // and it is safe under StrictMode's double-invocation (the update is idempotent).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useLayoutEffect(() => {
+    if (openTask && openTask.runKey !== runKey && isPlaceholderRunKey(openTask.runKey)) {
       setOpenTask({ runKey, task: openTask.task });
-  }
+    }
+  }, [openTask, runKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const currentEdition = detail?.suite_hash ?? runs[0]?.suite_hash ?? "";
 
@@ -432,7 +433,6 @@ export function TasksAndRuns({
           running={running}
           onSelect={selectRun}
           storedDetails={storedDetails}
-          now={now}
         />
       )}
       {tab === "cmp" && (
@@ -570,14 +570,12 @@ function ThisRunPane({
               );
               const budgetHarmed =
                 tainted === "budget" && graded.some((r) => !r.solved);
-              const taintTitle =
-                tainted === null
-                  ? undefined
-                  : tainted === "truncation"
-                    ? TAINT_TOOLTIP.truncation
-                    : budgetHarmed
-                      ? TAINT_TOOLTIP.budget
-                      : TAINT_BUDGET_PASS;
+              let taintTitle: string | undefined;
+              if (tainted === "truncation") {
+                taintTitle = TAINT_TOOLTIP.truncation;
+              } else if (tainted !== null) {
+                taintTitle = budgetHarmed ? TAINT_TOOLTIP.budget : TAINT_BUDGET_PASS;
+              }
               return (
                 <Fragment key={task}>
                   <tr
@@ -689,13 +687,19 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
   if (!worst) return null;
   const explanation = failureExplanation(worst);
   const canary = assertionCanary(worst);
-  // completion_tokens is a SUM over the sample's attempts; total_tokens is the
-  // LARGEST SINGLE request. Different units — labelled as such so they are
-  // never read as one figure.
+  // "Tokens: completion" is a SUM over the sample's attempts; "Tokens: largest
+  // request" is the MAX of any single call. Different units — the shared prefix
+  // groups them; the second word carries the distinction (bench.py once hit
+  // 47,258 summed vs 23,300 max context, which reads as broken without this).
   const est = worst.tokens_estimated ? "~" : "";
   const estTitle = worst.tokens_estimated
     ? "Estimated by the harness, not reported by the server"
     : undefined;
+  const drilldownSuffix = (() => {
+    if (failingRecord) return " — why it failed";
+    if (serverOnly) return " — endpoint did not answer";
+    return " — attempt detail";
+  })();
 
   return (
     <div>
@@ -715,28 +719,25 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
             color: "var(--text-muted)",
           }}
         >
-          {worst.task}
-          {failingRecord
-            ? " — why it failed"
-            : serverOnly
-              ? " — endpoint did not answer"
-              : " — attempt detail"}
+          {worst.task}{drilldownSuffix}
         </span>
-        <span
-          data-testid="bench-canary"
-          title="The grader ran the number of assertions the suite declares. A mismatch means suite drift, not a model result."
-          style={{
-            marginLeft: "auto",
-            font: `10px ${MONO}`,
-            color: canary.ok ? "var(--success)" : "var(--danger)",
-            fontWeight: canary.ok ? 400 : 700,
-          }}
-        >
-          tests {canary.ran}/{canary.expected}
-          {canary.ok
-            ? " ✓"
-            : " ✗ SUITE DRIFT — assertion count disagrees with the suite"}
-        </span>
+        {canary.applicable && (
+          <span
+            data-testid="bench-canary"
+            title="The grader ran the number of assertions the suite declares. A mismatch means suite drift, not a model result."
+            style={{
+              marginLeft: "auto",
+              font: `10px ${MONO}`,
+              color: canary.ok ? "var(--success)" : "var(--danger)",
+              fontWeight: canary.ok ? 400 : 700,
+            }}
+          >
+            tests {canary.ran}/{canary.expected}
+            {canary.ok
+              ? " ✓"
+              : " ✗ SUITE DRIFT — assertion count disagrees with the suite"}
+          </span>
+        )}
       </div>
       <div
         style={{
@@ -889,7 +890,8 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
             <MetricTile
               accent
               mono
-              label="Gen"
+              testId="bench-gen-tile"
+              label="Generation time"
               value={fmtUptime(worst.gen_seconds)}
               valueSize={12}
             />
@@ -904,7 +906,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               accent
               mono
               testId="bench-tokens-sum"
-              label="Completion Σ (all attempts)"
+              label="Tokens: completion"
               value={`${est}${fmtNum(worst.completion_tokens)}`}
               valueSize={12}
               style={estTitle ? { cursor: "help" } : undefined}
@@ -913,7 +915,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               accent
               mono
               testId="bench-tokens-max"
-              label="Largest single request"
+              label="Tokens: largest request"
               value={`${est}${fmtNum(worst.total_tokens)}`}
               valueSize={12}
             />
@@ -960,6 +962,10 @@ function FlagChip({ label, title }: { label: string; title: string }) {
 
 // ── History ─────────────────────────────────────────────────────────────────
 
+function editionAgeLabel(gi: number): string {
+  return gi === 1 ? "previous edition" : "older edition";
+}
+
 function HistoryPane({
   bench,
   running,
@@ -971,7 +977,6 @@ function HistoryPane({
   running: boolean;
   onSelect: (id: string) => void;
   storedDetails: BenchRunDetail[];
-  now: number;
 }) {
   const { addAlert } = useAlertsContext();
   const [resumingFolder, setResumingFolder] = useState<string | null>(null);
@@ -1043,7 +1048,7 @@ function HistoryPane({
         </div>
       )}
       {groups.map((g, gi) => (
-        <div key={g.suiteHash}>
+        <div key={gi}>
           {gi > 0 && (
             <div
               className="bench-cut"
@@ -1057,8 +1062,8 @@ function HistoryPane({
               benchmarks
             </div>
           )}
-          <div style={EDHEAD}>
-            {gi === 0 ? "current edition" : "previous edition"}
+          <div style={EDHEAD} data-testid="bench-edition-head">
+            {gi === 0 ? "current edition" : editionAgeLabel(gi)}
             <span
               style={{
                 font: `10px ${MONO}`,
@@ -1084,11 +1089,13 @@ function HistoryPane({
                       models: a.models,
                       suite_hash: a.suite_hash,
                       records: a.records,
+                      config: a.config,
                     },
                     {
                       models: b.models,
                       suite_hash: b.suite_hash,
                       records: b.records,
+                      config: b.config,
                     },
                   )
                 : null;
@@ -1098,7 +1105,16 @@ function HistoryPane({
             // live run is not a no-op — it would spawn a second process
             // against the same run directory. Liveness comes from the same
             // signal driving the hero and Start/Stop, not a second rule.
-            const isLiveRun = running && run.run_id === bench.detail?.run_id;
+            // T126: identify liveness by the running process's folder, not by
+            // which run the user has selected. bench.detail changes when the
+            // user clicks a history entry; the spawned process's folder does
+            // not. Fallback to detail comparison for CLI-started runs where
+            // current.running is false.
+            const isLiveRun =
+              running &&
+              (bench.current.running && bench.current.run?.folder != null
+                ? run.folder === bench.current.run.folder
+                : run.run_id === bench.detail?.run_id);
             const interrupted = !run.finished && !isLiveRun;
             // Chips compare solved-state between two runs; against a run
             // still in progress that is a partial score, so a task not yet
@@ -1519,7 +1535,7 @@ function ComparePane({
               maxWidth: "70ch",
             }}
           >
-            {taskOrder
+            {taskOrder && taskOrder.length > 0
               ? "Sorted by suite task order."
               : "Sorted by Δ: the tasks where runs disagree most are the ones that discriminate between these models."}{" "}
             The strongest comparison needs none of this machinery: several

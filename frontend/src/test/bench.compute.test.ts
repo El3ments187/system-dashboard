@@ -243,6 +243,20 @@ describe("T14 history grouping and provenance marking", () => {
     expect(groups[0].runs.map((r) => r.run_id)).toEqual(["a", "b"]);
   });
 
+  // T146 — groupByEdition must use plain string comparison, not localeCompare.
+  // localeCompare is locale-sensitive and can produce wrong order for ISO dates.
+  it("T146 sorts by created using plain comparison (not localeCompare)", () => {
+    // Provide runs already in wrong order to confirm the sort works correctly.
+    const groups = groupByEdition([
+      row({ run_id: "old", created: "2026-08-01T10:00:00", suite_hash: "e293ad7" }),
+      row({ run_id: "new", created: "2026-08-10T10:00:00", suite_hash: "e293ad7" }),
+      row({ run_id: "mid", created: "2026-08-05T10:00:00", suite_hash: "e293ad7" }),
+    ]);
+    expect(groups).toHaveLength(1);
+    // Newest first.
+    expect(groups[0].runs.map((r) => r.run_id)).toEqual(["new", "mid", "old"]);
+  });
+
   it("marks multi-sample runs with their --n and single-sample runs as --n 1", () => {
     expect(sampleLabel({ n: 3 })).toBe("x̄ over --n 3");
     expect(sampleLabel({ n: 1 })).toBe("--n 1");
@@ -290,6 +304,49 @@ describe("T15 regression chips", () => {
     );
     expect(chips.comparable).toBe(false);
     expect(chips.reason).toContain("edition");
+  });
+});
+
+// T145 — regression chips: --label must not suppress chips for the same model.
+describe("T145 regression chips with --label", () => {
+  const before = [rec({ task: "js/a", solved: true }), rec({ task: "js/b", solved: false, status: "fail" })];
+  const after = [rec({ task: "js/a", solved: true }), rec({ task: "js/b", solved: true })];
+
+  it("is comparable when models[] differ but config.model matches", () => {
+    const chips = regressionChips(
+      {
+        models: ["/models/qwen.gguf"],
+        suite_hash: "e293ad7",
+        records: before,
+        config: { model: "/models/qwen.gguf" },
+      },
+      {
+        models: ["my-label"],
+        suite_hash: "e293ad7",
+        records: after,
+        config: { model: "/models/qwen.gguf" },
+      },
+    );
+    expect(chips.comparable).toBe(true);
+    expect(chips.up).toEqual(["js/b"]);
+  });
+
+  it("is not comparable when config.model differs even if models[] match by label", () => {
+    const chips = regressionChips(
+      {
+        models: ["label"],
+        suite_hash: "e293ad7",
+        records: before,
+        config: { model: "/models/qwen.gguf" },
+      },
+      {
+        models: ["label"],
+        suite_hash: "e293ad7",
+        records: after,
+        config: { model: "/models/gemma.gguf" },
+      },
+    );
+    expect(chips.comparable).toBe(false);
   });
 });
 

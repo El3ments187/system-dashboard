@@ -25,7 +25,7 @@ const CELL_TITLE: Record<CellState, string> = {
     "Crashed or produced nothing runnable — the code never got as far as being wrong",
   timeout: "Timed out or the reply could not be parsed",
   server: "The endpoint never answered — excluded from every rate, not a zero",
-  live: "in progress",
+  live: "Running now — no result yet",
   pending: "Not run yet",
 };
 
@@ -174,13 +174,13 @@ export function SubTabs({
 
 export function StripLegend() {
   const items: Array<[CellState, string]> = [
-    ["solved", "solved"],
-    ["solved-late", "on retry (−1 pt each)"],
-    ["miss", "failed"],
-    ["error", "crashed / nothing runnable"],
-    ["timeout", "timeout/format"],
-    ["server", "server — excluded, never a zero"],
-    ["live", "in progress"],
+    ["solved", "Solved"],
+    ["solved-late", "On retry (−1 pt each)"],
+    ["miss", "Failed"],
+    ["error", "Crashed / nothing runnable"],
+    ["timeout", "Timeout/format"],
+    ["server", "Excluded"],
+    ["live", "In progress"],
   ];
   return (
     <div
@@ -203,7 +203,7 @@ export function StripLegend() {
           {label}
         </span>
       ))}
-      <span>│ separates samples (--n)</span>
+      <span>│ Separates samples (--n)</span>
     </div>
   );
 }

@@ -347,14 +347,23 @@ export interface RegressionChips {
  * the benchmark itself changed, so a flip would be reported as a model
  * change, confidently and wrongly.
  */
-export function regressionChips(
-  previous: { models: string[]; suite_hash: string; records: BenchRecord[] },
-  next: { models: string[]; suite_hash: string; records: BenchRecord[] },
-): RegressionChips {
-  const sameModels =
-    previous.models.length === next.models.length &&
-    previous.models.every((m, i) => m === next.models[i]);
-  if (!sameModels)
+type ChipRun = {
+  models: string[];
+  suite_hash: string;
+  records: BenchRecord[];
+  config?: { model?: string };
+};
+
+function sameModelIdentity(a: ChipRun, b: ChipRun): boolean {
+  const am = a.config?.model;
+  const bm = b.config?.model;
+  // config.model is the ground truth; models[] may be overridden by --label.
+  if (am && bm) return am === bm;
+  return a.models.length === b.models.length && a.models.every((m, i) => m === b.models[i]);
+}
+
+export function regressionChips(previous: ChipRun, next: ChipRun): RegressionChips {
+  if (!sameModelIdentity(previous, next))
     return {
       up: [],
       down: [],
@@ -391,7 +400,9 @@ export interface EditionGroup {
  * between groups. Scores either side of it measure different benchmarks.
  */
 export function groupByEdition(runs: BenchRunRow[]): EditionGroup[] {
-  const sorted = [...runs].sort((a, b) => b.created.localeCompare(a.created));
+  const sorted = [...runs].sort((a, b) =>
+    +(b.created > a.created) - +(b.created < a.created),
+  );
   const groups: EditionGroup[] = [];
   for (const run of sorted) {
     const last = groups[groups.length - 1];

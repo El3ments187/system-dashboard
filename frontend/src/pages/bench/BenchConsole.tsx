@@ -55,11 +55,18 @@ export function BenchConsole({
 
   // Polls regardless of `active` — a background process keeps producing
   // output whether or not anyone is looking at this tab.
+  // When running becomes true a new run has started: clear the old output
+  // and reset the offset so the new run's lines are fetched from the start.
   // When not running: one fetch to collect any tail output, then stop.
-  // When running: poll every second until the effect is torn down.
   useEffect(() => {
     let cancelled = false;
+    let freshStart = running;
     const tick = async () => {
+      if (freshStart) {
+        freshStart = false;
+        offsetRef.current = 0;
+        if (!cancelled) setLines([]);
+      }
       try {
         const res = await fetch(`/api/bench/log?offset=${offsetRef.current}`);
         if (!res.ok) return;
@@ -68,8 +75,12 @@ export function BenchConsole({
           nextOffset?: number;
         };
         if (cancelled) return;
+        // Always advance the offset when the server provides one — including
+        // empty responses, which signal a log-clear (new run start).
+        if (body.nextOffset !== undefined) {
+          offsetRef.current = body.nextOffset;
+        }
         if (body.lines && body.lines.length > 0) {
-          offsetRef.current = body.nextOffset ?? offsetRef.current;
           setLines((prev) => [...prev, ...(body.lines ?? [])].slice(-2000));
         }
       } catch {

@@ -268,6 +268,10 @@ struct BenchState {
     current: Option<CurrentRun>,
     log: BenchLog,
     exited: bool,
+    /// T127: set while a spawn is in flight so concurrent start/resume
+    /// requests see the window as occupied and are refused. Cleared once the
+    /// pid is stored (success) or on spawn failure.
+    spawning: bool,
 }
 
 fn state() -> &'static RwLock<BenchState> {
@@ -281,12 +285,21 @@ fn pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-fn a_run_is_live() -> bool {
-    let guard = state().read().unwrap_or_else(|e| e.into_inner());
-    match guard.pid {
-        Some(pid) => !guard.exited && pid_alive(pid),
+/// Pure liveness predicate extracted for testing without the pid_alive
+/// side-effect. `spawning` is true while a spawn is in flight.
+fn is_live_state(pid: Option<u32>, exited: bool, spawning: bool) -> bool {
+    if spawning {
+        return true;
+    }
+    match pid {
+        Some(p) => !exited && pid_alive(p),
         None => false,
     }
+}
+
+fn a_run_is_live() -> bool {
+    let g = state().read().unwrap_or_else(|e| e.into_inner());
+    is_live_state(g.pid, g.exited, g.spawning)
 }
 
 /// SIGTERM only — **never SIGKILL**.
@@ -384,6 +397,75 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
 /// wide enough for bench.py to mkdir but narrow enough that a second run
 /// cannot race in. Two simultaneous starts are blocked by `a_run_is_live()`,
 /// so the heuristic is safe in normal operation.
+/// Snapshot of all run folder names currently present, taken before spawning
+/// so the diff approach (T133) can identify which folder bench.py created.
+fn snapshot_run_folders(base: &std::path::Path) -> std::collections::HashSet<String> {
+    std::fs::read_dir(base)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect()
+}
+
+/// Returns the first folder in `base` not present in `known`, or `None` if
+/// bench.py has not created its directory yet.
+fn new_folder_since(
+    base: &std::path::Path,
+    known: &std::collections::HashSet<String>,
+) -> Option<String> {
+    std::fs::read_dir(base)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .find(|name| !known.contains(name))
+}
+
+/// Polls `runs_dir()` for a folder not in `known` for up to 2 s at 50 ms
+/// intervals, then falls back to the mtime heuristic if nothing appears.
+async fn folder_after_spawn(known: &std::collections::HashSet<String>) -> Option<String> {
+    let base = runs_dir();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Some(folder) = new_folder_since(&base, known) {
+            return Some(folder);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    // Fallback: mtime heuristic (same as the original 600ms approach).
+    newest_run_folder()
+}
+
+/// Scan `base` for a run folder whose `results.json` has a non-empty `live`
+/// field and whose `pid` file names a still-alive process.  Used by
+/// `stop_handler` to recover the pid after a dashboard restart (T135).
+fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
+    let rd = std::fs::read_dir(base).ok()?;
+    for entry in rd.filter_map(|e| e.ok()) {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path().join("results.json")).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let live = json.get("live")?;
+        if live.as_object().is_none_or(|m| m.is_empty()) {
+            continue;
+        }
+        let pid_str = std::fs::read_to_string(entry.path().join("pid")).ok()?;
+        let pid: u32 = pid_str.trim().parse().ok()?;
+        if pid_alive(pid) {
+            return Some(pid);
+        }
+    }
+    None
+}
+
 fn newest_run_folder() -> Option<String> {
     let mut entries: Vec<(std::time::SystemTime, String)> = std::fs::read_dir(runs_dir())
         .ok()?
@@ -534,6 +616,10 @@ impl ResumeRequest {
         if self.folder.contains("..") {
             return Err("path traversal sequences are not allowed");
         }
+        // "." passes the ".." check but resolves to the runs dir itself.
+        if self.folder == "." {
+            return Err("single dot resolves to the runs directory");
+        }
         Ok(())
     }
 
@@ -608,25 +694,30 @@ pub async fn start_handler(
     if let Err(e) = req.validate() {
         return axum::response::Json(json!({ "error": e, "success": false }));
     }
-    if should_refuse_start(a_run_is_live()) {
-        return axum::response::Json(json!({
-            "error": "a bench run is already active", "success": false
-        }));
-    }
+    // T127: check liveness and set the spawning flag in the same write-lock
+    // acquisition. A concurrent request that passed the old read-only check
+    // now sees spawning=true when it acquires its own write lock and is
+    // refused, closing the check-then-act gap.
     {
         let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+        if should_refuse_start(is_live_state(g.pid, g.exited, g.spawning)) {
+            return axum::response::Json(json!({
+                "error": "a bench run is already active", "success": false
+            }));
+        }
+        g.spawning = true;
         g.log.clear();
         g.exited = false;
         g.pid = None;
         g.run_folder = None;
         g.current = None;
     }
+    // T133: snapshot before spawn so the diff finds bench.py's folder even
+    // if an older run has a more recent mtime when the poll fires.
+    let known_folders = snapshot_run_folders(&runs_dir());
     match spawn_bench(req.to_args()).await {
         Ok(pid) => {
-            // bench.py creates the folder as it starts; give it a moment so
-            // the run can be attached to its output directory.
-            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-            let folder = newest_run_folder();
+            let folder = folder_after_spawn(&known_folders).await;
             let current = CurrentRun {
                 pid,
                 folder: folder.clone(),
@@ -644,6 +735,12 @@ pub async fn start_handler(
                 g.pid = Some(pid);
                 g.run_folder = folder.clone();
                 g.current = Some(current.clone());
+                g.spawning = false;
+            }
+            // T135: persist the pid so stop_handler can recover it after a
+            // dashboard restart, when BenchState.pid would otherwise be None.
+            if let Some(ref f) = folder {
+                let _ = std::fs::write(runs_dir().join(f).join("pid"), pid.to_string());
             }
             // Everything the hero's identity row needs, before results.json
             // exists at all.
@@ -651,7 +748,13 @@ pub async fn start_handler(
                 "pid": pid, "folder": folder, "run": current, "success": true
             }))
         }
-        Err(e) => axum::response::Json(json!({ "error": e, "success": false })),
+        Err(e) => {
+            state()
+                .write()
+                .unwrap_or_else(|e2| e2.into_inner())
+                .spawning = false;
+            axum::response::Json(json!({ "error": e, "success": false }))
+        }
     }
 }
 
@@ -731,7 +834,10 @@ pub async fn current_handler() -> axum::response::Json<Value> {
 
 pub async fn stop_handler() -> axum::response::Json<Value> {
     let pid = state().read().unwrap_or_else(|e| e.into_inner()).pid;
-    match pid {
+    // T135: if pid was lost after a restart, recover it from the pid file
+    // written at spawn time — the process may still be running.
+    let effective_pid = pid.or_else(|| recover_pid_for_live_run(&runs_dir()));
+    match effective_pid {
         Some(pid) if pid_alive(pid) => {
             sigterm_only(pid);
             axum::response::Json(json!({
@@ -823,33 +929,37 @@ pub async fn resume_handler(
     if let Err(reason) = req.validate_folder() {
         return axum::response::Json(json!({ "error": reason, "success": false }));
     }
-    if should_refuse_start(a_run_is_live()) {
-        return axum::response::Json(json!({
-            "error": "a bench run is already active", "success": false
-        }));
+    // T127: same atomic check-and-set as start_handler.
+    {
+        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+        if should_refuse_start(is_live_state(g.pid, g.exited, g.spawning)) {
+            return axum::response::Json(json!({
+                "error": "a bench run is already active", "success": false
+            }));
+        }
+        g.spawning = true;
+        g.log.clear();
+        g.exited = false;
     }
     let dir = bench_dir();
     // ABSOLUTE: the --resume argument is cwd-resolved by bench.py.
     let path = resume_run_path(&dir, &req.folder);
     let args = req.to_args(&path.to_string_lossy());
-    {
-        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
-        g.log.clear();
-        g.exited = false;
-    }
     match spawn_bench(args).await {
         Ok(pid) => {
             {
                 let mut g = state().write().unwrap_or_else(|e| e.into_inner());
                 g.pid = Some(pid);
                 g.run_folder = Some(req.folder.clone());
+                g.spawning = false;
             }
+            // T135: persist pid for post-restart recovery.
+            let _ = std::fs::write(runs_dir().join(&req.folder).join("pid"), pid.to_string());
             // bench.py refuses an incompatible resume by exiting immediately.
             // Reporting success here would announce a run that is already
             // dead and leave the reason visible only to someone who thinks to
             // open the Console tab.
-            tokio::time::sleep(std::time::Duration::from_millis(RESUME_SETTLE_MS)).await;
-            if a_run_is_live() {
+            if settle_liveness_check(a_run_is_live, RESUME_SETTLE_MS).await {
                 return axum::response::Json(json!({ "pid": pid, "success": true }));
             }
             let reason = {
@@ -867,7 +977,13 @@ pub async fn resume_handler(
                 "success": false
             }))
         }
-        Err(e) => axum::response::Json(json!({ "error": e, "success": false })),
+        Err(e) => {
+            state()
+                .write()
+                .unwrap_or_else(|e2| e2.into_inner())
+                .spawning = false;
+            axum::response::Json(json!({ "error": e, "success": false }))
+        }
     }
 }
 
@@ -875,6 +991,23 @@ pub async fn resume_handler(
 /// stall the button. A refusal is a `sys.exit` on the first read of the run
 /// file, not work.
 const RESUME_SETTLE_MS: u64 = 900;
+
+/// Second-probe delay after the initial settle — just long enough for a
+/// process that was in the middle of its exit sequence at t=SETTLE to have
+/// fully exited.
+const RESUME_CONFIRM_MS: u64 = 300;
+
+/// T138: check liveness at t=settle_ms and again at t=settle_ms+CONFIRM, so a
+/// process mid-exit (reading results.json) at the first probe does not produce
+/// a false success.  The closure is called twice; both must return true.
+async fn settle_liveness_check<F: Fn() -> bool>(is_live: F, settle_ms: u64) -> bool {
+    tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
+    if !is_live() {
+        return false;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(RESUME_CONFIRM_MS)).await;
+    is_live()
+}
 
 pub async fn queue_advance_handler(
     axum::extract::Json(req): axum::extract::Json<QueueAdvanceRequest>,
@@ -893,8 +1026,13 @@ pub async fn queue_advance_handler(
         .url
         .clone()
         .unwrap_or_else(|| "http://localhost:8081".to_string());
-    let url = format!("{}/v1/models", base.trim_end_matches('/'));
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    let url = models_probe_url(&base);
+    // T137: browsers drop connections well before 600s.  Cap each request at
+    // 30s and signal still_waiting=true so a caller can re-POST immediately
+    // without rebuilding the whole poll loop client-side.  Total patience for
+    // a cold 27B load (~10 min) is achieved by the caller looping on
+    // still_waiting rather than this handler holding a connection for 600s.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let client = reqwest::Client::new();
     while std::time::Instant::now() < deadline {
         if let Ok(resp) = client.get(&url).send().await
@@ -906,8 +1044,8 @@ pub async fn queue_advance_handler(
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
     axum::response::Json(json!({
-        "ready": false, "success": false,
-        "error": format!("{} did not appear in {url} within 600s", req.expected_model_id)
+        "ready": false, "still_waiting": true, "success": false,
+        "error": format!("{} not yet visible in {url} — re-POST to continue waiting", req.expected_model_id)
     }))
 }
 
@@ -1300,5 +1438,201 @@ mod tests {
             ..Default::default()
         };
         assert!(req.validate_folder().is_err());
+    }
+
+    // T138 — a single pid_alive check at t=900ms gives false success when the
+    // process is mid-exit (reading results.json) and dies moments later.
+    // settle_liveness_check polls twice with a gap; both checks must pass.
+    #[tokio::test]
+    async fn t138_settle_liveness_check_requires_both_probes_to_pass() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // First probe alive, second probe dead → must NOT report alive.
+        let n = AtomicUsize::new(0);
+        let result = settle_liveness_check(
+            || n.fetch_add(1, Ordering::SeqCst) == 0,
+            0, // settle_ms=0 so the test doesn't wait 900ms
+        )
+        .await;
+        assert!(
+            !result,
+            "process alive at first probe but dead at second must not be reported alive"
+        );
+
+        // Both probes alive → must report alive.
+        let result2 = settle_liveness_check(|| true, 0).await;
+        assert!(result2, "consistently alive process must be reported alive");
+    }
+
+    // T136 — queue_advance_handler used to build the /v1/models url by
+    // concatenation, producing …/v1/v1/models when the user configured a
+    // /v1-suffixed base url (the default).  models_probe_url() strips the
+    // trailing /v1 before appending /v1/models.
+    #[test]
+    fn t136_models_probe_url_handles_v1_suffixed_base() {
+        // Demonstrate the old bug.
+        let v1_url = "http://localhost:8081/v1";
+        let buggy = format!("{}/v1/models", v1_url.trim_end_matches('/'));
+        assert_eq!(
+            buggy, "http://localhost:8081/v1/v1/models",
+            "raw concatenation produces a double /v1"
+        );
+        // The fix: use models_probe_url which strips the trailing /v1.
+        assert_eq!(
+            models_probe_url(v1_url),
+            "http://localhost:8081/v1/models",
+            "models_probe_url must not double-append /v1"
+        );
+        // Plain URL (no /v1 suffix) must be unchanged.
+        assert_eq!(
+            models_probe_url("http://localhost:8081"),
+            "http://localhost:8081/v1/models"
+        );
+    }
+
+    // T135 — after a dashboard restart BenchState.pid is None; stop_handler
+    // must recover the pid from the pid file written at spawn time.
+    #[test]
+    fn t135_recover_pid_for_live_run_finds_pid_file_beside_active_run() {
+        let runs = std::env::temp_dir().join(format!(
+            "bench_t135_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let folder = runs.join("my-run_20260808-120000");
+        std::fs::create_dir_all(&folder).unwrap();
+
+        // A results.json whose `live` field is non-empty (run is active).
+        std::fs::write(
+            folder.join("results.json"),
+            r#"{"live":{"current_task":"js/foo","done":1,"total":4},"models":["m"]}"#,
+        )
+        .unwrap();
+
+        // The pid file the dashboard writes at spawn time.
+        let own_pid = std::process::id(); // always alive
+        std::fs::write(folder.join("pid"), own_pid.to_string()).unwrap();
+
+        let found = recover_pid_for_live_run(&runs);
+        assert_eq!(
+            found,
+            Some(own_pid),
+            "must recover the pid from the pid file beside the active run"
+        );
+
+        // A run whose live field is empty must not be returned.
+        let finished = runs.join("done-run_20260808-110000");
+        std::fs::create_dir_all(&finished).unwrap();
+        std::fs::write(
+            finished.join("results.json"),
+            r#"{"live":{},"models":["m"]}"#,
+        )
+        .unwrap();
+        std::fs::write(finished.join("pid"), own_pid.to_string()).unwrap();
+
+        // Recovery must still find the active run, not the finished one.
+        assert_eq!(recover_pid_for_live_run(&runs), Some(own_pid));
+
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    // T133 — folder-attach must use a pre-spawn snapshot so a decoy directory
+    // (or the previous run's folder touched during the 600ms window) is never
+    // mistaken for the new run's folder.
+    #[test]
+    fn t133_new_folder_since_skips_decoy_and_finds_real_folder() {
+        let runs = std::env::temp_dir().join(format!(
+            "bench_t133_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&runs).unwrap();
+
+        // Pre-existing decoy (newest by mtime — the old heuristic would pick this).
+        std::fs::create_dir(runs.join("decoy-run_20260808-120000")).unwrap();
+
+        let known = snapshot_run_folders(&runs);
+
+        // No new folder yet: must return None, not the decoy.
+        assert!(
+            new_folder_since(&runs, &known).is_none(),
+            "must not attach to the decoy when bench.py has not created its folder yet"
+        );
+
+        // bench.py creates its folder.
+        std::fs::create_dir(runs.join("new-run_20260808-120001")).unwrap();
+
+        let found = new_folder_since(&runs, &known);
+        assert_eq!(
+            found.as_deref(),
+            Some("new-run_20260808-120001"),
+            "must attach to the newly created folder, not the decoy"
+        );
+
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    // T144 — validate_folder must reject "." (which contains no ".." so it
+    // passes all existing guards but resolves to the runs directory itself).
+    #[test]
+    fn t144_validate_folder_rejects_dot() {
+        let req = |folder: &str| ResumeRequest {
+            folder: folder.to_string(),
+            ..Default::default()
+        };
+        assert!(
+            req(".").validate_folder().is_err(),
+            r#""." resolves to the runs dir itself and must be rejected"#
+        );
+        // "./" and ".//" already fail the path-separator check — verify that
+        // too so the guard is clearly complete.
+        assert!(
+            req("./").validate_folder().is_err(),
+            r#""./" must be rejected (contains /)"#
+        );
+        assert!(
+            req(".//.").validate_folder().is_err(),
+            r#"".//.". must be rejected (contains /)"#
+        );
+    }
+
+    // T127 — the spawning flag is included in the liveness check so a
+    // concurrent start that slips past the original read-only check is refused
+    // when it tries to acquire the write lock.
+    #[test]
+    fn t127_spawning_flag_makes_state_live_so_concurrent_start_is_refused() {
+        assert!(
+            is_live_state(None, false, true),
+            "spawning=true must report live — closes the TOCTOU window"
+        );
+        assert!(
+            !is_live_state(None, false, false),
+            "idle state (no pid, not spawning) must not report live"
+        );
+        assert!(
+            !is_live_state(None, true, false),
+            "exited with no pid must not report live"
+        );
+    }
+
+    // T140 — all state() lock acquisitions use unwrap_or_else so a poisoned
+    // lock does not crash the process. Verify the recovery pattern holds for
+    // any RwLock — avoids touching the global singleton from a test.
+    #[test]
+    fn t140_poisoned_rwlock_is_recovered_by_unwrap_or_else() {
+        use std::sync::{Arc, RwLock};
+        let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(42));
+        let lock2 = Arc::clone(&lock);
+        let _ = std::panic::catch_unwind(move || {
+            let _g = lock2.write().unwrap();
+            panic!("deliberate poison for T140");
+        });
+        // After poisoning, unwrap_or_else must recover the inner value.
+        let val = *lock.read().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(val, 42, "poisoned lock must be recovered, not panic");
     }
 }

@@ -356,11 +356,16 @@ function HeroCard({
   const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
 
   // A live run's own flags win; otherwise the selected run's stored config.
-  const liveLangs = current.running && !warming ? current.run?.langs : null;
-  const scope = runTaskScope(
-    taskList?.tasks,
-    liveLangs ? liveLangs.split(",") : detail?.config?.langs,
-  );
+  // Warming is included: current.run?.langs comes from process state and is
+  // available before results.json exists. Null means no filter (all langs),
+  // not "inherit from the previous run's config".
+  const liveLangs = current.running ? current.run?.langs : null;
+  const scopeLangs = (() => {
+    if (liveLangs) return liveLangs.split(",");
+    if (!current.running) return detail?.config?.langs;
+    return undefined;
+  })();
+  const scope = runTaskScope(taskList?.tasks, scopeLangs);
   const serverErrors = live.consecutive_server_errors ?? 0;
   const heroTarget = runTargetUrl(current, detail, targetUrl);
 
@@ -559,7 +564,7 @@ function HeroCard({
             accent
             mono
             label="Started"
-            value={startedAt ? new Date(startedAt).toISOString().slice(11, 19) : null}
+            value={startedAt ? new Date(startedAt).toISOString().slice(11, 19) + " UTC" : null}
             valueSize={14}
           />
           <MetricTile
@@ -822,6 +827,11 @@ function ProgressCard({
     if (last?.attempts_used) return `${last.attempts_used}/${of}`;
     return "—";
   })();
+  const taskTileLabel = (() => {
+    if (onTask.inFlight) return "On task";
+    if (onTask.task) return "Last completed";
+    return "Task";
+  })();
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -878,7 +888,7 @@ function ProgressCard({
             <MetricTile
               accent
               mono
-              label={onTask.inFlight ? "On task" : onTask.task ? "Last completed" : "Task"}
+              label={taskTileLabel}
               value={onTask.task ?? "—"}
               valueSize={11}
             />
@@ -1631,11 +1641,12 @@ function RunSetupCard({
           />
           {/* Clearing `override` IS the reset: every field falls back through
               the chain above to localbench's defaults, so nothing can be
-              missed by listing fields here and forgetting one. */}
+              missed by listing fields here and forgetting one. URL is separate
+              state (bench.setTargetUrl) so it is reset explicitly. */}
           <ActionButton
             label="Reset to defaults"
             disabled={running}
-            onClick={() => setOverride({})}
+            onClick={() => { setOverride({}); setTargetUrl(defaultUrl); }}
             title={
               running
                 ? "A run is active — Run Setup stages the next one, so reset enables when it finishes."
@@ -1666,7 +1677,7 @@ function RunSetupCard({
 
 export default function BenchPage() {
   const bench = useBenchData();
-  const { detail, check, runs, storedDetails, current } = bench;
+  const { detail, check, runs, storedDetails, current, error: benchError } = bench;
   const { addAlert } = useAlertsContext();
   // Same source as the llama.cpp page's Sampling tile, so Run Setup's
   // temperature follows the model that is actually loaded.
@@ -1805,9 +1816,16 @@ export default function BenchPage() {
 
   // A multi-hour run nobody is watching is the point of this page, so the end
   // of a run rings the header bell exactly once.
+  // T134: only announce when WE observed the running→not-running transition in
+  // this session.  Selecting an already-finished run from History must not ring
+  // the bell; `prevRunningRef` distinguishes the transition from page-load.
   const announcedRef = useRef<string | null>(null);
+  const prevRunningRef = useRef(false);
   useEffect(() => {
+    const wasRunning = prevRunningRef.current;
+    prevRunningRef.current = running;
     if (!detail || running) return;
+    if (!wasRunning) return;
     if (announcedRef.current === detail.run_id) return;
     announcedRef.current = detail.run_id;
     const samples = detail.summary?.samples ?? 0;
@@ -1845,6 +1863,23 @@ export default function BenchPage() {
           overflow: "hidden",
         }}
       >
+        {benchError && (
+          <div
+            data-testid="bench-data-error"
+            role="alert"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 6,
+              background: "color-mix(in srgb, var(--danger) 12%, transparent)",
+              border: "1px solid var(--danger)",
+              color: "var(--danger)",
+              font: "12px Inter, system-ui, sans-serif",
+              flexShrink: 0,
+            }}
+          >
+            Bench configuration unavailable: {benchError}
+          </div>
+        )}
         <div
           style={{
             display: "grid",
@@ -1953,7 +1988,6 @@ export default function BenchPage() {
           <PanelErrorBoundary panelName="Bench Tasks and Runs">
             <TasksAndRuns
               bench={bench}
-              now={now}
               running={running}
               warming={identity.warming}
               outputFolder={identity.folder}

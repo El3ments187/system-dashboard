@@ -646,14 +646,90 @@ describe("T26 polling lifecycle", () => {
   });
 });
 
-// T28 — the header bell, once.
+// T28 — the header bell, once.  The alert must fire when a run transitions
+// from live to finished in this session — not on every page load.
 describe("T28 alerts", () => {
-  it("pushes exactly one alert when a run has finished", async () => {
-    installFetch();
+  it("pushes exactly one alert when a run finishes while being watched", async () => {
+    // Drive liveness through current.running (CURRENT_POLL_MS=3000ms), which
+    // avoids the stored-detail loop racing the detail-poll for the call counter.
+    let currentCallCount = 0;
+    const baseFetch = installFetch();
+    void baseFetch;
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/bench/current")) {
+        currentCallCount++;
+        const active = currentCallCount === 1;
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              data: {
+                running: active,
+                run: active ? { folder: "seedA_20260808-223558" } : null,
+              },
+              success: true,
+            }),
+        } as Response);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
     render(<BenchPage />);
-    await waitFor(() => expect(addAlert).toHaveBeenCalled());
+    // CURRENT_POLL_MS=3000ms; the second poll flips running→false and fires
+    // the announcement.  Allow 5 s so the poll fires within the window.
+    await waitFor(() => expect(addAlert).toHaveBeenCalled(), { timeout: 5000 });
     expect(addAlert).toHaveBeenCalledTimes(1);
     expect(addAlert.mock.calls[0][1]).toBe("bench");
+    expect(String(addAlert.mock.calls[0][2])).toMatch(/finished/);
+  });
+});
+
+// T134 — announcedRef must track the running→finished transition, not every
+// time the selected run changes.  Clicking an already-finished run while idle
+// must never ring the bell; only a live run completing in this session does.
+describe("T134 announcedRef only fires on running→finished transition", () => {
+  it("does not alert when selecting a finished run while idle", async () => {
+    installFetch(); // current.running=false, detail.live={}
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    // Let two poll cycles pass — no alert should ever fire.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(addAlert).not.toHaveBeenCalled();
+  });
+
+  it("alerts exactly once when a live run finishes while being watched", async () => {
+    let currentCallCount = 0;
+    const baseFetch = installFetch();
+    void baseFetch;
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/bench/current")) {
+        currentCallCount++;
+        const active = currentCallCount === 1;
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              data: {
+                running: active,
+                run: active ? { folder: "seedA_20260808-223558" } : null,
+              },
+              success: true,
+            }),
+        } as Response);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    await waitFor(() => expect(addAlert).toHaveBeenCalled(), { timeout: 5000 });
+    // Exactly one alert for the completion.
+    expect(addAlert).toHaveBeenCalledTimes(1);
     expect(String(addAlert.mock.calls[0][2])).toMatch(/finished/);
   });
 });
@@ -1291,14 +1367,19 @@ describe("T23/T24 drilldown", () => {
     fireEvent.click(row);
   }
 
-  it("labels completion tokens as a SUM and total_tokens as the largest single request", async () => {
+  // T147 — drilldown tile labels.
+  // Old test asserted "Completion / all attempts" and "Largest single request"
+  // which were the pre-rename strings. Now renamed to "Tokens: completion" and
+  // "Tokens: largest request" so they read as a pair. Updated below.
+  it("T147 drilldown tiles carry the new labels", async () => {
     const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
     await openFirstTask(detail);
-    const sum = await screen.findByTestId("bench-tokens-sum");
+    const gen = await screen.findByTestId("bench-gen-tile");
+    const sum = screen.getByTestId("bench-tokens-sum");
     const max = screen.getByTestId("bench-tokens-max");
-    expect(sum.textContent).toMatch(/Completion/i);
-    expect(sum.textContent).toMatch(/all attempts/i);
-    expect(max.textContent).toMatch(/Largest single request/i);
+    expect(gen.textContent).toMatch(/Generation time/i);
+    expect(sum.textContent).toMatch(/Tokens:\s*completion/i);
+    expect(max.textContent).toMatch(/Tokens:\s*largest request/i);
   });
 
   it("suffixes token figures with ~ when tokens_estimated is set", async () => {
@@ -1525,6 +1606,69 @@ describe("T57 hero tiles and Output relocation", () => {
   });
 });
 
+// T142 — Started tile must show UTC label so users know the timezone.
+describe("T142 Started tile UTC label", () => {
+  it("renders the start time with a UTC suffix", async () => {
+    installFetch({
+      current: {
+        running: true,
+        run: runRow({ started: "2026-08-09T12:00:00Z", finished: false }),
+      },
+    });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-hero-tiles");
+    // "2026-08-09T12:00:00Z" → "12:00:00 UTC"
+    expect(tiles.textContent).toMatch(/12:00:00\s*UTC/);
+  });
+});
+
+// T143 — groupByEdition: third group must not be labelled "previous edition".
+describe("T143 groupByEdition three-edition labels", () => {
+  it("labels the third group 'older edition', not 'previous edition'", async () => {
+    const runs = [
+      runRow({ run_id: "r1", suite_hash: "aaa0001", created: "2026-08-10T10:00:00" }),
+      runRow({ run_id: "r2", suite_hash: "bbb0002", created: "2026-08-09T10:00:00" }),
+      runRow({ run_id: "r3", suite_hash: "ccc0003", created: "2026-08-08T10:00:00" }),
+    ];
+    installFetch({ runs });
+    render(<BenchPage />);
+    // Switch to the History tab so the edition headers render.
+    const histTab = await screen.findByTestId("bench-tab-hist");
+    fireEvent.click(histTab);
+    // Runs arrive asynchronously; waitFor retries until all three heads appear.
+    await waitFor(() => expect(screen.getAllByTestId("bench-edition-head")).toHaveLength(3));
+    const heads = screen.getAllByTestId("bench-edition-head");
+    expect(heads).toHaveLength(3);
+    expect(heads[0].textContent).toMatch(/current edition/);
+    expect(heads[1].textContent).toMatch(/previous edition/);
+    expect(heads[2].textContent).toMatch(/older edition/);
+  });
+});
+
+// T148 — StripLegend entries are capitalised; server entry shortened to "Excluded".
+describe("T148 StripLegend capitalisation", () => {
+  it("renders each legend entry capitalised and shortens the server entry", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-hero-tiles");
+    const bodyText = document.body.textContent ?? "";
+    // All eight items must be capitalised (first letter uppercase).
+    expect(bodyText).toMatch(/Solved/);
+    expect(bodyText).toMatch(/On retry/);
+    expect(bodyText).toMatch(/Failed/);
+    expect(bodyText).toMatch(/Crashed \/ nothing runnable/);
+    expect(bodyText).toMatch(/Timeout\/format/);
+    expect(bodyText).toMatch(/Excluded/);
+    expect(bodyText).toMatch(/In progress/);
+    expect(bodyText).toMatch(/│ Separates samples/);
+    // The verbose server entry must not survive.
+    expect(bodyText).not.toMatch(/server — excluded, never a zero/);
+    // U+2212 true minus preserved in "On retry (−1 pt each)".
+    // \u2212 in the pattern ensures the rendered text carries the real minus sign.
+    expect(bodyText).toMatch(/\u22121 pt each/);
+  });
+});
+
 // T58 — Languages is four toggles sourced from real availability.
 describe("T58 language toggles", () => {
   it("toggles independently and submits exactly what is left on", async () => {
@@ -1647,10 +1791,10 @@ describe("T59 footer is single-source", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-gen-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
     );
     for (const id of [
-      "bench-footer-gen-speed",
+      "bench-footer-generation-speed",
       "bench-footer-samples-hr",
       "bench-footer-pass-rate",
       "bench-footer-remaining",
@@ -1924,9 +2068,10 @@ describe("T63b no unexpected lowercase-first copy", () => {
     /^(of|edition|localbench|tasks?|on task|set it in Settings)$/,
     /^est\. /, // "est. 3m 17s" — a value annotation, not a sentence
     /^(queued|skipped)$/, // roster-row state labels, not sentences
-    /^(solved|failed|in progress|timeout\/format|on retry|server —)/, // strip legend fragments
-    /^crashed \/ nothing runnable$/, // T70's legend entry, same class
-    /^(current|previous) edition$/, // section headings (CSS-uppercased)
+    // T148: legend entries are now capitalised — exemptions removed. The old
+    // patterns exempted "solved", "failed", etc. which now start uppercase and
+    // pass the check without an exemption. Kept: none.
+    /^(current|previous|older) edition$/, // section headings (CSS-uppercased)
     /^mock \/ other server$/, // badge (CSS-uppercased)
     /^inspect prompt$/, // lead pill label
     /^no server answering at/, // T61's byte-exact banner — owned by that test
@@ -2164,25 +2309,78 @@ describe("T67 the suite-drift canary ignores crashed records", () => {
     r.tests_total = ran;
     r.tests_expected = expected;
     r.solved = false;
+    // Clear first_failed so failureExplanation reaches the reason/canary branch.
+    (r as Record<string, unknown>).first_failed = [];
     return d;
   };
 
   it("says nothing when a crash cut the assertion count short", async () => {
     // The real run: java/glob_matcher errored after 59 of 128 assertions and
     // was reported as SUITE DRIFT. A crash explains the low count by itself.
+    // The canary is hidden entirely for non-applicable records (T130).
     installFetch({ detail: asStatus("error", 59, 128) });
     render(<BenchPage />);
     const rows = await screen.findAllByTestId("bench-task-row");
     fireEvent.click(rows[0]);
-    const canary = await screen.findByTestId("bench-canary");
+    await screen.findByTestId("bench-failure-reason");
     expect(
-      canary.textContent,
-      "a crashed record's count is evidence of the crash, not of drift",
-    ).not.toMatch(/SUITE DRIFT/);
+      screen.queryByTestId("bench-canary"),
+      "a crashed record must not render the canary at all",
+    ).toBeNull();
   });
 
   it("still shouts when a completed record disagrees with the suite", async () => {
     installFetch({ detail: asStatus("fail", 32, 35) });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    const canary = await screen.findByTestId("bench-canary");
+    expect(canary.textContent).toMatch(/SUITE DRIFT/);
+  });
+});
+
+// T130 — assertionCanary.applicable must gate the canary render.
+// A crashed record has applicable=false (the count proves nothing about the
+// suite). The old code branched on canary.ok only; ok is always true for
+// non-applicable records, so a crash displayed "tests 0/35 ✓" in green.
+describe("T130 canary is absent for non-applicable (crashed) records", () => {
+  const mkRecord = (status: string, ran: number, expected: number) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const r = (d as { records: Record<string, unknown>[] }).records[0];
+    r.status = status;
+    r.tests_total = ran;
+    r.tests_expected = expected;
+    r.solved = false;
+    // Clear first_failed so failureExplanation reaches the reason/canary branch.
+    (r as Record<string, unknown>).first_failed = [];
+    return d;
+  };
+
+  it("non-applicable (crashed): canary element is absent — neither ✓ nor drift", async () => {
+    installFetch({ detail: mkRecord("error", 0, 35) });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    // Wait for drilldown to open (error records always show a reason)
+    await screen.findByTestId("bench-failure-reason");
+    expect(
+      screen.queryByTestId("bench-canary"),
+      "crashed record must not render the canary at all",
+    ).toBeNull();
+  });
+
+  it("completed+matching: shows ✓, no drift", async () => {
+    installFetch({ detail: mkRecord("pass", 42, 42) });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    const canary = await screen.findByTestId("bench-canary");
+    expect(canary.textContent).toContain("✓");
+    expect(canary.textContent).not.toMatch(/SUITE DRIFT/);
+  });
+
+  it("completed+mismatch: shows drift warning", async () => {
+    installFetch({ detail: mkRecord("fail", 32, 35) });
     render(<BenchPage />);
     const rows = await screen.findAllByTestId("bench-task-row");
     fireEvent.click(rows[0]);
@@ -2210,9 +2408,11 @@ describe("T70 error is distinguishable from fail", () => {
     expect(
       document.querySelectorAll('[data-cell-state="miss"]').length,
     ).toBeGreaterThan(0);
-    // Both appear in the legend, so the distinction is readable.
-    expect(screen.getByText("crashed / nothing runnable")).toBeTruthy();
-    expect(screen.getByText("failed")).toBeTruthy();
+    // Both appear in the legend so the distinction is readable.
+    // T148: legend entries are now capitalised — old strings ("crashed / nothing
+    // runnable", "failed") no longer exist; updated to the new casing.
+    expect(screen.getByText("Crashed / nothing runnable")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
   });
 });
 
@@ -2491,7 +2691,7 @@ describe("T83 footer sparklines", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-gen-speed").textContent).toBe(
+      expect(screen.getByTestId("bench-footer-generation-speed").textContent).toBe(
         "—",
       ),
     );
@@ -2969,6 +3169,65 @@ describe("T86 History distinguishes running from interrupted", () => {
   });
 });
 
+// T126 — isLiveRun must use the running process's folder, not the selected run.
+// Selecting a finished run in History while a benchmark is active swaps
+// bench.detail; the old rule stripped isLiveRun from the live run and showed
+// Resume on it, which would spawn a second bench.py on the same directory.
+describe("T126 isLiveRun from process folder, not selected-run detail", () => {
+  const LIVE_FOLDER = "qwen_20260809-130000";
+  const RUNNING_CURRENT = {
+    running: true,
+    run: {
+      pid: 5555,
+      folder: LIVE_FOLDER,
+      model: "Qwen3-27B",
+      label: null,
+      langs: "js",
+      url: "http://localhost:8081",
+      attempts: 3,
+      n: 1,
+      temperature: 0.6,
+      started: "2026-08-09T13:00:00Z",
+    },
+  };
+
+  it("live run shows running (not Resume) even when its detail is not selected", async () => {
+    // bench.detail = benchRun (run_id ≠ "live-001").
+    // Old: isLiveRun = running && "live-001" === benchRun.run_id → false → Resume shown.
+    // Fixed: isLiveRun = current.run.folder === run.folder → true → no Resume.
+    installFetch({
+      runs: [
+        runRow({ run_id: "live-001", folder: LIVE_FOLDER, finished: false, summary: null }),
+        runRow(),
+      ],
+      current: RUNNING_CURRENT,
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-run-running")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-resume"),
+      "live run must not show Resume when a different run is selected",
+    ).toBeNull();
+  });
+
+  it("a genuinely interrupted run still shows Resume when current folder differs", async () => {
+    installFetch({
+      runs: [runRow({ run_id: "interrupted-001", folder: "old_20260808-100000", finished: false })],
+      current: RUNNING_CURRENT,
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-resume")).toBeTruthy(),
+    );
+  });
+});
+
 // T90 — the footer's fifth slot reports something that moves.
 describe("T90 footer shows Remaining, not an always-zero error count", () => {
   it("replaces the Server errors slot", async () => {
@@ -3108,6 +3367,39 @@ describe("T92 Compare per-slot dropdowns", () => {
 
     const refusal = await screen.findByTestId("bench-compare-refusal");
     expect(refusal.textContent).toMatch(/suite editions/);
+  });
+});
+
+// T129 — Compare caption must match the actual sort.
+// taskList.tasks = [] is truthy, so the old `taskOrder ? ... : ...` said
+// "Sorted by suite task order" while compareRows fell through to Δ-sort.
+describe("T129 Compare caption matches actual sort when taskList is empty", () => {
+  const twoRuns = () => [runRow(), runRow({ run_id: "r2" })];
+
+  it("says 'Sorted by Δ' when taskList has no tasks", async () => {
+    installFetch({ runs: twoRuns(), taskList: { suite_hash: "abc", tasks: [] } });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-compare-slot-0")).toBeTruthy(),
+    );
+    const caption = document.querySelector("p");
+    expect(
+      caption?.textContent,
+      "empty taskList must not claim suite-order sort",
+    ).toMatch(/Sorted by/);
+    expect(caption?.textContent).not.toContain("suite task order");
+  });
+
+  it("says 'Sorted by suite task order' when taskList has tasks", async () => {
+    installFetch({ runs: twoRuns() }); // default TASK_LIST has tasks
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-compare-slot-0")).toBeTruthy(),
+    );
+    const caption = document.querySelector("p");
+    expect(caption?.textContent).toContain("suite task order");
   });
 });
 
@@ -3808,12 +4100,16 @@ describe("T100 the why-it-failed panel states the mode", () => {
     ).toBeNull();
   });
 
-  it("leaves the canary alone: a crashed record stays green", async () => {
+  it("hides the canary for a crashed record (T130): count proves nothing when the grader was cut short", async () => {
     installFetch({ detail: cutOff() });
     render(<BenchPage />);
     await openDrilldown();
-    const canary = await screen.findByTestId("bench-canary");
-    expect(canary.textContent).not.toMatch(/SUITE DRIFT/);
+    // Wait for the drilldown to render before asserting absence
+    await screen.findByTestId("bench-failure-history");
+    expect(
+      screen.queryByTestId("bench-canary"),
+      "a crashed record (applicable=false) must not render the canary",
+    ).toBeNull();
   });
 });
 
@@ -4549,5 +4845,129 @@ describe("T119 controlAction error surfacing", () => {
     await waitFor(() => expect(addAlert).toHaveBeenCalled());
     const [, , msg] = addAlert.mock.calls[0] as [unknown, unknown, string];
     expect(msg).toMatch(/no active run/i);
+  });
+});
+
+// T132 — stored-detail loop must write each fetched run to the ref
+// immediately, not only after the full pass completes.  If the 5 s runs-list
+// poll fires mid-pass, the cleanup cancels it and a new pass starts.  Without
+// a per-run write the new pass rebuilds `cached` from an empty ref and
+// re-fetches every run — with 32 runs that is ~8 req/s, forever.
+describe("T132 stored-detail loop writes cache per-run, not only at completion", () => {
+  it("does not re-fetch run-A after its detail was loaded in a pass that was later cancelled", async () => {
+    vi.useFakeTimers();
+
+    const RUN_A_ID = "run-a-t132";
+    const RUN_B_ID = "run-b-t132";
+
+    const runA = runRow({ run_id: RUN_A_ID, folder: "seedA_t132a", finished: true });
+    const runB = runRow({ run_id: RUN_B_ID, folder: "seedB_t132b", finished: true });
+
+    // run-B's fetch is deliberately stalled so the 5 s poll fires while the
+    // first stored-detail pass is still mid-loop (waiting on run-B).
+    let resolveRunB!: () => void;
+    const runBGate = new Promise<void>((r) => {
+      resolveRunB = r;
+    });
+
+    const fetchCounts: Record<string, number> = {};
+
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/bench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes(`/api/bench/runs/${RUN_A_ID}`)) {
+        fetchCounts[RUN_A_ID] = (fetchCounts[RUN_A_ID] ?? 0) + 1;
+        return okJson({ ...benchRun, run_id: RUN_A_ID });
+      }
+      if (url.includes(`/api/bench/runs/${RUN_B_ID}`)) {
+        fetchCounts[RUN_B_ID] = (fetchCounts[RUN_B_ID] ?? 0) + 1;
+        // Stall until released — keeps the first pass cancelled mid-loop.
+        return runBGate.then(
+          () =>
+            ({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  data: { ...benchRun, run_id: RUN_B_ID },
+                  success: true,
+                }),
+            }) as Response,
+        );
+      }
+      if (url.includes("/api/bench/runs")) return okJson([runA, runB]);
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ data: {}, success: true }),
+      } as Response);
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+
+    // Wait for the first stored-detail pass to fetch run-A.
+    await vi.waitFor(() => expect(fetchCounts[RUN_A_ID]).toBeGreaterThanOrEqual(1));
+    const afterFirstPass = fetchCounts[RUN_A_ID]!;
+
+    // Advance 5 s: fires the RUNS_LIST_POLL_MS timer, which fetches
+    // /api/bench/runs again, produces a new array object, and cancels the
+    // in-flight stored-detail pass (run-B is still stalled).  A second pass
+    // then starts immediately.
+    await vi.advanceTimersByTimeAsync(5000);
+    // Flush microtasks so the second pass can read storedDetailsRef.
+    await vi.advanceTimersByTimeAsync(100);
+
+    // run-A must not have been re-fetched: the fix writes it to
+    // storedDetailsRef immediately after each successful fetch, so the second
+    // pass finds it in the cached map and skips it.
+    expect(
+      fetchCounts[RUN_A_ID] ?? 0,
+      "run-A detail must not be re-fetched when it is already in the per-run cache",
+    ).toBe(afterFirstPass);
+
+    // Release the gate so the component can unmount without dangling promises.
+    resolveRunB();
+  });
+});
+
+// T131 — bench.error must appear on screen so the user knows why the page is
+// blank, not just in an empty state with no explanation.
+describe("T131 bench.error is rendered as an inline banner", () => {
+  it("shows the error when /check fails", async () => {
+    installFetch({ failCheck: true });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-data-error")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-data-error").textContent).toMatch(
+      /API error 500/i,
+    );
+  });
+
+  it("does not show an error banner on a healthy load", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-data-error")).toBeNull();
   });
 });
