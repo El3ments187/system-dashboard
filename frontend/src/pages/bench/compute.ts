@@ -470,6 +470,41 @@ export function compareEligibility(
 }
 
 /**
+ * Condenses partial-coverage tasks for the banner.
+ * Languages with ≥2 partial tasks fold to "all N lang"; single-task
+ * languages are listed individually.
+ */
+export function groupCoverage(partial: string[]): string {
+  const byLang = new Map<string, string[]>();
+  for (const task of partial) {
+    const lang = task.split("/")[0];
+    const list = byLang.get(lang);
+    if (list) list.push(task);
+    else byLang.set(lang, [task]);
+  }
+  const parts: string[] = [];
+  for (const [lang, tasks] of byLang) {
+    if (tasks.length >= 2) parts.push(`all ${tasks.length} ${lang}`);
+    else parts.push(tasks[0]);
+  }
+  return parts.join(", ");
+}
+
+/**
+ * bench.py writes `datetime.now().isoformat(timespec="seconds")` — local time
+ * with no timezone offset. `new Date(s).toISOString()` converts that to UTC,
+ * so the displayed hour is wrong in any non-UTC timezone. Slice the original
+ * string instead; both helpers share this invariant.
+ */
+export function benchLocalTime(isoLocal: string): string {
+  return isoLocal.slice(11, 19);
+}
+
+export function benchLocalDate(isoLocal: string): string {
+  return isoLocal.slice(0, 10);
+}
+
+/**
  * localbench's own defaults, read from bench.py's argparse table in
  * `2026.08.07-129` and verified against the checkout:
  *

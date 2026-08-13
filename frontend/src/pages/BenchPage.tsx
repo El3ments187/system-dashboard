@@ -45,6 +45,7 @@ import {
   heartbeatAgeMs,
   historicalTaskMedian,
   isHeartbeatStale,
+  benchLocalTime,
   languageBreakdown,
   runTaskAvg,
   serverExcludedCount,
@@ -337,7 +338,6 @@ function HeroCard({
   elapsedSeconds,
   current,
   defaultUrl,
-  targetUrl,
   taskList,
 }: {
   status: RunStatus;
@@ -351,7 +351,6 @@ function HeroCard({
   elapsedSeconds: number | null;
   current: BenchCurrent;
   defaultUrl: string;
-  targetUrl: string;
   taskList: BenchTaskList | null;
 }) {
   const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
@@ -368,7 +367,7 @@ function HeroCard({
   })();
   const scope = runTaskScope(taskList?.tasks, scopeLangs);
   const serverErrors = live.consecutive_server_errors ?? 0;
-  const heroTarget = runTargetUrl(current, detail, targetUrl);
+  const heroTarget = runTargetUrl(current, detail, defaultUrl);
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -565,7 +564,7 @@ function HeroCard({
             accent
             mono
             label="Started"
-            value={startedAt ? new Date(startedAt).toISOString().slice(11, 19) + " UTC" : null}
+            value={startedAt ? benchLocalTime(startedAt) : null}
             valueSize={14}
           />
           <MetricTile
@@ -1065,8 +1064,6 @@ function RunSetupCard({
   check,
   running,
   onRefresh,
-  targetUrl,
-  setTargetUrl,
   defaultUrl,
   readiness,
   mockReadiness,
@@ -1080,8 +1077,6 @@ function RunSetupCard({
   check: BenchCheck | null;
   running: boolean;
   onRefresh: () => void;
-  targetUrl: string;
-  setTargetUrl: (url: string) => void;
   defaultUrl: string;
   readiness: BenchReadiness;
   mockReadiness: BenchReadiness;
@@ -1221,11 +1216,8 @@ function RunSetupCard({
       url,
     });
 
-  const startRun = () => startWith(targetUrl);
+  const startRun = () => startWith(defaultUrl);
 
-  // A ONE-OFF start against the mockserver. Deliberately does not write to
-  // targetUrl: silently repointing the configured field at a mock — which
-  // the user would then never notice — would be its own bug.
   const dryRun = () => startWith(MOCK_URL);
 
   const dryRunBlocked = startDisabledReason({
@@ -1259,7 +1251,7 @@ function RunSetupCard({
   const estimate = estimatedRunSeconds(
     storedDetails,
     (plannedTasks.length || taskCount) * form.n,
-    targetUrl,
+    defaultUrl,
     defaultUrl,
     { remainingTasks: plannedTasks, samplesPerTask: form.n },
   );
@@ -1342,35 +1334,6 @@ function RunSetupCard({
               title="Maps to --label. It renames the run everywhere in results.json except config.model, so with Model ID blank the real model is not recorded anywhere."
               onChange={(e) => set("label", e.target.value)}
             />
-          </Field>
-
-          <Field
-            label="URL"
-            hint={
-              isNonDefaultTarget(targetUrl, defaultUrl)
-                ? "Not the configured llama-server"
-                : "Defaults to the configured llama-server"
-            }
-          >
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input
-                data-testid="bench-url-field"
-                id="bench-url"
-                name="bench-url"
-                style={{
-                  ...FIELD_INPUT,
-                  borderColor: readiness.ready
-                    ? "var(--border-color)"
-                    : "color-mix(in srgb, var(--warning) 45%, transparent)",
-                }}
-                value={targetUrl}
-                spellCheck={false}
-                onChange={(e) => setTargetUrl(e.target.value)}
-              />
-              {isNonDefaultTarget(targetUrl, defaultUrl) && (
-                <TargetBadge url={targetUrl} />
-              )}
-            </div>
           </Field>
 
           {/* Toggles, not free text. There are exactly four selectable
@@ -1550,7 +1513,7 @@ function RunSetupCard({
               marginTop: 8,
             }}
           >
-            Model ID <b>{form.model}</b> is not what {targetUrl} reports (
+            Model ID <b>{form.model}</b> is not what {defaultUrl} reports (
             {knownIds.slice(0, 3).join(", ")}
             {knownIds.length > 3 ? ", …" : ""}). bench.py records this name
             without checking it, so the run would be filed under a model that
@@ -1572,10 +1535,10 @@ function RunSetupCard({
           </div>
         )}
 
-        {/* The readiness refusal, in the same banner idiom as the hero's
-            server-error strip. The raw transport error is deliberately NOT
-            in the sentence — it repeated the address and buried the one
-            thing worth reading; it lives in the tooltip instead. */}
+        {/* Short link-only banner — the diagnosis lives on the Start
+            button's tooltip (blockedReason), which is visible on hover.
+            The link is kept here so the one-click fix is reachable without
+            dismissing anything or hunting through text. */}
         {!running && !readiness.ready && (
           <div
             className="bench-banner"
@@ -1583,24 +1546,17 @@ function RunSetupCard({
             title={readiness.reason}
             style={{ margin: "10px 0 0", padding: "7px 12px", fontSize: 12 }}
           >
-            <TriangleAlert size={13} />
-            <span>
-              No server answering at{" "}
-              <code className="bench-code">{readiness.url || targetUrl}</code>.{" "}
-              <a
-                href="/llama-cpp"
-                data-testid="bench-llamacpp-link"
-                style={{ color: "var(--text-primary)", fontWeight: 600 }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigateTo("/llama-cpp");
-                }}
-              >
-                Start a model on the llama.cpp page
-              </a>
-              , or point <code className="bench-code">--url</code> at a
-              mockserver.
-            </span>
+            <a
+              href="/llama-cpp"
+              data-testid="bench-llamacpp-link"
+              style={{ color: "var(--text-primary)", fontWeight: 600 }}
+              onClick={(e) => {
+                e.preventDefault();
+                navigateTo("/llama-cpp");
+              }}
+            >
+              Start a model on the llama.cpp page
+            </a>
           </div>
         )}
         <div
@@ -1613,7 +1569,7 @@ function RunSetupCard({
             onClick={startRun}
             title={
               blockedReason ??
-              `Spawn bench.py with the flags above, against ${targetUrl}.`
+              `Spawn bench.py with the flags above, against ${defaultUrl}.`
             }
           />
           <ActionButton
@@ -1646,16 +1602,15 @@ function RunSetupCard({
           />
           {/* Clearing `override` IS the reset: every field falls back through
               the chain above to localbench's defaults, so nothing can be
-              missed by listing fields here and forgetting one. URL is separate
-              state (bench.setTargetUrl) so it is reset explicitly. */}
+              missed by listing fields here and forgetting one. */}
           <ActionButton
             label="Reset to defaults"
             disabled={running}
-            onClick={() => { setOverride({}); setTargetUrl(defaultUrl); }}
+            onClick={() => { setOverride({}); }}
             title={
               running
                 ? "A run is active — Run Setup stages the next one, so reset enables when it finishes."
-                : "Put every field back to localbench's own defaults, with the model and temperature taken from the loaded server and the url from your configuration."
+                : "Put every field back to localbench's own defaults, with the model and temperature taken from the loaded server."
             }
           />
           <span
@@ -1749,7 +1704,7 @@ export default function BenchPage() {
     return estimatedRunSeconds(
       storedDetails,
       left,
-      runTargetUrl(current, detail, bench.targetUrl),
+      runTargetUrl(current, detail, bench.defaultUrl),
       bench.defaultUrl,
       // The run in progress is the best evidence of its own pace, and it was
       // being ignored in favour of history alone.
@@ -1763,7 +1718,6 @@ export default function BenchPage() {
     storedDetails,
     current,
     detail,
-    bench.targetUrl,
     bench.defaultUrl,
   ]);
 
@@ -1788,20 +1742,19 @@ export default function BenchPage() {
   })();
   const median = useMemo(
     () =>
-      live.current_task
-        ? historicalTaskMedian(
-            storedDetails,
-            live.current_task,
-            runTargetUrl(current, detail, bench.targetUrl),
-            bench.defaultUrl,
-          )
-        : null,
+        live.current_task
+          ? historicalTaskMedian(
+              storedDetails,
+              live.current_task,
+              runTargetUrl(current, detail, bench.defaultUrl),
+              bench.defaultUrl,
+            )
+          : null,
     [
       storedDetails,
       live.current_task,
       current,
       detail,
-      bench.targetUrl,
       bench.defaultUrl,
     ],
   );
@@ -1904,7 +1857,6 @@ export default function BenchPage() {
               elapsedSeconds={elapsedSeconds}
               current={bench.current}
               defaultUrl={bench.defaultUrl}
-              targetUrl={bench.targetUrl}
               taskList={bench.taskList}
             />
           </PanelErrorBoundary>
@@ -1971,8 +1923,6 @@ export default function BenchPage() {
                 check={check}
                 running={running}
                 onRefresh={bench.refresh}
-                targetUrl={bench.targetUrl}
-                setTargetUrl={bench.setTargetUrl}
                 defaultUrl={bench.defaultUrl}
                 readiness={bench.readiness}
                 mockReadiness={bench.mockReadiness}

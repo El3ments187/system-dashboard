@@ -111,15 +111,8 @@ export const READY_POLL_MS = 5000;
 export const RUNS_LIST_POLL_MS = 5000;
 
 export interface BenchData {
-  /**
-   * The server a run will target. ONE field with three consumers — the
-   * readiness gate, the mock-target badge, and the flags passed to
-   * bench.py — so they cannot drift apart.
-   */
-  targetUrl: string;
-  setTargetUrl: (url: string) => void;
   /** The configured llama-server, used as the default and as the
-   *  "is this a real target" comparison. */
+   *  "is this a real target" comparison. Runs target this URL. */
   defaultUrl: string;
   /** Configured localbench checkout, for the runs-path chip. */
   benchDir: string | null;
@@ -151,10 +144,6 @@ export function useBenchData(): BenchData {
     running: false,
     run: null,
   });
-  // Session-only on purpose: a mock/test url must never survive a reload as
-  // a saved default. A fresh load shows the real server unless the user has
-  // changed it in THIS session.
-  const [targetUrl, setTargetUrl] = useState("");
   const [defaultUrl, setDefaultUrl] = useState("");
   const [benchDir, setBenchDir] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<BenchReadiness>({
@@ -191,7 +180,8 @@ export function useBenchData(): BenchData {
   const selectRun = useCallback((runId: string) => setSelectedRunId(runId), []);
 
   // The configured llama-server is the default target and the yardstick for
-  // "is this a real server". Fetched once.
+  // "is this a real server". Re-fetched on every nonce bump so Re-check
+  // picks up a URL change made in Settings without a full reload.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -207,23 +197,23 @@ export function useBenchData(): BenchData {
         const url = body.llama_server_url ?? "";
         if (!url) return;
         setDefaultUrl(url);
-        setTargetUrl((cur) => cur || url);
       } catch {
-        // No settings: the field stays editable and readiness will say so.
+        // No settings: readiness will report accordingly.
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [nonce]);
 
   // Re-probe the target so starting a model elsewhere flips the gate without
   // a reload — the same self-syncing principle as the update button.
   useEffect(() => {
+    if (!defaultUrl) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
-      const next = await probeReadiness(targetUrl);
+      const next = await probeReadiness(defaultUrl);
       if (cancelled) return;
       setReadiness(next);
       timer = setTimeout(() => void tick(), READY_POLL_MS);
@@ -233,7 +223,7 @@ export function useBenchData(): BenchData {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [targetUrl, nonce]);
+  }, [defaultUrl, nonce]);
 
   // The same data RUN MODELS shows on the llama.cpp page — reused, not a
   // second endpoint. `--list` returns TASKS, so it cannot serve this.
@@ -479,8 +469,6 @@ export function useBenchData(): BenchData {
   }, [selectedRunId, nonce]);
 
   return {
-    targetUrl,
-    setTargetUrl,
     defaultUrl,
     benchDir,
     readiness,

@@ -827,16 +827,17 @@ describe("T37 server-readiness gate", () => {
           .disabled,
       ).toBe(true),
     );
-    // The first probe runs before the settings fetch resolves, so the
-    // reason is briefly "no url configured" — wait for the real one.
+    // The verbose sentence moved to the Start button's tooltip (T151).
+    // Wait for the real reason (not the initial "Checking..." placeholder).
     await waitFor(() =>
-      expect(screen.getByTestId("bench-start-blocked").textContent).toMatch(
-        /no server answering/i,
-      ),
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .title,
+      ).toMatch(/no server answering/i),
     );
-    // The remedy must be in the UI, not only a tooltip.
+    // The llama.cpp link must remain visible in the short banner.
     expect(screen.getByTestId("bench-start-blocked").textContent).toMatch(
-      /llama\.cpp page|mockserver/i,
+      /llama\.cpp page/i,
     );
   });
 
@@ -1030,20 +1031,6 @@ describe("T39 liveness wiring", () => {
 
 // T40 / T43 / T44 — Run Setup is a real form (Fix 7, Fix 10).
 describe("T40/T43/T44 Run Setup form", () => {
-  it("T40 the url field defaults to the llama-server, not the last run's url", async () => {
-    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
-    // The stored run used a mock url; a fresh mount must NOT inherit it.
-    (detail as { config: { url: string } }).config.url =
-      "http://127.0.0.1:8123";
-    installFetch({ detail });
-    render(<BenchPage />);
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId("bench-url-field") as HTMLInputElement).value,
-      ).toBe("http://localhost:8081"),
-    );
-  });
-
   it("T43 every field is a real editable control", async () => {
     installFetch();
     render(<BenchPage />);
@@ -1053,7 +1040,6 @@ describe("T40/T43/T44 Run Setup form", () => {
     for (const id of [
       "bench-field-model",
       "bench-field-label",
-      "bench-url-field",
       "bench-field-attempts",
       "bench-field-n",
       "bench-field-temperature",
@@ -1263,29 +1249,6 @@ describe("T49/T50/T51 Dry run", () => {
       expect(calls.some((c) => c.includes("/api/bench/start"))).toBe(true),
     );
     expect(startBody().url).toBe("http://127.0.0.1:8123");
-  });
-
-  it("T50 leaves the configured url field byte-identical", async () => {
-    installFetch();
-    render(<BenchPage />);
-    const field = (await screen.findByTestId(
-      "bench-url-field",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(field.value).toBe("http://localhost:8081"));
-    const before = field.value;
-
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
-          .disabled,
-      ).toBe(false),
-    );
-    fireEvent.click(screen.getByTestId("bench-action-dry-run"));
-
-    expect(
-      (screen.getByTestId("bench-url-field") as HTMLInputElement).value,
-      "a dry run must not silently repoint the configured url",
-    ).toBe(before);
   });
 
   it("T51 faces the same readiness gate, for the MOCK address", async () => {
@@ -1606,19 +1569,27 @@ describe("T57 hero tiles and Output relocation", () => {
   });
 });
 
-// T142 — Started tile must show UTC label so users know the timezone.
-describe("T142 Started tile UTC label", () => {
-  it("renders the start time with a UTC suffix", async () => {
+// T142 — Started tile shows the time without a UTC suffix.
+//
+// T142 originally asserted the "UTC" label. T153 found that label was false:
+// bench.py writes local time with no timezone offset, so the old code was
+// converting a local timestamp to UTC and labelling it as such.
+// The test is updated to assert the time appears and the UTC suffix does NOT.
+describe("T142 Started tile shows time without UTC suffix", () => {
+  it("renders the start time without a UTC suffix", async () => {
     installFetch({
       current: {
         running: true,
-        run: runRow({ started: "2026-08-09T12:00:00Z", finished: false }),
+        run: runRow({ started: "2026-08-09T12:00:00", finished: false }),
       },
     });
     render(<BenchPage />);
     const tiles = await screen.findByTestId("bench-hero-tiles");
-    // "2026-08-09T12:00:00Z" → "12:00:00 UTC"
-    expect(tiles.textContent).toMatch(/12:00:00\s*UTC/);
+    await waitFor(() =>
+      expect(tiles.textContent).toMatch(/\d{2}:\d{2}:\d{2}/),
+    );
+    expect(tiles.textContent).toContain("12:00:00");
+    expect(tiles.textContent).not.toMatch(/UTC/);
   });
 });
 
@@ -1807,10 +1778,10 @@ describe("T59 footer is single-source", () => {
   });
 });
 
-// T61 — the refusal copy, byte for byte. A substring check is what let the
-// raw-HTTP-error version through last time.
+// T61 — the refusal copy stays clean. A raw-HTTP-error version once leaked
+// into the banner; that guard now lives on the Start button's tooltip (T151).
 describe("T61 readiness refusal copy", () => {
-  it("renders the exact sentence, with no raw transport error inline", async () => {
+  it("Start button title has the clean reason, not the raw transport error", async () => {
     installFetch({
       ready: {
         ready: false,
@@ -1821,15 +1792,14 @@ describe("T61 readiness refusal copy", () => {
     });
     render(<BenchPage />);
     const banner = await screen.findByTestId("bench-start-blocked");
-    // Wait on the TITLE: the sentence can already match from the url field
-    // while the probe is still in flight, so asserting it first would race.
+    // Wait until the probe result (not the initial "Checking…") lands.
     await waitFor(() =>
       expect(banner.getAttribute("title")).toContain("error sending request"),
     );
-    expect(banner.textContent).toBe(
-      serverUnreachableCopy("http://localhost:8081"),
-    );
+    // The button tooltip carries the full reason — including the transport detail.
+    // The banner text is only the link, with no raw error or verbose sentence.
     expect(banner.textContent).not.toContain("error sending request");
+    expect(banner.textContent).not.toContain("No server answering");
     expect(
       screen.getByTestId("bench-llamacpp-link").getAttribute("href"),
       "the page is a link, not prose naming a page",
@@ -1972,7 +1942,6 @@ describe("T63a copy is sentence-cased (byte-exact)", () => {
     // is unchanged.
     ["Model ID hint", /^Blank = trust the server$/],
     ["Benchmark Alias hint", /^Optional — names this run$/],
-    ["URL hint", /^Defaults to the configured llama-server$/],
     [
       "Languages hint",
       /^Click to toggle · struck through = toolchain unavailable$/,
@@ -4203,9 +4172,6 @@ describe("T99 Run Setup defaults and reset", () => {
         "0.6",
       ),
     );
-    expect(val("bench-url-field"), "the configured llama-server").toContain(
-      "8081",
-    );
   });
 
   it("cannot be reset while a run is active", async () => {
@@ -4969,5 +4935,456 @@ describe("T131 bench.error is rendered as an inline banner", () => {
       expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
     );
     expect(screen.queryByTestId("bench-data-error")).toBeNull();
+  });
+});
+
+describe("T150 URL field removed from Run Setup", () => {
+  const startBody = () =>
+    JSON.parse(
+      (
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+          ([u]: [unknown]) => String(u).includes("/api/bench/start"),
+        )![1] as RequestInit
+      ).body as string,
+    );
+
+  it("Run Setup does not render a URL input", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-field-model")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-url-field"),
+      "URL field must not exist in Run Setup",
+    ).toBeNull();
+  });
+
+  it("Start run sends the URL from /api/settings", async () => {
+    installFetch();
+    render(<BenchPage />);
+    // All available languages are selected by default; Start is enabled once
+    // the server is ready — no language toggle required.
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-start-run"));
+    await waitFor(() =>
+      expect(
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(
+          ([u]: [unknown]) => String(u).includes("/api/bench/start"),
+        ),
+      ).toBe(true),
+    );
+    expect(startBody().url).toBe("http://localhost:8081");
+  });
+
+  it("a settings URL change is reflected after Re-check (no reload needed)", async () => {
+    let settingsUrl = "http://localhost:8081";
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ llama_server_url: settingsUrl }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: settingsUrl, reason: "" });
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson([runRow()]);
+      if (url.includes("/api/bench/start")) return okJson({});
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-field-model")).toBeTruthy(),
+    );
+
+    settingsUrl = "http://192.168.1.50:8081";
+    fireEvent.click(screen.getByTestId("bench-action-re-check"));
+
+    // Wait until the settings re-fetch completes and the new URL reaches the
+    // readiness probe — only then does startRun() carry the updated address.
+    await waitFor(() =>
+      expect(
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(
+          ([u]: [unknown]) => String(u).includes("192.168.1.50"),
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-start-run"));
+    await waitFor(() =>
+      expect(
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(
+          ([u]: [unknown]) => String(u).includes("/api/bench/start"),
+        ),
+      ).toBe(true),
+    );
+    expect(startBody().url).toBe("http://192.168.1.50:8081");
+  });
+
+  it("Dry run still spawns against the mock address, not the settings URL", async () => {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: url.includes("8123") ? "http://127.0.0.1:8123" : "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson([runRow()]);
+      if (url.includes("/api/bench/start")) return okJson({});
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("bench-action-dry-run"));
+    await waitFor(() =>
+      expect(
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(
+          ([u]: [unknown]) => String(u).includes("/api/bench/start"),
+        ),
+      ).toBe(true),
+    );
+    expect(startBody().url).toBe("http://127.0.0.1:8123");
+  });
+
+  it("a stored run against a non-default URL still shows its TargetBadge", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (detail.config as { url?: string }).url = "http://192.168.1.50:8081";
+    installFetch({ detail });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-mock-badge")).toBeTruthy(),
+    );
+  });
+});
+
+describe("T151 readiness banner condensed to link only", () => {
+  function unreachableFetch() {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({
+          ready: false,
+          url: "http://localhost:8081",
+          reason: "No server answering at http://localhost:8081",
+        });
+      return installFetch() && okJson({});
+    }) as unknown as typeof fetch;
+    // reinstall properly
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ llama_server_url: "http://localhost:8081" }),
+        } as Response);
+      if (url.includes("/api/bench/ready"))
+        return okJson({
+          ready: false,
+          url: "http://localhost:8081",
+          reason: "No server answering at http://localhost:8081",
+        });
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson([runRow()]);
+      return okJson({});
+    }) as unknown as typeof fetch;
+  }
+
+  it("banner does not contain the verbose 'No server answering' sentence", async () => {
+    unreachableFetch();
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-start-blocked");
+    await waitFor(() =>
+      expect(banner.getAttribute("title")).toContain("No server answering"),
+    );
+    expect(banner.textContent).not.toMatch(/no server answering/i);
+  });
+
+  it("no --url mention survives in Run Setup when server is unreachable", async () => {
+    unreachableFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-start-blocked");
+    expect(
+      screen.queryByText(/--url/),
+      "--url text must not appear in Run Setup after T151",
+    ).toBeNull();
+  });
+
+  it("Start button title carries the server reason when blocked", async () => {
+    unreachableFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement).title,
+      ).toMatch(/no server answering/i),
+    );
+    expect(
+      (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("no banner when server is ready", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-start-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    expect(screen.queryByTestId("bench-start-blocked")).toBeNull();
+  });
+});
+
+// ── T152 — coverage note groups by language ──────────────────────────────────
+//
+// The old banner enumerated all partial task ids inline. The new form groups
+// by language when ≥2 tasks share a lang ("all 8 gdscript"), lists singles by
+// name, and moves the full list to the element's title attribute.
+describe("T152 coverage note groups by language", () => {
+  const GDSCRIPT_TASKS = [
+    "gdscript/cooldowns",
+    "gdscript/inventory",
+    "gdscript/line_of_sight",
+    "gdscript/grid_pathfinder",
+    "gdscript/status_engine",
+    "gdscript/turn_queue",
+    "gdscript/behavior_tree",
+    "gdscript/rollback_sim",
+  ];
+  const PARTIAL_TASKS = [...GDSCRIPT_TASKS, "java/mvcc_store"];
+
+  // Spread the first real record so every required field is present.
+  function makeRecord(task: string) {
+    return {
+      ...benchRun.records[0],
+      task,
+      lang: task.split("/")[0],
+      number: 1,
+      sample: 0,
+    };
+  }
+
+  const R1_ID = "r1partial";
+  const R2_ID = "r2base";
+
+  const r1Detail = {
+    ...benchRun,
+    run_id: R1_ID,
+    records: [...benchRun.records, ...PARTIAL_TASKS.map(makeRecord)],
+  };
+  const r2Detail = { ...benchRun, run_id: R2_ID, records: [...benchRun.records] };
+
+  function coverageFetch(d1: unknown = r1Detail, d2: unknown = r2Detail) {
+    const runs = [runRow({ run_id: R1_ID }), runRow({ run_id: R2_ID })];
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes(`/api/bench/runs/${R1_ID}`)) return okJson(d1);
+      if (url.includes(`/api/bench/runs/${R2_ID}`)) return okJson(d2);
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson(runs);
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      return okJson({});
+    }) as unknown as typeof fetch;
+  }
+
+  const openCompare = async () => {
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+  };
+
+  it("9 partial tasks render grouped summary, not enumeration", async () => {
+    coverageFetch();
+    await openCompare();
+    const banner = await screen.findByTestId("bench-compare-coverage");
+    // Count must be present
+    expect(banner.textContent).toContain("9");
+    // Language group name, not individual task ids
+    expect(banner.textContent).toContain("gdscript");
+    expect(banner.textContent).not.toContain("gdscript/cooldowns");
+    expect(banner.textContent).not.toContain("gdscript/inventory");
+    // Full list preserved in title
+    expect(banner.getAttribute("title")).toContain("gdscript/cooldowns");
+  });
+
+  it("equal coverage renders no banner", async () => {
+    // installFetch returns the same benchRun detail for any run id,
+    // so both runs have identical task sets → no partial tasks.
+    installFetch({
+      runs: [runRow({ run_id: R1_ID }), runRow({ run_id: R2_ID })],
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("bench-compare-coverage")).toBeNull();
+  });
+
+  it("1 partial task reads as singular ('task appears')", async () => {
+    const oneTaskDetail = {
+      ...benchRun,
+      run_id: R1_ID,
+      records: [...benchRun.records, makeRecord("java/mvcc_store")],
+    };
+    coverageFetch(oneTaskDetail, r2Detail);
+    await openCompare();
+    const banner = await screen.findByTestId("bench-compare-coverage");
+    expect(banner.textContent).toContain("1");
+    expect(banner.textContent).toMatch(/task appears/);
+    expect(banner.textContent).not.toMatch(/tasks appear/);
+  });
+
+  it("blank compare cells show '—' for tasks missing from one run", async () => {
+    coverageFetch();
+    await openCompare();
+    await screen.findByTestId("bench-compare-coverage");
+    // Tasks that appear only in r1 produce null means for r2's column → "—"
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+});
+
+// ── T153 — Started tile and History date show local time ─────────────────────
+//
+// bench.py writes `datetime.now().isoformat(timespec="seconds")` — local time
+// with no timezone offset. The old code wrapped it in `new Date().toISOString()`
+// which converts to UTC, producing a wrong hour and a false "UTC" label.
+// The fix slices the original string directly (no round-trip through Date).
+//
+// T142 encoded the wrong behaviour (asserted the UTC label that this removes).
+// T142 is updated below: same fixture, asserts time IS shown, UTC label is NOT.
+//
+// startedAt populates synchronously only when current.running === true
+// (spawned.started), matching the T142 pattern. The fixture uses a
+// bench.py-format timestamp (no 'Z'/'offset'); the old code converts it to
+// UTC and tacks on " UTC", the fix keeps the local hour intact.
+describe("T153 Started tile and History date show local time", () => {
+  // "2026-08-12T13:34:24" local → UTC in a UTC-5 env → "2026-08-12T18:34:24Z"
+  // Old code: slice → "18:34:24 UTC"  New code: slice local → "13:34:24"
+  const STARTED = "2026-08-12T13:34:24";
+
+  it("Started tile does not carry the false UTC suffix", async () => {
+    installFetch({
+      current: {
+        running: true,
+        run: runRow({ started: STARTED, finished: false }),
+      },
+    });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-hero-tiles");
+    // Wait for the time to actually render (old code produces a time then " UTC")
+    await waitFor(() =>
+      expect(tiles.textContent).toMatch(/\d{2}:\d{2}:\d{2}/),
+    );
+    // The " UTC" suffix is false — bench.py's isoformat is local, not UTC.
+    // RED today: old code appends " UTC".
+    expect(tiles.textContent).not.toMatch(/UTC/);
+  });
+
+  it("Started tile shows the local HH:MM:SS from the bench.py created string", async () => {
+    installFetch({
+      current: {
+        running: true,
+        run: runRow({ started: STARTED, finished: false }),
+      },
+    });
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-hero-tiles");
+    await waitFor(() =>
+      expect(tiles.textContent).toMatch(/\d{2}:\d{2}:\d{2}/),
+    );
+    // After the fix: slices the original string → "13:34:24".
+    // RED today (UTC-5): old code → "18:34:24".
+    expect(tiles.textContent).toContain("13:34:24");
+  });
+
+  it("null startedAt still renders the tile label without crashing", async () => {
+    // running: false + no spawned run → startedAt = detail?.created.
+    // If detail not yet loaded the value is null; the tile must not throw.
+    installFetch();
+    render(<BenchPage />);
+    const tiles = await screen.findByTestId("bench-hero-tiles");
+    expect(tiles.textContent).toMatch(/Started/);
+  });
+
+  it("History date shows the local date, not the UTC date (rollover guard)", async () => {
+    // "2026-08-11T20:00:00" local in UTC-5 → "2026-08-12T01:00:00Z"
+    // Old code: toISOString().slice(0,10) → "2026-08-12" (next day — wrong).
+    // Fix: original string .slice(0,10) → "2026-08-11".
+    installFetch({ runs: [runRow({ created: "2026-08-11T20:00:00" })] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    await screen.findByTestId("bench-run-name");
+    expect(document.body.textContent).toContain("2026-08-11");
+    expect(document.body.textContent).not.toContain("2026-08-12");
   });
 });

@@ -23,11 +23,13 @@ import {
 } from "./parts";
 import {
   assertionCanary,
+  benchLocalDate,
   compareEligibility,
   compareNotation,
   compareRows,
   compareSlotOptions,
   gradedRecords,
+  groupCoverage,
   runTaskRoster,
   groupByEdition,
   groupByTask,
@@ -1134,7 +1136,7 @@ function HistoryPane({
                 <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
                   {/* ISO, like the header: 8/11/2026 is ambiguous outside
                       the US and the two surfaces disagreed. */}
-                  {new Date(run.created).toISOString().slice(0, 10)}
+                  {benchLocalDate(run.created)}
                 </span>
                 <span
                   style={{ overflow: "hidden", textOverflow: "ellipsis" }}
@@ -1428,15 +1430,15 @@ function ComparePane({
               className="bench-banner"
               data-testid="bench-compare-coverage"
               style={{ margin: "0 12px 10px", fontSize: 11 }}
+              title={coverageNote.join(", ")}
             >
               <TriangleAlert size={13} />
               <span>
                 {coverageNote.length}{" "}
                 {coverageNote.length === 1 ? "task appears" : "tasks appear"}{" "}
-                in some runs but not all — those rows will show blanks for the
-                missing runs:{" "}
+                in some but not all runs:{" "}
                 <span style={{ fontFamily: MONO }}>
-                  {coverageNote.join(", ")}
+                  {groupCoverage(coverageNote)}
                 </span>
               </span>
             </div>
