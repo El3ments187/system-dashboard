@@ -24,7 +24,7 @@ vi.mock("../context/AlertsContext", () => ({
 }));
 
 import BenchPage from "../pages/BenchPage";
-import { serverUnreachableCopy } from "../pages/bench/compute";
+import { serverUnreachableCopy, LOCALBENCH_DEFAULTS } from "../pages/bench/compute";
 import Header from "../components/Header";
 
 // Mutable so a test can change what the ACTIVE model reports — the source
@@ -1755,7 +1755,7 @@ describe("T59 footer is single-source", () => {
     expect(
       heroElapsed,
       "two clocks that can disagree is worse than one shown twice",
-    ).toContain(screen.getByTestId("bench-footer-elapsed").textContent ?? "");
+    ).toContain(screen.getByTestId("bench-progress-elapsed").textContent ?? "");
   });
 
   it("dashes every stat when there is no run at all", async () => {
@@ -2266,7 +2266,7 @@ describe("T69 both remedies name a control this page has", () => {
     const nudge = screen.getByTestId(
       "bench-field-nudge-at",
     ) as HTMLInputElement;
-    expect(nudge.value, "bench.py's own default").toBe("16384");
+    expect(nudge.value, "bench.py's own default").toBe("32768");
   });
 });
 
@@ -2643,17 +2643,19 @@ describe("T83 footer sparklines", () => {
     // Addressed by series name, not index: an index silently follows any
     // reordering of the strip (T90 replaced one slot) and the failure then
     // looks like a data bug rather than a moved column.
+    // T154: Elapsed no longer has a sparkline (Progress already shows Elapsed
+    // as a plain MetricTile; a second sparklined copy was dropped). Use
+    // Samples/hr, which is always record-length regardless of null rates.
     const spark = (name: string) =>
       document.querySelector(`[data-series="${name}"]`);
     await waitFor(() =>
-      expect(spark("Elapsed")?.querySelectorAll("i")).toHaveLength(5),
+      expect(spark("Samples/hr")?.querySelectorAll("i")).toHaveLength(5),
     );
     const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
-    expect(sparks).toHaveLength(5); // one per footer stat
-    // One bar per record. data-points counts only the FINITE values — the
-    // mock fixture's gen_seconds are ~0, so most rates are null and would
-    // understate the bar count.
-    expect(spark("Elapsed")?.querySelectorAll("i")).toHaveLength(5);
+    // 4 sparks: Generation speed, Samples/hr, Pass rate, Remaining.
+    // Elapsed was the fifth; it moved to Progress as a plain tile, no spark.
+    expect(sparks).toHaveLength(4);
+    expect(spark("Samples/hr")?.querySelectorAll("i")).toHaveLength(5);
   });
 
   it("draws nothing rather than a misleading shape with no points", async () => {
@@ -2671,6 +2673,14 @@ describe("T83 footer sparklines", () => {
   });
 
   it("gives Samples/hr its own series, not a copy of Elapsed's", async () => {
+    // T154: Elapsed spark is gone (Progress has it as a plain tile, no spark).
+    // Guard is re-pointed to compare Samples/hr (index 1) vs Pass rate (index 2).
+    // Pass rate is a cumulative percentage; Samples/hr is a rate in hr⁻¹.
+    // Their heights would be identical only if ratePerHourSeries wrongly reused
+    // passSeries — a different bug, but this keeps the guard meaningful.
+    // The original bug was ratePerHourSeries === elapsedSeries; that is best
+    // guarded at the footerFigures unit level when a compute.ts test suite
+    // is added.
     installFetch({ detail: withRecords(6) });
     render(<BenchPage />);
     await waitFor(() =>
@@ -2683,12 +2693,11 @@ describe("T83 footer sparklines", () => {
     ];
     const heights = (el: Element) =>
       [...el.querySelectorAll("i")].map((i) => (i as HTMLElement).style.height);
-    // index 1 = Samples/hr, index 3 = Elapsed. Elapsed is cumulative and so
-    // monotonically rising; samples-per-hour is a rate and is not.
+    // Layout after T154: [0]=Generation speed, [1]=Samples/hr, [2]=Pass rate, [3]=Remaining
     expect(
       heights(sparks[1]).join(","),
-      "Samples/hr must not be a copy of the Elapsed series",
-    ).not.toBe(heights(sparks[3]).join(","));
+      "Samples/hr must not be a copy of the Pass rate series",
+    ).not.toBe(heights(sparks[2]).join(","));
   });
 });
 
@@ -4122,7 +4131,7 @@ describe("T99 Run Setup defaults and reset", () => {
     );
     expect(val("bench-field-n"), "bench.py --n default").toBe("1");
     expect(val("bench-field-max-tokens")).toBe("0");
-    expect(val("bench-field-nudge-at")).toBe("16384");
+    expect(val("bench-field-nudge-at")).toBe("32768");
     expect(val("bench-field-label")).toBe("");
   });
 
@@ -4152,7 +4161,7 @@ describe("T99 Run Setup defaults and reset", () => {
     await waitFor(() => expect(val("bench-field-attempts")).toBe("3"));
     expect(val("bench-field-n")).toBe("1");
     expect(val("bench-field-max-tokens")).toBe("0");
-    expect(val("bench-field-nudge-at")).toBe("16384");
+    expect(val("bench-field-nudge-at")).toBe("32768");
     expect(val("bench-field-label")).toBe("");
     expect(
       screen.getByTestId("bench-lang-js").getAttribute("aria-pressed"),
@@ -5386,5 +5395,1023 @@ describe("T153 Started tile and History date show local time", () => {
     await screen.findByTestId("bench-run-name");
     expect(document.body.textContent).toContain("2026-08-11");
     expect(document.body.textContent).not.toContain("2026-08-12");
+  });
+});
+
+// ── T149 — surface localbench's 0–100 score ────────────────────────────────
+//
+// localbench -157 added a weighted score out of 100. The dashboard showed
+// task-avg instead. These tests gate every surface: ScoreCard headline,
+// per-language breakdown, History outcome cell, and the Compare score strip.
+//
+// PRE-157 RUNS ARE THE COMMON PATH today — the fallback tests run first.
+describe("T149 localbench 0–100 score", () => {
+  const SCORED_SUMMARY = {
+    ...benchRun.summary,
+    score: 71.9,
+    correctness_100: 65.8,
+    correctness_weighted: 52.6,
+    speed_weighted: 19.3,
+    median_solved_minutes: 2.1,
+    suite_tasks: 27,
+    partial: false,
+    by_language: {
+      java: { score: 66.5, correctness: 58.8, speed: 19.5 },
+      js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+      ts: { score: 78.7, correctness: 74.3, speed: 19.3 },
+    },
+  };
+
+  // ── fallback (pre-157) ───────────────────────────────────────────────────
+
+  it("pre-157: task-avg headline renders and bench-headline-score does not exist", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-headline-score")).toBeNull();
+  });
+
+  it("pre-157: languageBreakdown ratios still render in the per-language line", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    // ratios look like "2/4"
+    expect(screen.getByTestId("bench-lang-breakdown").textContent).toMatch(
+      /\d+\/\d+/,
+    );
+  });
+
+  // ── scored run ───────────────────────────────────────────────────────────
+
+  it("scored run: bench-headline-score shows score, task-avg still rendered", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-headline-score").textContent).toContain(
+      "71.9",
+    );
+    // task-avg must stay — it is not superseded
+    expect(screen.getByTestId("bench-task-avg")).toBeTruthy();
+  });
+
+  it("correctness_weighted and speed_weighted both render (wiring guard)", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("52.6"); // correctness_weighted
+    expect(body).toContain("19.3"); // speed_weighted
+    // 52.6 + 19.3 = 71.9 (all three must appear, proving no wire cross)
+    expect(body).toContain("71.9");
+  });
+
+  // ── null / zero edge cases ────────────────────────────────────────────────
+
+  it("score: null renders '—', not '0'", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...benchRun.summary,
+          score: null,
+          suite_tasks: 27,
+          partial: true,
+        },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    const tile = screen.getByTestId("bench-headline-score");
+    expect(tile.textContent).toContain("—");
+    // null is not zero — the tile must not start with "0"
+    expect(tile.textContent?.trimStart()).not.toMatch(/^0/);
+  });
+
+  it("score: 0.0 renders '0', not '—' (??-vs-|| guard)", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...benchRun.summary,
+          score: 0.0,
+          correctness_100: 0,
+          correctness_weighted: 0,
+          speed_weighted: 0,
+          suite_tasks: 27,
+          partial: false,
+        },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    const tile = screen.getByTestId("bench-headline-score");
+    // 0.0 is a real (bad) score — must not be hidden by a falsy guard
+    expect(tile.textContent).not.toContain("—");
+  });
+
+  // ── partial caveat ────────────────────────────────────────────────────────
+
+  it("partial: true shows suite coverage caveat", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: { ...SCORED_SUMMARY, partial: true, suite_tasks: 27 },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    expect(document.body.textContent).toMatch(/partial|not comparable/i);
+  });
+
+  it("partial: false shows no partial caveat", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    expect(document.body.textContent).not.toMatch(/not comparable/i);
+  });
+
+  // ── special summary shapes ────────────────────────────────────────────────
+
+  it("multi-model summary renders without throwing and surfaces why unscored", async () => {
+    const multiModelSummary = JSON.parse(
+      JSON.stringify({
+        ...benchRun.summary,
+        score: null,
+        suite_tasks: 27,
+        partial: true,
+        models_in_file: ["model-a", "model-b"],
+      }),
+    );
+    installFetch({ detail: { ...benchRun, summary: multiModelSummary } });
+    render(<BenchPage />);
+    // bench-headline-score appears once the detail (score: null) is loaded
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    expect(document.body.textContent).toMatch(
+      /multi.*model|model-a|multiple model/i,
+    );
+  });
+
+  it("nothing-graded summary (score: null, graded: 0) renders without throwing", async () => {
+    const nothingGradedSummary = JSON.parse(
+      JSON.stringify({
+        ...benchRun.summary,
+        score: null,
+        suite_tasks: 27,
+        partial: true,
+        graded: 0,
+      }),
+    );
+    installFetch({ detail: { ...benchRun, summary: nothingGradedSummary } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+  });
+
+  // ── by_language breakdown ─────────────────────────────────────────────────
+
+  it("by_language renders score, correctness and speed per language", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    const text = screen.getByTestId("bench-lang-breakdown").textContent ?? "";
+    expect(text).toContain("70.4"); // js score
+    expect(text).toContain("64.3"); // js correctness
+    expect(text).toContain("19.0"); // js speed
+  });
+
+  it("null speed in by_language renders '—', not '0'", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: JSON.parse(
+          JSON.stringify({
+            ...SCORED_SUMMARY,
+            by_language: {
+              js: { score: 70.4, correctness: 64.3, speed: null },
+            },
+          }),
+        ),
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    expect(
+      screen.getByTestId("bench-lang-breakdown").textContent,
+    ).toContain("—");
+  });
+
+  it("pre-165 by_language with plain number values degrades gracefully (no crash)", async () => {
+    const oldShapeSummary = JSON.parse(
+      JSON.stringify({ ...benchRun.summary, score: 65.8, by_language: { js: 65.8 } }),
+    );
+    installFetch({ detail: { ...benchRun, summary: oldShapeSummary } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+  });
+
+  it("languages render in page order (js before ts before java), not alphabetically", async () => {
+    // After T169 the order follows taskList first-appearance. Provide a
+    // taskList with js→ts→java so the test reflects real page ordering.
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: JSON.parse(
+          JSON.stringify({
+            ...SCORED_SUMMARY,
+            // java is first alphabetically — should appear last in page order
+            by_language: {
+              java: { score: 66.5, correctness: 58.8, speed: 19.5 },
+              js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+              ts: { score: 78.7, correctness: 74.3, speed: 19.3 },
+            },
+          }),
+        ),
+      },
+      taskList: {
+        suite_hash: "e293ad7",
+        tasks: [
+          { number: 1, id: "js/a", lang: "js", difficulty: "medium", kind: "fix", assertions: 1 },
+          { number: 2, id: "ts/a", lang: "ts", difficulty: "medium", kind: "fix", assertions: 1 },
+          { number: 3, id: "java/a", lang: "java", difficulty: "medium", kind: "fix", assertions: 1 },
+        ],
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    const text = screen.getByTestId("bench-lang-breakdown").textContent ?? "";
+    const jsIdx = text.indexOf("js");
+    const tsIdx = text.indexOf("ts");
+    const javaIdx = text.indexOf("java");
+    expect(jsIdx).toBeGreaterThanOrEqual(0);
+    expect(jsIdx).toBeLessThan(tsIdx);
+    expect(tsIdx).toBeLessThan(javaIdx);
+  });
+
+  // ── tile fixes (a–d) ──────────────────────────────────────────────────────
+
+  it("tile a: score and task-avg titles together explain the curve difference", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    const scoreTitle =
+      screen.getByTestId("bench-headline-score").getAttribute("title") ?? "";
+    const avgTitle =
+      screen.getByTestId("bench-task-avg").getAttribute("title") ?? "";
+    expect(scoreTitle + avgTitle).toMatch(/curve|100\/80\/60|3\/2\/1|differ/i);
+  });
+
+  it("tile b: Raw assertions title covers the uneven-weighting caveat", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-raw-assertions")).toBeTruthy(),
+    );
+    const title =
+      screen.getByTestId("bench-raw-assertions").getAttribute("title") ?? "";
+    expect(title).toMatch(/uneven|weight|dominate/i);
+  });
+
+  it("tile c: First try renders with a denominator (n / total)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-first-try")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-first-try").textContent).toMatch(
+      /\d+\s*\/\s*\d+/,
+    );
+  });
+
+  it("tile d: Solved tile suffix no longer says 'graded'", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-solved")).toBeTruthy(),
+    );
+    // The whole banner tile (value + suffix) must not contain "graded"
+    const bannerText =
+      screen.getByTestId("bench-solved").parentElement?.textContent ?? "";
+    expect(bannerText).not.toMatch(/graded/i);
+  });
+
+  it("tile d: server-excluded fixture still shows the reduced denominator", async () => {
+    const serverRec = {
+      ...benchRun.records[0],
+      status: "server",
+      solved: false,
+      points: 0,
+    };
+    installFetch({
+      detail: {
+        ...benchRun,
+        records: [...benchRun.records, serverRec],
+      },
+    });
+    render(<BenchPage />);
+    // Wait until detail is loaded — lang breakdown appears once records render
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    // 12 original records are graded; the server record is excluded
+    const solvedText =
+      screen.getByTestId("bench-solved").parentElement?.textContent ?? "";
+    expect(solvedText).toContain("12");
+    expect(solvedText).not.toContain("13");
+  });
+
+  // ── History outcome cell ─────────────────────────────────────────────────
+
+  it("History: scored run shows /100, pre-157 run shows /maxPoints — different scales", async () => {
+    const scoredRow = runRow({ run_id: "run-scored", summary: SCORED_SUMMARY });
+    const unscoredRow = runRow({ run_id: "run-pre157" }); // uses benchRun.summary (no score)
+    installFetch({ runs: [scoredRow, unscoredRow] });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    // two rows render; use findAll to avoid "multiple elements" error
+    await waitFor(() =>
+      expect(screen.queryAllByTestId("bench-run-name").length).toBe(2),
+    );
+    expect(document.body.textContent).toContain("/100");
+    expect(document.body.textContent).toContain(
+      `/${benchRun.summary.max_points}`,
+    );
+  });
+
+  // ── Compare score strip ───────────────────────────────────────────────────
+
+  function makeScoredCompareFetch(opts: {
+    r1Id: string;
+    r2Id: string;
+    d1: unknown;
+    d2: unknown;
+    sum1: unknown;
+    sum2: unknown;
+  }) {
+    const runs = [
+      runRow({ run_id: opts.r1Id, summary: opts.sum1 }),
+      runRow({ run_id: opts.r2Id, summary: opts.sum2 }),
+    ];
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes(`/api/bench/runs/${opts.r1Id}`)) return okJson(opts.d1);
+      if (url.includes(`/api/bench/runs/${opts.r2Id}`)) return okJson(opts.d2);
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson(runs);
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      return okJson({});
+    }) as unknown as typeof fetch;
+  }
+
+  it("Compare: two scored runs render the score strip above the table", async () => {
+    const R1 = "cmp-s1";
+    const R2 = "cmp-s2";
+    makeScoredCompareFetch({
+      r1Id: R1,
+      r2Id: R2,
+      d1: { ...benchRun, run_id: R1, summary: SCORED_SUMMARY },
+      d2: { ...benchRun, run_id: R2, summary: SCORED_SUMMARY },
+      sum1: SCORED_SUMMARY,
+      sum2: SCORED_SUMMARY,
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    const strip = screen.getByTestId("bench-compare-scores");
+    expect(strip.textContent).toContain("71.9");
+  });
+
+  it("Compare: two pre-157 runs render no score strip", async () => {
+    const R1 = "cmp-p1";
+    const R2 = "cmp-p2";
+    makeScoredCompareFetch({
+      r1Id: R1,
+      r2Id: R2,
+      d1: { ...benchRun, run_id: R1 },
+      d2: { ...benchRun, run_id: R2 },
+      sum1: benchRun.summary,
+      sum2: benchRun.summary,
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("bench-compare-scores")).toBeNull();
+  });
+
+  it("Compare: mixed pair shows '—' for unscored run, never '0'", async () => {
+    const R1 = "cmp-mx-s";
+    const R2 = "cmp-mx-u";
+    makeScoredCompareFetch({
+      r1Id: R1,
+      r2Id: R2,
+      d1: { ...benchRun, run_id: R1, summary: SCORED_SUMMARY },
+      d2: { ...benchRun, run_id: R2 },
+      sum1: SCORED_SUMMARY,
+      sum2: benchRun.summary, // no score field
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    const strip = await screen.findByTestId("bench-compare-scores");
+    expect(strip.textContent).toContain("71.9"); // scored run
+    expect(strip.textContent).toContain("—"); // pre-157 → "—", not "0"
+  });
+});
+
+// ── T167 — Compare signed score difference ────────────────────────────────
+//
+// When exactly two runs are selected and both have a numeric score (not null,
+// not undefined), the strip shows the signed Δ (slot-0 minus slot-1).
+// Three runs selected → no Δ row. One or both scores absent → no Δ row.
+// A missing score is never treated as 0.
+
+describe("T167 Compare signed score difference", () => {
+  const makeSum = (score: number) => ({
+    score,
+    correctness_weighted: 50.0,
+    speed_weighted: 15.0,
+    median_solved_minutes: 5,
+    suite_tasks: 10,
+  });
+
+  function makeT167Fetch(
+    runs: ReturnType<typeof runRow>[],
+    details: Record<string, unknown>,
+  ) {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      if (url.includes("/api/bench/runs/")) {
+        const matched = Object.keys(details).find((id) => url.includes(id));
+        if (matched) return okJson(details[matched]);
+        return okJson(benchRun);
+      }
+      if (url.includes("/api/bench/runs")) return okJson(runs);
+      return okJson({});
+    }) as unknown as typeof fetch;
+  }
+
+  it("two scored runs: strip shows signed difference (slot-0 minus slot-1)", async () => {
+    const R1 = "t167-s1";
+    const R2 = "t167-s2";
+    const sum1 = makeSum(71.9);
+    const sum2 = makeSum(65.0); // diff = +6.9
+    makeT167Fetch(
+      [
+        runRow({ run_id: R1, summary: sum1 }),
+        runRow({ run_id: R2, summary: sum2 }),
+      ],
+      {
+        [R1]: { ...benchRun, run_id: R1, summary: sum1 },
+        [R2]: { ...benchRun, run_id: R2, summary: sum2 },
+      },
+    );
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    const diff = await screen.findByTestId("bench-compare-score-diff");
+    // 71.9 − 65.0 = +6.9
+    expect(diff.textContent).toMatch(/\+6\.9/);
+  });
+
+  it("two scored runs, negative diff: shows negative sign", async () => {
+    const R1 = "t167-n1";
+    const R2 = "t167-n2";
+    const sum1 = makeSum(60.0);
+    const sum2 = makeSum(71.9); // diff = −11.9
+    makeT167Fetch(
+      [
+        runRow({ run_id: R1, summary: sum1 }),
+        runRow({ run_id: R2, summary: sum2 }),
+      ],
+      {
+        [R1]: { ...benchRun, run_id: R1, summary: sum1 },
+        [R2]: { ...benchRun, run_id: R2, summary: sum2 },
+      },
+    );
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    const diff = await screen.findByTestId("bench-compare-score-diff");
+    expect(diff.textContent).toMatch(/[−-]11\.9/);
+  });
+
+  it("three scored runs: no diff row (strip still visible)", async () => {
+    const runs = [
+      runRow({ run_id: "t167-3a", summary: makeSum(71.9) }),
+      runRow({ run_id: "t167-3b", summary: makeSum(65.0) }),
+      runRow({ run_id: "t167-3c", summary: makeSum(58.0) }),
+    ];
+    makeT167Fetch(runs, {
+      "t167-3a": { ...benchRun, run_id: "t167-3a", summary: makeSum(71.9) },
+      "t167-3b": { ...benchRun, run_id: "t167-3b", summary: makeSum(65.0) },
+      "t167-3c": { ...benchRun, run_id: "t167-3c", summary: makeSum(58.0) },
+    });
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    // score strip is visible (all runs have scores)
+    await screen.findByTestId("bench-compare-scores");
+    // but no diff row for three runs
+    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+  });
+
+  it("one scored + one pre-157: no diff row (missing score is not 0)", async () => {
+    const R1 = "t167-m1";
+    const R2 = "t167-m2";
+    const sum1 = makeSum(71.9);
+    makeT167Fetch(
+      [
+        runRow({ run_id: R1, summary: sum1 }),
+        runRow({ run_id: R2 }), // pre-157: no score field
+      ],
+      {
+        [R1]: { ...benchRun, run_id: R1, summary: sum1 },
+        [R2]: { ...benchRun, run_id: R2 }, // no score field in detail
+      },
+    );
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    // strip renders (one run has a score field)
+    await screen.findByTestId("bench-compare-scores");
+    // no diff because one score is absent
+    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+  });
+
+  it("one scored + one null-scored (nothing graded): no diff row", async () => {
+    const R1 = "t167-nl1";
+    const R2 = "t167-nl2";
+    const sum1 = makeSum(71.9);
+    const sum2 = { score: null, graded: 0 }; // post-157 but nothing graded
+    makeT167Fetch(
+      [
+        runRow({ run_id: R1, summary: sum1 }),
+        runRow({ run_id: R2, summary: sum2 }),
+      ],
+      {
+        [R1]: { ...benchRun, run_id: R1, summary: sum1 },
+        [R2]: { ...benchRun, run_id: R2, summary: sum2 },
+      },
+    );
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    await screen.findByTestId("bench-compare-scores");
+    // null score is not 0 — no diff
+    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+  });
+});
+
+// ── T169 — language order comes from taskList, not hardcoded LANG_ORDER ───
+//
+// LANG_ORDER = ["js","ts","java","gdscript"]. When the taskList puts gdscript
+// tasks before js tasks the breakdown must follow the taskList, not the
+// constant. When no taskList is present, LANG_ORDER is the fallback.
+
+describe("T169 by_language order follows taskList first-appearance, not LANG_ORDER", () => {
+  // Minimal scored summary that enables the by_language breakdown to render.
+  // SCORED_SUMMARY is scoped to the T149 describe block, so we define one here.
+  const T169_SCORED = {
+    score: 71.9,
+    correctness_weighted: 52.6,
+    speed_weighted: 19.3,
+    median_solved_minutes: 5,
+    suite_tasks: 27,
+    tasks: 27,
+    graded: 27,
+  };
+
+  const gdscriptFirstTaskList = {
+    suite_hash: "e293ad7",
+    tasks: [
+      { number: 1, id: "gdscript/foo", lang: "gdscript", difficulty: "medium", kind: "fix", assertions: 10 },
+      { number: 2, id: "js/bar", lang: "js", difficulty: "medium", kind: "fix", assertions: 10 },
+      { number: 3, id: "ts/baz", lang: "ts", difficulty: "medium", kind: "fix", assertions: 10 },
+    ],
+  };
+
+  it("when taskList has gdscript before js, breakdown renders gdscript before js", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...T169_SCORED,
+          by_language: {
+            js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+            ts: { score: 78.7, correctness: 74.3, speed: 19.3 },
+            gdscript: { score: 85.7, correctness: 80.0, speed: 19.6 },
+          },
+        },
+      },
+      taskList: gdscriptFirstTaskList,
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    const text = screen.getByTestId("bench-lang-breakdown").textContent ?? "";
+    const gdscriptIdx = text.indexOf("gdscript");
+    const jsIdx = text.indexOf("js");
+    expect(gdscriptIdx).toBeGreaterThanOrEqual(0);
+    expect(jsIdx).toBeGreaterThanOrEqual(0);
+    // taskList has gdscript before js — output must follow
+    expect(gdscriptIdx).toBeLessThan(jsIdx);
+  });
+
+  it("each language appears exactly once even if it has multiple tasks in the list", async () => {
+    const repeatedLangList = {
+      suite_hash: "e293ad7",
+      tasks: [
+        { number: 1, id: "ts/a", lang: "ts", difficulty: "medium", kind: "fix", assertions: 10 },
+        { number: 2, id: "ts/b", lang: "ts", difficulty: "medium", kind: "fix", assertions: 10 },
+        { number: 3, id: "js/c", lang: "js", difficulty: "medium", kind: "fix", assertions: 10 },
+      ],
+    };
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...T169_SCORED,
+          by_language: {
+            js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+            ts: { score: 78.7, correctness: 74.3, speed: 19.3 },
+          },
+        },
+      },
+      taskList: repeatedLangList,
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
+    );
+    const text = screen.getByTestId("bench-lang-breakdown").textContent ?? "";
+    const tsIdx = text.indexOf("ts");
+    const jsIdx = text.indexOf("js");
+    // ts appears first in task list → ts before js
+    expect(tsIdx).toBeLessThan(jsIdx);
+  });
+});
+
+// ── T154 — footer strip retired; figures move to Progress ─────────────────
+//
+// BenchFooter is removed. Gen speed, Samples/hr, Pass rate and Remaining move
+// to the Progress card. Elapsed already lives in Progress — one copy only.
+// The bench-footer wrapper disappears; the individual stat testids remain.
+
+describe("T154 footer strip retired, figures in Progress", () => {
+  it("bench-footer wrapper no longer renders", async () => {
+    installFetch();
+    render(<BenchPage />);
+    // Wait for the page to fully load (Progress tiles are always rendered)
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId("bench-footer"),
+      "the footer wrapper must be gone",
+    ).toBeNull();
+  });
+
+  it("Progress shows Remaining", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-footer-remaining");
+  });
+
+  it("Progress has exactly one Elapsed — no bench-footer-elapsed testid", async () => {
+    installFetch();
+    render(<BenchPage />);
+    // Wait for the page to load, then check synchronously.
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy(),
+    );
+    // The footer's Elapsed (bench-footer-elapsed) must be gone. Progress keeps
+    // its plain MetricTile for Elapsed but must NOT carry the footer testid.
+    expect(screen.queryByTestId("bench-footer-elapsed")).toBeNull();
+  });
+
+  it("Generation speed renders in Progress with a sparkline", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: unknown[] }).records = (
+      d as { records: unknown[] }
+    ).records.slice(0, 5);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("bench-footer-generation-speed"),
+      ).toBeTruthy(),
+    );
+    const spark = document.querySelector(
+      '[data-series="Generation speed"]',
+    );
+    expect(spark, "Generation speed sparkline must be present").toBeTruthy();
+  });
+
+  it("Samples/hr renders in Progress with a sparkline", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: unknown[] }).records = (
+      d as { records: unknown[] }
+    ).records.slice(0, 5);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy(),
+    );
+    const spark = document.querySelector('[data-series="Samples/hr"]');
+    expect(spark, "Samples/hr sparkline must be present").toBeTruthy();
+  });
+
+  it("Pass rate renders in Progress with a sparkline", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy(),
+    );
+    const spark = document.querySelector('[data-series="Pass rate"]');
+    expect(spark, "Pass rate sparkline must be present").toBeTruthy();
+  });
+
+  it("idle state: relocated stats show dashes, not zeros", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+    );
+    for (const id of [
+      "bench-footer-generation-speed",
+      "bench-footer-samples-hr",
+      "bench-footer-pass-rate",
+      "bench-footer-remaining",
+    ]) {
+      expect(
+        screen.getByTestId(id).textContent,
+        `${id} must be an honest dash when idle`,
+      ).toBe("—");
+    }
+  });
+});
+
+// ── T158 — hero model name: auto-fit, larger, accented quant suffix ────────
+//
+// Currently BenchPage uses middleTruncate(displayName, 30) — a hard 30-char cap
+// applied to the full name before it reaches the DOM, regardless of card width.
+// The fix: useFitText + splitModelName from llamacpp/parts, middleTruncate at
+// 40 on the head only. The quant goes in an accent span.
+
+describe("T158 hero model name: auto-fit, accented quant, no hard 30-char cap", () => {
+  // 54-char model name — current 30-char cap would truncate it to ≤30 chars.
+  const LONG_MODEL =
+    "Qwen3.6-35B-A3B-REAM-192-heretic-APEX-IQuality-Q5_K_M";
+
+  it("a 46+ char model name renders more than 30 characters in textContent", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        config: { ...benchRun.config, model: LONG_MODEL },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("bench-hero-model").textContent,
+      ).toContain("Q5_K_M"),
+    );
+    const text = screen.getByTestId("bench-hero-model").textContent ?? "";
+    expect(
+      text.length,
+      `expected >30 chars rendered, got ${text.length}: "${text}"`,
+    ).toBeGreaterThan(30);
+  });
+
+  it("quant suffix renders inside an element with the accent class", async () => {
+    const QUANT_MODEL =
+      "Qwen3.6-35B-A3B-REAM-192-heretic-APEX-ICompact-Q3_K_L";
+    installFetch({
+      detail: {
+        ...benchRun,
+        config: { ...benchRun.config, model: QUANT_MODEL },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("bench-hero-model").textContent,
+      ).toContain("Q3_K_L"),
+    );
+    const hero = screen.getByTestId("bench-hero-model");
+    const accentEl = hero.querySelector(".accent-text");
+    expect(accentEl, "quant must be inside an accent-text span").toBeTruthy();
+    expect(accentEl!.textContent).toBe("Q3_K_L");
+    // The head must NOT be in an accent element.
+    expect(
+      hero.querySelector(".accent-text")!.textContent,
+      "only the quant is accented",
+    ).not.toContain("Qwen3.6");
+  });
+
+  it("a name with no quant suffix renders as one plain string, no accent span", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model")).toBeTruthy(),
+    );
+    const hero = screen.getByTestId("bench-hero-model");
+    expect(hero.textContent).toContain("No run selected");
+    expect(
+      hero.querySelector(".accent-text"),
+      "no quant → no accent span",
+    ).toBeNull();
+  });
+
+  it("bench-hero-model testid and title are preserved", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        config: { ...benchRun.config, model: LONG_MODEL },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("bench-hero-model").textContent,
+      ).toContain("Q5_K_M"),
+    );
+    const hero = screen.getByTestId("bench-hero-model");
+    expect(hero).toBeTruthy();
+    expect(hero.getAttribute("title")).toBe(LONG_MODEL);
+  });
+});
+
+// ── T170 — nudge-at default doubled; dashboard must track LOCALBENCH_DEFAULTS ─
+//
+// bench.py introduced DEFAULT_NUDGE_AT = 32768 at -157 (was a 16384 literal
+// in -129). The constant in compute.ts still shipped 16384, seeding every
+// dashboard-launched run with half the upstream budget.
+describe("T170 nudge-at default: LOCALBENCH_DEFAULTS.nudgeAt matches upstream 32768", () => {
+  it("LOCALBENCH_DEFAULTS.nudgeAt is 32768", () => {
+    expect(
+      LOCALBENCH_DEFAULTS.nudgeAt,
+      "constant must track bench.py's DEFAULT_NUDGE_AT",
+    ).toBe(32768);
+  });
+
+  it("Run Setup seeds 32768 on a fresh mount", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const nudge = (await screen.findByTestId(
+      "bench-field-nudge-at",
+    )) as HTMLInputElement;
+    expect(nudge.value, "nudge-at field must initialise from LOCALBENCH_DEFAULTS").toBe(
+      "32768",
+    );
+  });
+
+  it("Reset to defaults restores 32768 after a manual change", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-nudge-at");
+    fireEvent.change(screen.getByTestId("bench-field-nudge-at"), {
+      target: { value: "99" },
+    });
+    fireEvent.click(screen.getByTestId("bench-action-reset-to-defaults"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-field-nudge-at") as HTMLInputElement).value,
+        "reset must restore the current LOCALBENCH_DEFAULTS value",
+      ).toBe("32768"),
+    );
+  });
+
+  it("budget banner number is derived from LOCALBENCH_DEFAULTS, not a hardcoded literal (injection proof)", async () => {
+    // Mutate the constant to a sentinel. Both this test and BenchPage share the
+    // same module instance, so if the JSX reads the constant at render time the
+    // banner shows 99999. A hardcoded literal is unaffected by the mutation and
+    // the test fails — catching any future drift before it reaches a run.
+    const original = LOCALBENCH_DEFAULTS.nudgeAt;
+    (LOCALBENCH_DEFAULTS as Record<string, unknown>).nudgeAt = 99999;
+    try {
+      const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+      (d as { records: Record<string, unknown>[] }).records[0].stopped_at_budget =
+        true;
+      installFetch({ detail: d });
+      render(<BenchPage />);
+      const banner = await screen.findByTestId("bench-budget-banner");
+      expect(
+        banner.textContent,
+        "banner must reflect the constant (99999), not a hardcoded literal",
+      ).toContain("99999");
+    } finally {
+      (LOCALBENCH_DEFAULTS as Record<string, unknown>).nudgeAt = original;
+    }
   });
 });

@@ -77,6 +77,21 @@ export interface BenchSummary {
   tests_expected: number;
   seconds: number;
   unsolved: string[];
+  // localbench -157+ scoring fields (absent on pre-157 runs — use ??, never ||)
+  /** null means "no score": multi-model file or nothing graded. NOT zero. */
+  score?: number | null;
+  correctness_100?: number;
+  correctness_weighted?: number;
+  speed_weighted?: number;
+  median_solved_minutes?: number;
+  suite_tasks?: number;
+  partial?: boolean;
+  // -165+: per-language breakdown (score, correctness, speed per lang)
+  by_language?: Record<string, { score: number; correctness: number; speed: number | null }>;
+  // multi-model shape only (score: null + models_in_file)
+  models_in_file?: string[];
+  // nothing-graded shape only (score: null + graded: 0)
+  graded?: number;
 }
 
 export interface BenchConfig {

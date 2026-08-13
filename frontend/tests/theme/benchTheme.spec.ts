@@ -112,9 +112,12 @@ test("T33 the accent spine is not painted over by the sticky table header", asyn
   ).toBe(true);
 });
 
-// ── T42 — content must stop at the footer ──────────────────────────────────
+// ── T42 — content must not overflow the viewport ───────────────────────────
+// T154: The footer strip is gone. The layout floor is now the viewport bottom.
+// The test still guards the same flex min-height:0 chain — if that breaks,
+// the Tasks & Runs card will grow past the viewport and the page will scroll.
 
-test("T42 cards stop at the footer instead of running past the bottom", async ({
+test("T42 cards stay within the viewport (footer removed by T154)", async ({
   page,
 }) => {
   // Deliberately short: a tall viewport hides this bug entirely.
@@ -123,36 +126,30 @@ test("T42 cards stop at the footer instead of running past the bottom", async ({
   await page.waitForTimeout(600);
 
   const probe = await page.evaluate(() => {
-    const footer = document.querySelector('[data-testid="bench-footer"]');
     const table = document.querySelector("table");
     const card = table?.closest("[data-accent-el]") ?? null;
-    if (!footer || !card) return { error: "missing footer or card" } as const;
-    const f = footer.getBoundingClientRect();
+    if (!card) return { error: "missing Tasks & Runs card" } as const;
     const c = card.getBoundingClientRect();
     return {
-      footerTop: Math.round(f.top),
-      footerBottom: Math.round(f.bottom),
       cardBottom: Math.round(c.bottom),
       inner: window.innerHeight,
       pageScrolls:
         document.documentElement.scrollHeight >
         document.documentElement.clientHeight + 2,
+      footerGone:
+        document.querySelector('[data-testid="bench-footer"]') === null,
     };
   });
 
   expect("error" in probe ? probe.error : "").toBe("");
   const p = probe as Exclude<typeof probe, { error: string }>;
 
-  // The footer is the floor: it must be on screen...
-  expect(
-    p.footerBottom,
-    `the footer is below the viewport (${p.footerBottom} > ${p.inner})`,
-  ).toBeLessThanOrEqual(p.inner + 2);
-  // ...and the tallest card must not spill past it.
+  expect(p.footerGone, "bench-footer must be removed (T154)").toBe(true);
+  // The tallest card must not spill out of the viewport.
   expect(
     p.cardBottom,
-    `Tasks & Runs runs past the footer (card bottom ${p.cardBottom} > footer top ${p.footerTop}) — the flex min-height:0 chain is broken`,
-  ).toBeLessThanOrEqual(p.footerTop + 2);
+    `Tasks & Runs runs past the viewport bottom (${p.cardBottom} > ${p.inner}) — the flex min-height:0 chain is broken`,
+  ).toBeLessThanOrEqual(p.inner + 2);
   expect(p.pageScrolls, "the outer page must not scroll").toBe(false);
 });
 

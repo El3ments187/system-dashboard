@@ -491,6 +491,25 @@ export function groupCoverage(partial: string[]): string {
 }
 
 /**
+ * bench.py's execution order for the standard tracks, used to sort
+ * `by_language` keys into the same order the page uses everywhere else.
+ * Unknown languages sort after these, alphabetically.
+ */
+export const LANG_ORDER = ["js", "ts", "java", "gdscript"];
+
+export function sortByLangOrder(langs: string[], order?: string[]): string[] {
+  const effectiveOrder = order ?? LANG_ORDER;
+  return [...langs].sort((a, b) => {
+    const ai = effectiveOrder.indexOf(a);
+    const bi = effectiveOrder.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+}
+
+/**
  * bench.py writes `datetime.now().isoformat(timespec="seconds")` — local time
  * with no timezone offset. `new Date(s).toISOString()` converts that to UTC,
  * so the displayed hour is wrong in any non-UTC timezone. Slice the original
@@ -506,10 +525,11 @@ export function benchLocalDate(isoLocal: string): string {
 
 /**
  * localbench's own defaults, read from bench.py's argparse table in
- * `2026.08.07-129` and verified against the checkout:
+ * `2026.08.13-157` and verified against the checkout:
  *
- *   --attempts 3 (:2810) · -n/--n 1 (:2785) · --max-tokens 0 (:2821)
- *   --nudge-at 16384 (:2795) · --label "" (:2894) · --langs "" (:2850)
+ *   --attempts 3 (:3271) · -n/--n 1 (:3246) · --max-tokens 0 (:3282)
+ *   DEFAULT_NUDGE_AT = 32768 (:70), used at --nudge-at (:3256)
+ *   --label "" (:3355)
  *
  * Named once so four literals cannot drift from upstream independently. The
  * three fields NOT here are deliberate: the model comes from the loaded
@@ -519,7 +539,7 @@ export function benchLocalDate(isoLocal: string): string {
  * active model because the backend requires an explicit value (T96).
  *
  * `--langs ""` is NOT reproduced: an empty value means EVERY language to
- * bench.py (`:233`), so the dashboard's default is the languages whose
+ * bench.py (`:244`), so the dashboard's default is the languages whose
  * toolchain is actually present.
  */
 export const LOCALBENCH_DEFAULTS = {
@@ -527,7 +547,7 @@ export const LOCALBENCH_DEFAULTS = {
   attempts: 3,
   n: 1,
   maxTokens: 0,
-  nudgeAt: 16384,
+  nudgeAt: 32768,
 } as const;
 
 /**
@@ -1446,5 +1466,86 @@ export function assertionCanary(record: BenchRecord): {
     ran: record.tests_total,
     expected: record.tests_expected,
     applicable: completed,
+  };
+}
+
+/** Running totals, without mutating anything during render. */
+export function cumulative(values: number[]): number[] {
+  return values.reduce<number[]>(
+    (acc, v) => [...acc, (acc[acc.length - 1] ?? 0) + v],
+    [],
+  );
+}
+
+/**
+ * Tokens per second for one sample. `completion_tokens` is the sum over the
+ * sample's attempts and `gen_seconds` is the matching generation time.
+ */
+function genRate(r: BenchRecord): number | null {
+  if (r.gen_seconds <= 0) return null;
+  return r.completion_tokens / r.gen_seconds;
+}
+
+/**
+ * Every figure the Progress card's relocated stats need, derived in one place.
+ * All are null/empty when idle rather than carrying the previous run's numbers.
+ *
+ * Note: elapsedSeries is returned but not displayed (Progress already has an
+ * Elapsed MetricTile without a sparkline — two Elapsed tiles would disagree).
+ * It is kept because ratePerHourSeries and remainingSeries are independent
+ * derivations that both happen to use elapsed time.
+ */
+export function footerFigures(
+  records: BenchRunDetail["records"],
+  elapsedSeconds: number | null,
+  running: boolean,
+  remainingSeconds: number | null,
+) {
+  const graded = gradedRecords(records);
+
+  const rates = graded.map(genRate);
+  const known = rates.filter((r): r is number => r !== null);
+  const meanRate =
+    known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : null;
+
+  // Cumulative pass rate, so the line shows how the run trended rather than
+  // repeating the headline figure.
+  const passSeries = cumulative(graded.map((r) => (r.solved ? 1 : 0))).map(
+    (solvedSoFar, i) => (solvedSoFar / (i + 1)) * 100,
+  );
+  const passRate =
+    graded.length > 0
+      ? (graded.filter((r) => r.solved).length / graded.length) * 100
+      : null;
+
+  const elapsedSeries = cumulative(records.map((r) => r.seconds));
+  const totalSeconds = elapsedSeconds ?? 0;
+  const perSample = records.length > 0 ? totalSeconds / records.length : 0;
+  // Counts down as samples land: what is left of the estimate at each point.
+  const remainingSeries =
+    remainingSeconds === null
+      ? []
+      : records.map(
+          (_, i) => remainingSeconds + (records.length - 1 - i) * perSample,
+        );
+
+  return {
+    // Nothing running and nothing selected means there is nothing to report.
+    idle: !running && records.length === 0,
+    totalSeconds,
+    rates,
+    meanRate,
+    passSeries,
+    passRate,
+    elapsedSeries,
+    remainingSeries,
+    samplesPerHour:
+      totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null,
+    // Its OWN series: samples completed per elapsed hour, as it evolved.
+    // Previously this reused elapsedSeries, so Samples/hr and Elapsed were
+    // mathematically guaranteed to draw the same shape.
+    ratePerHourSeries: elapsedSeries.map((cum, i) =>
+      cum > 0 ? ((i + 1) / cum) * 3600 : null,
+    ),
   };
 }

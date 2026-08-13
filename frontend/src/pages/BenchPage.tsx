@@ -18,13 +18,18 @@ import MetricTile from "../components/shared/MetricTile";
 import ProgressBar from "../components/shared/ProgressBar";
 import PanelErrorBoundary from "../components/common/PanelErrorBoundary";
 import { RadialGauge } from "./llamacpp/RadialGauge";
-import { fmtNum, middleTruncate } from "./llamacpp/parts";
+import {
+  fmtNum,
+  middleTruncate,
+  splitModelName,
+  useFitText,
+} from "./llamacpp/parts";
 import { fmtUptime } from "./llamaCppUtils";
 import { AlertSeverity, useAlertsContext } from "../context/AlertsContext";
 import { useMetricsContext } from "../context/MetricsContext";
 import { MOCK_URL, useBenchData, isRunning } from "./bench/useBenchData";
 import { TasksAndRuns } from "./bench/TasksAndRuns";
-import { BenchFooter } from "./bench/BenchFooter";
+
 import { navigateTo } from "./bench/parts";
 import {
   activeModelName,
@@ -46,9 +51,11 @@ import {
   historicalTaskMedian,
   isHeartbeatStale,
   benchLocalTime,
+  footerFigures,
   languageBreakdown,
   runTaskAvg,
   serverExcludedCount,
+  sortByLangOrder,
   truncationState,
 } from "./bench/compute";
 import type {
@@ -368,6 +375,8 @@ function HeroCard({
   const scope = runTaskScope(taskList?.tasks, scopeLangs);
   const serverErrors = live.consecutive_server_errors ?? 0;
   const heroTarget = runTargetUrl(current, detail, defaultUrl);
+  const modelNameRef = useFitText(displayName);
+  const { head: modelHead, quant: modelQuant } = splitModelName(displayName);
 
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
@@ -380,10 +389,11 @@ function HeroCard({
       />
       <div style={BODY_STYLE}>
         <div
+          ref={modelNameRef}
           data-testid="bench-hero-model"
           title={displayName}
           style={{
-            font: `700 22px ${MONO}`,
+            font: `700 26px ${MONO}`,
             letterSpacing: "-1px",
             margin: "4px 0 0",
             whiteSpace: "nowrap",
@@ -391,7 +401,8 @@ function HeroCard({
             textOverflow: "ellipsis",
           }}
         >
-          {middleTruncate(displayName, 30)}
+          {middleTruncate(modelHead, 40)}
+          {modelQuant && <span className="accent-text">{modelQuant}</span>}
         </div>
         {alias && (
           <div
@@ -537,7 +548,8 @@ function HeroCard({
               <b>{truncation.budgetStops}</b>{" "}
               {truncation.budgetStops === 1 ? "sample was" : "samples were"}{" "}
               cut by bench.py at the <b>--nudge-at</b> budget — the server was
-              still generating. Raise <b>--nudge-at</b> (default 16384) or{" "}
+              still generating. Raise <b>--nudge-at</b> (default{" "}
+              {LOCALBENCH_DEFAULTS.nudgeAt}) or{" "}
               <b>--max-nudges</b>. Hover the BUDGET badge on any row for
               details.
             </span>
@@ -625,6 +637,7 @@ function BannerTile({
 function ScoreCard({
   detail,
   spawnedAttempts,
+  taskLangOrder,
 }: {
   detail: BenchRunDetail | null;
   /**
@@ -634,6 +647,7 @@ function ScoreCard({
    * "/ 3" on a --attempts 1 run otherwise.
    */
   spawnedAttempts: number | null;
+  taskLangOrder?: string[];
 }) {
   const samplesPerTask = detail?.config?.n ?? 1;
   const langRatios = languageBreakdown(detail?.records ?? []);
@@ -649,6 +663,29 @@ function ScoreCard({
   const solvedSamples = graded.filter((r) => r.solved).length;
   const firstTrySamples = graded.filter((r) => r.first_try).length;
 
+  // localbench -157+ scoring fields. Use ?? not || — 0.0 is a real score.
+  const summary = detail?.summary;
+  const hasScore = summary !== undefined && summary.score !== undefined;
+  const score = summary?.score;
+  const corrWeighted = summary?.correctness_weighted;
+  const speedWeighted = summary?.speed_weighted;
+  const partial = summary?.partial;
+  const suiteTasksCount = summary?.suite_tasks;
+  const modelsInFile = summary?.models_in_file;
+  const byLanguage = summary?.by_language;
+
+  const scoreDisplay =
+    score === null ? "—" : score !== undefined ? score.toFixed(1) : "—";
+
+  const scoreTileLabel = (() => {
+    if (score === null && modelsInFile)
+      return `Multiple models in file (${modelsInFile.join(", ")}) — not scored`;
+    if (score === null) return "No score — nothing graded";
+    if (partial && suiteTasksCount != null)
+      return `Over ${summary?.tasks ?? "?"} of ${suiteTasksCount} suite tasks — partial run, not comparable with a full run`;
+    return "Score / 100";
+  })();
+
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
       <CardHeader
@@ -659,9 +696,24 @@ function ScoreCard({
         right={<CornerIndex n="02" />}
       />
       <div style={BODY_STYLE}>
+        {/* localbench -157+: headline score out of 100, above task-avg */}
+        {hasScore && (
+          <BannerTile
+            label={scoreTileLabel}
+            title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+            testId="bench-headline-score"
+            value={scoreDisplay}
+            suffix="/ 100"
+            percent={score ?? 0}
+          />
+        )}
         <BannerTile
-          label="Task-avg — the number to rank on"
-          title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced."
+          label={
+            hasScore
+              ? "Task-avg (3/2/1 per attempt)"
+              : "Task-avg — the number to rank on"
+          }
+          title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
           testId="bench-task-avg"
           value={taskAvg === null ? "—" : taskAvg.toFixed(2)}
           suffix={`/ ${maxPoints ?? "—"}`}
@@ -669,12 +721,38 @@ function ScoreCard({
             taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
           }
         />
+        {/* 80/20 split — only shown when both fields are present */}
+        {corrWeighted !== undefined && speedWeighted !== undefined && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <MetricTile
+              mono
+              label="Correctness (80%)"
+              value={corrWeighted.toFixed(1)}
+              valueSize={15}
+              title="correctness_weighted: per-task tier score averaged across languages, weighted at 80% of the headline score."
+            />
+            <MetricTile
+              mono
+              label="Speed (20%)"
+              value={speedWeighted.toFixed(1)}
+              valueSize={15}
+              title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+            />
+          </div>
+        )}
         <BannerTile
           label="Solved — samples"
           title="Server samples are excluded from the denominator: the endpoint never answered, so there is no verdict to count."
           testId="bench-solved"
           value={String(solvedSamples)}
-          suffix={`/ ${graded.length} graded`}
+          suffix={`/ ${graded.length} answered${serverExcluded > 0 ? ` (${serverExcluded} server excl.)` : ""}`}
           percent={
             graded.length === 0 ? 0 : (solvedSamples / graded.length) * 100
           }
@@ -691,13 +769,16 @@ function ScoreCard({
           <MetricTile
             accent
             mono
+            testId="bench-first-try"
             label="First try"
-            value={firstTrySamples}
+            value={`${firstTrySamples} / ${graded.length}`}
             valueSize={15}
+            title="Samples solved on the first attempt out of all answered samples. Same denominator as Solved — 8 of 27 answered is directly comparable to 16 of 27 solved."
           />
           <MetricTile
             mono
-            title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks."
+            testId="bench-raw-assertions"
+            title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks. Weighting is uneven: individual tasks can dominate the percentage — the top three tasks may account for over a third of all assertions."
             label="Raw assertions"
             value={`${fmtNum(detail?.summary?.tests_passed ?? 0)}/${fmtNum(detail?.summary?.tests_expected ?? 0)}`}
             valueSize={12}
@@ -753,11 +834,33 @@ function ScoreCard({
             {` · solid: ${flaky.solidCount}`}
           </div>
         )}
-        {/* Per-language solved ratios. Deliberately a compact line in the
-            existing idiom rather than another tile: this card already carries
-            six, and Run Setup needed T84 once for exactly that kind of
-            crowding. A language the run never touched is absent, not 0/0. */}
-        {langRatios.length > 0 && (
+        {/* Per-language breakdown. When by_language is present (-165+),
+            shows score/correctness/speed per language, sorted into page order.
+            Falls back to solved ratios from records for pre-157 runs.
+            A language the run never touched is absent, not 0/0. */}
+        {byLanguage ? (
+          <div
+            data-testid="bench-lang-breakdown"
+            style={{
+              font: `9.5px ${MONO}`,
+              color: "var(--text-muted)",
+              marginTop: 5,
+            }}
+          >
+            by language:{" "}
+            {sortByLangOrder(Object.keys(byLanguage), taskLangOrder)
+              .map((lang) => {
+                const v = byLanguage[lang];
+                if (typeof v !== "object" || v === null) {
+                  // pre-165 shape: plain number (correctness only)
+                  return `${lang} ${(v as unknown as number).toFixed(1)}`;
+                }
+                const spd = v.speed != null ? v.speed.toFixed(1) : "—";
+                return `${lang} ${v.score.toFixed(1)}·${v.correctness.toFixed(1)}·${spd}`;
+              })
+              .join(" · ")}
+          </div>
+        ) : langRatios.length > 0 ? (
           <div
             data-testid="bench-lang-breakdown"
             style={{
@@ -771,9 +874,120 @@ function ScoreCard({
               .map((l) => `${l.lang} ${l.solved}/${l.total}`)
               .join(" · ")}
           </div>
-        )}
+        ) : null}
       </div>
     </Card>
+  );
+}
+
+/**
+ * The design's sparkline is discrete BARS, not a line
+ * (bench-page-design-7.html:388-390 — `.fspark i`, 3px wide, own height).
+ * The shared `Sparkline` is line/area-only, and a line through the 1-2
+ * points a run has early on is by definition one long diagonal across the
+ * whole strip, which is exactly what it drew. Bars degrade honestly: two
+ * points look like two bars.
+ *
+ * Rendered locally rather than by teaching the shared component a bar mode,
+ * because that component has other callers and this is the only one the
+ * design draws as bars.
+ */
+function BarSpark({
+  values,
+  label,
+}: {
+  values: Array<number | null>;
+  label: string;
+}) {
+  const real = values.filter((v): v is number => v !== null && isFinite(v));
+  if (real.length === 0)
+    return (
+      <span
+        data-testid="bench-spark"
+        data-series={label}
+        data-points={0}
+        style={{ flex: 1, minWidth: 0, height: 18 }}
+      />
+    );
+  const max = Math.max(...real);
+  const min = Math.min(...real, 0);
+  const span = max - min || 1;
+  return (
+    <span
+      data-testid="bench-spark"
+      data-series={label}
+      data-points={real.length}
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 1.5,
+        height: 18,
+        flex: 1,
+        minWidth: 0,
+        justifyContent: "flex-end",
+        overflow: "hidden",
+      }}
+    >
+      {values.map((v, i) => (
+        <i
+          key={i}
+          data-testid="bench-spark-bar"
+          style={{
+            width: 3,
+            flex: "0 0 3px",
+            borderRadius: 1.5,
+            height: `${v === null ? 0 : Math.max(8, ((v - min) / span) * 100)}%`,
+            background:
+              "linear-gradient(180deg, var(--accent-primary), var(--accent-tint-15))",
+            opacity: 0.8,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** A stat tile for the Progress card: label + value + BarSpark in a row. */
+function ProgressStat({
+  label,
+  value,
+  data,
+}: {
+  label: string;
+  value: string;
+  data: Array<number | null>;
+}) {
+  const testId = `bench-footer-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 0",
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          font: "600 9px Inter, system-ui, sans-serif",
+          letterSpacing: "0.6px",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          flexShrink: 0,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{ font: `700 12px ${MONO}`, whiteSpace: "nowrap", flexShrink: 0 }}
+        data-testid={testId}
+      >
+        {value}
+      </span>
+      <BarSpark values={data} label={label} />
+    </div>
   );
 }
 
@@ -785,6 +999,7 @@ function ProgressCard({
   running,
   warming,
   elapsedSeconds,
+  remainingSeconds,
   donePct,
   median,
 }: {
@@ -798,6 +1013,8 @@ function ProgressCard({
   warming: boolean;
   /** The page's single elapsed clock. */
   elapsedSeconds: number | null;
+  /** Estimated seconds remaining; null when no comparable history. */
+  remainingSeconds: number | null;
   donePct: number | null;
   median: number | null;
 }) {
@@ -807,6 +1024,7 @@ function ProgressCard({
   // the hero correctly described the new one. Nothing file-derived is
   // trustworthy until the spawned run's own file lands.
   const onTask = onTaskDisplay(live, records, detail?.config?.n ?? 1);
+  const figs = footerFigures(records, elapsedSeconds, running, remainingSeconds);
 
   const samplesValue = (() => {
     if (live.total) return `${live.done ?? 0}/${live.total}`;
@@ -879,6 +1097,7 @@ function ProgressCard({
               label="Elapsed"
               value={fmtUptime(elapsedSeconds)}
               valueSize={14}
+              testId="bench-progress-elapsed"
             />
             {/* T82/T98 — `live` is written only at sample END, so between
                 saves current_task names the one that just finished. The tile
@@ -900,6 +1119,54 @@ function ProgressCard({
               valueSize={14}
             />
           </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0 14px",
+            paddingTop: 6,
+            borderTop: "1px solid var(--border-light)",
+            marginTop: 8,
+          }}
+        >
+          <ProgressStat
+            label="Generation speed"
+            value={
+              figs.idle || figs.meanRate === null
+                ? "—"
+                : `${fmtNum(Math.round(figs.meanRate))} t/s`
+            }
+            data={figs.idle ? [] : figs.rates}
+          />
+          <ProgressStat
+            label="Samples/hr"
+            value={
+              figs.idle || figs.samplesPerHour === null
+                ? "—"
+                : figs.samplesPerHour.toFixed(1)
+            }
+            data={figs.idle ? [] : figs.ratePerHourSeries}
+          />
+          <ProgressStat
+            label="Pass rate"
+            value={
+              figs.idle || figs.passRate === null
+                ? "—"
+                : `${Math.round(figs.passRate)}%`
+            }
+            data={figs.idle ? [] : figs.passSeries}
+          />
+          <ProgressStat
+            label="Remaining"
+            value={
+              figs.idle || remainingSeconds === null
+                ? "—"
+                : fmtUptime(remainingSeconds)
+            }
+            data={figs.idle ? [] : figs.remainingSeries}
+          />
         </div>
 
         <div style={{ marginTop: "auto", paddingTop: 10 }}>
@@ -1721,6 +1988,17 @@ export default function BenchPage() {
     bench.defaultUrl,
   ]);
 
+  const taskLangOrder = useMemo(() => {
+    const tasks = bench.taskList?.tasks;
+    if (!tasks) return undefined;
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const t of tasks) {
+      if (!seen.has(t.lang)) { seen.add(t.lang); order.push(t.lang); }
+    }
+    return order;
+  }, [bench.taskList]);
+
   const donePct = computeDonePct(live, detail, identity.warming);
   // ONE clock. The hero, Progress and the footer all render this same
   // number — two elapsed values that can disagree is worse than one shown
@@ -1867,6 +2145,7 @@ export default function BenchPage() {
               spawnedAttempts={
                 current.running ? (current.run?.attempts ?? null) : null
               }
+              taskLangOrder={taskLangOrder}
             />
           </PanelErrorBoundary>
 
@@ -1879,6 +2158,7 @@ export default function BenchPage() {
               running={running}
               warming={identity.warming}
               elapsedSeconds={elapsedSeconds}
+              remainingSeconds={remainingSeconds}
               donePct={donePct}
               median={median}
             />
@@ -1950,12 +2230,6 @@ export default function BenchPage() {
           </PanelErrorBoundary>
         </div>
       </div>
-      <BenchFooter
-        detail={scopedDetail}
-        elapsedSeconds={elapsedSeconds}
-        running={running}
-        remainingSeconds={remainingSeconds}
-      />
     </main>
   );
 }

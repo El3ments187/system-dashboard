@@ -1153,12 +1153,12 @@ describe("T100 failureExplanation", () => {
 // T99 — the defaults are localbench's, and this is what catches the next
 // upstream bump: bench.py's argparse table is the source, not this file.
 describe("T99 LOCALBENCH_DEFAULTS tracks bench.py", () => {
-  it("matches the -129 argparse table", () => {
-    expect(LOCALBENCH_DEFAULTS.attempts, "bench.py:2810").toBe(3);
-    expect(LOCALBENCH_DEFAULTS.n, "bench.py:2785").toBe(1);
-    expect(LOCALBENCH_DEFAULTS.maxTokens, "bench.py:2821").toBe(0);
-    expect(LOCALBENCH_DEFAULTS.nudgeAt, "bench.py:2795").toBe(16384);
-    expect(LOCALBENCH_DEFAULTS.label, "bench.py:2894").toBe("");
+  it("matches the -157 argparse table", () => {
+    expect(LOCALBENCH_DEFAULTS.attempts, "bench.py:3271").toBe(3);
+    expect(LOCALBENCH_DEFAULTS.n, "bench.py:3246").toBe(1);
+    expect(LOCALBENCH_DEFAULTS.maxTokens, "bench.py:3282").toBe(0);
+    expect(LOCALBENCH_DEFAULTS.nudgeAt, "DEFAULT_NUDGE_AT bench.py:70 used at :3256").toBe(32768);
+    expect(LOCALBENCH_DEFAULTS.label, "bench.py:3355").toBe("");
   });
 
   it("does not reproduce --langs '' , which means EVERY language", () => {

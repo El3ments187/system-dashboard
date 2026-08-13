@@ -123,12 +123,15 @@ function RunOutcome({
   samples,
   avg,
   maxPoints,
+  score,
 }: {
   isLiveRun: boolean;
   interrupted: boolean;
   samples: number;
   avg: number | null;
   maxPoints: number | string;
+  /** localbench -157+ headline score; undefined means pre-157 run. */
+  score?: number | null;
 }) {
   if (isLiveRun)
     return (
@@ -145,6 +148,14 @@ function RunOutcome({
         interrupted · {samples} samples
       </span>
     );
+  // Post-157: show the 0–100 headline score
+  if (score !== undefined) {
+    return (
+      <span style={{ fontWeight: 700 }}>
+        {score === null ? "—" : score.toFixed(1)}/100
+      </span>
+    );
+  }
   return (
     <span style={{ fontWeight: 700 }}>
       {avg === null ? "—" : avg.toFixed(2)}/{maxPoints}
@@ -1178,6 +1189,7 @@ function HistoryPane({
                   samples={run.summary?.samples ?? 0}
                   avg={avg}
                   maxPoints={run.summary?.max_points ?? "?"}
+                  score={run.summary?.score}
                 />
                 <span
                   style={{
@@ -1443,6 +1455,93 @@ function ComparePane({
               </span>
             </div>
           )}
+          {/* Score strip — only rendered when at least one selected run has
+              the -157+ score field. Pre-157 runs show "—" rather than 0. */}
+          {chosenRows.some((r) => r.summary?.score !== undefined) && (() => {
+            const s0 = chosenRows[0]?.summary?.score;
+            const s1 = chosenRows[1]?.summary?.score;
+            const scoreDiff =
+              chosenRows.length === 2 &&
+              typeof s0 === "number" &&
+              typeof s1 === "number"
+                ? s0 - s1
+                : null;
+            return (
+              <div
+                data-testid="bench-compare-scores"
+                style={{
+                  margin: "0 12px 10px",
+                  display: "grid",
+                  gridTemplateColumns: `auto repeat(${chosenRows.length}, 1fr)`,
+                  gap: "4px 12px",
+                  font: `11px ${MONO}`,
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <span style={{ color: "var(--text-muted)", fontSize: 10 }} />
+                {chosenRows.map((r) => {
+                  const s = r.summary;
+                  const sc = s?.score;
+                  const hasField = sc !== undefined;
+                  return (
+                    <span key={r.run_id} style={{ fontWeight: 700 }}>
+                      {hasField
+                        ? sc === null
+                          ? "—"
+                          : `${sc.toFixed(1)}/100`
+                        : "—"}
+                    </span>
+                  );
+                })}
+                {scoreDiff !== null && (
+                  <>
+                    <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                      Δ
+                    </span>
+                    <span
+                      data-testid="bench-compare-score-diff"
+                      style={{
+                        fontWeight: 700,
+                        gridColumn: "span 2",
+                        color:
+                          scoreDiff > 0
+                            ? "var(--success)"
+                            : scoreDiff < 0
+                              ? "var(--danger)"
+                              : "var(--text-secondary)",
+                      }}
+                    >
+                      {scoreDiff >= 0
+                        ? `+${scoreDiff.toFixed(1)}`
+                        : scoreDiff.toFixed(1)}
+                    </span>
+                  </>
+                )}
+                <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                  Correctness
+                </span>
+                {chosenRows.map((r) => {
+                  const cw = r.summary?.correctness_weighted;
+                  return (
+                    <span key={r.run_id}>
+                      {cw !== undefined ? cw.toFixed(1) : "—"}
+                    </span>
+                  );
+                })}
+                <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                  Speed
+                </span>
+                {chosenRows.map((r) => {
+                  const sw = r.summary?.speed_weighted;
+                  return (
+                    <span key={r.run_id}>
+                      {sw !== undefined ? sw.toFixed(1) : "—"}
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <table
             style={{
               width: "100%",
