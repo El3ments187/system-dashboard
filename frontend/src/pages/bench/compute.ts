@@ -241,6 +241,29 @@ export function rowTaint(indexes: number[], state: TruncationState): TaintKind {
   return sawTruncation ? "truncation" : null;
 }
 
+/**
+ * Whether a budget-tainted task row warrants the stronger tooltip.
+ *
+ * The weak tooltip ("scored full marks") applies only when the cap was in
+ * effect but left no measurable trace: every sample solved, all expected
+ * assertions ran, and nothing was cut mid-block.  Any of the three
+ * conditions below means the cap likely harmed the score.
+ *
+ * `cut_mid_block` accumulates across attempts (bench.py:1691-1692), so it
+ * means *an* attempt was cut, not necessarily the final one.
+ */
+export function budgetHarmed(
+  tainted: TaintKind,
+  graded: BenchRecord[],
+): boolean {
+  return (
+    tainted === "budget" &&
+    (graded.some((r) => !r.solved) ||
+      graded.some((r) => r.tests_total < r.tests_expected) ||
+      graded.some((r) => r.cut_mid_block))
+  );
+}
+
 export interface FailureExplanation {
   /** Null when the assertion list already tells the story. */
   reason: string | null;

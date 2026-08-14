@@ -24,6 +24,7 @@ import {
 import {
   assertionCanary,
   benchLocalDate,
+  budgetHarmed,
   compareEligibility,
   compareNotation,
   compareRows,
@@ -509,16 +510,36 @@ function ThisRunPane({
   );
   const trunc = useMemo(() => truncationState(records), [records]);
   const byTask = useMemo(() => groupByTask(records), [records]);
+  // T155: build once outside the row map so taint lookup is O(1), not O(n).
+  // First-occurrence wins to match indexOf semantics (same-reference duplicates
+  // cannot arise from normal API responses, but the semantics should match).
+  const indexOf = useMemo(() => {
+    const m = new Map<(typeof records)[0], number>();
+    records.forEach((r, i) => {
+      if (!m.has(r)) m.set(r, i);
+    });
+    return m;
+  }, [records]);
   const expectedSamples = detail?.config?.n ?? 1;
 
   // Rows come from the ROSTER, not from the records, so every task this run
   // covers is visible from the first render instead of the table growing one
   // row at a time while the hero already says "27 of 27". A task with no
   // record yet renders queued — never zeros, which read as a scored result.
-  const rows: Array<[string, typeof records]> =
+  //
+  // T156: widen the tuple to carry lang from the roster so skipped-vs-queued
+  // follows the roster field, not a re-parse of the task id string.
+  // In the byTask fallback every entry has at least one record (BenchRecord.lang
+  // is required), so rs[0].lang is always defined there — the split is
+  // unreachable but kept as a type-safe last resort.
+  const rows: Array<[string, typeof records, string]> =
     roster.length > 0
-      ? roster.map((t) => [t.id, byTask.get(t.id) ?? []])
-      : [...byTask.entries()];
+      ? roster.map((t) => [t.id, byTask.get(t.id) ?? [], t.lang])
+      : [...byTask.entries()].map(([id, rs]) => [
+          id,
+          rs,
+          rs[0]?.lang ?? id.split("/")[0],
+        ]);
   const visible = rows.filter(([task]) =>
     task.toLowerCase().includes(query.toLowerCase()),
   );
@@ -565,8 +586,7 @@ function ThisRunPane({
             </tr>
           </thead>
           <tbody>
-            {visible.map(([task, rs]) => {
-              const lang = task.split("/")[0];
+            {visible.map(([task, rs, lang]) => {
               const skipped = rs.length === 0 && unavailableLangs.has(lang);
               const queued = rs.length === 0 && !skipped;
               const graded = gradedRecords(rs);
@@ -578,16 +598,15 @@ function ThisRunPane({
                   : graded.reduce((s, r) => s + r.gen_seconds, 0) /
                     graded.length;
               const tainted = rowTaint(
-                rs.map((r) => records.indexOf(r)),
+                rs.map((r) => indexOf.get(r) ?? -1),
                 trunc,
               );
-              const budgetHarmed =
-                tainted === "budget" && graded.some((r) => !r.solved);
+              const harmed = budgetHarmed(tainted, graded);
               let taintTitle: string | undefined;
               if (tainted === "truncation") {
                 taintTitle = TAINT_TOOLTIP.truncation;
               } else if (tainted !== null) {
-                taintTitle = budgetHarmed ? TAINT_TOOLTIP.budget : TAINT_BUDGET_PASS;
+                taintTitle = harmed ? TAINT_TOOLTIP.budget : TAINT_BUDGET_PASS;
               }
               return (
                 <Fragment key={task}>

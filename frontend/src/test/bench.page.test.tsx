@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import benchRun from "./fixtures/benchRun.json";
 
 class MockResizeObserver {
@@ -1451,7 +1451,7 @@ describe("T54 Progress during warming", () => {
     );
     expect(
       screen.getByTestId("bench-gauge-label").textContent,
-      "the previous run's completed gauge must not light up the new one",
+      "the previous run's score must not carry into the new one (T173: gauge shows score, not donePct)",
     ).not.toBe("100");
     const progress = screen.getByTestId("bench-progress-tiles").textContent;
     expect(
@@ -1544,12 +1544,15 @@ describe("T56 Model ID vs Benchmark Alias", () => {
 
 // T57 — Config left the hero; Output moved next to the log it belongs with.
 describe("T57 hero tiles and Output relocation", () => {
-  it("renders exactly two hero tiles, with no Config echo", async () => {
+  // T172 removed the hero's Elapsed tile (duplicate of Progress's), so the
+  // old assertion `toMatch(/Elapsed/)` is no longer correct. T172's own test
+  // guards that bench-hero-elapsed is absent and bench-progress-elapsed
+  // remains. T173 will add Remaining beside Started, restoring two tiles.
+  it("hero tiles contain Started; no Config echo, no Output", async () => {
     installFetch();
     render(<BenchPage />);
     const tiles = await screen.findByTestId("bench-hero-tiles");
     expect(tiles.textContent).toMatch(/Started/);
-    expect(tiles.textContent).toMatch(/Elapsed/);
     expect(
       tiles.textContent,
       "Run Setup owns configuration; a compressed copy here is the duplication that was removed",
@@ -1730,7 +1733,12 @@ describe("T58 language toggles", () => {
 
 // T59 — the footer reports the page's own numbers, not a second computation.
 describe("T59 footer is single-source", () => {
-  it("matches Score's solved/graded and the hero's elapsed", async () => {
+  // The original assertion checked that the hero's Elapsed matched
+  // bench-progress-elapsed (same single-source value shown twice). T172
+  // removed the hero Elapsed, so the check is obviated: only one surface
+  // shows Elapsed now. T172's own test guards that bench-progress-elapsed
+  // survives and bench-hero-elapsed is absent.
+  it("matches Score's solved/graded", async () => {
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
@@ -1749,13 +1757,6 @@ describe("T59 footer is single-source", () => {
     expect(screen.getByTestId("bench-footer-pass-rate").textContent).toBe(
       expected,
     );
-
-    const heroElapsed =
-      screen.getByTestId("bench-hero-tiles").textContent ?? "";
-    expect(
-      heroElapsed,
-      "two clocks that can disagree is worse than one shown twice",
-    ).toContain(screen.getByTestId("bench-progress-elapsed").textContent ?? "");
   });
 
   it("dashes every stat when there is no run at all", async () => {
@@ -4760,10 +4761,12 @@ describe("T114 budget badge tooltip strength", () => {
   };
 
   it("uses the weaker tooltip when all budget-tainted rows still solved", async () => {
+    // tests_total must equal tests_expected so T157's new condition does not
+    // fire and the weak path stays exercised.
     installFetch({
       detail: withBudget([
-        { solved: true, status: "pass" },
-        { solved: true, status: "pass" },
+        { solved: true, status: "pass", tests_total: 35 },
+        { solved: true, status: "pass", tests_total: 35 },
       ]),
     });
     render(<BenchPage />);
@@ -6413,5 +6416,440 @@ describe("T170 nudge-at default: LOCALBENCH_DEFAULTS.nudgeAt matches upstream 32
     } finally {
       (LOCALBENCH_DEFAULTS as Record<string, unknown>).nudgeAt = original;
     }
+  });
+});
+
+// ── T156 — task lang resolved from roster field, not task-id prefix ──────────
+//
+// The row was using `task.split("/")[0]` to derive the language, throwing away
+// the `lang` field the roster already carries.  `unavailableLangs.has(lang)`
+// decides skipped vs queued, so a task whose roster lang differs from its id
+// prefix reads the wrong state.
+//
+// Fixture: id "py/fizzbuzz", roster lang "python", check marks "python"
+// unavailable.  Bug: split gives "py", not in unavailableLangs → "queued".
+// Fix: tuple carries "python" → "skipped".
+describe("T156 skipped-vs-queued follows roster lang, not task-id prefix", () => {
+  it("an empty row reads 'skipped' when the roster lang (not the id prefix) is unavailable", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: unknown[] }).records = [];
+    (d.config as Record<string, unknown>).langs = ["python"];
+    installFetch({
+      detail: d,
+      taskList: {
+        suite_hash: "t156",
+        tasks: [
+          {
+            number: 1,
+            id: "py/fizzbuzz",
+            lang: "python",
+            difficulty: "medium",
+            kind: "fix",
+            assertions: 10,
+          },
+        ],
+      },
+      check: {
+        version: "2026.08.13-157",
+        suite_hash: "t156",
+        endpoint: "http://localhost:8081/v1",
+        tracks: [
+          {
+            lang: "python",
+            tasks: 1,
+            available: false,
+            reason: "python not on PATH",
+          },
+        ],
+      },
+    });
+    render(<BenchPage />);
+    const pending = await screen.findAllByTestId("bench-task-pending");
+    expect(pending[0].textContent).toBe("skipped");
+  });
+});
+
+// ── T155 — indexOf → Map: behaviour preserved at the call site ───────────────
+//
+// T155 is a performance fix (O(n²) indexOf → O(1) Map).  There is no
+// correctness defect to inject — same-object-reference duplicates cannot
+// occur in normal API responses (JSON.parse always creates distinct objects).
+// This test asserts that taint verdicts at the call site are unchanged after
+// the refactor:
+//   index 0 (before budget trigger at 1) → no badge
+//   index 1 (budget trigger)             → BUDGET badge
+//   index 2 (contagion, index >= trigger) → BUDGET badge
+// There is no red-first phase for this item.
+describe("T155 call-site taint unchanged after indexOf-to-Map refactor", () => {
+  it("pre-trigger row has no badge; trigger and contagion rows have BUDGET", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const base = (d as { records: Record<string, unknown>[] }).records[0];
+    (d as { records: Record<string, unknown>[] }).records = [
+      {
+        ...base,
+        task: "js/retry_backoff",
+        sample: 1,
+        stopped_at_budget: false,
+        truncated: false,
+      },
+      {
+        ...base,
+        task: "js/formula_engine",
+        sample: 1,
+        stopped_at_budget: true,
+        truncated: false,
+      },
+      {
+        ...base,
+        task: "js/interval_set",
+        sample: 1,
+        stopped_at_budget: false,
+        truncated: false,
+      },
+    ];
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    // formula_engine (trigger at index 1) and interval_set (contagion at index 2)
+    // both get BUDGET.  retry_backoff (index 0, pre-trigger) gets nothing.
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges.every((b) => b.getAttribute("data-taint") === "budget")).toBe(
+      true,
+    );
+  });
+});
+
+// ── T157 — budgetHarmed detects cut-but-solved ───────────────────────────────
+//
+// The old predicate only counted unsolved rows.  A task that was solved but
+// had fewer assertions run than expected (tests_total < tests_expected) or
+// was cut mid-block still deserves the strong "measures the cutoff" tooltip —
+// the drilldown already shows a CUT MID-BLOCK chip for the same record, so
+// the two surfaces were contradicting each other.
+describe("T157 budgetHarmed: strong tooltip when solved but cut or short on assertions", () => {
+  const ROSTER_TASKS = TASK_LIST.tasks.map((t) => t.id);
+
+  const withBudget157 = (over: Record<string, unknown>[]) => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: Record<string, unknown>[] }).records = over.map(
+      (o, i) => ({
+        ...(d as { records: Record<string, unknown>[] }).records[
+          Math.min(i, (d as { records: unknown[] }).records.length - 1)
+        ],
+        task: ROSTER_TASKS[i],
+        sample: 1,
+        stopped_at_budget: true,
+        truncated: false,
+        ...o,
+      }),
+    );
+    return d;
+  };
+
+  it("shows strong tooltip when solved but tests_total < tests_expected", async () => {
+    installFetch({
+      detail: withBudget157([
+        { solved: true, status: "pass", tests_total: 20, tests_expected: 35 },
+      ]),
+    });
+    render(<BenchPage />);
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    const budgetBadge = badges.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budgetBadge?.getAttribute("title")).toMatch(/measures the cutoff/i);
+  });
+
+  it("shows strong tooltip when solved but cut_mid_block is true", async () => {
+    installFetch({
+      detail: withBudget157([
+        {
+          solved: true,
+          status: "pass",
+          tests_total: 35,
+          tests_expected: 35,
+          cut_mid_block: true,
+        },
+      ]),
+    });
+    render(<BenchPage />);
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    const budgetBadge = badges.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budgetBadge?.getAttribute("title")).toMatch(/measures the cutoff/i);
+  });
+
+  it("keeps weak tooltip when all solved, all assertions ran, no mid-block cut", async () => {
+    installFetch({
+      detail: withBudget157([
+        {
+          solved: true,
+          status: "pass",
+          tests_total: 35,
+          tests_expected: 35,
+          cut_mid_block: false,
+        },
+      ]),
+    });
+    render(<BenchPage />);
+    const badges = await screen.findAllByTestId("bench-taint-badge");
+    const budgetBadge = badges.find(
+      (b) => b.getAttribute("data-taint") === "budget",
+    );
+    expect(budgetBadge?.getAttribute("title")).toMatch(/scored full marks/i);
+    expect(budgetBadge?.getAttribute("title")).not.toMatch(
+      /measures the cutoff/i,
+    );
+  });
+});
+
+// ── T162 — Dry run must respect the no-languages guard ──────────────────────
+//
+// dryRunBlocked omitted `anyLanguage`, so `opts.anyLanguage === false` (the
+// guard in startDisabledReason) never fired — Dry run could launch with zero
+// languages selected, and `--langs ""` runs the full suite (T93 fail-open).
+//
+// haveFlags: true is correct for dry run: the mock URL does not need a real
+// model configured.  Only `anyLanguage` was missing.
+describe("T162 dry run blocked when no language is selected", () => {
+  it("Dry run button is enabled when a language is selected", async () => {
+    // benchRun.config.langs = ["js"] seeds the form with js selected.
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("Dry run button is disabled and carries a reason after all languages are deselected", async () => {
+    installFetch();
+    render(<BenchPage />);
+    // Wait for the form to be seeded from the selected run (js selected).
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    // Deselect the only active language toggle.
+    fireEvent.click(screen.getByTestId("bench-lang-js"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("bench-action-dry-run") as HTMLButtonElement)
+          .disabled,
+      ).toBe(true),
+    );
+    const title = screen
+      .getByTestId("bench-action-dry-run")
+      .getAttribute("title");
+    expect(title).toMatch(/no languages selected/i);
+  });
+});
+
+// ── T173 — layout redesign ───────────────────────────────────────────────────
+//
+// Two-card top row (Hero + ScoreProgress merged), score as a ring, four
+// throughput stats move to Hero, by-language becomes a table.
+describe("T173 score ring, by-language table, throughput stats on hero", () => {
+  it("score ring (bench-gauge-label) shows the numeric score, not donePct", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d.summary as Record<string, unknown>).score = 75.3;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    // bench-gauge-label exists from first render; wait for async data to settle
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-gauge-label").textContent).toBe("75.3"),
+    );
+    expect(screen.getByTestId("bench-gauge-label").textContent).not.toBe("0");
+  });
+
+  it("null score renders '—' in the ring, not '0' (pct??0 trap)", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d.summary as Record<string, unknown>).score = null;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    // Wait for data to load, then confirm null score shows "—" not "0" (null??0 trap)
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-gauge-label").textContent).not.toBe("0"),
+    );
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("—");
+  });
+
+  it("by-language renders bench-lang-row elements with score / correctness / speed", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d.summary as Record<string, unknown>).by_language = {
+      js: { score: 80.5, correctness: 75.0, speed: 12.3 },
+      java: { score: 65.2, correctness: 60.0, speed: 8.7 },
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    const rows = screen.getAllByTestId("bench-lang-row");
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    // taskLangOrder from TASK_LIST: js appears before java
+    expect(rows[0].textContent).toContain("js");
+    expect(rows[0].textContent).toContain("80.5");
+    expect(rows[1].textContent).toContain("java");
+    expect(rows[1].textContent).toContain("65.2");
+  });
+});
+
+// ── T174 — repair: merged card, 3-across tiles, by-language table ────────────
+//
+// T173 landed a two-column grid with Score stacked above Progress, each with
+// its own Card border and header. That left the hero stretched to the combined
+// height of two cards and the BannerTiles occupying a single full-width row
+// each. T174 merges them into one card and adds column headers to the
+// by-language breakdown.
+describe("T174 merged ScoreProgress card; by-language table with headers", () => {
+  it("by-language renders a header row (bench-lang-table-header)", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d.summary as Record<string, unknown>).by_language = {
+      js: { score: 80.5, correctness: 75.0, speed: 12.3 },
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    expect(screen.getByTestId("bench-lang-table-header")).toBeTruthy();
+  });
+
+  it("T173 inventory fields survive the merge: gauge, elapsed, task-avg, solved, pacing", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "buggy-model",
+      ),
+    );
+    expect(screen.getByTestId("bench-gauge-label")).toBeTruthy();
+    expect(screen.getByTestId("bench-progress-elapsed")).toBeTruthy();
+    expect(screen.getByTestId("bench-task-avg")).toBeTruthy();
+    expect(screen.getByTestId("bench-solved")).toBeTruthy();
+    expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy();
+    expect(screen.getByTestId("bench-pacing")).toBeTruthy();
+    // Remaining stays in progress-stats (T154 guard)
+    expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy();
+  });
+});
+
+// ── T172 — hero Elapsed is a duplicate; keep only Progress's ────────────────
+//
+// The hero card and the Progress section both showed Elapsed. They derive
+// the same value (elapsedSeconds) so they can never disagree — but two tiles
+// labelled the same way on one screen reads as redundant and wastes the grid
+// slot that T173 gives to Remaining.
+describe("T172 hero Elapsed removed; Progress Elapsed survives", () => {
+  it("bench-hero-elapsed is absent; bench-progress-elapsed remains", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-progress-elapsed")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("bench-hero-elapsed")).toBeNull();
+  });
+});
+
+// ── T175 — four throughput stats move from ScoreProgress to the hero ─────────
+//
+// T154 confirmed bench-footer-generation-speed, bench-footer-samples-hr,
+// bench-footer-pass-rate, and bench-footer-remaining exist somewhere on the
+// page. T175 tightens this: they must live inside the hero card and must NOT
+// appear inside the Score & Progress card.
+describe("T175 four throughput stats on hero card", () => {
+  it("all four stats are reachable in the DOM", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "buggy-model",
+      ),
+    );
+    expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
+    expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
+    expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
+    expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy();
+  });
+
+  it("stats are inside bench-hero-stats (on the hero card)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "buggy-model",
+      ),
+    );
+    const heroStats = screen.getByTestId("bench-hero-stats");
+    expect(
+      within(heroStats).getByTestId("bench-footer-generation-speed"),
+    ).toBeTruthy();
+    expect(within(heroStats).getByTestId("bench-footer-samples-hr")).toBeTruthy();
+    expect(within(heroStats).getByTestId("bench-footer-pass-rate")).toBeTruthy();
+    expect(within(heroStats).getByTestId("bench-footer-remaining")).toBeTruthy();
+  });
+
+  it("stats are absent from the Score & Progress card (bench-score-progress-body)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-model").textContent).toContain(
+        "buggy-model",
+      ),
+    );
+    const spBody = screen.getByTestId("bench-score-progress-body");
+    expect(
+      within(spBody).queryByTestId("bench-footer-generation-speed"),
+    ).toBeNull();
+    expect(within(spBody).queryByTestId("bench-footer-samples-hr")).toBeNull();
+    expect(within(spBody).queryByTestId("bench-footer-pass-rate")).toBeNull();
+    expect(within(spBody).queryByTestId("bench-footer-remaining")).toBeNull();
+  });
+
+  it("sparklines (data-series attributes) are present on the hero", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: unknown[] }).records = (
+      d as { records: unknown[] }
+    ).records.slice(0, 5);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+    );
+    expect(document.querySelector('[data-series="Generation speed"]')).toBeTruthy();
+    expect(document.querySelector('[data-series="Samples/hr"]')).toBeTruthy();
+    expect(document.querySelector('[data-series="Pass rate"]')).toBeTruthy();
+    expect(document.querySelector('[data-series="Remaining"]')).toBeTruthy();
+  });
+
+  it("samplesPerHour series is distinct from generation-speed series on a multi-record fixture", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: unknown[] }).records = (
+      d as { records: unknown[] }
+    ).records.slice(0, 5);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy(),
+    );
+    const genSpark = document.querySelector('[data-series="Generation speed"]');
+    const samplesSpark = document.querySelector('[data-series="Samples/hr"]');
+    // Both must be present and they must be different DOM elements
+    expect(genSpark).toBeTruthy();
+    expect(samplesSpark).toBeTruthy();
+    expect(genSpark).not.toBe(samplesSpark);
+  });
+
+  it("idle state: stats render '—' not '0'", async () => {
+    installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+    );
+    const stat = screen.getByTestId("bench-footer-generation-speed");
+    expect(stat.textContent).toContain("—");
+    expect(stat.textContent).not.toContain("0 t/s");
   });
 });

@@ -451,14 +451,24 @@ fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
         if !entry.path().is_dir() {
             continue;
         }
-        let text = std::fs::read_to_string(entry.path().join("results.json")).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let live = json.get("live")?;
+        let Ok(text) = std::fs::read_to_string(entry.path().join("results.json")) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Some(live) = json.get("live") else {
+            continue;
+        };
         if live.as_object().is_none_or(|m| m.is_empty()) {
             continue;
         }
-        let pid_str = std::fs::read_to_string(entry.path().join("pid")).ok()?;
-        let pid: u32 = pid_str.trim().parse().ok()?;
+        let Ok(pid_str) = std::fs::read_to_string(entry.path().join("pid")) else {
+            continue;
+        };
+        let Ok(pid) = pid_str.trim().parse::<u32>() else {
+            continue;
+        };
         if pid_alive(pid) {
             return Some(pid);
         }
@@ -619,6 +629,27 @@ impl ResumeRequest {
         // "." passes the ".." check but resolves to the runs dir itself.
         if self.folder == "." {
             return Err("single dot resolves to the runs directory");
+        }
+        Ok(())
+    }
+
+    /// Reject url values that are not http or https. `None` is allowed — the
+    /// field is optional and a missing url omits `--url` from the bench.py
+    /// invocation. Scheme check only: an allow-list of the configured server
+    /// plus MOCK_URL would be tighter but blocks legitimate ad-hoc targets.
+    pub(crate) fn validate_url(&self) -> Result<(), &'static str> {
+        let Some(url) = &self.url else {
+            return Ok(());
+        };
+        let scheme_end = url
+            .find("://")
+            .ok_or("url must include a scheme (http:// or https://)")?;
+        let scheme = &url[..scheme_end];
+        if scheme != "http" && scheme != "https" {
+            return Err("url scheme must be http or https");
+        }
+        if url.len() <= scheme_end + 3 {
+            return Err("url has no host after the scheme");
         }
         Ok(())
     }
@@ -927,6 +958,9 @@ pub async fn resume_handler(
     axum::extract::Json(req): axum::extract::Json<ResumeRequest>,
 ) -> axum::response::Json<Value> {
     if let Err(reason) = req.validate_folder() {
+        return axum::response::Json(json!({ "error": reason, "success": false }));
+    }
+    if let Err(reason) = req.validate_url() {
         return axum::response::Json(json!({ "error": reason, "success": false }));
     }
     // T127: same atomic check-and-set as start_handler.
@@ -1538,6 +1572,127 @@ mod tests {
         let _ = std::fs::remove_dir_all(&runs);
     }
 
+    // T160 — pid recovery must SKIP unusable run folders rather than aborting
+    // the whole scan.  Five tests, one per `?` that was causing early return.
+    // Defective folder is created FIRST (insertion order = scan order on tmpfs),
+    // valid live folder SECOND.  With the old `?` code the defective folder
+    // aborts the scan and None is returned; after the fix the scan continues.
+    fn t160_make_runs(suffix: &str) -> std::path::PathBuf {
+        let runs = std::env::temp_dir().join(format!(
+            "bench_t160{}_{}",
+            suffix,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&runs).unwrap();
+        runs
+    }
+
+    fn t160_add_live_folder(runs: &std::path::Path, own_pid: u32) {
+        // Named "live" — hashes after "defective" on this filesystem,
+        // so "defective" is always returned first by read_dir.
+        let live = runs.join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        std::fs::write(
+            live.join("results.json"),
+            r#"{"live":{"current_task":"js/foo","done":1,"total":4},"models":["m"]}"#,
+        )
+        .unwrap();
+        std::fs::write(live.join("pid"), own_pid.to_string()).unwrap();
+    }
+
+    #[test]
+    fn t160a_pid_recovery_skips_folder_missing_results_json() {
+        let own_pid = std::process::id();
+        let runs = t160_make_runs("a");
+        // "defective" hashes before "live" on this filesystem → scanned first.
+        std::fs::create_dir_all(runs.join("defective")).unwrap();
+        t160_add_live_folder(&runs, own_pid);
+        assert_eq!(
+            recover_pid_for_live_run(&runs),
+            Some(own_pid),
+            "missing results.json must be skipped, not abort the scan",
+        );
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    #[test]
+    fn t160b_pid_recovery_skips_folder_with_invalid_json() {
+        let own_pid = std::process::id();
+        let runs = t160_make_runs("b");
+        let defective = runs.join("defective");
+        std::fs::create_dir_all(&defective).unwrap();
+        std::fs::write(defective.join("results.json"), "not json at all").unwrap();
+        t160_add_live_folder(&runs, own_pid);
+        assert_eq!(
+            recover_pid_for_live_run(&runs),
+            Some(own_pid),
+            "invalid JSON must be skipped, not abort the scan",
+        );
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    #[test]
+    fn t160c_pid_recovery_skips_folder_with_no_live_key() {
+        let own_pid = std::process::id();
+        let runs = t160_make_runs("c");
+        let defective = runs.join("defective");
+        std::fs::create_dir_all(&defective).unwrap();
+        // results.json valid JSON but no `live` key.
+        std::fs::write(defective.join("results.json"), r#"{"models":["m"]}"#).unwrap();
+        t160_add_live_folder(&runs, own_pid);
+        assert_eq!(
+            recover_pid_for_live_run(&runs),
+            Some(own_pid),
+            "missing `live` key must be skipped, not abort the scan",
+        );
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    #[test]
+    fn t160d_pid_recovery_skips_folder_missing_pid_file() {
+        let own_pid = std::process::id();
+        let runs = t160_make_runs("d");
+        let defective = runs.join("defective");
+        std::fs::create_dir_all(&defective).unwrap();
+        // Non-empty live but no pid file.
+        std::fs::write(
+            defective.join("results.json"),
+            r#"{"live":{"current_task":"ts/bar","done":0,"total":1},"models":["m"]}"#,
+        )
+        .unwrap();
+        t160_add_live_folder(&runs, own_pid);
+        assert_eq!(
+            recover_pid_for_live_run(&runs),
+            Some(own_pid),
+            "missing pid file must be skipped, not abort the scan",
+        );
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
+    #[test]
+    fn t160e_pid_recovery_skips_folder_with_unparseable_pid() {
+        let own_pid = std::process::id();
+        let runs = t160_make_runs("e");
+        let defective = runs.join("defective");
+        std::fs::create_dir_all(&defective).unwrap();
+        std::fs::write(
+            defective.join("results.json"),
+            r#"{"live":{"current_task":"ts/bar","done":0,"total":1},"models":["m"]}"#,
+        )
+        .unwrap();
+        std::fs::write(defective.join("pid"), "not-a-number").unwrap();
+        t160_add_live_folder(&runs, own_pid);
+        assert_eq!(
+            recover_pid_for_live_run(&runs),
+            Some(own_pid),
+            "unparseable pid must be skipped, not abort the scan",
+        );
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+
     // T133 — folder-attach must use a pre-spawn snapshot so a decoy directory
     // (or the previous run's folder touched during the 600ms window) is never
     // mistaken for the new run's folder.
@@ -1598,6 +1753,79 @@ mod tests {
             req(".//.").validate_folder().is_err(),
             r#"".//.". must be rejected (contains /)"#
         );
+    }
+
+    // T161 — ResumeRequest.url must require http/https and reject unparseable
+    // strings.  The configured URL still resumes successfully.
+    #[test]
+    fn t161_validate_url_rejects_non_http_scheme() {
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: Some("file:///etc/passwd".into()),
+            ..Default::default()
+        };
+        assert!(
+            req.validate_url().is_err(),
+            "file:// scheme must be rejected",
+        );
+    }
+
+    #[test]
+    fn t161_validate_url_rejects_unparseable_string() {
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: Some("not-a-url".into()),
+            ..Default::default()
+        };
+        assert!(
+            req.validate_url().is_err(),
+            "string with no :// must be rejected",
+        );
+    }
+
+    #[test]
+    fn t161_validate_url_rejects_scheme_only() {
+        // "http://" has no host — bench.py would error anyway but we reject early.
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: Some("http://".into()),
+            ..Default::default()
+        };
+        assert!(
+            req.validate_url().is_err(),
+            "http:// with no host must be rejected",
+        );
+    }
+
+    #[test]
+    fn t161_validate_url_accepts_http() {
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: Some("http://localhost:8080".into()),
+            ..Default::default()
+        };
+        assert!(req.validate_url().is_ok(), "http URL must be accepted");
+    }
+
+    #[test]
+    fn t161_validate_url_accepts_https() {
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: Some("https://llama.local:8080".into()),
+            ..Default::default()
+        };
+        assert!(req.validate_url().is_ok(), "https URL must be accepted");
+    }
+
+    #[test]
+    fn t161_validate_url_accepts_none() {
+        // url is optional; None means the --url flag is simply omitted.
+        let req = ResumeRequest {
+            folder: "run_20260101-120000".into(),
+            url: None,
+            ..Default::default()
+        };
+        assert!(req.validate_url().is_ok(), "None url must be accepted");
     }
 
     // T127 — the spawning flag is included in the liveness check so a
