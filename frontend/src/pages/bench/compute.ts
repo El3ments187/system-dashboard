@@ -1024,12 +1024,20 @@ export function startDisabledReason(opts: {
   haveFlags: boolean;
   /** False when every language toggle is off. */
   anyLanguage?: boolean;
+  /**
+   * Present only when Model ID disagrees with the live server's model.
+   * Omitted (undefined) when: Model ID is blank, activeModel is unknown,
+   * or a --label is set (not a model claim). Undefined must never block.
+   */
+  modelMismatch?: { form: string; active: string };
 }): string | null {
   if (opts.running)
     return "A run is active — Start enables when it finishes or is stopped";
   if (!opts.serverReady)
     // The backend composes this sentence-cased at its source.
     return opts.serverReason || "No server answering at the configured url";
+  if (opts.modelMismatch !== undefined)
+    return `Model ID says ${opts.modelMismatch.form}; the server has ${opts.modelMismatch.active} loaded. Runs are recorded under Model ID, so this run would be filed as ${opts.modelMismatch.form}.`;
   if (!opts.haveFlags)
     return "No previous run to take flags from — run bench.py once from the CLI first";
   // bench.py cannot be told "no languages": an empty `--langs` is an empty
@@ -1226,9 +1234,7 @@ export function healthStripText(opts: {
     return "Warming — bench.py writes results.json when the first sample completes, so there is no progress to pace yet.";
   if (opts.median === null)
     return "No comparable history for this task yet — progress updates are the only health signal so far";
-  const verdict =
-    (opts.taskElapsed ?? 0) <= opts.median ? "on pace" : "over median";
-  return `Median for this task: ${opts.fmtDuration(opts.median)} — ${verdict}. Progress and timing together tell you if a run is healthy; elapsed time by itself doesn't.`;
+  return "";
 }
 
 /**

@@ -31,6 +31,7 @@ import {
   compareSlotOptions,
   gradedRecords,
   groupCoverage,
+  languageBreakdown,
   runTaskRoster,
   groupByEdition,
   groupByTask,
@@ -43,6 +44,7 @@ import {
   runNaming,
   runTaskAvg,
   sampleLabel,
+  sortByLangOrder,
   taskMean,
   truncationState,
 } from "./compute";
@@ -311,6 +313,20 @@ export function TasksAndRuns({
   } | null>(null);
   const [compareIds, setCompareIds] = useState<string[] | null>(null);
 
+  const taskLangOrder = useMemo(
+    () => bench.taskList?.tasks.map((t) => t.lang),
+    [bench.taskList],
+  );
+  const byLangRaw = warming ? null : (detail?.summary?.by_language ?? null);
+  const byLang =
+    byLangRaw && Object.keys(byLangRaw as Record<string, unknown>).length > 0
+      ? (byLangRaw as Record<string, unknown>)
+      : null;
+  const langRatiosList = useMemo(
+    () => languageBreakdown(warming ? [] : (detail?.records ?? [])),
+    [detail, warming],
+  );
+
   // Roster rows render before the run's detail exists, so a click can be
   // keyed to a placeholder. Migrate it when the real id arrives — dropping it
   // collapsed an expanded task the moment the poll landed. A real id becoming
@@ -431,15 +447,113 @@ export function TasksAndRuns({
       />
 
       {tab === "tasks" && (
-        <ThisRunPane
-          detail={detail}
-          roster={roster}
-          unavailableLangs={unavailableLangs}
-          query={query}
-          warming={warming}
-          openTask={openTask?.runKey === runKey ? openTask.task : null}
-          setOpenTask={(task) => setOpenTask(task ? { runKey, task } : null)}
-        />
+        <>
+          {(byLang || langRatiosList.length > 0) && (
+            byLang ? (
+              <div
+                data-testid="bench-lang-breakdown"
+                style={{
+                  padding: "6px 12px 4px",
+                  font: `11px ${MONO}`,
+                  color: "var(--text-secondary)",
+                  borderBottom: "1px solid var(--border-light)",
+                }}
+              >
+                <div
+                  data-testid="bench-lang-table-header"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
+                    gap: "0 12px",
+                    fontWeight: 600,
+                    fontSize: 9,
+                    letterSpacing: "0.5px",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 3,
+                  }}
+                >
+                  <span>Lang</span>
+                  <span style={{ textAlign: "right" }}>Score</span>
+                  <span style={{ textAlign: "right" }}>Passes</span>
+                  <span style={{ textAlign: "right" }}>Tests</span>
+                  <span style={{ textAlign: "right" }}>Speed</span>
+                </div>
+                {sortByLangOrder(Object.keys(byLang), taskLangOrder).map(
+                  (lang) => {
+                    const v = byLang[lang];
+                    const isLegacy = typeof v !== "object" || v === null;
+                    const passes = isLegacy
+                      ? null
+                      : ((v as Record<string, unknown>).passes as number | null | undefined) ??
+                        ((v as Record<string, unknown>).correctness as number | null | undefined) ??
+                        null;
+                    const tests = isLegacy
+                      ? null
+                      : ((v as Record<string, unknown>).tests as number | null | undefined) ?? null;
+                    return (
+                      <div
+                        key={lang}
+                        data-testid="bench-lang-row"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
+                          gap: "0 12px",
+                        }}
+                      >
+                        <span>{lang}</span>
+                        <span style={{ textAlign: "right" }}>
+                          {isLegacy
+                            ? (v as unknown as number).toFixed(1)
+                            : (v as Record<string, unknown>).score != null
+                              ? ((v as Record<string, unknown>).score as number).toFixed(1)
+                              : "—"}
+                        </span>
+                        <span style={{ textAlign: "right" }}>
+                          {passes != null ? passes.toFixed(1) : "—"}
+                        </span>
+                        <span style={{ textAlign: "right" }}>
+                          {tests != null ? tests.toFixed(1) : "—"}
+                        </span>
+                        <span style={{ textAlign: "right" }}>
+                          {isLegacy
+                            ? "—"
+                            : (v as Record<string, unknown>).speed != null
+                              ? ((v as Record<string, unknown>).speed as number).toFixed(1)
+                              : "—"}
+                        </span>
+                      </div>
+                    );
+                  },
+                )}
+              </div>
+            ) : (
+              <div
+                data-testid="bench-lang-breakdown"
+                style={{
+                  padding: "4px 12px",
+                  font: `11px ${MONO}`,
+                  color: "var(--text-muted)",
+                  borderBottom: "1px solid var(--border-light)",
+                }}
+              >
+                by language:{" "}
+                {langRatiosList
+                  .map((l) => `${l.lang} ${l.solved}/${l.total}`)
+                  .join(" \u00b7 ")}
+              </div>
+            )
+          )}
+          <ThisRunPane
+            detail={detail}
+            roster={roster}
+            unavailableLangs={unavailableLangs}
+            query={query}
+            warming={warming}
+            openTask={openTask?.runKey === runKey ? openTask.task : null}
+            setOpenTask={(task) => setOpenTask(task ? { runKey, task } : null)}
+          />
+        </>
       )}
       {tab === "hist" && (
         <HistoryPane
@@ -1556,6 +1670,93 @@ function ComparePane({
                     <span key={r.run_id}>
                       {sw !== undefined ? sw.toFixed(1) : "—"}
                     </span>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          {(() => {
+            const allLangs = sortByLangOrder(
+              [
+                ...new Set(
+                  details.flatMap((d) =>
+                    d ? Object.keys(d.summary?.by_language ?? {}) : [],
+                  ),
+                ),
+              ],
+              bench.taskList?.tasks.map((t) => t.lang),
+            );
+            if (allLangs.length === 0) return null;
+            return (
+              <div
+                data-testid="bench-compare-lang"
+                style={{
+                  margin: "0 12px 10px",
+                  font: `10px ${MONO}`,
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
+                    gap: "2px 10px",
+                    fontWeight: 600,
+                    fontSize: 9,
+                    letterSpacing: "0.5px",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 2,
+                  }}
+                >
+                  <span>Lang</span>
+                  {chosenRows.map((r) => {
+                    const naming = runNaming(r.models, r.config);
+                    return (
+                      <span key={r.run_id} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {naming.primary}
+                      </span>
+                    );
+                  })}
+                  <span style={{ textAlign: "right" }}>Δ</span>
+                </div>
+                {allLangs.map((lang) => {
+                  const scores = details.map((d) => {
+                    if (!d) return null;
+                    const v = d.summary?.by_language?.[lang];
+                    if (v === undefined) return null;
+                    if (typeof v !== "object" || v === null)
+                      return typeof v === "number" ? v : null;
+                    return (v as Record<string, unknown>).score != null
+                      ? ((v as Record<string, unknown>).score as number)
+                      : null;
+                  });
+                  const allPresent =
+                    scores.length >= 2 && scores.every((s) => s !== null);
+                  const delta = allPresent
+                    ? (
+                        Math.max(...(scores as number[])) -
+                        Math.min(...(scores as number[]))
+                      ).toFixed(1)
+                    : null;
+                  return (
+                    <div
+                      key={lang}
+                      data-testid="bench-compare-lang-row"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
+                        gap: "2px 10px",
+                      }}
+                    >
+                      <span>{lang}</span>
+                      {scores.map((s, i) => (
+                        <span key={i}>{s !== null ? s.toFixed(1) : "—"}</span>
+                      ))}
+                      <span style={{ textAlign: "right" }}>
+                        {delta ?? "—"}
+                      </span>
+                    </div>
                   );
                 })}
               </div>

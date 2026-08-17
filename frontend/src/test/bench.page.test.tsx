@@ -1413,11 +1413,15 @@ describe("T52 health strip states", () => {
     };
     installFetch({ detail: live });
     render(<BenchPage />);
-    const strip = await screen.findByTestId("bench-pacing");
+    // Wait for the detail to load before asserting on the pacing strip.
     await waitFor(() =>
-      expect(strip.textContent).toMatch(/health signal|median for this task/i),
+      expect(
+        screen.getByTestId("bench-run-status").getAttribute("data-status"),
+      ).toBe("running"),
     );
-    expect(strip.textContent).not.toMatch(/run stopped/i);
+    expect(screen.getByTestId("bench-pacing").textContent).not.toMatch(
+      /run stopped/i,
+    );
   });
 });
 
@@ -3026,14 +3030,13 @@ describe("T74 run status in plain language", () => {
   it("no user-visible text or tooltip says 'heartbeat'", async () => {
     installFetch({ detail: liveDetail(4000) });
     const { container } = render(<BenchPage />);
-    // Wait for the PACING branch that carried the jargon. Waiting only for
-    // the status element made this vacuous: it exists before the detail
-    // loads, so the median-based health line never rendered and the sweep
-    // walked a DOM that could not contain the string it was looking for.
+    // Wait for the detail to load. Waiting only for the status element made
+    // this vacuous: it exists before the detail loads, so the sweep walked
+    // a DOM that could not contain the string it was looking for.
     await waitFor(() =>
-      expect(screen.getByTestId("bench-pacing").textContent).toMatch(
-        /Median for this task/,
-      ),
+      expect(
+        screen.getByTestId("bench-run-status").getAttribute("data-status"),
+      ).toBe("running"),
     );
 
     const offenders: string[] = [];
@@ -3689,22 +3692,6 @@ describe("T94 stuck detection paces against the task", () => {
     expect(el.textContent).toMatch(/may be stuck/);
   });
 
-  it("never says 'stuck' while Progress says the task is merely over median", async () => {
-    // One fixture, both surfaces: this is the contradiction T94 reported.
-    installFetch({ detail: runningDetail(150_000, 200) });
-    render(<BenchPage />);
-    const status = await screen.findByTestId("bench-run-status");
-    await waitFor(() =>
-      expect(status.getAttribute("data-status")).toBe("running"),
-    );
-    const overMedian = screen.queryByText(/over median/);
-    if (overMedian) {
-      expect(
-        status.textContent,
-        "Progress and the status line must not give opposite verdicts",
-      ).not.toMatch(/may be stuck/);
-    }
-  });
 });
 
 // ── T95 — BUDGET must not be stamped on a truncation-tainted sample ────────
@@ -5668,10 +5655,13 @@ describe("T149 localbench 0–100 score", () => {
     await waitFor(() =>
       expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy(),
     );
-    const text = screen.getByTestId("bench-lang-breakdown").textContent ?? "";
-    const jsIdx = text.indexOf("js");
-    const tsIdx = text.indexOf("ts");
-    const javaIdx = text.indexOf("java");
+    // Check row order via bench-lang-row elements. Raw textContent is not
+    // reliable: the "Tests" header column label contains "ts" as a substring.
+    const rows = screen.queryAllByTestId("bench-lang-row");
+    const langs = rows.map((r) => r.querySelector("span")?.textContent ?? "");
+    const jsIdx = langs.indexOf("js");
+    const tsIdx = langs.indexOf("ts");
+    const javaIdx = langs.indexOf("java");
     expect(jsIdx).toBeGreaterThanOrEqual(0);
     expect(jsIdx).toBeLessThan(tsIdx);
     expect(tsIdx).toBeLessThan(javaIdx);
@@ -6851,5 +6841,337 @@ describe("T175 four throughput stats on hero card", () => {
     const stat = screen.getByTestId("bench-footer-generation-speed");
     expect(stat.textContent).toContain("—");
     expect(stat.textContent).not.toContain("0 t/s");
+  });
+});
+
+// ── T179 — by-language moves from Score & Progress to Tasks tab; Compare
+//           gets a per-language table with Passes/Tests columns ──────────────
+//
+// Previously the breakdown lived inside ScoreProgressCard. It now lives in
+// TasksAndRuns (tasks tab). The Compare pane gains a per-language score table
+// with a Δ column that shows "—" whenever a language is absent from any run.
+describe("T179 by-language relocates to Tasks tab; Compare per-lang table", () => {
+  // -165 format: by_language has { score, correctness, speed }
+  const SUM_165 = {
+    ...benchRun.summary,
+    by_language: {
+      java: { score: 66.5, correctness: 58.8, speed: 19.5 },
+      js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+    },
+  };
+
+  // -185 format: by_language has { score, passes, tests, speed }
+  const SUM_185 = {
+    ...benchRun.summary,
+    by_language: {
+      java: { score: 37.7, passes: 16.7, tests: 71.9, speed: 18.8 },
+      js: { score: 70.4, passes: 64.3, tests: 90.0, speed: 19.0 },
+    },
+  };
+
+  it("bench-lang-breakdown is absent from bench-score-progress-body", async () => {
+    installFetch({ detail: { ...benchRun, summary: SUM_165 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    const spBody = screen.getByTestId("bench-score-progress-body");
+    expect(within(spBody).queryByTestId("bench-lang-breakdown")).toBeNull();
+  });
+
+  it("bench-lang-breakdown appears on the Tasks tab with a header row", async () => {
+    installFetch({ detail: { ...benchRun, summary: SUM_165 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    expect(screen.getByTestId("bench-lang-table-header")).toBeTruthy();
+    expect(screen.queryAllByTestId("bench-lang-row").length).toBeGreaterThan(0);
+  });
+
+  it("-185 format: Passes column shows passes value; Tests column shows tests value", async () => {
+    installFetch({ detail: { ...benchRun, summary: SUM_185 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    const rows = screen.queryAllByTestId("bench-lang-row");
+    const javaRow = rows.find((r) => r.querySelector("span")?.textContent === "java");
+    expect(javaRow).toBeDefined();
+    const spans = javaRow!.querySelectorAll("span");
+    expect(spans[2]?.textContent).toBe("16.7"); // passes
+    expect(spans[3]?.textContent).toBe("71.9"); // tests
+  });
+
+  it("-165 format: correctness appears in Passes column; Tests column shows '—'", async () => {
+    installFetch({ detail: { ...benchRun, summary: SUM_165 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    const rows = screen.queryAllByTestId("bench-lang-row");
+    const javaRow = rows.find((r) => r.querySelector("span")?.textContent === "java");
+    expect(javaRow).toBeDefined();
+    const spans = javaRow!.querySelectorAll("span");
+    expect(spans[2]?.textContent).toBe("58.8"); // correctness → Passes
+    expect(spans[3]?.textContent).toBe("—");   // no tests field → Tests = —
+  });
+
+  it("rows follow taskLangOrder: js appears before java", async () => {
+    installFetch({ detail: { ...benchRun, summary: SUM_165 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    const rows = screen.queryAllByTestId("bench-lang-row");
+    const langs = rows.map((r) => r.querySelector("span")?.textContent ?? "");
+    const jsIdx = langs.indexOf("js");
+    const javaIdx = langs.indexOf("java");
+    expect(jsIdx).not.toBe(-1);
+    expect(javaIdx).not.toBe(-1);
+    expect(jsIdx).toBeLessThan(javaIdx);
+  });
+
+  it("Compare: language absent in one run renders '—' for its score and Δ", async () => {
+    const R1 = "t179-a";
+    const R2 = "t179-b";
+    const sum1 = {
+      ...benchRun.summary,
+      by_language: {
+        js: { score: 70.0, correctness: 60.0, speed: 18.0 },
+        java: { score: 50.0, correctness: 45.0, speed: 16.0 },
+      },
+    };
+    const sum2 = {
+      ...benchRun.summary,
+      by_language: {
+        js: { score: 80.0, correctness: 70.0, speed: 20.0 },
+      },
+    };
+    const runs = [
+      runRow({ run_id: R1, summary: sum1 }),
+      runRow({ run_id: R2, summary: sum2 }),
+    ];
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes(`/api/bench/runs/${R1}`))
+        return okJson({ ...benchRun, run_id: R1, summary: sum1 });
+      if (url.includes(`/api/bench/runs/${R2}`))
+        return okJson({ ...benchRun, run_id: R2, summary: sum2 });
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson(runs);
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(screen.queryAllByTestId("bench-compare-col").length).toBeGreaterThan(0),
+    );
+    const langTable = await screen.findByTestId("bench-compare-lang");
+    const langRows = within(langTable).queryAllByTestId("bench-compare-lang-row");
+    const javaRow = langRows.find((r) => r.querySelector("span")?.textContent === "java");
+    expect(javaRow).toBeDefined();
+    // R2 lacks java → its score cell and the Δ cell both show "—"
+    const dashes = (javaRow!.textContent?.match(/—/g) ?? []).length;
+    expect(dashes).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ── T181 — model-mismatch guard blocks start and names both values ────────────
+//
+// modelMismatch is computed at the RunSetupCard call site from activeModel
+// (live server) and form.model (user input). Three non-blocking cases are
+// enforced there: blank Model ID, absent activeModel, and a label set.
+describe("T181 model-mismatch guard", () => {
+  it("Start is disabled and names both models when Model ID disagrees with the server", async () => {
+    setActiveModel({
+      model_path: "/models/gemma-4-26B-it-qat.gguf",
+      model_alias: null,
+    });
+    installFetch();
+    render(<BenchPage />);
+    const modelField = await screen.findByTestId("bench-field-model");
+    // Form seeds model from activeModel — wait for it
+    await waitFor(() =>
+      expect((modelField as HTMLInputElement).value).toBe("gemma-4-26B-it-qat"),
+    );
+    // Type a different model to create mismatch
+    fireEvent.change(modelField, { target: { value: "Qwen3.6-27B-UD-Q4_K_XL" } });
+    const startBtn = screen.getByTestId(
+      "bench-action-start-run",
+    ) as HTMLButtonElement;
+    await waitFor(() => expect(startBtn.disabled).toBe(true));
+    expect(startBtn.title).toMatch(/Qwen3\.6-27B-UD-Q4_K_XL/);
+    expect(startBtn.title).toMatch(/gemma-4-26B-it-qat/);
+  });
+
+  it("non-blocking: blank Model ID does not trigger mismatch guard", async () => {
+    setActiveModel({
+      model_path: "/models/gemma-4-26B-it-qat.gguf",
+      model_alias: null,
+    });
+    installFetch();
+    render(<BenchPage />);
+    const modelField = await screen.findByTestId("bench-field-model");
+    await waitFor(() =>
+      expect((modelField as HTMLInputElement).value).toBe("gemma-4-26B-it-qat"),
+    );
+    // Clear the field — blank model means "trust the server"
+    fireEvent.change(modelField, { target: { value: "" } });
+    const startBtn = screen.getByTestId(
+      "bench-action-start-run",
+    ) as HTMLButtonElement;
+    await waitFor(() => expect(startBtn.disabled).toBe(false));
+  });
+
+  it("non-blocking: absent activeModel does not trigger mismatch guard", async () => {
+    // Default beforeEach: model_path: null → activeModel = null
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-model");
+    // Type any model — no activeModel to compare against, so no block
+    fireEvent.change(screen.getByTestId("bench-field-model"), {
+      target: { value: "SomeModel" },
+    });
+    const startBtn = screen.getByTestId(
+      "bench-action-start-run",
+    ) as HTMLButtonElement;
+    await waitFor(() => expect(startBtn.disabled).toBe(false));
+  });
+
+  it("non-blocking: label set suppresses mismatch guard", async () => {
+    setActiveModel({
+      model_path: "/models/gemma-4-26B-it-qat.gguf",
+      model_alias: null,
+    });
+    installFetch();
+    render(<BenchPage />);
+    const modelField = await screen.findByTestId("bench-field-model");
+    await waitFor(() =>
+      expect((modelField as HTMLInputElement).value).toBe("gemma-4-26B-it-qat"),
+    );
+    // Mismatch in Model ID, but a label is set → guard must not fire
+    fireEvent.change(modelField, { target: { value: "Qwen3.6-27B-UD-Q4_K_XL" } });
+    fireEvent.change(screen.getByTestId("bench-field-label"), {
+      target: { value: "my-experiment" },
+    });
+    const startBtn = screen.getByTestId(
+      "bench-action-start-run",
+    ) as HTMLButtonElement;
+    await waitFor(() => expect(startBtn.disabled).toBe(false));
+  });
+
+  it("matching Model ID and activeModel allows start", async () => {
+    setActiveModel({
+      model_path: "/models/gemma-4-26B-it-qat.gguf",
+      model_alias: null,
+    });
+    installFetch();
+    render(<BenchPage />);
+    // Form is seeded from activeModel — they match by default
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByTestId("bench-action-start-run") as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+  });
+});
+
+// ── T180 — Run Setup fills its column; top-row cards share height ─────────────
+//
+// jsdom cannot compute layout (offsetHeight = 0, ResizeObserver stubbed).
+// These tests assert inline styles — what was actually changed — and guard
+// the load-bearing constraints the layout comment at BenchPage.tsx:2121 explains.
+describe("T180 Run Setup fills column; top-row alignItems stretch", () => {
+  it("Run Setup card has flexGrow: 1 and flexShrink: 0 (flexShrink must not be removed)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-model");
+    const modelField = screen.getByTestId("bench-field-model");
+    // Walk up from the model field to find the card that carries both flags
+    let el: HTMLElement | null = modelField.parentElement;
+    let cardEl: HTMLElement | null = null;
+    while (el) {
+      if (el.style.flexShrink === "0" && el.style.flexGrow === "1") {
+        cardEl = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+    expect(
+      cardEl,
+      "Run Setup card must have flexShrink: 0 and flexGrow: 1",
+    ).not.toBeNull();
+    expect(cardEl?.style.height).toBe(""); // no fixed height added
+    expect(cardEl?.style.minHeight).toBe(""); // no minHeight added
+  });
+
+  it("Run Setup card body is a flex column with flexGrow: 1 (so buttons can pin to bottom)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-model");
+    const modelField = screen.getByTestId("bench-field-model");
+    // The content body is the wrapper containing the model field
+    // Walk up past the card to find the padding div
+    let el: HTMLElement | null = modelField.parentElement;
+    let bodyEl: HTMLElement | null = null;
+    while (el) {
+      if (
+        el.style.flexGrow === "1" &&
+        el.style.flexDirection === "column" &&
+        el.style.display === "flex"
+      ) {
+        // Must not be the card itself (which has flexShrink: 0)
+        if (el.style.flexShrink !== "0") {
+          bodyEl = el;
+          break;
+        }
+      }
+      el = el.parentElement;
+    }
+    expect(bodyEl, "Run Setup card body must be a flex column with flexGrow: 1").not.toBeNull();
+  });
+
+  it("action buttons have marginTop auto (pins them to the bottom of the card)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const startBtn = await screen.findByTestId("bench-action-start-run");
+    const buttonsRow = startBtn.parentElement;
+    expect(buttonsRow?.style.marginTop).toBe("auto");
+    expect(buttonsRow?.style.paddingTop).toBe("10px");
+  });
+
+  it("top-row grid uses alignItems stretch, not start", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-run-status");
+    const statusEl = screen.getByTestId("bench-run-status");
+    // Walk up to find the grid container with the 12fr column template
+    let el: HTMLElement | null = statusEl.parentElement;
+    let gridEl: HTMLElement | null = null;
+    while (el) {
+      if (el.style?.gridTemplateColumns?.includes("12fr")) {
+        gridEl = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+    expect(gridEl, "top-row grid must be found").not.toBeNull();
+    expect(gridEl?.style.alignItems).toBe("stretch");
   });
 });

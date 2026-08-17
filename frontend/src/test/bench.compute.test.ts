@@ -30,6 +30,7 @@ import {
   estimatedRunSeconds,
   runEstimate,
   assertionCanary,
+  startDisabledReason,
 } from "../pages/bench/compute";
 import type {
   BenchRecord,
@@ -1452,5 +1453,73 @@ describe("T125 compareRows genMeans", () => {
     const [row] = compareRows([d1, null]);
     expect(row.genMeans[0]).toBeCloseTo(1);
     expect(row.genMeans[1]).toBeNull();
+  });
+});
+
+// ── T181 — startDisabledReason model-mismatch branch ─────────────────────────
+//
+// modelMismatch is computed at the call site (three non-blocking conditions
+// reduce it to undefined before the function is reached). The function itself
+// only needs to check !== undefined and place the branch after serverReady.
+describe("T181 startDisabledReason model mismatch", () => {
+  const base = {
+    running: false,
+    serverReady: true,
+    serverReason: "",
+    haveFlags: true,
+    anyLanguage: true as boolean | undefined,
+  };
+
+  it("blocks start and names both models when modelMismatch is present", () => {
+    const reason = startDisabledReason({
+      ...base,
+      modelMismatch: { form: "QwenX", active: "GemmaY" },
+    });
+    expect(reason).toMatch(/QwenX/);
+    expect(reason).toMatch(/GemmaY/);
+  });
+
+  it("returns null when modelMismatch is undefined", () => {
+    expect(startDisabledReason(base)).toBeNull();
+  });
+
+  it("running wins over mismatch — branch order preserved", () => {
+    const reason = startDisabledReason({
+      ...base,
+      running: true,
+      modelMismatch: { form: "QwenX", active: "GemmaY" },
+    });
+    expect(reason).toMatch(/run is active/i);
+    expect(reason).not.toMatch(/QwenX/);
+  });
+
+  it("server down wins over mismatch — branch order preserved", () => {
+    const reason = startDisabledReason({
+      ...base,
+      serverReady: false,
+      serverReason: "Server offline",
+      modelMismatch: { form: "QwenX", active: "GemmaY" },
+    });
+    expect(reason).toBe("Server offline");
+    expect(reason).not.toMatch(/QwenX/);
+  });
+
+  it("four existing refusals still return their own messages", () => {
+    expect(startDisabledReason({ ...base, running: true })).toMatch(
+      /run is active/i,
+    );
+    expect(
+      startDisabledReason({
+        ...base,
+        serverReady: false,
+        serverReason: "no server",
+      }),
+    ).toMatch(/no server/i);
+    expect(startDisabledReason({ ...base, haveFlags: false })).toMatch(
+      /no previous run/i,
+    );
+    expect(startDisabledReason({ ...base, anyLanguage: false })).toMatch(
+      /no languages/i,
+    );
   });
 });

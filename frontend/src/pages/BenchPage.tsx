@@ -51,10 +51,8 @@ import {
   isHeartbeatStale,
   benchLocalTime,
   footerFigures,
-  languageBreakdown,
   runTaskAvg,
   serverExcludedCount,
-  sortByLangOrder,
   truncationState,
 } from "./bench/compute";
 import type {
@@ -599,9 +597,12 @@ function HeroCard({
         <div
           data-testid="bench-hero-stats"
           style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 0,
+            // 2x2 rather than four full-width rows: halves the block's
+            // height and gives each sparkline a usable width instead of a
+            // sliver at the far right of a 722px row.
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0 18px",
             paddingTop: 8,
             borderTop: "1px solid var(--border-light)",
             marginTop: 8,
@@ -805,7 +806,6 @@ function ScoreProgressCard({
   scoreDetail,
   progressDetail,
   spawnedAttempts,
-  taskLangOrder,
   status,
   live,
   records,
@@ -818,7 +818,6 @@ function ScoreProgressCard({
   scoreDetail: BenchRunDetail | null;
   progressDetail: BenchRunDetail | null;
   spawnedAttempts: number | null;
-  taskLangOrder?: string[];
   status: RunStatus;
   live: BenchLive;
   records: BenchRecord[];
@@ -830,7 +829,6 @@ function ScoreProgressCard({
 }) {
   // ── Score data ──────────────────────────────────────────────────
   const samplesPerTask = scoreDetail?.config?.n ?? 1;
-  const langRatios = languageBreakdown(scoreDetail?.records ?? []);
   const scoreRecords = useMemo(() => scoreDetail?.records ?? [], [scoreDetail]);
   const taskAvg = useMemo(() => runTaskAvg(scoreRecords), [scoreRecords]);
   const flaky = useMemo(() => flakyTasks(scoreRecords), [scoreRecords]);
@@ -851,7 +849,7 @@ function ScoreProgressCard({
   const partial = summary?.partial;
   const suiteTasksCount = summary?.suite_tasks;
   const modelsInFile = summary?.models_in_file;
-  const byLanguage = summary?.by_language;
+
 
   const scoreDisplay =
     score === null ? "\u2014" : score !== undefined ? score.toFixed(1) : "\u2014";
@@ -904,124 +902,155 @@ function ScoreProgressCard({
         right={<CornerIndex n="02" />}
       />
       <div style={BODY_STYLE} data-testid="bench-score-progress-body">
-        {/* ── Score section ── */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${hasScore ? 3 : 2}, 1fr)`,
-            gap: 6,
-          }}
-        >
-          {hasScore && (
-            <BannerTile
-              label={scoreTileLabel}
-              title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
-              testId="bench-headline-score"
-              value={scoreDisplay}
-              suffix="/ 100"
-              percent={score ?? 0}
-            />
-          )}
-          <BannerTile
-            label={
-              hasScore
-                ? "Task-avg (3/2/1 per attempt)"
-                : "Task-avg — the number to rank on"
-            }
-            title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
-            testId="bench-task-avg"
-            value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
-            suffix={`/ ${maxPoints ?? "\u2014"}`}
-            percent={
-              taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
-            }
-          />
-          <BannerTile
-            label="Solved — samples"
-            title="Server samples are excluded from the denominator: the endpoint never answered, so there is no verdict to count."
-            testId="bench-solved"
-            value={String(solvedSamples)}
-            suffix={`/ ${graded.length} answered${serverExcluded > 0 ? ` (${serverExcluded} server excl.)` : ""}`}
-            percent={
-              graded.length === 0 ? 0 : (solvedSamples / graded.length) * 100
-            }
-          />
-        </div>
+        {/* ── Top row: completion ring · score tiles · score ring ── */}
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          {/* Completion ring — top-left. Each ring in its own bench-gauge wrapper
+              so the CSS glow selector (.bench-gauge svg path:last-of-type) hits both. */}
+          <span className="bench-gauge" data-testid="bench-gauge">
+            <RadialGauge pct={donePct} size={150}>
+              <span style={{ font: `700 20px ${MONO}`, lineHeight: 1 }}>
+                {donePct != null ? `${Math.round(donePct)}%` : "\u2014"}
+              </span>
+              <span style={LABEL_STYLE}>% done</span>
+            </RadialGauge>
+          </span>
 
-        {corrWeighted !== undefined && speedWeighted !== undefined && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: 8,
-              marginBottom: 8,
-            }}
-          >
-            <MetricTile
-              mono
-              label="Correctness (80%)"
-              value={corrWeighted.toFixed(1)}
-              valueSize={15}
-              title="correctness_weighted: per-task tier score averaged across languages, weighted at 80% of the headline score."
-            />
-            <MetricTile
-              mono
-              label="Speed (20%)"
-              value={speedWeighted.toFixed(1)}
-              valueSize={15}
-              title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
-            />
+          {/* Score & metric tiles — fill the width between rings */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${hasScore ? 3 : 2}, 1fr)`,
+                gap: 6,
+              }}
+            >
+              {hasScore && (
+                <BannerTile
+                  label={scoreTileLabel}
+                  title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                  testId="bench-headline-score"
+                  value={scoreDisplay}
+                  suffix="/ 100"
+                  percent={score ?? 0}
+                />
+              )}
+              <BannerTile
+                label={
+                  hasScore
+                    ? "Task-avg (3/2/1 per attempt)"
+                    : "Task-avg — the number to rank on"
+                }
+                title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
+                testId="bench-task-avg"
+                value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
+                suffix={`/ ${maxPoints ?? "\u2014"}`}
+                percent={
+                  taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
+                }
+              />
+              <BannerTile
+                label="Solved — samples"
+                title="Server samples are excluded from the denominator: the endpoint never answered, so there is no verdict to count."
+                testId="bench-solved"
+                value={String(solvedSamples)}
+                suffix={`/ ${graded.length} answered${serverExcluded > 0 ? ` (${serverExcluded} server excl.)` : ""}`}
+                percent={
+                  graded.length === 0 ? 0 : (solvedSamples / graded.length) * 100
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 6,
+              }}
+            >
+              <MetricTile
+                accent
+                mono
+                testId="bench-first-try"
+                label="First try"
+                value={`${firstTrySamples} / ${graded.length}`}
+                valueSize={15}
+                title="Samples solved on the first attempt out of all answered samples. Same denominator as Solved — 8 of 27 answered is directly comparable to 16 of 27 solved."
+              />
+              <MetricTile
+                mono
+                testId="bench-raw-assertions"
+                title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks. Weighting is uneven: individual tasks can dominate the percentage — the top three tasks may account for over a third of all assertions."
+                label="Raw assertions"
+                value={`${fmtNum(scoreDetail?.summary?.tests_passed ?? 0)}/${fmtNum(scoreDetail?.summary?.tests_expected ?? 0)}`}
+                valueSize={12}
+                style={{ opacity: 0.85 }}
+              />
+              <MetricTile
+                accent
+                mono
+                testId="bench-flaky"
+                label={samplesPerTask < 2 ? "Flaky solves (n/a)" : "Flaky solves"}
+                value={samplesPerTask < 2 ? null : flaky.tasks.length}
+                valueSize={15}
+                title={
+                  samplesPerTask < 2
+                    ? "Flakiness means the same task solved on one sample and not another, so it needs --n 2 or more. This run recorded --n 1, so there is nothing to measure — not zero flakiness."
+                    : `Tasks solved on some samples but not others, across --n ${samplesPerTask}.`
+                }
+              />
+              <MetricTile
+                accent
+                mono
+                testId="bench-server-excluded"
+                label="Server excl."
+                value={serverExcluded}
+                valueSize={15}
+                title="Samples dropped because the endpoint never answered. They are not a verdict on the model, so they are excluded from every rate; 0 means the server held up."
+              />
+            </div>
+
+            {corrWeighted !== undefined && speedWeighted !== undefined && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 6,
+                }}
+              >
+                <MetricTile
+                  mono
+                  label="Correctness (80%)"
+                  value={corrWeighted.toFixed(1)}
+                  valueSize={15}
+                  title="correctness_weighted: per-task tier score averaged across languages, weighted at 80% of the headline score."
+                />
+                <MetricTile
+                  mono
+                  label="Speed (20%)"
+                  value={speedWeighted.toFixed(1)}
+                  valueSize={15}
+                  title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+                />
+              </div>
+            )}
           </div>
-        )}
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 8,
-            marginTop: "auto",
-          }}
-        >
-          <MetricTile
-            accent
-            mono
-            testId="bench-first-try"
-            label="First try"
-            value={`${firstTrySamples} / ${graded.length}`}
-            valueSize={15}
-            title="Samples solved on the first attempt out of all answered samples. Same denominator as Solved — 8 of 27 answered is directly comparable to 16 of 27 solved."
-          />
-          <MetricTile
-            mono
-            testId="bench-raw-assertions"
-            title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks. Weighting is uneven: individual tasks can dominate the percentage — the top three tasks may account for over a third of all assertions."
-            label="Raw assertions"
-            value={`${fmtNum(scoreDetail?.summary?.tests_passed ?? 0)}/${fmtNum(scoreDetail?.summary?.tests_expected ?? 0)}`}
-            valueSize={12}
-            style={{ opacity: 0.85 }}
-          />
-          <MetricTile
-            accent
-            mono
-            testId="bench-flaky"
-            label={samplesPerTask < 2 ? "Flaky solves (n/a)" : "Flaky solves"}
-            value={samplesPerTask < 2 ? null : flaky.tasks.length}
-            valueSize={15}
-            title={
-              samplesPerTask < 2
-                ? "Flakiness means the same task solved on one sample and not another, so it needs --n 2 or more. This run recorded --n 1, so there is nothing to measure — not zero flakiness."
-                : `Tasks solved on some samples but not others, across --n ${samplesPerTask}.`
-            }
-          />
-          <MetricTile
-            accent
-            mono
-            testId="bench-server-excluded"
-            label="Server excl."
-            value={serverExcluded}
-            valueSize={15}
-            title="Samples dropped because the endpoint never answered. They are not a verdict on the model, so they are excluded from every rate; 0 means the server held up."
-          />
+          {/* Score ring — top-right */}
+          <span className="bench-gauge" data-testid="bench-score-gauge">
+            <RadialGauge
+              pct={progressScore ?? null}
+              size={150}
+              color="var(--accent-primary)"
+            >
+              <span
+                data-testid="bench-gauge-label"
+                style={{ font: `700 20px ${MONO}`, lineHeight: 1 }}
+              >
+                {progressScoreDisplay}
+              </span>
+              <span style={LABEL_STYLE}>Score</span>
+            </RadialGauge>
+          </span>
         </div>
 
         {flaky.detail.length > 0 && (
@@ -1039,147 +1068,35 @@ function ScoreProgressCard({
           </div>
         )}
 
-        {byLanguage ? (
-          <div
-            data-testid="bench-lang-breakdown"
-            style={{
-              font: `9.5px ${MONO}`,
-              color: "var(--text-muted)",
-              marginTop: 8,
-            }}
-          >
-            <div
-              data-testid="bench-lang-table-header"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "5.5ch 1fr 1fr 1fr",
-                gap: "0 4px",
-                fontWeight: 600,
-                color: "var(--text-secondary)",
-                marginBottom: 2,
-              }}
-            >
-              <span>Lang</span>
-              <span>Score</span>
-              <span>Correct</span>
-              <span>Speed</span>
-            </div>
-            {sortByLangOrder(Object.keys(byLanguage), taskLangOrder).map(
-              (lang) => {
-                const v = byLanguage[lang];
-                const isLegacy = typeof v !== "object" || v === null;
-                return (
-                  <div
-                    key={lang}
-                    data-testid="bench-lang-row"
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "5.5ch 1fr 1fr 1fr",
-                      gap: "0 4px",
-                    }}
-                  >
-                    <span>{lang}</span>
-                    <span>
-                      {isLegacy
-                        ? (v as unknown as number).toFixed(1)
-                        : v.score != null
-                          ? v.score.toFixed(1)
-                          : "\u2014"}
-                    </span>
-                    <span>
-                      {isLegacy
-                        ? "\u2014"
-                        : v.correctness != null
-                          ? v.correctness.toFixed(1)
-                          : "\u2014"}
-                    </span>
-                    <span>
-                      {isLegacy
-                        ? "\u2014"
-                        : v.speed != null
-                          ? v.speed.toFixed(1)
-                          : "\u2014"}
-                    </span>
-                  </div>
-                );
-              },
-            )}
-          </div>
-        ) : langRatios.length > 0 ? (
-          <div
-            data-testid="bench-lang-breakdown"
-            style={{
-              font: `9.5px ${MONO}`,
-              color: "var(--text-muted)",
-              marginTop: 5,
-            }}
-          >
-            by language:{" "}
-            {langRatios.map((l) => `${l.lang} ${l.solved}/${l.total}`).join(" \u00b7 ")}
-          </div>
-        ) : null}
 
+
+        {/* ── Progress tiles — full width below the rings ── */}
         <div
+          data-testid="bench-progress-tiles"
           style={{
-            borderTop: "1px solid var(--border-light)",
-            marginTop: 7,
-            marginBottom: 7,
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 6,
+            marginTop: 8,
           }}
-        />
-
-        {/* ── Progress section ── */}
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-          {/* Each ring in its own bench-gauge wrapper so CSS glow selector hits both. */}
-          <span className="bench-gauge" data-testid="bench-gauge">
-            <RadialGauge pct={donePct} size={86}>
-              <span style={{ font: `700 20px ${MONO}`, lineHeight: 1 }}>
-                {donePct != null ? `${Math.round(donePct)}%` : "\u2014"}
-              </span>
-              <span style={LABEL_STYLE}>% done</span>
-            </RadialGauge>
-          </span>
-          <span className="bench-gauge" data-testid="bench-score-gauge">
-            <RadialGauge
-              pct={progressScore ?? null}
-              size={86}
-              color="var(--accent-primary)"
-            >
-              <span
-                data-testid="bench-gauge-label"
-                style={{ font: `700 20px ${MONO}`, lineHeight: 1 }}
-              >
-                {progressScoreDisplay}
-              </span>
-              <span style={LABEL_STYLE}>Score</span>
-            </RadialGauge>
-          </span>
-          <div
-            data-testid="bench-progress-tiles"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 7,
-              flex: 1,
-            }}
-          >
-            <MetricTile accent mono label="Samples" value={samplesValue} valueSize={14} />
-            <MetricTile
-              accent
-              mono
-              label="Elapsed"
-              value={fmtUptime(elapsedSeconds)}
-              valueSize={14}
-              testId="bench-progress-elapsed"
-            />
-            <MetricTile
-              accent
-              mono
-              label={taskTileLabel}
-              value={onTask.task ?? "\u2014"}
-              valueSize={11}
-            />
-            <MetricTile accent mono label="Attempt" value={attemptValue} valueSize={14} />
-          </div>
+        >
+          <MetricTile accent mono label="Samples" value={samplesValue} valueSize={14} />
+          <MetricTile
+            accent
+            mono
+            label="Elapsed"
+            value={fmtUptime(elapsedSeconds)}
+            valueSize={14}
+            testId="bench-progress-elapsed"
+          />
+          <MetricTile
+            accent
+            mono
+            label={taskTileLabel}
+            value={onTask.task ?? "\u2014"}
+            valueSize={11}
+          />
+          <MetricTile accent mono label="Attempt" value={attemptValue} valueSize={14} />
         </div>
 
         <div style={{ marginTop: "auto", paddingTop: 10 }}>
@@ -1534,6 +1451,17 @@ function RunSetupCard({
     defaultUrl,
     { remainingTasks: plannedTasks, samplesPerTask: form.n },
   );
+  // Non-blocking: blank model ID, absent activeModel, label set.
+  // Match is case-insensitive: activeModelName strips path/extension, but
+  // casing can still differ between the server report and the user's entry.
+  const modelMismatchOpt: { form: string; active: string } | undefined =
+    form.model.trim() !== "" &&
+    activeModel !== null &&
+    form.label.trim() === "" &&
+    form.model.trim().toLowerCase() !== activeModel.toLowerCase()
+      ? { form: form.model.trim(), active: activeModel }
+      : undefined;
+
   const blockedReason =
     startDisabledReason({
       running,
@@ -1541,6 +1469,7 @@ function RunSetupCard({
       serverReason: readiness.reason,
       haveFlags: true,
       anyLanguage: selectedLangs.length > 0,
+      modelMismatch: modelMismatchOpt,
     }) ??
     (greedy
       ? `Temperature 0 with --n ${form.n}: greedy decoding makes every sample identical. Set temperature > 0 or set --n 1.`
@@ -1550,7 +1479,7 @@ function RunSetupCard({
     <Card
       role={null}
       baseClass=""
-      style={{ ...PANEL_CARD_STYLE, flexShrink: 0 }}
+      style={{ ...PANEL_CARD_STYLE, flexShrink: 0, flexGrow: 1 }}
     >
       <CardHeader
         compact
@@ -1559,7 +1488,7 @@ function RunSetupCard({
         titleAccentBar
         right={<CornerIndex n="04" />}
       />
-      <div style={{ padding: "10px 15px 13px", minWidth: 0 }}>
+      <div style={{ padding: "10px 15px 13px", minWidth: 0, display: "flex", flexDirection: "column", flexGrow: 1 }}>
         <div
           style={{
             display: "grid",
@@ -1839,7 +1768,7 @@ function RunSetupCard({
           </div>
         )}
         <div
-          style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 10, flexWrap: "wrap" }}
         >
           <ActionButton
             label="Start run"
@@ -2000,16 +1929,7 @@ export default function BenchPage() {
     bench.defaultUrl,
   ]);
 
-  const taskLangOrder = useMemo(() => {
-    const tasks = bench.taskList?.tasks;
-    if (!tasks) return undefined;
-    const seen = new Set<string>();
-    const order: string[] = [];
-    for (const t of tasks) {
-      if (!seen.has(t.lang)) { seen.add(t.lang); order.push(t.lang); }
-    }
-    return order;
-  }, [bench.taskList]);
+
 
   const donePct = computeDonePct(live, detail, identity.warming);
   // ONE clock. Progress renders this number (T154 retired the footer tile,
@@ -2133,7 +2053,7 @@ export default function BenchPage() {
             gridTemplateColumns: "12fr 18fr",
             gap: 9,
             flexShrink: 0,
-            alignItems: "start",
+            alignItems: "stretch",
           }}
         >
           <PanelErrorBoundary panelName="Bench Run">
@@ -2161,7 +2081,6 @@ export default function BenchPage() {
               spawnedAttempts={
                 current.running ? (current.run?.attempts ?? null) : null
               }
-              taskLangOrder={taskLangOrder}
               status={runState}
               live={live}
               records={records}
