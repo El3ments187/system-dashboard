@@ -24,7 +24,7 @@ vi.mock("../context/AlertsContext", () => ({
 }));
 
 import BenchPage from "../pages/BenchPage";
-import { serverUnreachableCopy, LOCALBENCH_DEFAULTS } from "../pages/bench/compute";
+import { LOCALBENCH_DEFAULTS } from "../pages/bench/compute";
 import Header from "../components/Header";
 
 // Mutable so a test can change what the ACTIVE model reports — the source
@@ -548,8 +548,9 @@ describe("T34/T35 hero liveness", () => {
       consecutive_server_errors: 0,
       heartbeat: new Date().toISOString(),
     };
-    // No process state: this backend did not spawn it.
-    installFetch({ detail, current: { running: false, run: null } });
+    // T185: current_handler now recovers the pid from disk, so a CLI-started
+    // run reports running:true even though the dashboard didn't spawn it.
+    installFetch({ detail, current: { running: true, run: null } });
     render(<BenchPage />);
 
     // The status element replaced the heartbeat label in T74; a CLI-started
@@ -772,7 +773,7 @@ describe("run controls", () => {
   });
 
   it("enables Stop and Skip during a live run and refuses a second Start", async () => {
-    installFetch({ detail: { ...benchRun, live: LIVE } });
+    installFetch({ detail: { ...benchRun, live: LIVE }, current: { running: true, run: null } });
     render(<BenchPage />);
     await waitFor(() =>
       expect(
@@ -792,7 +793,7 @@ describe("run controls", () => {
   });
 
   it("Stop calls the SIGTERM endpoint and says so, never SIGKILL", async () => {
-    const calls = installFetch({ detail: { ...benchRun, live: LIVE } });
+    const calls = installFetch({ detail: { ...benchRun, live: LIVE }, current: { running: true, run: null } });
     render(<BenchPage />);
     await waitFor(() =>
       expect(
@@ -1411,7 +1412,7 @@ describe("T52 health strip states", () => {
       task_elapsed: 30,
       heartbeat: new Date().toISOString(),
     };
-    installFetch({ detail: live });
+    installFetch({ detail: live, current: { running: true, run: null } });
     render(<BenchPage />);
     // Wait for the detail to load before asserting on the pacing strip.
     await waitFor(() =>
@@ -2987,11 +2988,15 @@ describe("T74 run status in plain language", () => {
   };
 
   it("running: green dot, and the label says so", async () => {
-    installFetch({ detail: liveDetail(4000) });
+    installFetch({ detail: liveDetail(4000), current: { running: true, run: null } });
     render(<BenchPage />);
     const el = await screen.findByTestId("bench-run-status");
-    await waitFor(() => expect(el.getAttribute("data-status")).toBe("running"));
-    expect(el.textContent).toMatch(/^Running · updated \d+s ago$/);
+    // Wait for both: status and the heartbeat-based label (detail may load
+    // slightly after current.running becomes true, so retry both together).
+    await waitFor(() => {
+      expect(el.getAttribute("data-status")).toBe("running");
+      expect(el.textContent).toMatch(/^Running · updated \d+s ago$/);
+    });
   });
 
   // Amended by T94. This used a 106s-old heartbeat, which was "stale" only
@@ -3000,7 +3005,7 @@ describe("T74 run status in plain language", () => {
   // run. The stalled STATE is still asserted — with an age past any plausible
   // sample — and T94's own tests assert the healthy-slow direction.
   it("stalled: says the run may be stuck, not 'stale'", async () => {
-    installFetch({ detail: liveDetail(1_800_000) });
+    installFetch({ detail: liveDetail(1_800_000), current: { running: true, run: null } });
     render(<BenchPage />);
     const el = await screen.findByTestId("bench-run-status");
     await waitFor(() => expect(el.getAttribute("data-status")).toBe("stalled"));
@@ -3028,7 +3033,7 @@ describe("T74 run status in plain language", () => {
   // Backstop, on RENDERED OUTPUT ONLY. A source-text assertion would flag the
   // data contract's own field name and would be the wrong test.
   it("no user-visible text or tooltip says 'heartbeat'", async () => {
-    installFetch({ detail: liveDetail(4000) });
+    installFetch({ detail: liveDetail(4000), current: { running: true, run: null } });
     const { container } = render(<BenchPage />);
     // Wait for the detail to load. Waiting only for the status element made
     // this vacuous: it exists before the detail loads, so the sweep walked
@@ -3121,7 +3126,7 @@ describe("T86 History distinguishes running from interrupted", () => {
 
   it("shows the live run as running, with no Resume", async () => {
     const d = unfinished();
-    installFetch({ detail: d, runs: [runRow({ finished: false })] });
+    installFetch({ detail: d, runs: [runRow({ finished: false })], current: { running: true, run: null } });
     render(<BenchPage />);
     fireEvent.click(await screen.findByTestId("bench-tab-hist"));
 
@@ -3673,7 +3678,7 @@ describe("T94 stuck detection paces against the task", () => {
 
   it("a healthy run slower than the old constant reads as running", async () => {
     // The reported case: 150s since the last sample, on a ~200s task.
-    installFetch({ detail: runningDetail(150_000, 200) });
+    installFetch({ detail: runningDetail(150_000, 200), current: { running: true, run: null } });
     render(<BenchPage />);
     const el = await screen.findByTestId("bench-run-status");
     await waitFor(() => expect(el.getAttribute("data-status")).toBe("running"));
@@ -3685,7 +3690,7 @@ describe("T94 stuck detection paces against the task", () => {
 
   it("a genuinely wedged run is still called out", async () => {
     // Half an hour without a sample on a ~200s task is not slowness.
-    installFetch({ detail: runningDetail(1_800_000, 200) });
+    installFetch({ detail: runningDetail(1_800_000, 200), current: { running: true, run: null } });
     render(<BenchPage />);
     const el = await screen.findByTestId("bench-run-status");
     await waitFor(() => expect(el.getAttribute("data-status")).toBe("stalled"));
@@ -3846,7 +3851,7 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
       run_elapsed: 90,
       heartbeat: new Date().toISOString(),
     };
-    installFetch({ detail: d });
+    installFetch({ detail: d, current: { running: true, run: null } });
     render(<BenchPage />);
 
     const remaining = await screen.findByTestId("bench-footer-remaining");
@@ -4283,14 +4288,13 @@ describe("T103 terminal run states agree across surfaces", () => {
 
   it("a run with a live block still reads running, not finished", async () => {
     // The likely regression is making every terminal run read "finished".
-    // Note what the page CAN and cannot tell apart: `isRunning` treats any
-    // populated live block as running (T35 — a CLI-started run known only
-    // through results.json must read as running), and bench.py empties that
-    // block on a clean finish. So "aborted" is not a state the hero can
-    // detect; History draws it, by comparing a stored row against the run
-    // actually in flight (T86). What is asserted here is that a run still
-    // holding a live block is never called finished.
-    installFetch({ detail: interruptedRun() });
+    // Note what the page CAN and cannot tell apart: current.running is the
+    // authoritative liveness source (T185); bench.py empties the live block on
+    // a clean finish. So "aborted" is not a state the hero can detect; History
+    // draws it, by comparing a stored row against the run actually in flight
+    // (T86). What is asserted here is that a run still holding a live block is
+    // never called finished.
+    installFetch({ detail: interruptedRun(), current: { running: true, run: null } });
     render(<BenchPage />);
     const pill = await screen.findByTestId("bench-state-pill");
     await waitFor(() =>
@@ -4471,7 +4475,7 @@ describe("T106 elapsed counts the time since the run started", () => {
 
   it("includes the time since the last save, not just up to it", async () => {
     // 600s of saved progress, then 150s generating with nothing written.
-    installFetch({ detail: liveRun(150, 600) });
+    installFetch({ detail: liveRun(150, 600), current: { running: true, run: null } });
     render(<BenchPage />);
     const tiles = await screen.findByTestId("bench-progress-tiles");
     // 12m 30s, not the frozen 10m.
@@ -5214,9 +5218,10 @@ describe("T152 coverage note groups by language", () => {
   const r1Detail = {
     ...benchRun,
     run_id: R1_ID,
+    tasks: [...benchRun.tasks, ...PARTIAL_TASKS],
     records: [...benchRun.records, ...PARTIAL_TASKS.map(makeRecord)],
   };
-  const r2Detail = { ...benchRun, run_id: R2_ID, records: [...benchRun.records] };
+  const r2Detail = { ...benchRun, run_id: R2_ID };
 
   function coverageFetch(d1: unknown = r1Detail, d2: unknown = r2Detail) {
     const runs = [runRow({ run_id: R1_ID }), runRow({ run_id: R2_ID })];
@@ -5292,6 +5297,7 @@ describe("T152 coverage note groups by language", () => {
     const oneTaskDetail = {
       ...benchRun,
       run_id: R1_ID,
+      tasks: [...benchRun.tasks, "java/mvcc_store"],
       records: [...benchRun.records, makeRecord("java/mvcc_store")],
     };
     coverageFetch(oneTaskDetail, r2Detail);
@@ -6003,8 +6009,8 @@ describe("T167 Compare signed score difference", () => {
     );
     // score strip is visible (all runs have scores)
     await screen.findByTestId("bench-compare-scores");
-    // but no diff row for three runs
-    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+    // diff element present but shows — for three-run compare
+    expect(screen.getByTestId("bench-compare-score-diff").textContent).toBe("—");
   });
 
   it("one scored + one pre-157: no diff row (missing score is not 0)", async () => {
@@ -6031,8 +6037,8 @@ describe("T167 Compare signed score difference", () => {
     );
     // strip renders (one run has a score field)
     await screen.findByTestId("bench-compare-scores");
-    // no diff because one score is absent
-    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+    // diff element present but shows — because one score is absent
+    expect(screen.getByTestId("bench-compare-score-diff").textContent).toBe("—");
   });
 
   it("one scored + one null-scored (nothing graded): no diff row", async () => {
@@ -6059,8 +6065,8 @@ describe("T167 Compare signed score difference", () => {
       ).toBeGreaterThan(0),
     );
     await screen.findByTestId("bench-compare-scores");
-    // null score is not 0 — no diff
-    expect(screen.queryByTestId("bench-compare-score-diff")).toBeNull();
+    // null score is not 0 — diff element present but shows —
+    expect(screen.getByTestId("bench-compare-score-diff").textContent).toBe("—");
   });
 });
 
@@ -7173,5 +7179,532 @@ describe("T180 Run Setup fills column; top-row alignItems stretch", () => {
     }
     expect(gridEl, "top-row grid must be found").not.toBeNull();
     expect(gridEl?.style.alignItems).toBe("stretch");
+  });
+});
+
+// ── T183 — by-language table ALL (overall) row ────────────────────────────
+//
+// The by-language table shows per-language rows but had no total. T183 adds
+// an ALL row last, separated by a rule, reading every value from summary —
+// never computing it.
+describe("T183 by-language ALL overall row", () => {
+  // -185 schema. Language score mean = (58+43+40+55)/4 = 49.0, which differs
+  // from summary.score = 50.5. The test explicitly guards this discrepancy to
+  // prevent the dashboard ever averaging the language rows as a shortcut.
+  const S185 = {
+    ...benchRun.summary,
+    score: 50.5,
+    passes_100: 34.4,
+    tests_100: 73.8,
+    speed_weighted: 19.1,
+    suite_tasks: 27,
+    by_language: {
+      js:       { score: 58.0, passes: 40.0, tests: 80.0, speed: 20.0 },
+      ts:       { score: 43.0, passes: 30.0, tests: 70.0, speed: 18.0 },
+      java:     { score: 40.0, passes: 28.0, tests: 68.0, speed: 18.0 },
+      gdscript: { score: 55.0, passes: 39.0, tests: 78.0, speed: 20.5 },
+    },
+  };
+
+  it("T183a: ALL row renders with all four values read from summary", async () => {
+    installFetch({ detail: { ...benchRun, summary: S185 } });
+    render(<BenchPage />);
+    const row = await screen.findByTestId("bench-lang-all-row");
+    expect(row.textContent).toContain("ALL");
+    expect(row.textContent).toContain("50.5"); // summary.score
+    expect(row.textContent).toContain("34.4"); // passes_100
+    expect(row.textContent).toContain("73.8"); // tests_100
+    expect(row.textContent).toContain("19.1"); // speed_weighted
+  });
+
+  it("T183b: renders summary.score (50.5), not the mean of language scores (49.0)", async () => {
+    installFetch({ detail: { ...benchRun, summary: S185 } });
+    render(<BenchPage />);
+    const row = await screen.findByTestId("bench-lang-all-row");
+    expect(row.textContent).toContain("50.5");
+    expect(row.textContent).not.toContain("49.0");
+  });
+
+  it("T183c: ALL row is last in the DOM — after every language row", async () => {
+    installFetch({ detail: { ...benchRun, summary: S185 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-all-row");
+    const breakdown = screen.getByTestId("bench-lang-breakdown");
+    const langRows = breakdown.querySelectorAll("[data-testid='bench-lang-row']");
+    const allRow = breakdown.querySelector(
+      "[data-testid='bench-lang-all-row']",
+    ) as HTMLElement;
+    expect(allRow).not.toBeNull();
+    const last = langRows[langRows.length - 1] as HTMLElement;
+    // DOCUMENT_POSITION_FOLLOWING means allRow comes after last in tree order
+    expect(
+      last.compareDocumentPosition(allRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("T183d: language rows are unchanged — four rows still render", async () => {
+    installFetch({ detail: { ...benchRun, summary: S185 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-all-row");
+    expect(screen.queryAllByTestId("bench-lang-row")).toHaveLength(4);
+  });
+
+  it("T183e: pre-scoring run renders no ALL row", async () => {
+    // benchRun.summary has no score field; add by_language so the table renders
+    const preScoring = {
+      ...benchRun.summary,
+      by_language: {
+        js: { score: 58.0, passes: 40.0, tests: 80.0, speed: 20.0 },
+      },
+    };
+    installFetch({ detail: { ...benchRun, summary: preScoring } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+    expect(screen.queryByTestId("bench-lang-all-row")).toBeNull();
+  });
+
+  it("T183f: -165 run: ALL row shows score and speed, — for passes and tests", async () => {
+    const s165 = {
+      ...benchRun.summary,
+      score: 71.9,
+      correctness_100: 65.8,
+      speed_weighted: 19.3,
+      suite_tasks: 27,
+      by_language: {
+        js: { score: 70.4, correctness: 64.3, speed: 19.0 },
+      },
+    };
+    installFetch({ detail: { ...benchRun, summary: s165 } });
+    render(<BenchPage />);
+    const row = await screen.findByTestId("bench-lang-all-row");
+    expect(row.textContent).toContain("71.9"); // score
+    expect(row.textContent).toContain("19.3"); // speed_weighted
+    const spans = Array.from(row.querySelectorAll("span"));
+    // order: label(ALL) | score | passes | tests | speed
+    expect(spans[2]?.textContent).toBe("—"); // passes_100 absent on -165
+    expect(spans[3]?.textContent).toBe("—"); // tests_100 absent on -165
+  });
+
+  it("T183g: Compare ALL row shows one score per run; absent score renders — with — delta", async () => {
+    const R1 = "t183-cmp-scored";
+    const R2 = "t183-cmp-unscored";
+    const d1 = { ...benchRun, run_id: R1, summary: S185 };
+    const d2 = { ...benchRun, run_id: R2 }; // no score field
+    const runs = [
+      runRow({ run_id: R1, summary: S185 }),
+      runRow({ run_id: R2, summary: benchRun.summary }),
+    ];
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/ai/settings"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              llama_server_url: "http://localhost:8081",
+              bench_dir: "/home/gamer/Projects/ai_benchmark/localbench",
+            }),
+        } as Response);
+      if (url.includes("/api/bench/check")) return okJson(CHECK);
+      if (url.includes("/api/bench/tasks")) return okJson(TASK_LIST);
+      if (url.includes("/api/launch/profiles")) return okJson({ profiles: [] });
+      if (url.includes("/api/bench/ready"))
+        return okJson({ ready: true, url: "http://localhost:8081", reason: "" });
+      if (url.includes("/api/bench/current"))
+        return okJson({ running: false, run: null });
+      if (url.includes(`/api/bench/runs/${R1}`)) return okJson(d1);
+      if (url.includes(`/api/bench/runs/${R2}`)) return okJson(d2);
+      if (url.includes("/api/bench/runs/")) return okJson(benchRun);
+      if (url.includes("/api/bench/runs")) return okJson(runs);
+      if (url.includes("/api/bench/log"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ lines: [], nextOffset: 0 }),
+        } as Response);
+      return okJson({});
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await screen.findByTestId("bench-compare-slot-0");
+    await waitFor(() =>
+      expect(
+        screen.queryAllByTestId("bench-compare-col").length,
+      ).toBeGreaterThan(0),
+    );
+    const allRow = await screen.findByTestId("bench-compare-all-row");
+    expect(allRow.textContent).toContain("ALL");
+    expect(allRow.textContent).toContain("50.5"); // R1's score
+    expect(allRow.textContent).toContain("—");    // R2 has no score
+    // delta must also be — (not all scores present)
+    const spans = Array.from(allRow.querySelectorAll("span"));
+    const deltaSpan = spans[spans.length - 1];
+    expect(deltaSpan?.textContent).toBe("—");
+  });
+});
+
+// ── T187 — completion gauge reads the recorded ratio, not 100% ─────────────
+//
+// A run that stopped at 6 of 27 tasks showed 100% DONE because
+// `computeDonePct` returned 100 for any non-null detail with no live total.
+// The fix derives from summary.tasks (tasks this run set out to do) so the
+// gauge reflects what actually ran.
+describe("T187 completion gauge uses summary.tasks, not a finished assumption", () => {
+  const withSummary = (samples: number, tasks: number) => ({
+    ...benchRun,
+    live: {} as Record<string, unknown>,
+    summary: { ...benchRun.summary, samples, tasks },
+  });
+
+  it("6 of 27 reads 22%, not 100", async () => {
+    installFetch({ detail: withSummary(6, 27) });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    await waitFor(() => expect(gauge.textContent).toMatch(/22%/));
+    expect(gauge.textContent).not.toMatch(/100%/);
+  });
+
+  it("27 of 27 reads 100%", async () => {
+    installFetch({ detail: withSummary(27, 27) });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    await waitFor(() => expect(gauge.textContent).toMatch(/100%/));
+  });
+
+  it("26 of 27 does not round to 100%", async () => {
+    installFetch({ detail: withSummary(26, 27) });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    // Wait for both: data loads before we assert the numeric value.
+    await waitFor(() => {
+      expect(gauge.textContent).toMatch(/96%/); // 26/27 ≈ 96%
+      expect(gauge.textContent).not.toMatch(/100%/);
+    });
+  });
+
+  it("live.total present still wins over summary", async () => {
+    const detail = {
+      ...benchRun,
+      live: { done: 5, total: 10, current_task: "js/foo", heartbeat: new Date().toISOString() },
+      summary: { ...benchRun.summary, samples: 6, tasks: 27 },
+    };
+    installFetch({ detail, current: { running: true, run: null } });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    await waitFor(() => expect(gauge.textContent).toMatch(/50%/));
+    expect(gauge.textContent).not.toMatch(/22%/);
+  });
+
+  it("warming returns 0%, not the summary ratio", async () => {
+    // Warming: a just-spawned run whose results.json hasn't appeared yet.
+    // current.run must be non-null with a folder that has no matching detail row.
+    installFetch({
+      detail: withSummary(6, 27),
+      current: {
+        running: true,
+        run: {
+          pid: 1234,
+          folder: "warming_run_20260817-000000",
+          model: "m",
+          label: null,
+          langs: null,
+          url: "http://localhost:8081",
+          attempts: 3,
+          n: 1,
+          temperature: 0.6,
+          started: new Date().toISOString(),
+        },
+      },
+    });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    // warming=true → computeDonePct returns 0
+    await waitFor(() => expect(gauge.textContent).toMatch(/0%/));
+    expect(gauge.textContent).not.toMatch(/22%/);
+  });
+
+  it("no detail returns the em-dash placeholder", async () => {
+     installFetch({ noDetail: true, runs: [] });
+    render(<BenchPage />);
+    const gauge = await screen.findByTestId("bench-gauge");
+    // "—% done" is the rendered text — "% done" is the always-present label span.
+    // Assert no numeric percentage (only the em-dash, not a number).
+    await waitFor(() => expect(gauge.textContent).toMatch(/—/));
+    expect(gauge.textContent).not.toMatch(/\d+%/);
+  });
+});
+
+// ── T188 — Compare score strip: -185 fields, partial caveat, Δ gating ───────
+//
+// Four faults fixed:
+//   1. Correctness (dead field) → Passes + Tests with -165 fallback
+//   2. Partial run score shown without caveat; Δ across unlike denominators
+//   3. Coverage source: d.records → d.tasks (attempted, not just scored)
+//   4. Alignment: one grid matching per-task table template
+
+describe("T188 Compare score strip", () => {
+  // Summaries for the score strip (on BenchRunRow)
+  const S_185_FULL = {
+    ...benchRun.summary,
+    score: 74.7,
+    passes_100: 38.9,
+    tests_100: 77.6,
+    speed_weighted: 18.8,
+    partial: false,
+  };
+  const S_185_PARTIAL = {
+    ...benchRun.summary,
+    score: 62.4,
+    passes_100: 34.4,
+    tests_100: 72.3,
+    speed_weighted: 18.8,
+    partial: true,
+    suite_tasks: 27,
+  };
+  const S_165 = {
+    ...benchRun.summary,
+    score: 71.2,
+    correctness_100: 45.6,
+    speed_weighted: 19.1,
+  };
+
+  // Task sets
+  const TASKS_FULL = ["js/retry_backoff", "js/formula_engine", "js/interval_set", "js/decimal_calc"];
+  const TASKS_PARTIAL = ["js/retry_backoff", "js/formula_engine"];
+  const TASKS_TS = ["ts/event_bus", "ts/task_scheduler"];
+
+  type T188Run = { row: Record<string, unknown>; detail: Record<string, unknown> };
+
+  function installT188(runs: T188Run[]) {
+    const rows = runs.map((r) => r.row);
+    installFetch({ runs: rows });
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      for (const r of runs) {
+        if (url.includes(`/api/bench/runs/${r.row.run_id as string}`)) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ data: r.detail, success: true }),
+          } as Response);
+        }
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  function makeRun(id: string, summary: Record<string, unknown>, tasks: string[]) {
+    return {
+      row: runRow({ run_id: id, summary }),
+      detail: { ...benchRun, run_id: id, tasks, summary },
+    };
+  }
+
+  async function openCompareScores() {
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    return screen.findByTestId("bench-compare-scores");
+  }
+
+  it("Passes and Tests replace Correctness; Correctness label absent", async () => {
+    installT188([makeRun("t188-a", S_185_FULL, TASKS_FULL), makeRun("t188-b", S_185_FULL, TASKS_FULL)]);
+    await openCompareScores();
+    await waitFor(() => {
+      expect(screen.getByText("Passes")).toBeTruthy();
+      expect(screen.getByText("Tests")).toBeTruthy();
+      expect(screen.queryByText("Correctness")).toBeNull();
+    });
+    // values from the strip: 38.9 (passes_100) and 77.6 (tests_100)
+    expect(screen.getAllByText("38.9").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("77.6").length).toBeGreaterThan(0);
+  });
+
+  it("-165 run: Passes shows correctness_100; Tests shows —", async () => {
+    installT188([makeRun("t188-165a", S_165, TASKS_FULL), makeRun("t188-165b", S_165, TASKS_FULL)]);
+    await openCompareScores();
+    await waitFor(() => expect(screen.getByText("Passes")).toBeTruthy());
+    expect(screen.getAllByText("45.6").length).toBeGreaterThan(0);
+    // Tests row: —, since tests_100 is absent on -165 summary
+    const testsCells = screen.getAllByText("—");
+    expect(testsCells.length).toBeGreaterThan(0);
+  });
+
+  it("partial run score carries 'partial run' note; full run does not", async () => {
+    installT188([makeRun("t188-full", S_185_FULL, TASKS_FULL), makeRun("t188-part", S_185_PARTIAL, TASKS_PARTIAL)]);
+    await openCompareScores();
+    await waitFor(() => {
+      const notes = screen.queryAllByTestId("bench-compare-partial-note");
+      // only the partial run's cell has the note
+      expect(notes.length).toBe(1);
+    });
+  });
+
+  it("Δ is — when the two runs cover different task sets", async () => {
+    // Before the fix: this rendered −12.3 across a 4-task and a 2-task run.
+    installT188([makeRun("t188-d1", S_185_FULL, TASKS_FULL), makeRun("t188-d2", S_185_PARTIAL, TASKS_TS)]);
+    await openCompareScores();
+    const diff = await screen.findByTestId("bench-compare-score-diff");
+    await waitFor(() => expect(diff.textContent).toBe("—"));
+  });
+
+  it("Δ is shown when both runs cover the same task set", async () => {
+    const s2 = { ...S_185_FULL, score: 62.4 };
+    installT188([makeRun("t188-e1", S_185_FULL, TASKS_FULL), makeRun("t188-e2", s2, TASKS_FULL)]);
+    await openCompareScores();
+    const diff = await screen.findByTestId("bench-compare-score-diff");
+    await waitFor(() => expect(diff.textContent).toMatch(/12\.3/));
+  });
+
+  it("equal task count but different ids suppresses Δ", async () => {
+    // summary.tasks count would be equal (2 each) but the actual task ids differ.
+    // This is the case summary.tasks (a count) cannot detect.
+    const s = { ...S_185_FULL, score: 74.7 };
+    installT188([
+      makeRun("t188-ci", s, ["js/retry_backoff", "js/formula_engine"]),
+      makeRun("t188-cj", s, ["js/interval_set", "js/decimal_calc"]),
+    ]);
+    await openCompareScores();
+    const diff = await screen.findByTestId("bench-compare-score-diff");
+    await waitFor(() => expect(diff.textContent).toBe("—"));
+  });
+
+  it("coverage note counts a task present in tasks[] but absent from records", async () => {
+    // Run A attempted "js/interval_set" (in tasks[]) but never scored it (not in records).
+    // Old code: derived coverage from records → both sets = {"js/retry_backoff"} → no note.
+    // New code: derived from tasks[] → A set includes interval_set → note appears.
+    const detailA = {
+      ...benchRun,
+      run_id: "t188-cov-a",
+      tasks: ["js/retry_backoff", "js/interval_set"],
+      records: benchRun.records.filter((r) => r.task === "js/retry_backoff"),
+      summary: { ...S_185_FULL, score: 60.0 },
+    };
+    const detailB = {
+      ...benchRun,
+      run_id: "t188-cov-b",
+      tasks: ["js/retry_backoff"],
+      records: benchRun.records.filter((r) => r.task === "js/retry_backoff"),
+      summary: { ...S_185_FULL, score: 72.0 },
+    };
+    installT188([
+      { row: runRow({ run_id: "t188-cov-a", summary: { ...S_185_FULL, score: 60.0 } }), detail: detailA },
+      { row: runRow({ run_id: "t188-cov-b", summary: { ...S_185_FULL, score: 72.0 } }), detail: detailB },
+    ]);
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-compare-coverage")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-compare-coverage").textContent).toMatch(/interval_set/);
+  });
+});
+
+// ── T186 — Resume button in Run Setup ───────────────────────────────────────
+//
+// The Run Setup card grows a Resume button (bench-action-resume) that is
+// enabled only when the currently displayed run is interrupted and no run is
+// live. This shares doResume/resumingFolder state with the History panel's
+// bench-resume button so an in-flight resume disables both.
+
+describe("T186 Resume button in Run Setup", () => {
+  it("enabled for an interrupted run with no live process", async () => {
+    installFetch({
+      runs: [runRow({ finished: false })],
+      current: { running: false, run: null },
+    });
+    render(<BenchPage />);
+    const btn = await screen.findByTestId("bench-action-resume");
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("disabled for a finished run", async () => {
+    // runRow() defaults to finished: true.
+    installFetch();
+    render(<BenchPage />);
+    const btn = await screen.findByTestId("bench-action-resume");
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it("disabled while a run is live (T86 guard)", async () => {
+    installFetch({
+      runs: [runRow({ finished: false })],
+      current: { running: true, run: null },
+    });
+    render(<BenchPage />);
+    const btn = await screen.findByTestId("bench-action-resume");
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it("a refusal from the backend surfaces as an error alert", async () => {
+    installFetch({
+      runs: [runRow({ finished: false })],
+      current: { running: false, run: null },
+    });
+    // Override fetch so /api/bench/resume returns a failure.
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/bench/resume")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ success: false, error: "conditions changed" }),
+        } as Response);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    const btn = await screen.findByTestId("bench-action-resume");
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(addAlert).toHaveBeenCalledWith(
+        "error",
+        "bench",
+        expect.stringMatching(/conditions changed/),
+      ),
+    );
+  });
+
+  it("in-flight resume disables both Run Setup and History buttons", async () => {
+    let resolveResume!: (v: Response) => void;
+    const resumePending = new Promise<Response>(
+      (res) => (resolveResume = res),
+    );
+    installFetch({
+      runs: [runRow({ finished: false })],
+      current: { running: false, run: null },
+    });
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/bench/resume")) return resumePending;
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<BenchPage />);
+    const setupBtn = await screen.findByTestId("bench-action-resume");
+    await waitFor(() =>
+      expect((setupBtn as HTMLButtonElement).disabled).toBe(false),
+    );
+
+    fireEvent.click(setupBtn);
+
+    // While the request is in-flight both buttons must be disabled.
+    await waitFor(() =>
+      expect((setupBtn as HTMLButtonElement).disabled).toBe(true),
+    );
+    fireEvent.click(await screen.findByTestId("bench-tab-hist"));
+    await waitFor(() => {
+      const histBtn = screen.queryByTestId("bench-resume");
+      // History Resume may not appear if the run shows as running — either
+      // it is absent (live state) or present-but-disabled: both are safe.
+      if (histBtn) expect((histBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // Resolve so the component can clean up.
+    resolveResume({
+      ok: true,
+      json: () => Promise.resolve({ success: true }),
+    } as Response);
   });
 });

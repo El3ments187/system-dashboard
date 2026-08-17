@@ -3,8 +3,21 @@
  * k-of-n pills, subtabs and the legend have no equivalent among the shared
  * components, and nothing else in the app should grow a dependency on them.
  */
+import type { CSSProperties } from "react";
 import type { BenchRecord, CellState } from "./types";
 import { cellState } from "./compute";
+
+export const MONO = '"JetBrains Mono", "Fira Code", monospace';
+
+export const PANEL_CARD_STYLE: CSSProperties = {
+  position: "relative",
+  backgroundColor: "var(--bg-card)",
+  border: "1px solid var(--border-light, var(--border-color))",
+  borderRadius: "var(--radius-md)",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+};
 
 const CELL_CLASS: Record<CellState, string> = {
   solved: "bench-att solved",

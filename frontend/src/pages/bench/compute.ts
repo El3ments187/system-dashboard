@@ -518,7 +518,7 @@ export function groupCoverage(partial: string[]): string {
  * `by_language` keys into the same order the page uses everywhere else.
  * Unknown languages sort after these, alphabetically.
  */
-export const LANG_ORDER = ["js", "ts", "java", "gdscript"];
+const LANG_ORDER = ["js", "ts", "java", "gdscript"];
 
 export function sortByLangOrder(langs: string[], order?: string[]): string[] {
   const effectiveOrder = order ?? LANG_ORDER;
@@ -857,10 +857,10 @@ export function leadsFromRuns(
  * disagree. The floor covers the no-history case, where a slow first run must
  * not be accused of being wedged.
  */
-export const STALE_HEARTBEAT_FLOOR_MS = 600_000;
-export const STALE_HEARTBEAT_MEDIAN_MULTIPLE = 3;
+const STALE_HEARTBEAT_FLOOR_MS = 600_000;
+const STALE_HEARTBEAT_MEDIAN_MULTIPLE = 3;
 
-export function staleHeartbeatThresholdMs(
+function staleHeartbeatThresholdMs(
   medianSeconds: number | null | undefined,
 ): number {
   if (
@@ -1299,7 +1299,7 @@ function normalizeTarget(url: string | null | undefined): string {
  * any figure averaged across both describes neither. Shared by the duration
  * estimate and the pacing median so the two cannot drift apart.
  */
-export function sameTargetClass(
+function sameTargetClass(
   details: BenchRunDetail[],
   targetUrl: string | undefined,
   defaultUrl: string | undefined,
@@ -1332,7 +1332,7 @@ export function estimatedRunSeconds(
 }
 
 /** Median of a list, or null when empty. One statistic for every surface. */
-export function medianOf(values: number[]): number | null {
+function medianOf(values: number[]): number | null {
   if (values.length === 0) return null;
   const xs = [...values].sort((a, b) => a - b);
   const mid = Math.floor(xs.length / 2);
@@ -1499,7 +1499,7 @@ export function assertionCanary(record: BenchRecord): {
 }
 
 /** Running totals, without mutating anything during render. */
-export function cumulative(values: number[]): number[] {
+function cumulative(values: number[]): number[] {
   return values.reduce<number[]>(
     (acc, v) => [...acc, (acc[acc.length - 1] ?? 0) + v],
     [],
@@ -1547,20 +1547,20 @@ export function footerFigures(
       ? (graded.filter((r) => r.solved).length / graded.length) * 100
       : null;
 
-  const elapsedSeries = cumulative(records.map((r) => r.seconds));
+  const elapsedSeries = cumulative(graded.map((r) => r.seconds));
   const totalSeconds = elapsedSeconds ?? 0;
-  const perSample = records.length > 0 ? totalSeconds / records.length : 0;
+  const perSample = graded.length > 0 ? totalSeconds / graded.length : 0;
   // Counts down as samples land: what is left of the estimate at each point.
   const remainingSeries =
     remainingSeconds === null
       ? []
-      : records.map(
-          (_, i) => remainingSeconds + (records.length - 1 - i) * perSample,
+      : graded.map(
+          (_, i) => remainingSeconds + (graded.length - 1 - i) * perSample,
         );
 
   return {
     // Nothing running and nothing selected means there is nothing to report.
-    idle: !running && records.length === 0,
+    idle: !running && graded.length === 0,
     totalSeconds,
     rates,
     meanRate,
@@ -1569,7 +1569,7 @@ export function footerFigures(
     elapsedSeries,
     remainingSeries,
     samplesPerHour:
-      totalSeconds > 0 ? (records.length / totalSeconds) * 3600 : null,
+      totalSeconds > 0 ? (graded.length / totalSeconds) * 3600 : null,
     // Its OWN series: samples completed per elapsed hour, as it evolved.
     // Previously this reused elapsedSeries, so Samples/hr and Elapsed were
     // mathematically guaranteed to draw the same shape.

@@ -8,7 +8,6 @@ import { Fragment, useLayoutEffect, useMemo, useState } from "react";
 import { List, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { BenchConsole } from "./BenchConsole";
 import { TargetBadge } from "../BenchPage";
-import { AlertSeverity, useAlertsContext } from "../../context/AlertsContext";
 import { Card, CardHeader } from "../../components/shared/CardComponents";
 import MetricTile from "../../components/shared/MetricTile";
 import { fmtNum } from "../llamacpp/parts";
@@ -17,6 +16,9 @@ import {
   AttemptCell,
   AttemptStrip,
   KOfN,
+  MONO,
+  navigateTo,
+  PANEL_CARD_STYLE,
   StripLegend,
   SubTabs,
   type BenchTab,
@@ -51,7 +53,7 @@ import {
 import type { BenchData } from "./useBenchData";
 import type { BenchRecord, BenchRunDetail, BenchRunRow } from "./types";
 
-const MONO = '"JetBrains Mono", "Fira Code", monospace';
+
 
 /** Compare renders at most three columns, so it offers exactly three slots. */
 const COMPARE_SLOTS = 3;
@@ -166,15 +168,7 @@ function RunOutcome({
   );
 }
 
-const PANEL_CARD_STYLE: React.CSSProperties = {
-  position: "relative",
-  backgroundColor: "var(--bg-card)",
-  border: "1px solid var(--border-light, var(--border-color))",
-  borderRadius: "var(--radius-md)",
-  overflow: "hidden",
-  display: "flex",
-  flexDirection: "column",
-};
+
 
 const TH: React.CSSProperties = {
   font: "600 9px Inter, system-ui, sans-serif",
@@ -250,8 +244,7 @@ function RunsPathChip({ benchDir }: { benchDir: string | null }) {
             style={{ color: "var(--accent-primary)" }}
             onClick={(e) => {
               e.preventDefault();
-              window.history.pushState({}, "", "/settings");
-              window.dispatchEvent(new PopStateEvent("popstate"));
+              navigateTo("/settings");
             }}
           >
             set it in Settings
@@ -269,6 +262,8 @@ export function TasksAndRuns({
   running,
   warming,
   outputFolder,
+  resumingFolder,
+  onResume,
 }: {
   bench: BenchData;
   running: boolean;
@@ -276,6 +271,8 @@ export function TasksAndRuns({
   warming: boolean;
   /** Run folder for the Console tab's toolbar note (moved out of the hero). */
   outputFolder: string;
+  resumingFolder: string | null;
+  onResume: (folder: string, init: RequestInit) => void;
 }) {
   const { detail, runs, storedDetails, selectRun, refresh } = bench;
   // While a spawned run is warming, `detail` is still the PREVIOUS run, so
@@ -455,7 +452,7 @@ export function TasksAndRuns({
                 style={{
                   padding: "6px 12px 4px",
                   font: `11px ${MONO}`,
-                  color: "var(--text-secondary)",
+                  color: "var(--text-primary)",
                   borderBottom: "1px solid var(--border-light)",
                 }}
               >
@@ -526,6 +523,43 @@ export function TasksAndRuns({
                     );
                   },
                 )}
+                {detail?.summary?.score !== undefined && (
+                  <div
+                    data-testid="bench-lang-all-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
+                      gap: "0 12px",
+                      borderTop: "1px solid var(--border-color)",
+                      marginTop: 3,
+                      paddingTop: 3,
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <span>ALL</span>
+                    <span style={{ textAlign: "right" }}>
+                      {detail.summary.score != null
+                        ? detail.summary.score.toFixed(1)
+                        : "—"}
+                    </span>
+                    <span style={{ textAlign: "right" }}>
+                      {detail.summary.passes_100 != null
+                        ? detail.summary.passes_100.toFixed(1)
+                        : "—"}
+                    </span>
+                    <span style={{ textAlign: "right" }}>
+                      {detail.summary.tests_100 != null
+                        ? detail.summary.tests_100.toFixed(1)
+                        : "—"}
+                    </span>
+                    <span style={{ textAlign: "right" }}>
+                      {detail.summary.speed_weighted != null
+                        ? detail.summary.speed_weighted.toFixed(1)
+                        : "—"}
+                    </span>
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -561,6 +595,8 @@ export function TasksAndRuns({
           running={running}
           onSelect={selectRun}
           storedDetails={storedDetails}
+          resumingFolder={resumingFolder}
+          onResume={onResume}
         />
       )}
       {tab === "cmp" && (
@@ -1110,47 +1146,23 @@ function HistoryPane({
   running,
   onSelect,
   storedDetails,
+  resumingFolder,
+  onResume,
 }: {
   bench: BenchData;
   /** The page's liveness signal — the same one the hero and Start/Stop use. */
   running: boolean;
   onSelect: (id: string) => void;
   storedDetails: BenchRunDetail[];
+  resumingFolder: string | null;
+  onResume: (folder: string, init: RequestInit) => void;
 }) {
-  const { addAlert } = useAlertsContext();
-  const [resumingFolder, setResumingFolder] = useState<string | null>(null);
   const groups = useMemo(() => groupByEdition(bench.runs), [bench.runs]);
   const detailById = useMemo(() => {
     const m = new Map<string, BenchRunDetail>();
     for (const d of storedDetails) m.set(d.run_id, d);
     return m;
   }, [storedDetails]);
-
-  // bench.py refuses a resume whose conditions differ from the recorded run by
-  // exiting on launch. The response was previously discarded, so the run
-  // simply never appeared and the reason stayed in the Console tab.
-  const resumeRun = async (folder: string, init: RequestInit) => {
-    setResumingFolder(folder);
-    try {
-      const res = await fetch("/api/bench/resume", init);
-      const body = (await res.json()) as { success?: boolean; error?: string };
-      if (!body.success) {
-        addAlert(
-          AlertSeverity.Error,
-          "bench",
-          `Resume refused: ${body.error ?? "bench.py did not start"}`,
-        );
-      }
-    } catch {
-      addAlert(
-        AlertSeverity.Error,
-        "bench",
-        "Resume failed: the dashboard could not be reached",
-      );
-    } finally {
-      setResumingFolder(null);
-    }
-  };
 
   if (bench.runs.length === 0)
     return (
@@ -1369,7 +1381,7 @@ function HistoryPane({
                       disabled={resumingFolder === run.folder}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void resumeRun(run.folder, {
+                        void onResume(run.folder, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           // Every setting bench.py's resume guard compares.
@@ -1462,17 +1474,20 @@ function ComparePane({
     [details, eligibility.eligible, taskOrder],
   );
 
-  // T115: tasks present in some runs but not all
+  // T115: tasks present in some runs but not all.
+  // T188: source switched from records (scored only) to tasks[] (attempted).
   const coverageNote = useMemo(() => {
     if (!eligibility.eligible || details.length < 2) return null;
-    const taskSets = details.map(
-      (d) => new Set(d?.records.map((r) => r.task) ?? []),
-    );
+    const taskSets = details.map((d) => new Set(d?.tasks ?? []));
     const allTasks = new Set(taskSets.flatMap((s) => [...s]));
     const partial = [...allTasks].filter((t) =>
       taskSets.some((s) => !s.has(t)),
     );
-    return partial.length > 0 ? partial : null;
+    if (partial.length === 0) return null;
+    const sharedCount = [...allTasks].filter((t) =>
+      taskSets.every((s) => s.has(t)),
+    ).length;
+    return { tasks: partial, sharedCount };
   }, [details, eligibility.eligible]);
 
   const setSlot = (index: number, runId: string) => {
@@ -1575,103 +1590,153 @@ function ComparePane({
               className="bench-banner"
               data-testid="bench-compare-coverage"
               style={{ margin: "0 12px 10px", fontSize: 11 }}
-              title={coverageNote.join(", ")}
+              title={coverageNote.tasks.join(", ")}
             >
               <TriangleAlert size={13} />
               <span>
-                {coverageNote.length}{" "}
-                {coverageNote.length === 1 ? "task appears" : "tasks appear"}{" "}
+                {coverageNote.tasks.length}{" "}
+                {coverageNote.tasks.length === 1 ? "task appears" : "tasks appear"}{" "}
                 in some but not all runs:{" "}
                 <span style={{ fontFamily: MONO }}>
-                  {groupCoverage(coverageNote)}
+                  {groupCoverage(coverageNote.tasks)}
                 </span>
+                {" "}— runs share {coverageNote.sharedCount} tasks.
               </span>
             </div>
           )}
           {/* Score strip — only rendered when at least one selected run has
-              the -157+ score field. Pre-157 runs show "—" rather than 0. */}
+              the -157+ score field. Pre-157 runs show "—" rather than 0.
+              T188: grid aligns with the lang table; Δ gated on task-set
+              equality; partial caveat on each partial run's score. */}
           {chosenRows.some((r) => r.summary?.score !== undefined) && (() => {
+            // Gate Δ on task-set equality — equal count but different ids
+            // is a miscomparison that summary.tasks (a count) cannot detect.
+            const taskSet0 = new Set(details[0]?.tasks ?? []);
+            const taskSet1 = details[1] ? new Set(details[1].tasks ?? []) : null;
+            const sameTaskSet =
+              chosenRows.length === 2 &&
+              taskSet1 !== null &&
+              taskSet0.size === taskSet1.size &&
+              [...taskSet0].every((t) => taskSet1!.has(t));
+
             const s0 = chosenRows[0]?.summary?.score;
             const s1 = chosenRows[1]?.summary?.score;
             const scoreDiff =
-              chosenRows.length === 2 &&
+              sameTaskSet &&
               typeof s0 === "number" &&
               typeof s1 === "number"
                 ? s0 - s1
                 : null;
+
+            const cols = `7ch repeat(${chosenRows.length}, 1fr) auto`;
+            const labelStyle: React.CSSProperties = {
+              color: "var(--text-muted)",
+              fontSize: 10,
+              textAlign: "left",
+            };
+            const numStyle: React.CSSProperties = { textAlign: "right" };
+
             return (
               <div
                 data-testid="bench-compare-scores"
                 style={{
                   margin: "0 12px 10px",
                   display: "grid",
-                  gridTemplateColumns: `auto repeat(${chosenRows.length}, 1fr)`,
+                  gridTemplateColumns: cols,
                   gap: "4px 12px",
                   font: `11px ${MONO}`,
                   color: "var(--text-secondary)",
                 }}
               >
-                <span style={{ color: "var(--text-muted)", fontSize: 10 }} />
+                {/* Score row */}
+                <span style={labelStyle}>Score</span>
                 {chosenRows.map((r) => {
                   const s = r.summary;
                   const sc = s?.score;
                   const hasField = sc !== undefined;
+                  const isPartial = s?.partial === true;
                   return (
-                    <span key={r.run_id} style={{ fontWeight: 700 }}>
-                      {hasField
-                        ? sc === null
-                          ? "—"
-                          : `${sc.toFixed(1)}/100`
-                        : "—"}
+                    <span key={r.run_id} style={{ fontWeight: 700, textAlign: "right" }}>
+                      {hasField ? (sc === null ? "—" : `${sc.toFixed(1)}/100`) : "—"}
+                      {isPartial && (
+                        <span
+                          data-testid="bench-compare-partial-note"
+                          style={{
+                            display: "block",
+                            fontWeight: 400,
+                            fontSize: 9,
+                            color: "var(--warning)",
+                          }}
+                        >
+                          partial run
+                        </span>
+                      )}
                     </span>
                   );
                 })}
-                {scoreDiff !== null && (
-                  <>
-                    <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
-                      Δ
-                    </span>
-                    <span
-                      data-testid="bench-compare-score-diff"
-                      style={{
-                        fontWeight: 700,
-                        gridColumn: "span 2",
-                        color:
-                          scoreDiff > 0
-                            ? "var(--success)"
-                            : scoreDiff < 0
-                              ? "var(--danger)"
-                              : "var(--text-secondary)",
-                      }}
-                    >
-                      {scoreDiff >= 0
-                        ? `+${scoreDiff.toFixed(1)}`
-                        : scoreDiff.toFixed(1)}
-                    </span>
-                  </>
-                )}
-                <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
-                  Correctness
+                <span
+                  data-testid="bench-compare-score-diff"
+                  style={{
+                    fontWeight: 700,
+                    textAlign: "right",
+                    color:
+                      scoreDiff === null
+                        ? "var(--text-muted)"
+                        : scoreDiff > 0
+                          ? "var(--success)"
+                          : scoreDiff < 0
+                            ? "var(--danger)"
+                            : "var(--text-secondary)",
+                  }}
+                >
+                  {scoreDiff === null
+                    ? "—"
+                    : scoreDiff >= 0
+                      ? `+${scoreDiff.toFixed(1)}`
+                      : scoreDiff.toFixed(1)}
                 </span>
+
+                {/* Passes row: -185+ field; -165 fallback: correctness_100 */}
+                <span style={labelStyle}>Passes</span>
                 {chosenRows.map((r) => {
-                  const cw = r.summary?.correctness_weighted;
+                  const s = r.summary;
+                  const passes =
+                    s?.passes_100 !== undefined
+                      ? s.passes_100
+                      : s?.correctness_100 !== undefined
+                        ? s.correctness_100
+                        : null;
                   return (
-                    <span key={r.run_id}>
-                      {cw !== undefined ? cw.toFixed(1) : "—"}
+                    <span key={r.run_id} style={numStyle}>
+                      {passes !== null ? passes.toFixed(1) : "—"}
                     </span>
                   );
                 })}
-                <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
-                  Speed
-                </span>
+                <span />
+
+                {/* Tests row: -185+ only; — for -165 and pre-scoring */}
+                <span style={labelStyle}>Tests</span>
+                {chosenRows.map((r) => {
+                  const t = r.summary?.tests_100;
+                  return (
+                    <span key={r.run_id} style={numStyle}>
+                      {t !== undefined && t !== null ? t.toFixed(1) : "—"}
+                    </span>
+                  );
+                })}
+                <span />
+
+                {/* Speed */}
+                <span style={labelStyle}>Speed</span>
                 {chosenRows.map((r) => {
                   const sw = r.summary?.speed_weighted;
                   return (
-                    <span key={r.run_id}>
-                      {sw !== undefined ? sw.toFixed(1) : "—"}
+                    <span key={r.run_id} style={numStyle}>
+                      {sw !== undefined && sw !== null ? sw.toFixed(1) : "—"}
                     </span>
                   );
                 })}
+                <span />
               </div>
             );
           })()}
@@ -1733,7 +1798,17 @@ function ComparePane({
                   });
                   const allPresent =
                     scores.length >= 2 && scores.every((s) => s !== null);
-                  const delta = allPresent
+                  // T188: suppress Δ when runs covered different task subsets
+                  // for this language — equal lang score counts can still hide
+                  // different task ids.
+                  const langPrefix = lang + "/";
+                  const sameLangTasks = (() => {
+                    if (details.length < 2) return false;
+                    const s0 = new Set((details[0]?.tasks ?? []).filter(t => t.startsWith(langPrefix)));
+                    const s1 = new Set((details[1]?.tasks ?? []).filter(t => t.startsWith(langPrefix)));
+                    return s0.size === s1.size && [...s0].every(t => s1.has(t));
+                  })();
+                  const delta = allPresent && sameLangTasks
                     ? (
                         Math.max(...(scores as number[])) -
                         Math.min(...(scores as number[]))
@@ -1759,6 +1834,45 @@ function ComparePane({
                     </div>
                   );
                 })}
+                {(() => {
+                  if (!details.some((d) => d?.summary?.score !== undefined))
+                    return null;
+                  const overallScores = details.map((d) =>
+                    d?.summary?.score !== undefined
+                      ? (d.summary.score ?? null)
+                      : null,
+                  );
+                  const allPresent =
+                    overallScores.length >= 2 &&
+                    overallScores.every((s) => s !== null);
+                  const delta = allPresent
+                    ? (
+                        Math.max(...(overallScores as number[])) -
+                        Math.min(...(overallScores as number[]))
+                      ).toFixed(1)
+                    : null;
+                  return (
+                    <div
+                      data-testid="bench-compare-all-row"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
+                        gap: "2px 10px",
+                        borderTop: "1px solid var(--border-color)",
+                        marginTop: 3,
+                        paddingTop: 3,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <span>ALL</span>
+                      {overallScores.map((s, i) => (
+                        <span key={i}>{s != null ? s.toFixed(1) : "—"}</span>
+                      ))}
+                      <span style={{ textAlign: "right" }}>{delta ?? "—"}</span>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}

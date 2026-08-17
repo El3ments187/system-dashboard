@@ -109,7 +109,7 @@ export function BenchConsole({
       if (savedScrollRef.current !== null)
         el.scrollTop = savedScrollRef.current;
     } else {
-      savedScrollRef.current = el.scrollTop;
+      if (el.scrollTop > 0) savedScrollRef.current = el.scrollTop;
     }
   }, [active]);
 

@@ -67,7 +67,7 @@ function rec(over: Partial<BenchRecord> = {}): BenchRecord {
     prompt_tokens: 50,
     total_tokens: 120,
     tokens_estimated: false,
-    nudged: false,
+    nudged: 0,
     truncated: false,
     cut_mid_block: false,
     stopped_at_budget: false,

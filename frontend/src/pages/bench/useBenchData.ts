@@ -68,7 +68,7 @@ interface LaunchProfileLike {
  * The name RUN MODELS displays for a profile: its alias if the launch script
  * sets one, else the model file's basename, else the profile name.
  */
-export function modelNamesFromProfiles(
+function modelNamesFromProfiles(
   profiles: LaunchProfileLike[],
 ): string[] {
   const names = profiles.map((p) => {

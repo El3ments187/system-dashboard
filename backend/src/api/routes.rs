@@ -350,7 +350,7 @@ async fn ai_metrics_handler() -> axum::response::Json<Value> {
     {
         for stat in stats.iter_mut() {
             stat.used_gpu_memory_mb = first_gpu.vram_used_gb * 1024.0;
-            stat.free_gpu_memory_mb = first_gpu.vram_total_gb * 1024.0;
+            stat.free_gpu_memory_mb = (first_gpu.vram_total_gb - first_gpu.vram_used_gb) * 1024.0;
         }
     }
 

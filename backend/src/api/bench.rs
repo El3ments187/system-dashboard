@@ -476,6 +476,52 @@ fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
     None
 }
 
+/// T185: if a run folder has a non-empty live blob but no alive pid, clear
+/// the blob and return the folder name. Records are left untouched.
+fn clear_stale_live_blob(base: &std::path::Path) -> Option<String> {
+    let rd = std::fs::read_dir(base).ok()?;
+    for entry in rd.filter_map(|e| e.ok()) {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        let results_path = path.join("results.json");
+        let Ok(text) = std::fs::read_to_string(&results_path) else {
+            continue;
+        };
+        let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Some(live) = json.get("live") else {
+            continue;
+        };
+        if live.as_object().is_none_or(|m| m.is_empty()) {
+            continue;
+        }
+        let pid_str = std::fs::read_to_string(path.join("pid")).ok();
+        let is_alive = pid_str
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .map(pid_alive)
+            .unwrap_or(false);
+        if is_alive {
+            continue;
+        }
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert(
+                "live".to_string(),
+                serde_json::Value::Object(Default::default()),
+            );
+        }
+        let Ok(out) = serde_json::to_string_pretty(&json) else {
+            continue;
+        };
+        if std::fs::write(&results_path, out).is_ok() {
+            return Some(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
 fn newest_run_folder() -> Option<String> {
     let mut entries: Vec<(std::time::SystemTime, String)> = std::fs::read_dir(runs_dir())
         .ok()?
@@ -851,12 +897,14 @@ pub async fn ready_handler(
 /// working for those through the existing results.json polling path, which
 /// is why `run` is nullable rather than an error.
 pub async fn current_handler() -> axum::response::Json<Value> {
-    let live = a_run_is_live();
     let run = state()
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .current
         .clone();
+    // T185: check in-memory state first; if not live, scan disk for a process
+    // that survived a dashboard restart and is still running.
+    let live = a_run_is_live() || recover_pid_for_live_run(&runs_dir()).is_some();
     axum::response::Json(json!({
         "data": { "running": live, "run": if live { run } else { None } },
         "success": true
@@ -876,7 +924,18 @@ pub async fn stop_handler() -> axum::response::Json<Value> {
                 "message": "SIGTERM sent; the run saves results and stays resumable"
             }))
         }
-        _ => axum::response::Json(json!({ "error": "no live bench run", "success": false })),
+        _ => {
+            // T185: pid is dead but live blob may still be set — clear it so
+            // the user can start again without hand-editing results.json.
+            if let Some(cleared) = clear_stale_live_blob(&runs_dir()) {
+                axum::response::Json(json!({
+                    "success": true,
+                    "message": format!("the process was already gone; the run is marked finished ({cleared})")
+                }))
+            } else {
+                axum::response::Json(json!({ "error": "no live bench run", "success": false }))
+            }
+        }
     }
 }
 
@@ -981,10 +1040,23 @@ pub async fn resume_handler(
     let args = req.to_args(&path.to_string_lossy());
     match spawn_bench(args).await {
         Ok(pid) => {
+            let current = CurrentRun {
+                pid,
+                folder: Some(req.folder.clone()),
+                model: None,
+                label: None,
+                langs: None,
+                url: req.url.clone(),
+                attempts: req.attempts,
+                n: req.n,
+                temperature: req.temperature,
+                started: chrono::Utc::now().to_rfc3339(),
+            };
             {
                 let mut g = state().write().unwrap_or_else(|e| e.into_inner());
                 g.pid = Some(pid);
                 g.run_folder = Some(req.folder.clone());
+                g.current = Some(current);
                 g.spawning = false;
             }
             // T135: persist pid for post-restart recovery.
@@ -1046,6 +1118,12 @@ async fn settle_liveness_check<F: Fn() -> bool>(is_live: F, settle_ms: u64) -> b
 pub async fn queue_advance_handler(
     axum::extract::Json(req): axum::extract::Json<QueueAdvanceRequest>,
 ) -> axum::response::Json<Value> {
+    if req.script_path.is_empty() {
+        return axum::response::Json(json!({ "error": "script_path must not be empty", "success": false }));
+    }
+    if req.script_path.contains("..") {
+        return axum::response::Json(json!({ "error": "path traversal sequences are not allowed", "success": false }));
+    }
     let script = req.script_path.clone();
     let launched =
         tokio::task::spawn_blocking(move || crate::api::launcher::launch_profile(&script)).await;
@@ -1862,5 +1940,131 @@ mod tests {
         // After poisoning, unwrap_or_else must recover the inner value.
         let val = *lock.read().unwrap_or_else(|e| e.into_inner());
         assert_eq!(val, 42, "poisoned lock must be recovered, not panic");
+    }
+
+    // ── T185 helpers ─────────────────────────────────────────────────────────
+
+    fn t185_make_runs(suffix: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "bench_t185{}_{}",
+            suffix,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn t185_add_run(
+        runs: &std::path::Path,
+        name: &str,
+        live: serde_json::Value,
+        record_count: usize,
+        pid: Option<u32>,
+    ) {
+        let dir = runs.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let records: Vec<serde_json::Value> = (0..record_count)
+            .map(|i| serde_json::json!({"n": i}))
+            .collect();
+        let results = serde_json::json!({"live": live, "records": records});
+        std::fs::write(
+            dir.join("results.json"),
+            serde_json::to_string_pretty(&results).unwrap(),
+        )
+        .unwrap();
+        if let Some(p) = pid {
+            std::fs::write(dir.join("pid"), p.to_string()).unwrap();
+        }
+    }
+
+    // ── T185 tests ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn t185a_clear_stale_live_blob_clears_dead_pid_run() {
+        let runs = t185_make_runs("a");
+        t185_add_run(
+            &runs,
+            "run1",
+            serde_json::json!({"task": "ts/scheduler", "total": 10}),
+            6,
+            Some(9_999_999), // dead pid
+        );
+        let cleared = clear_stale_live_blob(&runs);
+        assert_eq!(cleared.as_deref(), Some("run1"), "must return folder name");
+        let text = std::fs::read_to_string(runs.join("run1/results.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(
+            json["live"].as_object().unwrap().is_empty(),
+            "live must be empty after clear"
+        );
+    }
+
+    #[test]
+    fn t185b_clear_stale_live_blob_leaves_records_untouched() {
+        let runs = t185_make_runs("b");
+        t185_add_run(
+            &runs,
+            "run1",
+            serde_json::json!({"task": "ts/scheduler"}),
+            6,
+            Some(9_999_999),
+        );
+        clear_stale_live_blob(&runs);
+        let text = std::fs::read_to_string(runs.join("run1/results.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            json["records"].as_array().unwrap().len(),
+            6,
+            "record count must be unchanged"
+        );
+    }
+
+    #[test]
+    fn t185c_clear_stale_live_blob_skips_alive_pid() {
+        let runs = t185_make_runs("c");
+        let own_pid = std::process::id();
+        t185_add_run(
+            &runs,
+            "live_run",
+            serde_json::json!({"task": "ts/scheduler"}),
+            3,
+            Some(own_pid), // alive pid — must not be cleared
+        );
+        let cleared = clear_stale_live_blob(&runs);
+        assert!(cleared.is_none(), "must not clear a run whose pid is alive");
+        // Verify live blob was left intact
+        let text = std::fs::read_to_string(runs.join("live_run/results.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(
+            !json["live"].as_object().unwrap().is_empty(),
+            "live blob must not have been touched"
+        );
+    }
+
+    #[test]
+    fn t185d_clear_stale_live_blob_skips_empty_live() {
+        let runs = t185_make_runs("d");
+        t185_add_run(
+            &runs,
+            "run1",
+            serde_json::json!({}), // already empty — nothing to do
+            3,
+            Some(9_999_999),
+        );
+        let cleared = clear_stale_live_blob(&runs);
+        assert!(
+            cleared.is_none(),
+            "must not touch a run whose live blob is already empty"
+        );
+    }
+
+    #[test]
+    fn t185e_clear_stale_live_blob_returns_none_for_empty_dir() {
+        let runs = t185_make_runs("e");
+        let cleared = clear_stale_live_blob(&runs);
+        assert!(cleared.is_none(), "empty runs dir must return None");
     }
 }

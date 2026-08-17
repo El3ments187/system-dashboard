@@ -83,11 +83,13 @@ export interface BenchSummary {
   correctness_100?: number;
   correctness_weighted?: number;
   speed_weighted?: number;
+  passes_100?: number;
+  tests_100?: number;
   median_solved_minutes?: number;
   suite_tasks?: number;
   partial?: boolean;
   // -165+: per-language breakdown (score, correctness, speed per lang)
-  by_language?: Record<string, { score: number; correctness: number; speed: number | null }>;
+  by_language?: Record<string, { score: number; correctness: number; speed: number | null; passes?: number; tests?: number }>;
   // multi-model shape only (score: null + models_in_file)
   models_in_file?: string[];
   // nothing-graded shape only (score: null + graded: 0)

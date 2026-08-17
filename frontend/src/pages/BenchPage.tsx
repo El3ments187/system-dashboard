@@ -26,10 +26,10 @@ import {
 import { fmtUptime } from "./llamaCppUtils";
 import { AlertSeverity, useAlertsContext } from "../context/AlertsContext";
 import { useMetricsContext } from "../context/MetricsContext";
-import { MOCK_URL, useBenchData, isRunning } from "./bench/useBenchData";
+import { MOCK_URL, useBenchData } from "./bench/useBenchData";
 import { TasksAndRuns } from "./bench/TasksAndRuns";
 
-import { navigateTo } from "./bench/parts";
+import { MONO, navigateTo, PANEL_CARD_STYLE } from "./bench/parts";
 import {
   activeModelName,
   estimatedRunSeconds,
@@ -70,18 +70,6 @@ import type {
   BenchRunRow,
   BenchTaskList,
 } from "./bench/types";
-
-const MONO = '"JetBrains Mono", "Fira Code", monospace';
-
-const PANEL_CARD_STYLE: React.CSSProperties = {
-  position: "relative",
-  backgroundColor: "var(--bg-card)",
-  border: "1px solid var(--border-light, var(--border-color))",
-  borderRadius: "var(--radius-md)",
-  overflow: "hidden",
-  display: "flex",
-  flexDirection: "column",
-};
 
 const LABEL_STYLE: React.CSSProperties = {
   font: "600 9px Inter, system-ui, sans-serif",
@@ -171,10 +159,18 @@ function computeDonePct(
   detail: BenchRunDetail | null,
   warming: boolean,
 ): number | null {
-  if (live.total && live.total > 0)
-    return Math.round(((live.done ?? 0) / live.total) * 100);
+  if ((live.total ?? 0) > 0)
+    return Math.round(((live.done ?? 0) / live.total!) * 100);
   if (warming) return 0;
-  if (detail) return 100;
+  if (detail) {
+    // T187: a run that stopped mid-flight has a non-null detail but no live
+    // total. Derive from summary.tasks (tasks this run set out to do) so that
+    // a completed partial run reads 100% and a 6-of-27 stoppage reads ~22%.
+    const { samples, tasks } = detail.summary ?? {};
+    if (samples != null && tasks != null && tasks > 0)
+      return Math.round((samples / tasks) * 100);
+    return 100; // no summary (pre-scoring run) — assume complete
+  }
   return null;
 }
 
@@ -189,7 +185,7 @@ function computeDonePct(
  * started from the CLI has no process state and falls through to the file,
  * which is the original polling path, unchanged.
  */
-export interface HeroIdentity {
+interface HeroIdentity {
   displayName: string;
   /** The run's --label, when one was given. Never merged into the name. */
   alias: string | null;
@@ -206,7 +202,7 @@ export interface HeroIdentity {
  * run exists. Shared so the hero's badge and the pacing median cannot
  * disagree about which class of target this is.
  */
-export function runTargetUrl(
+function runTargetUrl(
   current: BenchCurrent,
   detail: BenchRunDetail | null,
   fallback: string,
@@ -267,8 +263,12 @@ function heroIdentity(
     aliasIsAllWeHave,
     folder: spawned?.folder ?? detailFolder ?? "",
     startedAt: spawned?.started ?? detail?.created ?? null,
+    // T185: disk-recovered runs have current.run === null; they are never
+    // "warming up" (they have existing records). Warming only applies when
+    // the dashboard spawned the run and has the CurrentRun metadata.
     warming:
       current.running &&
+      current.run !== null &&
       (!showingSpawnedRun || (detail?.records?.length ?? 0) === 0),
   };
 }
@@ -892,6 +892,17 @@ function ScoreProgressCard({
     return "Task";
   })();
 
+  const healthStripCopy = healthStripText({
+    running,
+    kind: status.kind,
+    warming,
+    median,
+    taskElapsed: live.task_elapsed,
+    elapsed: elapsedSeconds,
+    samples: progressDetail?.summary?.samples ?? null,
+    fmtDuration: fmtUptime,
+  });
+
   return (
     <Card role={null} baseClass="" style={PANEL_CARD_STYLE}>
       <CardHeader
@@ -1120,22 +1131,14 @@ function ScoreProgressCard({
           <ProgressBar percent={donePct ?? 0} variant="compact" />
           <div
             data-testid="bench-pacing"
+            aria-hidden={!healthStripCopy || undefined}
             style={{
               font: `10px ${MONO}`,
               color: "var(--text-muted)",
               marginTop: 4,
             }}
           >
-            {healthStripText({
-              running,
-              kind: status.kind,
-              warming,
-              median,
-              taskElapsed: live.task_elapsed,
-              elapsed: elapsedSeconds,
-              samples: progressDetail?.summary?.samples ?? null,
-              fmtDuration: fmtUptime,
-            })}
+            {healthStripCopy}
           </div>
         </div>
       </div>
@@ -1265,6 +1268,10 @@ function RunSetupCard({
   storedDetails,
   taskCount,
   tasks,
+  detail,
+  resumableFolder,
+  resumingFolder,
+  onResume,
 }: {
   check: BenchCheck | null;
   running: boolean;
@@ -1280,6 +1287,11 @@ function RunSetupCard({
   taskCount: number;
   /** The suite in execution order, so the estimate can price what will run. */
   tasks: Array<{ id: string; lang: string }>;
+  detail: BenchRunDetail | null;
+  /** Non-null only when the displayed run is interrupted and no run is live. */
+  resumableFolder: string | null;
+  resumingFolder: string | null;
+  onResume: (folder: string, init: RequestInit) => void;
 }) {
   const [override, setOverride] = useState<Partial<RunForm>>({});
   const { addAlert } = useAlertsContext();
@@ -1794,6 +1806,35 @@ function RunSetupCard({
             title="Stop is SIGTERM — bench.py unwinds like Ctrl-C, results.json is saved and the run stays resumable. Never SIGKILL."
           />
           <ActionButton
+            label="Resume"
+            disabled={resumableFolder === null || resumingFolder === resumableFolder}
+            onClick={() => {
+              if (!resumableFolder) return;
+              onResume(resumableFolder, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  folder: resumableFolder,
+                  attempts: detail?.config?.attempts,
+                  n: detail?.config?.n,
+                  url: detail?.config?.url,
+                  temperature: detail?.config?.temperature ?? null,
+                  time_budget: detail?.config?.time_budget,
+                  time_step: detail?.config?.time_step,
+                }),
+              });
+            }}
+            title={
+              running
+                ? "A run is already active."
+                : resumableFolder === null
+                  ? "No interrupted run to resume."
+                  : resumingFolder === resumableFolder
+                    ? `Resuming ${resumableFolder}…`
+                    : `Resume the interrupted run in ${resumableFolder}.`
+            }
+          />
+          <ActionButton
             label="Re-check"
             onClick={onRefresh}
             title="Re-probe the target server, re-run bench.py --check and reload the stored runs."
@@ -1847,6 +1888,35 @@ export default function BenchPage() {
   const bench = useBenchData();
   const { detail, check, runs, storedDetails, current, error: benchError } = bench;
   const { addAlert } = useAlertsContext();
+  // T186: shared resume state — one resumingFolder so a resume in flight
+  // disables both the Run Setup button and History's button.
+  const [resumingFolder, setResumingFolder] = useState<string | null>(null);
+  const doResume = async (folder: string, init: RequestInit) => {
+    setResumingFolder(folder);
+    try {
+      const res = await fetch("/api/bench/resume", init);
+      const body = (await res.json()) as { success?: boolean; error?: string };
+      if (!body.success) {
+        addAlert(
+          AlertSeverity.Error,
+          "bench",
+          `Resume refused: ${body.error ?? "bench.py did not start"}`,
+        );
+      }
+    } catch {
+      addAlert(
+        AlertSeverity.Error,
+        "bench",
+        "Resume failed: the dashboard could not be reached",
+      );
+    } finally {
+      setResumingFolder(null);
+    }
+  };
+  // Non-null only when a specific interrupted run is shown and nothing is live.
+  const resumableFolder = !current.running && detail
+    ? (runs.find(r => r.run_id === detail.run_id && !r.finished)?.folder ?? null)
+    : null;
   // Same source as the llama.cpp page's Sampling tile, so Run Setup's
   // temperature follows the model that is actually loaded.
   const { aiCurrentMetrics } = useMetricsContext();
@@ -1859,9 +1929,10 @@ export default function BenchPage() {
   );
   const [now, setNow] = useState(() => Date.now());
 
-  // Either source proves a run is live: the spawned child, or a results.json
-  // that still carries a non-empty `live` (a CLI-started run).
-  const running = isRunning(detail) || current.running;
+  // T185: current.running is the authoritative backend answer; it now
+  // includes pid recovery after a dashboard restart, so isRunning(detail)
+  // is no longer needed as a liveness source here.
+  const running = current.running;
   // Computed ONCE and shared: the hero and Progress disagreeing about which
   // run is on screen is exactly the split-brain that let Progress keep
   // showing a finished run's numbers under a newly started one.
@@ -2144,6 +2215,10 @@ export default function BenchPage() {
                     .reduce((a, t) => a + t.tasks, 0) ?? 0
                 }
                 tasks={bench.taskList?.tasks ?? []}
+                detail={detail}
+                resumableFolder={resumableFolder}
+                resumingFolder={resumingFolder}
+                onResume={doResume}
               />
             </PanelErrorBoundary>
           </div>
@@ -2154,6 +2229,8 @@ export default function BenchPage() {
               running={running}
               warming={identity.warming}
               outputFolder={identity.folder}
+              resumingFolder={resumingFolder}
+              onResume={doResume}
             />
           </PanelErrorBoundary>
         </div>
