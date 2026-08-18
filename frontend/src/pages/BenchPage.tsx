@@ -591,17 +591,18 @@ function HeroCard({
                 : fmtUptime(remainingSeconds)
             }
             valueSize={14}
+            testId="bench-hero-remaining"
           />
         </div>
 
         <div
           data-testid="bench-hero-stats"
           style={{
-            // 2x2 rather than four full-width rows: halves the block's
-            // height and gives each sparkline a usable width instead of a
-            // sliver at the far right of a 722px row.
+            // Three stats in equal columns — single-row layout gives each
+            // sparkline a third of the card width. Remaining moved to
+            // hero tile (beside Started) in T175; it has no sparkline series.
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr",
             gap: "0 18px",
             paddingTop: 8,
             borderTop: "1px solid var(--border-light)",
@@ -634,15 +635,6 @@ function HeroCard({
                 : `${Math.round(figs.passRate)}%`
             }
             data={figs.idle ? [] : figs.passSeries}
-          />
-          <ProgressStat
-            label="Remaining"
-            value={
-              figs.idle || remainingSeconds === null
-                ? "—"
-                : fmtUptime(remainingSeconds)
-            }
-            data={figs.idle ? [] : figs.remainingSeries}
           />
         </div>
       </div>
@@ -736,8 +728,6 @@ function BarSpark({
         height: 18,
         flex: 1,
         minWidth: 0,
-        justifyContent: "flex-end",
-        overflow: "hidden",
       }}
     >
       {values.map((v, i) => (
@@ -745,8 +735,8 @@ function BarSpark({
           key={i}
           data-testid="bench-spark-bar"
           style={{
-            width: 3,
-            flex: "0 0 3px",
+            flex: "1 1 0",
+            minWidth: 0,
             borderRadius: 1.5,
             height: `${v === null ? 0 : Math.max(8, ((v - min) / span) * 100)}%`,
             background:
@@ -778,6 +768,7 @@ function ProgressStat({
         gap: 8,
         padding: "6px 0",
         minWidth: 0,
+        borderBottom: "1px solid var(--border-light)",
       }}
     >
       <span

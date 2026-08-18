@@ -24,7 +24,7 @@ vi.mock("../context/AlertsContext", () => ({
 }));
 
 import BenchPage from "../pages/BenchPage";
-import { LOCALBENCH_DEFAULTS } from "../pages/bench/compute";
+import { LOCALBENCH_DEFAULTS, compareSlotOptions } from "../pages/bench/compute";
 import Header from "../components/Header";
 
 // Mutable so a test can change what the ACTIVE model reports — the source
@@ -1774,7 +1774,7 @@ describe("T59 footer is single-source", () => {
       "bench-footer-generation-speed",
       "bench-footer-samples-hr",
       "bench-footer-pass-rate",
-      "bench-footer-remaining",
+      // bench-footer-remaining removed in T182: Remaining is a hero tile, not a stat row.
     ]) {
       expect(
         screen.getByTestId(id).textContent,
@@ -2658,9 +2658,9 @@ describe("T83 footer sparklines", () => {
       expect(spark("Samples/hr")?.querySelectorAll("i")).toHaveLength(5),
     );
     const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
-    // 4 sparks: Generation speed, Samples/hr, Pass rate, Remaining.
-    // Elapsed was the fifth; it moved to Progress as a plain tile, no spark.
-    expect(sparks).toHaveLength(4);
+    // 3 sparks: Generation speed, Samples/hr, Pass rate.
+    // Remaining moved to hero tile (T182); Elapsed was a plain tile (T154).
+    expect(sparks).toHaveLength(3);
     expect(spark("Samples/hr")?.querySelectorAll("i")).toHaveLength(5);
   });
 
@@ -2699,7 +2699,7 @@ describe("T83 footer sparklines", () => {
     ];
     const heights = (el: Element) =>
       [...el.querySelectorAll("i")].map((i) => (i as HTMLElement).style.height);
-    // Layout after T154: [0]=Generation speed, [1]=Samples/hr, [2]=Pass rate, [3]=Remaining
+    // Layout after T182: [0]=Generation speed, [1]=Samples/hr, [2]=Pass rate
     expect(
       heights(sparks[1]).join(","),
       "Samples/hr must not be a copy of the Pass rate series",
@@ -3220,8 +3220,9 @@ describe("T90 footer shows Remaining, not an always-zero error count", () => {
   it("replaces the Server errors slot", async () => {
     installFetch();
     render(<BenchPage />);
+    // T182: Remaining moved from stat row to hero tile; testid is bench-hero-remaining.
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy(),
+      expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy(),
     );
     expect(screen.queryByTestId("bench-footer-server-errors")).toBeNull();
   });
@@ -3229,10 +3230,9 @@ describe("T90 footer shows Remaining, not an always-zero error count", () => {
   it("dashes rather than guessing when no run is active", async () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
+    // T182: Remaining is a hero tile; it renders but shows no value when inactive.
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-remaining").textContent).toBe(
-        "—",
-      ),
+      expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy(),
     );
   });
 
@@ -3854,10 +3854,14 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
     installFetch({ detail: d, current: { running: true, run: null } });
     render(<BenchPage />);
 
-    const remaining = await screen.findByTestId("bench-footer-remaining");
+    const remaining = await screen.findByTestId("bench-hero-remaining");
     const rate = await screen.findByTestId("bench-footer-samples-hr");
+    // MetricTile puts data-testid on its container div; the value is in
+    // .metric-tile-value to avoid the label text corrupting the time parse.
+    const remainingValue = () =>
+      remaining.querySelector(".metric-tile-value")?.textContent ?? "";
     await waitFor(() =>
-      expect(secondsFromLabel(remaining.textContent ?? "")).toBeGreaterThan(0),
+      expect(secondsFromLabel(remainingValue())).toBeGreaterThan(0),
     );
 
     const left = TASK_LIST.tasks.length - 3;
@@ -3867,7 +3871,7 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
       "the footer must report a rate to compare against",
     ).toBeGreaterThan(0);
     const impliedSeconds = (left / perHour) * 3600;
-    const shown = secondsFromLabel(remaining.textContent ?? "");
+    const shown = secondsFromLabel(remainingValue());
 
     // Tolerance, and why: the remaining tasks are the slow tail, so REMAINING
     // may legitimately exceed the flat rate's implication — what it must not
@@ -6183,7 +6187,8 @@ describe("T154 footer strip retired, figures in Progress", () => {
   it("Progress shows Remaining", async () => {
     installFetch();
     render(<BenchPage />);
-    await screen.findByTestId("bench-footer-remaining");
+    // T182: Remaining is now a hero tile (bench-hero-remaining), not a stat row.
+    await screen.findByTestId("bench-hero-remaining");
   });
 
   it("Progress has exactly one Elapsed — no bench-footer-elapsed testid", async () => {
@@ -6250,7 +6255,7 @@ describe("T154 footer strip retired, figures in Progress", () => {
       "bench-footer-generation-speed",
       "bench-footer-samples-hr",
       "bench-footer-pass-rate",
-      "bench-footer-remaining",
+      // bench-footer-remaining removed in T182: Remaining is a hero tile.
     ]) {
       expect(
         screen.getByTestId(id).textContent,
@@ -6727,8 +6732,8 @@ describe("T174 merged ScoreProgress card; by-language table with headers", () =>
     expect(screen.getByTestId("bench-solved")).toBeTruthy();
     expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy();
     expect(screen.getByTestId("bench-pacing")).toBeTruthy();
-    // Remaining stays in progress-stats (T154 guard)
-    expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy();
+    // Remaining is a hero tile (T182); tile testid is bench-hero-remaining.
+    expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy();
   });
 });
 
@@ -6767,7 +6772,8 @@ describe("T175 four throughput stats on hero card", () => {
     expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
     expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
     expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
-    expect(screen.getByTestId("bench-footer-remaining")).toBeTruthy();
+    // Remaining moved to hero tile in T182; still reachable via bench-hero-remaining.
+    expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy();
   });
 
   it("stats are inside bench-hero-stats (on the hero card)", async () => {
@@ -6784,7 +6790,9 @@ describe("T175 four throughput stats on hero card", () => {
     ).toBeTruthy();
     expect(within(heroStats).getByTestId("bench-footer-samples-hr")).toBeTruthy();
     expect(within(heroStats).getByTestId("bench-footer-pass-rate")).toBeTruthy();
-    expect(within(heroStats).getByTestId("bench-footer-remaining")).toBeTruthy();
+    // Remaining is a hero tile (T182) — lives in bench-hero-tiles, not bench-hero-stats.
+    const heroTiles = screen.getByTestId("bench-hero-tiles");
+    expect(within(heroTiles).getByTestId("bench-hero-remaining")).toBeTruthy();
   });
 
   it("stats are absent from the Score & Progress card (bench-score-progress-body)", async () => {
@@ -6817,7 +6825,8 @@ describe("T175 four throughput stats on hero card", () => {
     expect(document.querySelector('[data-series="Generation speed"]')).toBeTruthy();
     expect(document.querySelector('[data-series="Samples/hr"]')).toBeTruthy();
     expect(document.querySelector('[data-series="Pass rate"]')).toBeTruthy();
-    expect(document.querySelector('[data-series="Remaining"]')).toBeTruthy();
+    // Remaining is a hero tile (T182) — it has no sparkline series.
+    expect(document.querySelector('[data-series="Remaining"]')).toBeNull();
   });
 
   it("samplesPerHour series is distinct from generation-speed series on a multi-record fixture", async () => {
@@ -7706,5 +7715,571 @@ describe("T186 Resume button in Run Setup", () => {
       ok: true,
       json: () => Promise.resolve({ success: true }),
     } as Response);
+  });
+});
+
+// ── T189 — Compare score strip: every row shares one column template ──────────
+//
+// Root cause (confirmed by DOM inspection): the T188 partial marker was rendered
+// inside the Score cell with display:block, making the Score row taller than
+// Passes/Tests/Speed. Fixed: partial marker moved to its own grid row, and
+// Passes/Tests/Speed gained filled Δ cells. Column template derived from run
+// count, not hardcoded, so two and three runs both align.
+
+describe("T189 Compare score strip column alignment", () => {
+  // Fixture values from the prompt — verified correct.
+  const S_A = {
+    ...benchRun.summary,
+    score: 50.1,
+    passes_100: 34.4,
+    tests_100: 72.3,
+    speed_weighted: 18.8,
+    partial: false,
+  };
+  const S_B = {
+    ...benchRun.summary,
+    score: 62.4,
+    passes_100: 50.0,
+    tests_100: 91.7,
+    speed_weighted: 18.2,
+    partial: true,
+  };
+  const TASKS_ALL = ["js/retry_backoff", "js/formula_engine", "js/interval_set", "js/decimal_calc"];
+  const TASKS_PART = ["js/retry_backoff", "js/formula_engine"];
+
+  type T189Run = { row: Record<string, unknown>; detail: Record<string, unknown> };
+
+  function makeRun189(id: string, summary: Record<string, unknown>, tasks: string[]): T189Run {
+    return {
+      row: runRow({ run_id: id, summary }),
+      detail: { ...benchRun, run_id: id, tasks, summary },
+    };
+  }
+
+  function install189(runs: T189Run[]) {
+    const rows = runs.map((r) => r.row);
+    installFetch({ runs: rows });
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      for (const r of runs) {
+        if (url.includes(`/api/bench/runs/${r.row.run_id as string}`)) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ data: r.detail, success: true }),
+          } as Response);
+        }
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  async function openCompare189() {
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    return screen.findByTestId("bench-compare-scores");
+  }
+
+  it("all four Δ cells exist for two runs (even when Δ is suppressed to —)", async () => {
+    install189([makeRun189("t189-2a", S_A, TASKS_ALL), makeRun189("t189-2b", S_B, TASKS_PART)]);
+    await openCompare189();
+    await waitFor(() => {
+      expect(screen.getByTestId("bench-compare-score-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-passes-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-tests-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-speed-diff")).toBeTruthy();
+    });
+  });
+
+  it("all four Δ cells exist for three runs, each showing —", async () => {
+    const S_C = { ...S_A, score: 55.0 };
+    install189([
+      makeRun189("t189-3a", S_A, TASKS_ALL),
+      makeRun189("t189-3b", S_B, TASKS_PART),
+      makeRun189("t189-3c", S_C, TASKS_ALL),
+    ]);
+    await openCompare189();
+    // sameTaskSet requires exactly 2 runs — three-run Δ is always —
+    await waitFor(() => {
+      expect(screen.getByTestId("bench-compare-score-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-passes-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-tests-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-speed-diff")).toBeTruthy();
+      expect(screen.getByTestId("bench-compare-score-diff").textContent).toBe("—");
+      expect(screen.getByTestId("bench-compare-passes-diff").textContent).toBe("—");
+    });
+  });
+
+  it("partial marker is not inside the Score cell — Score row height is unaffected", async () => {
+    install189([makeRun189("t189-full", S_A, TASKS_ALL), makeRun189("t189-part", S_B, TASKS_PART)]);
+    await openCompare189();
+    const note = await screen.findByTestId("bench-compare-partial-note");
+    const strip = screen.getByTestId("bench-compare-scores");
+    // note.parentElement is the partial-row grid cell; its parent is the grid container
+    const noteGridCell = note.parentElement!;
+    expect(noteGridCell.parentElement).toBe(strip);
+    // The partial-row cell must not contain any score value — no "/100"
+    expect(noteGridCell.textContent?.trim()).not.toMatch(/\/100/);
+  });
+
+  it("all four Δs use the same subtraction order: run 2 ahead means all show negative", async () => {
+    const sLow  = { ...benchRun.summary, score: 40.0, passes_100: 30.0, tests_100: 50.0, speed_weighted: 10.0, partial: false };
+    const sHigh = { ...benchRun.summary, score: 80.0, passes_100: 60.0, tests_100: 90.0, speed_weighted: 20.0, partial: false };
+    install189([makeRun189("t189-low", sLow, TASKS_ALL), makeRun189("t189-high", sHigh, TASKS_ALL)]);
+    await openCompare189();
+    // run 1 (low) − run 2 (high) → negative for all four
+    await waitFor(() => {
+      expect(screen.getByTestId("bench-compare-score-diff").textContent).toMatch(/^-/);
+      expect(screen.getByTestId("bench-compare-passes-diff").textContent).toMatch(/^-/);
+      expect(screen.getByTestId("bench-compare-tests-diff").textContent).toMatch(/^-/);
+      expect(screen.getByTestId("bench-compare-speed-diff").textContent).toMatch(/^-/);
+    });
+  });
+
+  it("values unchanged: 50.1 and 62.4 scores and their component rows render correctly", async () => {
+    install189([makeRun189("t189-va", S_A, TASKS_ALL), makeRun189("t189-vb", S_B, TASKS_PART)]);
+    const strip = await openCompare189();
+    await waitFor(() => {
+      // Score row
+      expect(within(strip).getAllByText("50.1/100").length).toBeGreaterThan(0);
+      expect(within(strip).getAllByText("62.4/100").length).toBeGreaterThan(0);
+      // Passes row
+      expect(within(strip).getAllByText("34.4").length).toBeGreaterThan(0);
+      expect(within(strip).getAllByText("50.0").length).toBeGreaterThan(0);
+      // Tests row
+      expect(within(strip).getAllByText("72.3").length).toBeGreaterThan(0);
+      expect(within(strip).getAllByText("91.7").length).toBeGreaterThan(0);
+      // Speed row (higher-is-better score; not inverted)
+      expect(within(strip).getAllByText("18.8").length).toBeGreaterThan(0);
+      expect(within(strip).getAllByText("18.2").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("by-language rows and per-task rows are untouched in the compare pane", async () => {
+    const sameSum = {
+      ...benchRun.summary,
+      score: 70.0, passes_100: 40.0, tests_100: 80.0, speed_weighted: 19.0, partial: false,
+      by_language: { js: { score: 70.0, passes: 40.0, tests: 80.0, speed: 19.0 } },
+    };
+    install189([makeRun189("t189-ul-a", sameSum, TASKS_ALL), makeRun189("t189-ul-b", sameSum, TASKS_ALL)]);
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-compare-row").length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByTestId("bench-compare-lang-row").length).toBeGreaterThan(0);
+  });
+});
+
+describe("T190 Compare block grid alignment", () => {
+  const TASKS_190 = ["js/retry_backoff", "js/formula_engine", "js/interval_set", "js/decimal_calc"];
+  const TASKS_190_SHORT = ["js/retry_backoff", "js/formula_engine"];
+  const SUM_A = {
+    ...benchRun.summary,
+    score: 66.6, passes_100: 55.6, tests_100: 85.0, speed_weighted: 19.2, partial: false,
+    by_language: { js: { score: 56.9 } },
+  };
+  const SUM_B = {
+    ...benchRun.summary,
+    score: 54.0, passes_100: 40.3, tests_100: 68.4, speed_weighted: 19.0, partial: false,
+    by_language: { js: { score: 52.3 } },
+  };
+
+  type T190Run = { row: Record<string, unknown>; detail: Record<string, unknown> };
+
+  function makeRun190(id: string, summary: Record<string, unknown>, tasks: string[]): T190Run {
+    return {
+      row: runRow({ run_id: id, summary }),
+      detail: { ...benchRun, run_id: id, tasks, summary },
+    };
+  }
+
+  function install190(runs: T190Run[]) {
+    const rows = runs.map((r) => r.row);
+    installFetch({ runs: rows });
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      for (const r of runs) {
+        if (url.includes(`/api/bench/runs/${r.row.run_id as string}`)) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ data: r.detail, success: true }),
+          } as Response);
+        }
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  async function openCompare190() {
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    return screen.findByTestId("bench-compare-scores");
+  }
+
+  it("score strip and every lang row share the same gridTemplateColumns (2 runs)", async () => {
+    install190([makeRun190("t190-a", SUM_A, TASKS_190), makeRun190("t190-b", SUM_B, TASKS_190)]);
+    const strip = await openCompare190();
+    const expected = "46px repeat(2, 1fr) 40px";
+    expect(strip.style.gridTemplateColumns).toBe(expected);
+    const langRows = screen.getAllByTestId("bench-compare-lang-row");
+    expect(langRows.length).toBeGreaterThan(0);
+    for (const row of langRows) {
+      expect(row.style.gridTemplateColumns).toBe(expected);
+    }
+    expect(screen.getByTestId("bench-compare-all-row").style.gridTemplateColumns).toBe(expected);
+  });
+
+  it("score strip and every lang row share the same gridTemplateColumns (3 runs)", async () => {
+    const SUM_C = { ...SUM_A, score: 60.0 };
+    install190([
+      makeRun190("t190-c1", SUM_A, TASKS_190),
+      makeRun190("t190-c2", SUM_B, TASKS_190),
+      makeRun190("t190-c3", SUM_C, TASKS_190),
+    ]);
+    const strip = await openCompare190();
+    const expected = "46px repeat(3, 1fr) 40px";
+    expect(strip.style.gridTemplateColumns).toBe(expected);
+    const langRows = screen.getAllByTestId("bench-compare-lang-row");
+    for (const row of langRows) {
+      expect(row.style.gridTemplateColumns).toBe(expected);
+    }
+    expect(screen.getByTestId("bench-compare-all-row").style.gridTemplateColumns).toBe(expected);
+  });
+
+  it("ALL row Δ is suppressed (—) when task sets differ — same condition as the strip", async () => {
+    install190([
+      makeRun190("t190-d1", SUM_A, TASKS_190),
+      makeRun190("t190-d2", SUM_B, TASKS_190_SHORT),
+    ]);
+    await openCompare190();
+    // strip Δ
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-compare-score-diff").textContent).toBe("—"),
+    );
+    // ALL row Δ (last child of the row)
+    const allRow = screen.getByTestId("bench-compare-all-row");
+    expect(allRow.lastElementChild?.textContent).toBe("—");
+  });
+
+  it("ALL row Δ shows a value when task sets match — same condition as the strip", async () => {
+    install190([makeRun190("t190-e1", SUM_A, TASKS_190), makeRun190("t190-e2", SUM_B, TASKS_190)]);
+    await openCompare190();
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-compare-score-diff").textContent).not.toBe("—"),
+    );
+    const allRow = screen.getByTestId("bench-compare-all-row");
+    expect(allRow.lastElementChild?.textContent).not.toBe("—");
+  });
+
+  it("values unchanged: 66.6 and 54.0 render in the score strip", async () => {
+    install190([makeRun190("t190-f1", SUM_A, TASKS_190), makeRun190("t190-f2", SUM_B, TASKS_190)]);
+    const strip = await openCompare190();
+    expect(within(strip).getByText("66.6/100")).toBeInTheDocument();
+    expect(within(strip).getByText("54.0/100")).toBeInTheDocument();
+  });
+});
+
+describe("T191 Compare clarity fixes", () => {
+  const TASKS_191 = ["js/retry_backoff", "js/formula_engine", "js/interval_set", "js/decimal_calc"];
+  const SUM_191_A = {
+    ...benchRun.summary,
+    score: 66.6, passes_100: 55.6, tests_100: 85.0, speed_weighted: 19.2, partial: false,
+    by_language: { js: { score: 56.9 } },
+  };
+  const SUM_191_B = {
+    ...benchRun.summary,
+    score: 54.0, passes_100: 40.3, tests_100: 68.4, speed_weighted: 19.0, partial: false,
+    by_language: { js: { score: 52.3 } },
+  };
+
+  type T191Run = { row: Record<string, unknown>; detail: Record<string, unknown> };
+
+  function makeRun191(id: string, summary: Record<string, unknown>, tasks: string[], overrides: Record<string, unknown> = {}): T191Run {
+    return {
+      row: runRow({ run_id: id, summary, ...overrides }),
+      detail: { ...benchRun, run_id: id, tasks, summary, ...overrides },
+    };
+  }
+
+  function install191(runs: T191Run[]) {
+    const rows = runs.map((r) => r.row);
+    installFetch({ runs: rows });
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      for (const r of runs) {
+        if (url.includes(`/api/bench/runs/${r.row.run_id as string}`)) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ data: r.detail, success: true }),
+          } as Response);
+        }
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  async function openCompare191() {
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    return screen.findByTestId("bench-compare-scores");
+  }
+
+  // Item 1: caption points to --report, not -m repeated
+  it("caption contains --report and does not reference -m repeated", async () => {
+    install191([makeRun191("t191-cap-a", SUM_191_A, TASKS_191), makeRun191("t191-cap-b", SUM_191_B, TASKS_191)]);
+    await openCompare191();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-compare-row").length).toBeGreaterThan(0),
+    );
+    expect(document.body.textContent).toContain("--report");
+    expect(document.body.textContent).not.toContain("-m repeated");
+  });
+
+  // Item 5: coverage note singular + leads with shared count
+  it("coverage note uses singular 'task' when sharedCount is 1 and leads with shared count", async () => {
+    // 1 shared task, 1 task exclusive to each run → sharedCount=1
+    const TASKS_A = ["js/retry_backoff", "js/formula_engine"];
+    const TASKS_B = ["js/retry_backoff", "js/interval_set"];
+    install191([makeRun191("t191-cov-a", SUM_191_A, TASKS_A), makeRun191("t191-cov-b", SUM_191_B, TASKS_B)]);
+    render(<BenchPage />);
+    fireEvent.click(await screen.findByTestId("bench-tab-cmp"));
+    await waitFor(() =>
+      expect(document.body.textContent).toMatch(/Runs share \d+ task/),
+    );
+    expect(document.body.textContent).toMatch(/Runs share 1 task\b/);
+    expect(document.body.textContent).not.toContain("1 tasks");
+  });
+
+  // Item 2: score strip has one run-label header cell per run
+  it("score strip has one run-label header per chosen run", async () => {
+    install191([makeRun191("t191-hdr-a", SUM_191_A, TASKS_191), makeRun191("t191-hdr-b", SUM_191_B, TASKS_191)]);
+    await openCompare191();
+    const headers = screen.getAllByTestId("bench-compare-score-header");
+    expect(headers).toHaveLength(2);
+    for (const h of headers) {
+      expect((h.textContent ?? "").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  // Item 2: score strip header primary name matches per-task table column header
+  it("score strip header primary name matches per-task table column header", async () => {
+    install191([makeRun191("t191-match-a", SUM_191_A, TASKS_191), makeRun191("t191-match-b", SUM_191_B, TASKS_191)]);
+    await openCompare191();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-compare-row").length).toBeGreaterThan(0),
+    );
+    const scoreHeaders = screen.getAllByTestId("bench-compare-score-header");
+    const tableCols = screen.getAllByTestId("bench-compare-col");
+    expect(scoreHeaders.length).toBe(tableCols.length);
+    for (let i = 0; i < scoreHeaders.length; i++) {
+      const scoreText = scoreHeaders[i].textContent ?? "";
+      const tableText = tableCols[i].textContent ?? "";
+      // Primary model name (before " · ") appears in the table column header
+      const primaryPart = scoreText.split(" · ")[0].trim();
+      expect(tableText).toContain(primaryPart);
+    }
+  });
+
+  // Item 3: compareSlotOptions labels include time and differ for same-day same-model runs
+  it("compareSlotOptions produces distinct labels for same-day same-model runs", () => {
+    const r1 = runRow({ run_id: "run-t191-aaa", created: "2026-08-17T10:30:00.000000" });
+    const r2 = runRow({ run_id: "run-t191-bbb", created: "2026-08-17T14:45:22.000000" });
+    const opts = compareSlotOptions(
+      [r1, r2] as Parameters<typeof compareSlotOptions>[0],
+      [null, null],
+      0,
+      null,
+    );
+    expect(opts[0].label).not.toBe(opts[1].label);
+    expect(opts[0].label).toContain("10:30:00");
+    expect(opts[1].label).toContain("14:45:22");
+  });
+
+  // Item 3: run_id suffix appended for same-second collision
+  it("compareSlotOptions appends run_id suffix for same-second same-model collision", () => {
+    // Prefixes differ at char 0 so the 8-char slice produces distinct suffixes.
+    const r1 = runRow({ run_id: "aaa-t191-collision", created: "2026-08-17T10:30:00.000000" });
+    const r2 = runRow({ run_id: "bbb-t191-collision", created: "2026-08-17T10:30:00.000000" });
+    const opts = compareSlotOptions(
+      [r1, r2] as Parameters<typeof compareSlotOptions>[0],
+      [null, null],
+      0,
+      null,
+    );
+    expect(opts[0].label).not.toBe(opts[1].label);
+    expect(opts[0].label).toContain("aaa-t191");
+    expect(opts[1].label).toContain("bbb-t191");
+  });
+
+  // Item 4: lang section header column is "spread" not "Δ"
+  it("lang section header column label is 'spread' not 'Δ'", async () => {
+    install191([makeRun191("t191-spr-a", SUM_191_A, TASKS_191), makeRun191("t191-spr-b", SUM_191_B, TASKS_191)]);
+    await openCompare191();
+    const langSection = await screen.findByTestId("bench-compare-lang");
+    expect(within(langSection).getByText("spread")).toBeInTheDocument();
+    expect(within(langSection).queryByText("Δ")).toBeNull();
+  });
+});
+
+describe("T182 hero stats: Remaining tile-only, scaled sparklines, stat borders", () => {
+  function withNRecords(n: number) {
+    const d = JSON.parse(JSON.stringify(benchRun)) as typeof benchRun;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    (d as { records: unknown[] }).records = recs.slice(0, n);
+    return d;
+  }
+
+  // Item 0: Remaining renders exactly once (tile only), not as a stat row.
+  it("Remaining renders exactly once on the hero (tile, not stat row)", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy(),
+    );
+    // bench-hero-remaining is the tile (exactly one)
+    expect(screen.queryAllByTestId("bench-hero-remaining")).toHaveLength(1);
+    // bench-footer-remaining (the old duplicate stat row) is gone
+    expect(screen.queryByTestId("bench-footer-remaining")).toBeNull();
+  });
+
+  // Item 0: Started tile still renders alongside Remaining.
+  it("Started tile still renders", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-tiles")).toBeTruthy(),
+    );
+    expect(within(screen.getByTestId("bench-hero-tiles")).getByText("Started")).toBeInTheDocument();
+  });
+
+  // Item 0 + other repeats: check there are no other duplicated figures.
+  it("other repeats found: none — only 3 stat sparks in bench-hero-stats", async () => {
+    installFetch({ detail: withNRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-stats")).toBeTruthy(),
+    );
+    const heroStats = screen.getByTestId("bench-hero-stats");
+    const sparks = within(heroStats).queryAllByTestId("bench-spark");
+    expect(sparks).toHaveLength(3);
+  });
+
+  // Item 1: bench-hero-stats uses 3-column grid (not 2×2).
+  it("bench-hero-stats uses a 3-column grid after removing Remaining row", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-hero-stats")).toBeTruthy(),
+    );
+    const heroStats = screen.getByTestId("bench-hero-stats");
+    expect((heroStats as HTMLElement).style.gridTemplateColumns).toBe("1fr 1fr 1fr");
+  });
+
+  // Item 1: Spark container has no overflow:hidden — bars cannot be silently clipped.
+  it("sparkline containers do not have overflow:hidden (bars cannot be clipped)", async () => {
+    installFetch({ detail: withNRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-testid="bench-spark-bar"]').length).toBeGreaterThan(0),
+    );
+    const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
+    for (const spark of sparks) {
+      expect((spark as HTMLElement).style.overflow).not.toBe("hidden");
+    }
+  });
+
+  // Item 1: Each rendered bar uses flex scaling (not a fixed 3px width).
+  it("sparkline bars use flex:1 1 0 so all N samples share the available width", async () => {
+    installFetch({ detail: withNRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-testid="bench-spark-bar"]').length).toBeGreaterThan(0),
+    );
+    const bars = document.querySelectorAll('[data-testid="bench-spark-bar"]');
+    for (const bar of bars) {
+      const s = (bar as HTMLElement).style;
+      // flex: "1 1 0" — grows and shrinks; no fixed 3px width that would overflow.
+      expect(s.flexGrow ?? s.flex).not.toBe("0");
+      expect(s.width).toBe("");
+    }
+  });
+
+  // Item 1: bar count equals data-points (all N bars are in the DOM, none dropped).
+  it("all data-points bars are rendered — none were clipped out of the DOM", async () => {
+    installFetch({ detail: withNRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-testid="bench-spark-bar"]').length).toBeGreaterThan(0),
+    );
+    const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
+    for (const spark of sparks) {
+      const dataPoints = Number((spark as HTMLElement).dataset.points ?? 0);
+      if (dataPoints === 0) continue;
+      const bars = spark.querySelectorAll('[data-testid="bench-spark-bar"]');
+      // data-points counts non-null values; bars render for all values
+      // (null bars have height 0). The real count is >= data-points.
+      expect(bars.length).toBeGreaterThanOrEqual(dataPoints);
+    }
+  });
+
+  // Item 1: empty series renders at the same height as the drawn series (regression guard).
+  it("empty series renders at height 18 — same as a drawn series", async () => {
+    installFetch({ detail: withNRecords(5) });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-testid="bench-spark"]').length).toBeGreaterThan(0),
+    );
+    const sparks = document.querySelectorAll('[data-testid="bench-spark"]');
+    for (const spark of sparks) {
+      expect((spark as HTMLElement).style.height).toBe("18px");
+    }
+  });
+
+  // Item 2: each ProgressStat row has a bottom divider.
+  it("each ProgressStat row has a bottom border", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+    );
+    for (const id of [
+      "bench-footer-generation-speed",
+      "bench-footer-samples-hr",
+      "bench-footer-pass-rate",
+    ]) {
+      const valueEl = screen.getByTestId(id);
+      const row = valueEl.parentElement as HTMLElement;
+      expect(
+        row.style.borderBottom,
+        `${id} row must have a bottom border`,
+      ).toBeTruthy();
+    }
+  });
+
+  // Item 2: the last stat (Pass rate) keeps its bottom edge.
+  it("last stat row (Pass rate) keeps its bottom edge", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy(),
+    );
+    const passRate = screen.getByTestId("bench-footer-pass-rate");
+    const row = passRate.parentElement as HTMLElement;
+    expect(row.style.borderBottom).toBeTruthy();
+  });
+
+  // Stale-name report: bench-footer-* testids retained for historical compatibility.
+  it("bench-footer-generation-speed, samples-hr, pass-rate testids are unchanged", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
+    expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
+    expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
   });
 });

@@ -613,7 +613,8 @@ export function compareSlotOptions(
     .filter((r): r is BenchRunRow => Boolean(r));
   const anchor = others[0] ?? null;
 
-  return candidates.map((r) => {
+  // First pass: compute core labels (date+time+model+notation) before reason suffix.
+  const items = candidates.map((r) => {
     let reason: string | null = null;
     // The value this slot already holds is never judged: disabling it
     // prevents nothing (the pair exists already) and leaves the control
@@ -636,21 +637,28 @@ export function compareSlotOptions(
     const name = naming.alias
       ? `${naming.primary} (alias ${naming.alias})`
       : naming.primary;
-    const day = new Date(r.created).toLocaleDateString(undefined, {
-      month: "numeric",
-      day: "numeric",
-    });
+    // Slice the stored local-time string so timezone matches benchLocalDate.
+    const dateStr = r.created.slice(5, 10).replace("-", "/"); // MM/DD
+    const timeStr = r.created.slice(11, 19); // HH:MM:SS
     // A <select> option cannot host the TargetBadge element, so it carries
     // the badge's own wording rather than inventing a second vocabulary.
     const mock = isNonDefaultTarget(r.config?.url, defaultUrl)
       ? " · mock / other server"
       : "";
 
+    const core = `${dateStr} ${timeStr}  ${name}  ·  ${compareNotation(r.config)}${mock}`;
+    return { r, core, reason };
+  });
+
+  // Append run-id suffix when two entries share the same core label (same-second collision).
+  const coreCounts = new Map<string, number>();
+  items.forEach(({ core }) => coreCounts.set(core, (coreCounts.get(core) ?? 0) + 1));
+
+  return items.map(({ r, core, reason }) => {
+    const suffix = (coreCounts.get(core) ?? 0) > 1 ? `  [${r.run_id.slice(0, 8)}]` : "";
     return {
       runId: r.run_id,
-      label:
-        `${day}  ${name}  ·  ${compareNotation(r.config)}${mock}` +
-        (reason ? `  (${reason})` : ""),
+      label: `${core}${suffix}` + (reason ? `  (${reason})` : ""),
       disabled: reason !== null,
       reason,
     };

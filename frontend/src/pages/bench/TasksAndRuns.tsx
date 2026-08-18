@@ -58,6 +58,13 @@ import type { BenchRecord, BenchRunDetail, BenchRunRow } from "./types";
 /** Compare renders at most three columns, so it offers exactly three slots. */
 const COMPARE_SLOTS = 3;
 
+/** Column gap shared by every row in the Compare score+language block. */
+const CMP_COL_GAP = 12;
+// 46px ≈ 7ch at 11px mono; 40px ≈ 6ch at 11px.  Using px so a font-size
+// change cannot shift the columns — ch is font-relative and would undo alignment.
+// Label sized for "Speed" with margin; Δ sized for "+100.0" (widest renderDiff output).
+const cmpCols = (n: number) => `46px repeat(${n}, 1fr) 40px`;
+
 /**
  * Each cutoff names its OWN remedy. They are not interchangeable: raising
  * `--max-tokens` does nothing for a bench.py budget stop, and `--nudge-at`
@@ -1594,23 +1601,25 @@ function ComparePane({
             >
               <TriangleAlert size={13} />
               <span>
+                Runs share {coverageNote.sharedCount}{" "}
+                {coverageNote.sharedCount === 1 ? "task" : "tasks"}.{" "}
                 {coverageNote.tasks.length}{" "}
                 {coverageNote.tasks.length === 1 ? "task appears" : "tasks appear"}{" "}
                 in some but not all runs:{" "}
                 <span style={{ fontFamily: MONO }}>
                   {groupCoverage(coverageNote.tasks)}
                 </span>
-                {" "}— runs share {coverageNote.sharedCount} tasks.
+                .
               </span>
             </div>
           )}
-          {/* Score strip — only rendered when at least one selected run has
-              the -157+ score field. Pre-157 runs show "—" rather than 0.
-              T188: grid aligns with the lang table; Δ gated on task-set
-              equality; partial caveat on each partial run's score. */}
-          {chosenRows.some((r) => r.summary?.score !== undefined) && (() => {
+          {/* Score strip + lang block — T190: one wrapper IIFE so cols, gap,
+              and sameTaskSet are in scope for both sub-blocks; nothing is
+              redeclared in the second block. */}
+          {(() => {
             // Gate Δ on task-set equality — equal count but different ids
             // is a miscomparison that summary.tasks (a count) cannot detect.
+            // Lifted here so the ALL row consumes the same rule, not a copy.
             const taskSet0 = new Set(details[0]?.tasks ?? []);
             const taskSet1 = details[1] ? new Set(details[1].tasks ?? []) : null;
             const sameTaskSet =
@@ -1618,6 +1627,8 @@ function ComparePane({
               taskSet1 !== null &&
               taskSet0.size === taskSet1.size &&
               [...taskSet0].every((t) => taskSet1!.has(t));
+
+            const cols = cmpCols(chosenRows.length);
 
             const s0 = chosenRows[0]?.summary?.score;
             const s1 = chosenRows[1]?.summary?.score;
@@ -1628,91 +1639,158 @@ function ComparePane({
                 ? s0 - s1
                 : null;
 
-            const cols = `7ch repeat(${chosenRows.length}, 1fr) auto`;
+            const getPassesVal = (s: (typeof chosenRows)[0]["summary"]) =>
+              s?.passes_100 !== undefined
+                ? s.passes_100
+                : s?.correctness_100 !== undefined
+                  ? s.correctness_100
+                  : null;
+            const p0 = getPassesVal(chosenRows[0]?.summary);
+            const p1 = getPassesVal(chosenRows[1]?.summary);
+            const passesDiff =
+              sameTaskSet && p0 !== null && p1 !== null ? p0 - p1 : null;
+
+            const t0 = chosenRows[0]?.summary?.tests_100;
+            const t1 = chosenRows[1]?.summary?.tests_100;
+            const testsDiff =
+              sameTaskSet && typeof t0 === "number" && typeof t1 === "number"
+                ? t0 - t1
+                : null;
+
+            const sw0 = chosenRows[0]?.summary?.speed_weighted;
+            const sw1 = chosenRows[1]?.summary?.speed_weighted;
+            const speedDiff =
+              sameTaskSet && typeof sw0 === "number" && typeof sw1 === "number"
+                ? sw0 - sw1
+                : null;
+
             const labelStyle: React.CSSProperties = {
               color: "var(--text-muted)",
               fontSize: 10,
               textAlign: "left",
             };
             const numStyle: React.CSSProperties = { textAlign: "right" };
+            const renderDiff = (
+              diff: number | null,
+              testId: string,
+            ) => (
+              <span
+                data-testid={testId}
+                style={{
+                  fontWeight: 700,
+                  textAlign: "right",
+                  color:
+                    diff === null
+                      ? "var(--text-muted)"
+                      : diff > 0
+                        ? "var(--success)"
+                        : diff < 0
+                          ? "var(--danger)"
+                          : "var(--text-secondary)",
+                }}
+              >
+                {diff === null
+                  ? "—"
+                  : diff >= 0
+                    ? `+${diff.toFixed(1)}`
+                    : diff.toFixed(1)}
+              </span>
+            );
 
-            return (
+            const anyPartial = chosenRows.some((r) => r.summary?.partial === true);
+
+            // Score strip — only rendered when at least one selected run has
+            // the -157+ score field. Pre-157 runs show "—" rather than 0.
+            const scoreStrip = chosenRows.some((r) => r.summary?.score !== undefined) ? (
               <div
                 data-testid="bench-compare-scores"
                 style={{
                   margin: "0 12px 10px",
                   display: "grid",
                   gridTemplateColumns: cols,
-                  gap: "4px 12px",
+                  gap: `4px ${CMP_COL_GAP}px`,
                   font: `11px ${MONO}`,
                   color: "var(--text-secondary)",
                 }}
               >
+                {/* Run label header — same text as per-task table column headers */}
+                <span />
+                {chosenRows.map((r) => {
+                  const naming = runNaming(r.models, r.config);
+                  return (
+                    <span
+                      key={r.run_id}
+                      data-testid="bench-compare-score-header"
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        textAlign: "right",
+                        fontWeight: 600,
+                        fontSize: 9,
+                        letterSpacing: "0.5px",
+                        textTransform: "uppercase",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {naming.primary}
+                      {naming.alias ? ` (alias ${naming.alias})` : ""}
+                      {" · "}
+                      {compareNotation(r.config)}
+                    </span>
+                  );
+                })}
+                <span />
+
                 {/* Score row */}
                 <span style={labelStyle}>Score</span>
                 {chosenRows.map((r) => {
                   const s = r.summary;
                   const sc = s?.score;
                   const hasField = sc !== undefined;
-                  const isPartial = s?.partial === true;
                   return (
                     <span key={r.run_id} style={{ fontWeight: 700, textAlign: "right" }}>
                       {hasField ? (sc === null ? "—" : `${sc.toFixed(1)}/100`) : "—"}
-                      {isPartial && (
-                        <span
-                          data-testid="bench-compare-partial-note"
-                          style={{
-                            display: "block",
-                            fontWeight: 400,
-                            fontSize: 9,
-                            color: "var(--warning)",
-                          }}
-                        >
-                          partial run
-                        </span>
-                      )}
                     </span>
                   );
                 })}
-                <span
-                  data-testid="bench-compare-score-diff"
-                  style={{
-                    fontWeight: 700,
-                    textAlign: "right",
-                    color:
-                      scoreDiff === null
-                        ? "var(--text-muted)"
-                        : scoreDiff > 0
-                          ? "var(--success)"
-                          : scoreDiff < 0
-                            ? "var(--danger)"
-                            : "var(--text-secondary)",
-                  }}
-                >
-                  {scoreDiff === null
-                    ? "—"
-                    : scoreDiff >= 0
-                      ? `+${scoreDiff.toFixed(1)}`
-                      : scoreDiff.toFixed(1)}
-                </span>
+                {renderDiff(scoreDiff, "bench-compare-score-diff")}
+
+                {/* Partial run notes row — one cell per run, same grid shape */}
+                {anyPartial && (
+                  <>
+                    <span />
+                    {chosenRows.map((r) => (
+                      <span key={r.run_id} style={{ textAlign: "right" }}>
+                        {r.summary?.partial === true && (
+                          <span
+                            data-testid="bench-compare-partial-note"
+                            style={{
+                              fontWeight: 400,
+                              fontSize: 9,
+                              color: "var(--warning)",
+                            }}
+                          >
+                            partial run
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                    <span />
+                  </>
+                )}
 
                 {/* Passes row: -185+ field; -165 fallback: correctness_100 */}
                 <span style={labelStyle}>Passes</span>
                 {chosenRows.map((r) => {
-                  const s = r.summary;
-                  const passes =
-                    s?.passes_100 !== undefined
-                      ? s.passes_100
-                      : s?.correctness_100 !== undefined
-                        ? s.correctness_100
-                        : null;
+                  const passes = getPassesVal(r.summary);
                   return (
                     <span key={r.run_id} style={numStyle}>
                       {passes !== null ? passes.toFixed(1) : "—"}
                     </span>
                   );
                 })}
-                <span />
+                {renderDiff(passesDiff, "bench-compare-passes-diff")}
 
                 {/* Tests row: -185+ only; — for -165 and pre-scoring */}
                 <span style={labelStyle}>Tests</span>
@@ -1724,7 +1802,7 @@ function ComparePane({
                     </span>
                   );
                 })}
-                <span />
+                {renderDiff(testsDiff, "bench-compare-tests-diff")}
 
                 {/* Speed */}
                 <span style={labelStyle}>Speed</span>
@@ -1736,11 +1814,10 @@ function ComparePane({
                     </span>
                   );
                 })}
-                <span />
+                {renderDiff(speedDiff, "bench-compare-speed-diff")}
               </div>
-            );
-          })()}
-          {(() => {
+            ) : null;
+
             const allLangs = sortByLangOrder(
               [
                 ...new Set(
@@ -1751,21 +1828,20 @@ function ComparePane({
               ],
               bench.taskList?.tasks.map((t) => t.lang),
             );
-            if (allLangs.length === 0) return null;
-            return (
+            const langSection = allLangs.length > 0 ? (
               <div
                 data-testid="bench-compare-lang"
                 style={{
                   margin: "0 12px 10px",
-                  font: `10px ${MONO}`,
+                  font: `12px ${MONO}`,
                   color: "var(--text-secondary)",
                 }}
               >
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
-                    gap: "2px 10px",
+                    gridTemplateColumns: cols,
+                    gap: `2px ${CMP_COL_GAP}px`,
                     fontWeight: 600,
                     fontSize: 9,
                     letterSpacing: "0.5px",
@@ -1783,7 +1859,7 @@ function ComparePane({
                       </span>
                     );
                   })}
-                  <span style={{ textAlign: "right" }}>Δ</span>
+                  <span style={{ textAlign: "right" }}>spread</span>
                 </div>
                 {allLangs.map((lang) => {
                   const scores = details.map((d) => {
@@ -1820,8 +1896,8 @@ function ComparePane({
                       data-testid="bench-compare-lang-row"
                       style={{
                         display: "grid",
-                        gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
-                        gap: "2px 10px",
+                        gridTemplateColumns: cols,
+                        gap: `2px ${CMP_COL_GAP}px`,
                       }}
                     >
                       <span>{lang}</span>
@@ -1845,7 +1921,7 @@ function ComparePane({
                   const allPresent =
                     overallScores.length >= 2 &&
                     overallScores.every((s) => s !== null);
-                  const delta = allPresent
+                  const delta = allPresent && sameTaskSet
                     ? (
                         Math.max(...(overallScores as number[])) -
                         Math.min(...(overallScores as number[]))
@@ -1856,8 +1932,8 @@ function ComparePane({
                       data-testid="bench-compare-all-row"
                       style={{
                         display: "grid",
-                        gridTemplateColumns: `7ch repeat(${chosenRows.length}, 1fr) auto`,
-                        gap: "2px 10px",
+                        gridTemplateColumns: cols,
+                        gap: `2px ${CMP_COL_GAP}px`,
                         borderTop: "1px solid var(--border-color)",
                         marginTop: 3,
                         paddingTop: 3,
@@ -1874,7 +1950,10 @@ function ComparePane({
                   );
                 })()}
               </div>
-            );
+            ) : null;
+
+            if (!scoreStrip && !langSection) return null;
+            return <>{scoreStrip}{langSection}</>;
           })()}
           <table
             style={{
@@ -1966,9 +2045,12 @@ function ComparePane({
             {taskOrder && taskOrder.length > 0
               ? "Sorted by suite task order."
               : "Sorted by Δ: the tasks where runs disagree most are the ones that discriminate between these models."}{" "}
-            The strongest comparison needs none of this machinery: several
-            models in ONE run (-m repeated) shares edition, sweep and server
-            session by construction.
+            The strongest comparison uses{" "}
+            <code>--report</code>
+            {" "}to load pre-scored results into one view; pick the same
+            edition and{" "}
+            <code>--attempts</code>
+            {" "}across runs to keep the metrics comparable.
           </p>
         </>
       )}
