@@ -1751,10 +1751,17 @@ describe("T59 hero stats are single-source", () => {
         "—",
       ),
     );
+    // T176 moved `bench-solved` from a BannerTile (where the testid sat on the
+    // inner value div, so `.parentElement` was the tile) to a MetricTile (where
+    // the testid IS the tile root, so `.parentElement` is the whole tile grid).
+    // Scraping the parent therefore read six tiles' text, not one. Same
+    // assertion — the stat strip must render Score's own ratio, not recompute
+    // it — now read from the tile's value node, which is shape-independent.
     const solved =
-      screen.getByTestId("bench-solved").parentElement?.textContent ?? "";
-    // "11 / 15 graded" → the same ratio the stat strip renders as a percentage.
-    // "Solved — samples11 / 15 graded" → the ratio Score is showing.
+      screen
+        .getByTestId("bench-solved")
+        .querySelector(".metric-tile-value")?.textContent ?? "";
+    // "11 / 15" → the same ratio the stat strip renders as a percentage.
     const [num, den] = solved
       .split("/")
       .map((part) => Number(part.replace(/\D/g, "")));
@@ -7356,13 +7363,16 @@ describe("T183 by-language ALL overall row", () => {
 //
 // A run that stopped at 6 of 27 tasks showed 100% DONE because
 // `computeDonePct` returned 100 for any non-null detail with no live total.
-// The fix derives from summary.tasks (tasks this run set out to do) so the
-// gauge reflects what actually ran.
+// The fix derives from tasks/suite_tasks so the gauge reflects what actually
+// ran. Real localbench writes tasks=N_done and suite_tasks=suite_total, so
+// the fixture must match that shape (not tasks=suite_total as before).
 describe("T187 completion gauge uses summary.tasks, not a finished assumption", () => {
-  const withSummary = (samples: number, tasks: number) => ({
+  // tasksDone = tasks with records (what localbench writes as summary.tasks).
+  // suiteTotal = summary.suite_tasks — the full suite size.
+  const withSummary = (tasksDone: number, suiteTotal: number) => ({
     ...benchRun,
     live: {} as Record<string, unknown>,
-    summary: { ...benchRun.summary, samples, tasks },
+    summary: { ...benchRun.summary, samples: tasksDone, tasks: tasksDone, suite_tasks: suiteTotal },
   });
 
   it("6 of 27 reads 22%, not 100", async () => {

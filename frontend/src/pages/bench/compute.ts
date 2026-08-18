@@ -955,7 +955,7 @@ export interface RunNaming {
   primary: string;
   /** True when the alias is the only name recorded anywhere. */
   aliasIsAllWeHave: boolean;
-  /** What the run is called — the label when one was given. */
+  /** The display name — models joined, or the alias when a --label was given. */
   name: string;
   /**
    * The real model, present ONLY when a label is masking it. `--label`
@@ -1282,14 +1282,6 @@ function normalizeTarget(url: string | null | undefined): string {
 }
 
 /**
- * How long a planned run is likely to take, from historical pace.
- *
- * Mean seconds per GRADED sample across stored runs, times the number of
- * samples planned. Server samples are excluded — they took no model time and
- * would drag the estimate down. Returns null rather than a guess when there
- * is no history to reason from.
- */
-/**
  * Runs whose target is the same CLASS as this one — mock or real.
  *
  * A mockserver run answers in milliseconds and a real model in minutes, so
@@ -1386,7 +1378,7 @@ export function runEstimate(
   if (graded.length === 0 || plannedSamples <= 0)
     return { seconds: null, basis: "none", runsUsed };
 
-  const pooled = medianOf(graded.map((r) => r.seconds)) ?? 0;
+  const pooled = medianOf(graded.map((r) => r.seconds))!;
   const remaining = opts?.remainingTasks ?? [];
   if (remaining.length === 0)
     return { seconds: pooled * plannedSamples, basis: "pooled", runsUsed };
@@ -1417,15 +1409,6 @@ export interface TaskScope {
 }
 
 /**
- * How many tasks THIS run covers.
- *
- * Derived from the language filter over the full task list, NOT from
- * `results.json.tasks` — that array holds only the tasks that actually ran,
- * so an interrupted run would under-report its own scope. The suite-wide
- * availability count belongs to Run Setup's language toggles; the hero reports
- * scope, which is a different question.
- */
-/**
  * The task ids a run covers, IN EXECUTION ORDER.
  *
  * Order matters: rows are rendered before any of them have results, so a
@@ -1446,6 +1429,15 @@ export function runTaskRoster(
   return tasks.filter((t) => set.has(t.lang));
 }
 
+/**
+ * How many tasks THIS run covers.
+ *
+ * Derived from the language filter over the full task list, NOT from
+ * `results.json.tasks` — that array holds only the tasks that actually ran,
+ * so an interrupted run would under-report its own scope. The suite-wide
+ * availability count belongs to Run Setup's language toggles; the hero reports
+ * scope, which is a different question.
+ */
 export function runTaskScope(
   tasks: Array<{ id: string; lang: string }> | null | undefined,
   langs: string[] | null | undefined,

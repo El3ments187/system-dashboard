@@ -346,7 +346,10 @@ export function TasksAndRuns({
   const [compareIds, setCompareIds] = useState<string[] | null>(null);
 
   const taskLangOrder = useMemo(
-    () => bench.taskList?.tasks.map((t) => t.lang),
+    () =>
+      bench.taskList
+        ? [...new Set(bench.taskList.tasks.map((t) => t.lang))]
+        : undefined,
     [bench.taskList],
   );
   const byLangRaw = warming ? null : (detail?.summary?.by_language ?? null);
@@ -1885,9 +1888,7 @@ function ComparePane({
                     if (v === undefined) return null;
                     if (typeof v !== "object" || v === null)
                       return typeof v === "number" ? v : null;
-                    return (v as Record<string, unknown>).score != null
-                      ? ((v as Record<string, unknown>).score as number)
-                      : null;
+                    return v.score != null ? v.score : null;
                   });
                   const allPresent =
                     scores.length >= 2 && scores.every((s) => s !== null);

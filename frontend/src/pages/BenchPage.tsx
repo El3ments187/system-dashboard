@@ -79,12 +79,29 @@ const LABEL_STYLE: React.CSSProperties = {
 };
 
 const BODY_STYLE: React.CSSProperties = {
-  padding: "10px 15px 13px",
+  padding: "8px 14px 10px",
   flex: 1,
   display: "flex",
   flexDirection: "column",
   minWidth: 0,
 };
+
+/**
+ * MetricTile leaves line-height to inherit, so a 9px label was sitting in a
+ * 14px line box and a 15px value in a 23px one — ~8px of air per tile row.
+ * Tightening the inherited line-height here keeps every font size exactly as
+ * it is (legibility is what the space is for) and only removes the leading.
+ * Passed per-call rather than changed in MetricTile, which has other callers.
+ */
+const TIGHT_TILE: React.CSSProperties = { lineHeight: 1.15 };
+
+/**
+ * Sized to the tile column that sits between the two gauges, not chosen for
+ * its own sake: the gauges are the tallest item in that row, so any surplus
+ * over the column's height is dead space the whole card pays for. At 150 the
+ * surplus was 49px. Font sizes inside the gauge are unchanged.
+ */
+const GAUGE_SIZE = 108;
 
 /**
  * A run pointed at anything but the configured llama-server. Without this a
@@ -181,9 +198,9 @@ function computeDonePct(
     // T187: a run that stopped mid-flight has a non-null detail but no live
     // total. Derive from summary.tasks (tasks this run set out to do) so that
     // a completed partial run reads 100% and a 6-of-27 stoppage reads ~22%.
-    const { samples, tasks } = detail.summary ?? {};
-    if (samples != null && tasks != null && tasks > 0)
-      return Math.round((samples / tasks) * 100);
+    const { tasks, suite_tasks } = detail.summary ?? {};
+    if (tasks != null && tasks > 0)
+      return Math.round((tasks / (suite_tasks ?? tasks)) * 100);
     return 100; // no summary (pre-scoring run) — assume complete
   }
   return null;
@@ -686,15 +703,17 @@ function BannerTile({
         border: "1px solid var(--accent-tint-40)",
         background: "var(--accent-tint-10)",
         borderRadius: 8,
-        padding: "8px 12px",
-        marginBottom: 8,
+        padding: "6px 10px",
+        // No marginBottom: the parent grid's `gap` already separates siblings,
+        // and as the row's last element it was 8px of pure dead space.
+        lineHeight: 1.2,
       }}
     >
       <div style={LABEL_STYLE}>{label}</div>
       <div
         data-testid={testId}
         title={title}
-        style={{ font: `700 24px ${MONO}` }}
+        style={{ font: `700 24px/1.2 ${MONO}` }}
       >
         {value}{" "}
         <span style={{ font: `600 11px ${MONO}`, color: "var(--text-muted)" }}>
@@ -862,8 +881,7 @@ function ScoreProgressCard({
   const modelsInFile = summary?.models_in_file;
 
 
-  const scoreDisplay =
-    score === null ? "\u2014" : score !== undefined ? score.toFixed(1) : "\u2014";
+  const scoreDisplay = score == null ? "\u2014" : score.toFixed(1);
 
   const scoreTileLabel = (() => {
     if (score === null && modelsInFile)
@@ -929,7 +947,7 @@ function ScoreProgressCard({
           {/* Completion ring — top-left. Each ring in its own bench-gauge wrapper
               so the CSS glow selector (.bench-gauge svg path:last-of-type) hits both. */}
           <span className="bench-gauge" data-testid="bench-gauge">
-            <RadialGauge pct={donePct} size={150}>
+            <RadialGauge pct={donePct} size={GAUGE_SIZE}>
               <span style={{ font: `700 20px ${MONO}`, lineHeight: 1 }}>
                 {donePct != null ? `${Math.round(donePct)}%` : "\u2014"}
               </span>
@@ -939,29 +957,21 @@ function ScoreProgressCard({
 
           {/* Score & metric tiles — fill the width between rings */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${hasScore ? 3 : 2}, 1fr)`,
-                gap: 6,
-              }}
-            >
-              {hasScore && (
-                <BannerTile
-                  label={scoreTileLabel}
-                  title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
-                  testId="bench-headline-score"
-                  value={scoreDisplay}
-                  suffix="/ 100"
-                  percent={score ?? 0}
-                />
-              )}
+            {/* Only the headline number earns the banner. With a score that is
+                Score; without one, Task-avg is the number to rank on and takes
+                the treatment instead. The rest are ordinary tiles. */}
+            {hasScore ? (
               <BannerTile
-                label={
-                  hasScore
-                    ? "Task-avg (3/2/1 per attempt)"
-                    : "Task-avg — the number to rank on"
-                }
+                label={scoreTileLabel}
+                title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                testId="bench-headline-score"
+                value={scoreDisplay}
+                suffix="/ 100"
+                percent={score ?? 0}
+              />
+            ) : (
+              <BannerTile
+                label="Task-avg — the number to rank on"
                 title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
                 testId="bench-task-avg"
                 value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
@@ -970,25 +980,41 @@ function ScoreProgressCard({
                   taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
                 }
               />
-              <BannerTile
-                label="Solved — samples"
-                title="Server samples are excluded from the denominator: the endpoint never answered, so there is no verdict to count."
-                testId="bench-solved"
-                value={String(solvedSamples)}
-                suffix={`/ ${graded.length} answered${serverExcluded > 0 ? ` (${serverExcluded} server excl.)` : ""}`}
-                percent={
-                  graded.length === 0 ? 0 : (solvedSamples / graded.length) * 100
-                }
-              />
-            </div>
+            )}
 
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
+                gridTemplateColumns: `repeat(${hasScore ? 6 : 5}, 1fr)`,
                 gap: 6,
               }}
             >
+              {hasScore && (
+                <MetricTile
+                  accent
+                  mono
+                  testId="bench-task-avg"
+                  label="Task-avg (3/2/1)"
+                  value={`${taskAvg === null ? "\u2014" : taskAvg.toFixed(2)} / ${maxPoints ?? "\u2014"}`}
+                  valueSize={15}
+                  style={TIGHT_TILE}
+                  title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
+                />
+              )}
+              <MetricTile
+                accent
+                mono
+                testId="bench-solved"
+                label={
+                  serverExcluded > 0
+                    ? `Solved — answered (${serverExcluded} srv excl.)`
+                    : "Solved — answered"
+                }
+                value={`${solvedSamples} / ${graded.length}`}
+                valueSize={15}
+                style={TIGHT_TILE}
+                title="Server samples are excluded from the denominator: the endpoint never answered, so there is no verdict to count."
+              />
               <MetricTile
                 accent
                 mono
@@ -996,6 +1022,7 @@ function ScoreProgressCard({
                 label="First try"
                 value={`${firstTrySamples} / ${graded.length}`}
                 valueSize={15}
+                style={TIGHT_TILE}
                 title="Samples solved on the first attempt out of all answered samples. Same denominator as Solved — 8 of 27 answered is directly comparable to 16 of 27 solved."
               />
               <MetricTile
@@ -1005,7 +1032,7 @@ function ScoreProgressCard({
                 label="Raw assertions"
                 value={`${fmtNum(scoreDetail?.summary?.tests_passed ?? 0)}/${fmtNum(scoreDetail?.summary?.tests_expected ?? 0)}`}
                 valueSize={12}
-                style={{ opacity: 0.85 }}
+                style={{ ...TIGHT_TILE, opacity: 0.85 }}
               />
               <MetricTile
                 accent
@@ -1014,6 +1041,7 @@ function ScoreProgressCard({
                 label={samplesPerTask < 2 ? "Flaky solves (n/a)" : "Flaky solves"}
                 value={samplesPerTask < 2 ? null : flaky.tasks.length}
                 valueSize={15}
+                style={TIGHT_TILE}
                 title={
                   samplesPerTask < 2
                     ? "Flakiness means the same task solved on one sample and not another, so it needs --n 2 or more. This run recorded --n 1, so there is nothing to measure — not zero flakiness."
@@ -1027,6 +1055,7 @@ function ScoreProgressCard({
                 label="Server excl."
                 value={serverExcluded}
                 valueSize={15}
+                style={TIGHT_TILE}
                 title="Samples dropped because the endpoint never answered. They are not a verdict on the model, so they are excluded from every rate; 0 means the server held up."
               />
             </div>
@@ -1044,6 +1073,7 @@ function ScoreProgressCard({
                   label="Correctness (80%)"
                   value={corrWeighted.toFixed(1)}
                   valueSize={15}
+                  style={TIGHT_TILE}
                   title="correctness_weighted: per-task tier score averaged across languages, weighted at 80% of the headline score."
                 />
                 <MetricTile
@@ -1051,6 +1081,7 @@ function ScoreProgressCard({
                   label="Speed (20%)"
                   value={speedWeighted.toFixed(1)}
                   valueSize={15}
+                  style={TIGHT_TILE}
                   title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
                 />
               </div>
@@ -1061,7 +1092,7 @@ function ScoreProgressCard({
           <span className="bench-gauge" data-testid="bench-score-gauge">
             <RadialGauge
               pct={progressScore ?? null}
-              size={150}
+              size={GAUGE_SIZE}
               color="var(--accent-primary)"
             >
               <span
@@ -1099,10 +1130,17 @@ function ScoreProgressCard({
             display: "grid",
             gridTemplateColumns: "repeat(4, 1fr)",
             gap: 6,
-            marginTop: 8,
+            marginTop: 6,
           }}
         >
-          <MetricTile accent mono label="Samples" value={samplesValue} valueSize={14} />
+          <MetricTile
+            accent
+            mono
+            label="Samples"
+            value={samplesValue}
+            valueSize={14}
+            style={TIGHT_TILE}
+          />
           <MetricTile
             accent
             mono
@@ -1110,18 +1148,27 @@ function ScoreProgressCard({
             value={fmtUptime(elapsedSeconds)}
             valueSize={14}
             testId="bench-progress-elapsed"
+            style={TIGHT_TILE}
           />
           <MetricTile
             accent
             mono
             label={taskTileLabel}
-            value={onTask.task ?? "\u2014"}
+            value={onTask.task ?? "—"}
             valueSize={11}
+            style={TIGHT_TILE}
           />
-          <MetricTile accent mono label="Attempt" value={attemptValue} valueSize={14} />
+          <MetricTile
+            accent
+            mono
+            label="Attempt"
+            value={attemptValue}
+            valueSize={14}
+            style={TIGHT_TILE}
+          />
         </div>
 
-        <div style={{ marginTop: "auto", paddingTop: 10 }}>
+        <div style={{ marginTop: "auto", paddingTop: 8 }}>
           <div
             style={{
               ...LABEL_STYLE,
@@ -2028,9 +2075,6 @@ export default function BenchPage() {
 
 
   const donePct = computeDonePct(live, scopedDetail, identity.warming);
-  // ONE clock. Progress renders this number (T154 moved the stat strip to the
-  // hero, T172 retired the hero elapsed tile). While warming, only the live counter is
-  // trustworthy: `detail` is still the previous run.
   // ONE clock, computed correctly rather than duplicated. `live.run_elapsed`
   // only advances when a sample is SAVED — T98 measured the whole live block
   // frozen for 90s on a running benchmark — so ELAPSED moved in 3-6 minute

@@ -201,7 +201,7 @@ export function StripLegend() {
         display: "flex",
         gap: 13,
         flexWrap: "wrap",
-        font: '10px "JetBrains Mono", "Fira Code", monospace',
+        font: `10px ${MONO}`,
         color: "var(--text-muted)",
         padding: "7px 12px",
         borderTop: "1px solid var(--border-light)",

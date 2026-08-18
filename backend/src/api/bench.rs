@@ -222,7 +222,7 @@ pub(crate) fn server_answering(models_body: &str) -> bool {
 /// component used by the llama console, which this must not disturb.
 #[derive(Default)]
 pub(crate) struct BenchLog {
-    lines: Vec<String>,
+    lines: std::collections::VecDeque<String>,
     /// How many lines have been dropped off the front, so offsets stay stable
     /// across eviction.
     dropped: usize,
@@ -230,11 +230,10 @@ pub(crate) struct BenchLog {
 
 impl BenchLog {
     pub(crate) fn append(&mut self, line: String) {
-        self.lines.push(line);
+        self.lines.push_back(line);
         if self.lines.len() > LOG_CAPACITY {
-            let excess = self.lines.len() - LOG_CAPACITY;
-            self.lines.drain(0..excess);
-            self.dropped += excess;
+            self.lines.pop_front();
+            self.dropped += 1;
         }
     }
 
@@ -242,9 +241,15 @@ impl BenchLog {
     /// The console's de-duplication depends on this being exact.
     pub(crate) fn read_from(&self, offset: usize) -> (Vec<String>, usize) {
         let total = self.dropped + self.lines.len();
-        let start = offset.max(self.dropped).min(total);
+        // If offset is ahead of total (stale client after a log clear), return
+        // all current lines so the caller catches up rather than seeing nothing.
+        let start = if offset > total {
+            self.dropped
+        } else {
+            offset.max(self.dropped)
+        };
         let idx = start - self.dropped;
-        (self.lines[idx..].to_vec(), total)
+        (self.lines.iter().skip(idx).cloned().collect(), total)
     }
 
     pub(crate) fn clear(&mut self) {
@@ -289,6 +294,9 @@ struct BenchState {
     /// requests see the window as occupied and are refused. Cleared once the
     /// pid is stored (success) or on spawn failure.
     spawning: bool,
+    /// Pid recovered from disk after a dashboard restart; cached to avoid
+    /// scanning all run directories on every poll.
+    recovered_pid: Option<u32>,
 }
 
 fn state() -> &'static RwLock<BenchState> {
@@ -350,12 +358,14 @@ fn sigterm_only(pid: u32) {
 /// JSON queries, which finish quickly.
 async fn bench_json(args: &[&str]) -> Result<Value, String> {
     let dir = bench_dir();
-    let out = tokio::process::Command::new("python3")
+    let fut = tokio::process::Command::new("python3")
         .current_dir(&dir)
         .arg("bench.py")
         .args(args)
-        .output()
+        .output();
+    let out = tokio::time::timeout(std::time::Duration::from_secs(30), fut)
         .await
+        .map_err(|_| "bench.py --json timed out after 30s".to_string())?
         .map_err(|e| format!("failed to spawn bench.py: {e}"))?;
     if !out.status.success() {
         return Err(format!(
@@ -406,6 +416,8 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
             }
             state().write().unwrap_or_else(|e| e.into_inner()).exited = true;
         });
+    } else {
+        state().write().unwrap_or_else(|e| e.into_inner()).exited = true;
     }
     if let Some(h) = stderr {
         tokio::spawn(async move {
@@ -476,7 +488,9 @@ async fn folder_after_spawn(known: &std::collections::HashSet<String>) -> Option
 /// `stop_handler` to recover the pid after a dashboard restart (T135).
 fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
     let rd = std::fs::read_dir(base).ok()?;
-    for entry in rd.filter_map(|e| e.ok()) {
+    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
         if !entry.path().is_dir() {
             continue;
         }
@@ -851,7 +865,9 @@ pub async fn start_handler(
             // T135: persist the pid so stop_handler can recover it after a
             // dashboard restart, when BenchState.pid would otherwise be None.
             if let Some(ref f) = folder {
-                let _ = std::fs::write(runs_dir().join(f).join("pid"), pid.to_string());
+                if let Err(e) = std::fs::write(runs_dir().join(f).join("pid"), pid.to_string()) {
+                    eprintln!("bench: failed to write pid file: {e}");
+                }
             }
             // Everything the hero's identity row needs, before results.json
             // exists at all.
@@ -937,8 +953,26 @@ pub async fn current_handler() -> axum::response::Json<Value> {
         .current
         .clone();
     // T185: check in-memory state first; if not live, scan disk for a process
-    // that survived a dashboard restart and is still running.
-    let live = a_run_is_live() || recover_pid_for_live_run(&runs_dir()).is_some();
+    // that survived a dashboard restart and is still running. The result is
+    // cached in BenchState so the filesystem scan only happens once.
+    let live = a_run_is_live() || {
+        let cached = state().read().unwrap_or_else(|e| e.into_inner()).recovered_pid;
+        match cached {
+            Some(pid) if pid_alive(pid) => true,
+            Some(_) => {
+                state().write().unwrap_or_else(|e| e.into_inner()).recovered_pid = None;
+                false
+            }
+            None => {
+                if let Some(pid) = recover_pid_for_live_run(&runs_dir()) {
+                    state().write().unwrap_or_else(|e| e.into_inner()).recovered_pid = Some(pid);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    };
     axum::response::Json(json!({
         "data": { "running": live, "run": if live { run } else { None } },
         "success": true
@@ -2206,5 +2240,31 @@ mod tests {
         let runs = t185_make_runs("e");
         let cleared = clear_stale_live_blob(&runs);
         assert!(cleared.is_none(), "empty runs dir must return None");
+    }
+
+    // T9 — BenchLog::read_from with offset > total after a log clear.
+    // A stale client offset (held from before the clear) must return all
+    // current lines rather than an empty response that permanently misses them.
+    #[test]
+    fn t9_stale_offset_after_clear_returns_all_current_lines() {
+        let mut log = BenchLog::default();
+        for i in 0..5 {
+            log.append(format!("old {i}"));
+        }
+        let (_, far_offset) = log.read_from(0);
+        assert_eq!(far_offset, 5);
+
+        log.clear();
+        log.append("fresh A".into());
+        log.append("fresh B".into());
+
+        // far_offset (5) > total (2): must return all current lines, not empty.
+        let (lines, next) = log.read_from(far_offset);
+        assert_eq!(
+            lines,
+            vec!["fresh A".to_string(), "fresh B".to_string()],
+            "stale offset past total must catch up to all current lines"
+        );
+        assert_eq!(next, 2, "next offset is the new total");
     }
 }

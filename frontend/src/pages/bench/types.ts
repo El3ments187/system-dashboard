@@ -65,6 +65,14 @@ export interface BenchLive {
   heartbeat?: string;
 }
 
+export interface ByLanguageEntry {
+  score: number;
+  correctness: number;
+  speed: number | null;
+  passes?: number;
+  tests?: number;
+}
+
 export interface BenchSummary {
   samples: number;
   tasks: number;
@@ -89,7 +97,7 @@ export interface BenchSummary {
   suite_tasks?: number;
   partial?: boolean;
   // -165+: per-language breakdown (score, correctness, speed per lang)
-  by_language?: Record<string, { score: number; correctness: number; speed: number | null; passes?: number; tests?: number }>;
+  by_language?: Record<string, ByLanguageEntry>;
   // multi-model shape only (score: null + models_in_file)
   models_in_file?: string[];
   // nothing-graded shape only (score: null + graded: 0)
@@ -142,6 +150,7 @@ export interface BenchRunDetail {
   config: BenchConfig;
   summary: BenchSummary;
   records: BenchRecord[];
+  /** `{}` (empty object) means the run FINISHED. Non-empty means still live. */
   live: BenchLive;
 }
 

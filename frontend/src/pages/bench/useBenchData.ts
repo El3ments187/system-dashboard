@@ -339,7 +339,7 @@ export function useBenchData(): BenchData {
         // clobbered by a later poll. A newly spawned run is picked up by the
         // auto-select effect instead, which is what makes Start work without
         // stealing an existing selection.
-        setSelectedRunId((current) => current ?? list[0]?.run_id ?? null);
+        setSelectedRunId((prev) => prev ?? list[0]?.run_id ?? null);
       } catch (e) {
         if (!cancelled)
           setError(e instanceof Error ? e.message : "bench runs failed");

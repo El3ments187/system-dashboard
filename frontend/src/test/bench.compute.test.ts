@@ -31,6 +31,16 @@ import {
   runEstimate,
   assertionCanary,
   startDisabledReason,
+  heroStatFigures,
+  runNaming,
+  isNonDefaultTarget,
+  healthStripText,
+  groupCoverage,
+  sortByLangOrder,
+  benchLocalTime,
+  benchLocalDate,
+  runTaskScope,
+  runTaskRoster,
 } from "../pages/bench/compute";
 import type {
   BenchRecord,
@@ -1453,6 +1463,243 @@ describe("T125 compareRows genMeans", () => {
     const [row] = compareRows([d1, null]);
     expect(row.genMeans[0]).toBeCloseTo(1);
     expect(row.genMeans[1]).toBeNull();
+  });
+});
+
+// ── T1 — heroStatFigures ────────────────────────────────────────────────────
+describe("T1 heroStatFigures", () => {
+  it("returns idle when not running and no graded records", () => {
+    expect(heroStatFigures([], null, false).idle).toBe(true);
+  });
+
+  it("is not idle while running even with no records yet", () => {
+    expect(heroStatFigures([], null, true).idle).toBe(false);
+  });
+
+  it("computes passRate as percent of graded records solved", () => {
+    const records = [
+      rec({ solved: true, seconds: 60 }),
+      rec({ solved: false, status: "fail", seconds: 30 }),
+    ];
+    expect(heroStatFigures(records, 90, false).passRate).toBe(50);
+  });
+
+  it("excludes server records from passRate and samplesPerHour", () => {
+    const records = [
+      rec({ solved: true, seconds: 60 }),
+      rec({ status: "server", solved: false, seconds: 0 }),
+    ];
+    const f = heroStatFigures(records, 60, false);
+    expect(f.passRate).toBe(100);
+    expect(f.samplesPerHour).toBeCloseTo(3600 / 60, 1);
+  });
+
+  it("returns null samplesPerHour when elapsed is 0", () => {
+    expect(heroStatFigures([rec()], 0, false).samplesPerHour).toBeNull();
+  });
+});
+
+// ── T2 — runNaming ──────────────────────────────────────────────────────────
+describe("T2 runNaming", () => {
+  it("returns models joined as name when no config.model mismatch", () => {
+    const n = runNaming(["qwen2.5"], null);
+    expect(n.name).toBe("qwen2.5");
+    expect(n.alias).toBeNull();
+    expect(n.model).toBeNull();
+  });
+
+  it("treats config.model matching models[] as no label", () => {
+    const n = runNaming(["qwen2.5"], { model: "qwen2.5" });
+    expect(n.alias).toBeNull();
+  });
+
+  it("detects a label when config.model differs from models[]", () => {
+    const n = runNaming(["my-label"], { model: "/models/qwen2.5.gguf" });
+    expect(n.name).toBe("my-label");
+    expect(n.alias).toBe("my-label");
+    expect(n.model).toBe("/models/qwen2.5.gguf");
+    expect(n.primary).toBe("/models/qwen2.5.gguf");
+  });
+
+  it("joins multiple models with a comma", () => {
+    expect(runNaming(["a", "b"], null).name).toBe("a, b");
+  });
+});
+
+// ── T3 — isNonDefaultTarget ─────────────────────────────────────────────────
+describe("T3 isNonDefaultTarget", () => {
+  const DEFAULT = "http://localhost:8081";
+
+  it("returns false when url matches the default", () => {
+    expect(isNonDefaultTarget(DEFAULT, DEFAULT)).toBe(false);
+  });
+
+  it("returns true for the mock server", () => {
+    expect(isNonDefaultTarget("http://127.0.0.1:8123", DEFAULT)).toBe(true);
+  });
+
+  it("normalizes trailing slashes and /v1 before comparing", () => {
+    expect(isNonDefaultTarget(`${DEFAULT}/v1/`, DEFAULT)).toBe(false);
+    expect(isNonDefaultTarget(`${DEFAULT}/`, DEFAULT)).toBe(false);
+  });
+
+  it("returns false when either url is empty or null", () => {
+    expect(isNonDefaultTarget(null, DEFAULT)).toBe(false);
+    expect(isNonDefaultTarget(DEFAULT, null)).toBe(false);
+    expect(isNonDefaultTarget("", DEFAULT)).toBe(false);
+  });
+});
+
+// ── T4 — healthStripText ────────────────────────────────────────────────────
+describe("T4 healthStripText", () => {
+  const fmt = (s: number | null) => (s === null ? "?" : `${s}s`);
+  const base = {
+    running: false,
+    kind: "idle" as const,
+    warming: false,
+    median: null,
+    taskElapsed: undefined,
+    elapsed: null,
+    samples: null,
+    fmtDuration: fmt,
+  };
+
+  it("returns the no-run message when not running and no data", () => {
+    expect(healthStripText(base)).toMatch(/no run selected/i);
+  });
+
+  it("returns a finished summary when not running and data is present", () => {
+    const text = healthStripText({ ...base, elapsed: 120, samples: 27 });
+    expect(text).toMatch(/run finished/i);
+    expect(text).toMatch(/27 samples/);
+  });
+
+  it("returns the warming message while warming up", () => {
+    const text = healthStripText({ ...base, running: true, kind: "running", warming: true });
+    expect(text).toMatch(/warming/i);
+  });
+
+  it("returns a no-history message when running without comparable history", () => {
+    const text = healthStripText({ ...base, running: true, kind: "running" });
+    expect(text).toMatch(/no comparable history/i);
+  });
+
+  it("returns empty string when running with a valid median", () => {
+    const text = healthStripText({
+      ...base,
+      running: true,
+      kind: "running",
+      median: 120,
+      taskElapsed: 60,
+    });
+    expect(text).toBe("");
+  });
+});
+
+// ── T5 — groupCoverage ──────────────────────────────────────────────────────
+describe("T5 groupCoverage", () => {
+  it("names a single task by its id", () => {
+    expect(groupCoverage(["js/foo"])).toBe("js/foo");
+  });
+
+  it("summarizes 2+ tasks in the same language", () => {
+    expect(groupCoverage(["js/a", "js/b"])).toBe("all 2 js");
+    expect(groupCoverage(["js/a", "js/b", "js/c"])).toBe("all 3 js");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(groupCoverage([])).toBe("");
+  });
+
+  it("names single tasks from different languages individually", () => {
+    const result = groupCoverage(["js/a", "ts/b"]);
+    expect(result).toContain("js/a");
+    expect(result).toContain("ts/b");
+  });
+});
+
+// ── T6 — sortByLangOrder ────────────────────────────────────────────────────
+describe("T6 sortByLangOrder", () => {
+  it("sorts langs into the standard bench.py execution order", () => {
+    expect(sortByLangOrder(["gdscript", "ts", "js", "java"])).toEqual([
+      "js", "ts", "java", "gdscript",
+    ]);
+  });
+
+  it("puts unknown languages after the known set, alphabetically", () => {
+    expect(sortByLangOrder(["rust", "js", "go"])).toEqual(["js", "go", "rust"]);
+  });
+
+  it("accepts a custom order override", () => {
+    expect(sortByLangOrder(["b", "a", "c"], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  });
+
+  it("is stable for an already-ordered input", () => {
+    const ordered = ["js", "ts", "java", "gdscript"];
+    expect(sortByLangOrder(ordered)).toEqual(ordered);
+  });
+});
+
+// ── T7 — benchLocalTime / benchLocalDate ────────────────────────────────────
+describe("T7 benchLocalTime and benchLocalDate", () => {
+  const iso = "2026-08-08T14:35:47";
+
+  it("slices the time component without timezone conversion", () => {
+    expect(benchLocalTime(iso)).toBe("14:35:47");
+  });
+
+  it("slices the date component", () => {
+    expect(benchLocalDate(iso)).toBe("2026-08-08");
+  });
+
+  it("does not use Date parsing — midnight stays midnight in any timezone", () => {
+    expect(benchLocalTime("2026-01-01T00:00:00")).toBe("00:00:00");
+  });
+});
+
+// ── T8 — runTaskScope / runTaskRoster ───────────────────────────────────────
+describe("T8 runTaskScope and runTaskRoster", () => {
+  const tasks = [
+    { id: "js/a", lang: "js" },
+    { id: "js/b", lang: "js" },
+    { id: "ts/a", lang: "ts" },
+    { id: "gdscript/a", lang: "gdscript" },
+  ];
+
+  describe("runTaskScope", () => {
+    it("covers all tasks when no lang filter", () => {
+      const s = runTaskScope(tasks, []);
+      expect(s.count).toBe(4);
+      expect(s.total).toBe(4);
+      expect(s.langsLabel).toBeNull();
+    });
+
+    it("counts only the filtered languages", () => {
+      const s = runTaskScope(tasks, ["js"]);
+      expect(s.count).toBe(2);
+      expect(s.total).toBe(4);
+      expect(s.langsLabel).not.toBeNull();
+    });
+
+    it("returns zero count for an empty task list", () => {
+      expect(runTaskScope([], ["js"]).count).toBe(0);
+    });
+  });
+
+  describe("runTaskRoster", () => {
+    it("returns all tasks when no lang filter", () => {
+      expect(runTaskRoster(tasks, [])).toHaveLength(4);
+    });
+
+    it("filters to the selected languages and preserves order", () => {
+      const roster = runTaskRoster(tasks, ["js", "gdscript"]);
+      expect(roster.map((t) => t.id)).toEqual(["js/a", "js/b", "gdscript/a"]);
+    });
+
+    it("returns empty array for null or empty task list", () => {
+      expect(runTaskRoster(null, ["js"])).toEqual([]);
+      expect(runTaskRoster([], ["js"])).toEqual([]);
+    });
   });
 });
 
