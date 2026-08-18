@@ -207,7 +207,7 @@ function RunOutcome({
 
 
 const TH: React.CSSProperties = {
-  font: "600 9px Inter, system-ui, sans-serif",
+  font: "600 11px Inter, system-ui, sans-serif",
   letterSpacing: "0.8px",
   textTransform: "uppercase",
   color: "var(--text-muted)",
@@ -502,7 +502,7 @@ export function TasksAndRuns({
                     gridTemplateColumns: THIS_RUN_LANG_COLS,
                     gap: `0 ${CMP_COL_GAP}px`,
                     fontWeight: 600,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: "0.5px",
                     textTransform: "uppercase",
                     color: "var(--text-muted)",
@@ -1748,7 +1748,7 @@ function ComparePane({
                         whiteSpace: "nowrap",
                         textAlign: "right",
                         fontWeight: 600,
-                        fontSize: 9,
+                        fontSize: 11,
                         letterSpacing: "0.5px",
                         textTransform: "uppercase",
                         color: "var(--text-muted)",
