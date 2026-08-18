@@ -30,6 +30,7 @@ import {
   compareEligibility,
   compareNotation,
   compareRows,
+  deltaSpread,
   compareSlotOptions,
   gradedRecords,
   groupCoverage,
@@ -1903,10 +1904,7 @@ function ComparePane({
                     return s0.size === s1.size && [...s0].every(t => s1.has(t));
                   })();
                   const delta = allPresent && sameLangTasks
-                    ? (
-                        Math.max(...(scores as number[])) -
-                        Math.min(...(scores as number[]))
-                      ).toFixed(1)
+                    ? (deltaSpread(scores)?.toFixed(1) ?? null)
                     : null;
                   return (
                     <div
@@ -1940,10 +1938,7 @@ function ComparePane({
                     overallScores.length >= 2 &&
                     overallScores.every((s) => s !== null);
                   const delta = allPresent && sameTaskSet
-                    ? (
-                        Math.max(...(overallScores as number[])) -
-                        Math.min(...(overallScores as number[]))
-                      ).toFixed(1)
+                    ? (deltaSpread(overallScores)?.toFixed(1) ?? null)
                     : null;
                   return (
                     <div

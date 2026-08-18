@@ -81,7 +81,7 @@ export function runTaskAvg(records: BenchRecord[]): number | null {
 }
 
 /** Solved in at least one graded sample — the unit history diffs on. */
-export function solvedInAtLeastOne(
+function solvedInAtLeastOne(
   records: BenchRecord[],
 ): Map<string, boolean> {
   const out = new Map<string, boolean>();
