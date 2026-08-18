@@ -382,7 +382,9 @@ function sameModelIdentity(a: ChipRun, b: ChipRun): boolean {
   const bm = b.config?.model;
   // config.model is the ground truth; models[] may be overridden by --label.
   if (am && bm) return am === bm;
-  return a.models.length === b.models.length && a.models.every((m, i) => m === b.models[i]);
+  const sa = [...a.models].sort();
+  const sb = [...b.models].sort();
+  return sa.length === sb.length && sa.every((m, i) => m === sb[i]);
 }
 
 export function regressionChips(previous: ChipRun, next: ChipRun): RegressionChips {
@@ -1058,15 +1060,6 @@ export function startDisabledReason(opts: {
 }
 
 /**
- * The sentence shown when nothing answers at the target.
- *
- * Kept separate from the raw probe reason on purpose. The probe returns the
- * transport error ("error sending request for url (…/v1/models)"), which
- * repeats the address and reads as noise in the common case — nothing is
- * running yet. That detail stays available as a tooltip; this is what the
- * banner says.
- */
-/**
  * The model the target server actually has loaded, named the way the
  * llama.cpp page names it (basename of the path, `.gguf` dropped, alias as
  * the fallback). Same derivation, so the two pages cannot disagree about
@@ -1255,10 +1248,6 @@ export function healthStripText(opts: {
 export function roundTemperature(t: number | null): number | null {
   if (t === null || !Number.isFinite(t)) return null;
   return Number(t.toFixed(2));
-}
-
-export function serverUnreachableCopy(url: string): string {
-  return `No server answering at ${url}. Start a model on the llama.cpp page, or point --url at a mockserver.`;
 }
 
 /**
@@ -1508,10 +1497,13 @@ export function assertionCanary(record: BenchRecord): {
 
 /** Running totals, without mutating anything during render. */
 function cumulative(values: number[]): number[] {
-  return values.reduce<number[]>(
-    (acc, v) => [...acc, (acc[acc.length - 1] ?? 0) + v],
-    [],
-  );
+  const out: number[] = [];
+  let sum = 0;
+  for (const v of values) {
+    sum += v;
+    out.push(sum);
+  }
+  return out;
 }
 
 /**
@@ -1527,16 +1519,13 @@ function genRate(r: BenchRecord): number | null {
  * Every figure the Progress card's relocated stats need, derived in one place.
  * All are null/empty when idle rather than carrying the previous run's numbers.
  *
- * Note: elapsedSeries is returned but not displayed (Progress already has an
- * Elapsed MetricTile without a sparkline — two Elapsed tiles would disagree).
- * It is kept because ratePerHourSeries and remainingSeries are independent
- * derivations that both happen to use elapsed time.
+ * Note: elapsedSeries is a local intermediate used only to derive
+ * ratePerHourSeries — it is not included in the return value.
  */
-export function footerFigures(
+export function heroStatFigures(
   records: BenchRunDetail["records"],
   elapsedSeconds: number | null,
   running: boolean,
-  remainingSeconds: number | null,
 ) {
   const graded = gradedRecords(records);
 
@@ -1557,14 +1546,6 @@ export function footerFigures(
 
   const elapsedSeries = cumulative(graded.map((r) => r.seconds));
   const totalSeconds = elapsedSeconds ?? 0;
-  const perSample = graded.length > 0 ? totalSeconds / graded.length : 0;
-  // Counts down as samples land: what is left of the estimate at each point.
-  const remainingSeries =
-    remainingSeconds === null
-      ? []
-      : graded.map(
-          (_, i) => remainingSeconds + (graded.length - 1 - i) * perSample,
-        );
 
   return {
     // Nothing running and nothing selected means there is nothing to report.
@@ -1574,8 +1555,6 @@ export function footerFigures(
     meanRate,
     passSeries,
     passRate,
-    elapsedSeries,
-    remainingSeries,
     samplesPerHour:
       totalSeconds > 0 ? (graded.length / totalSeconds) * 3600 : null,
     // Its OWN series: samples completed per elapsed hour, as it evolved.

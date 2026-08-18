@@ -329,10 +329,18 @@ fn a_run_is_live() -> bool {
 fn sigterm_only(pid: u32) {
     let ipid = pid as i32;
     let pgid = unsafe { libc::getpgid(ipid) };
-    let group_target = if pgid > 0 { -pgid } else { -ipid };
+    // Send to the whole process group when we know it (bench.py uses
+    // process_group(0), so the group includes every subprocess). Fall back to
+    // the individual pid when getpgid fails. Never send to both: the pid is a
+    // member of its own group and a second SIGTERM during the KeyboardInterrupt
+    // handler can hit the default disposition, killing the process before it
+    // saves results.json.
     unsafe {
-        libc::kill(group_target, libc::SIGTERM);
-        libc::kill(ipid, libc::SIGTERM);
+        if pgid > 0 {
+            libc::kill(-pgid, libc::SIGTERM);
+        } else {
+            libc::kill(ipid, libc::SIGTERM);
+        }
     }
 }
 
@@ -384,7 +392,11 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
         .ok_or_else(|| "no pid for bench.py".to_string())?;
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    drop(child);
+    // Reap the process when it exits so it does not become a zombie. The pipes
+    // are already detached; wait() here just collects the exit status.
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
 
     if let Some(h) = stdout {
         tokio::spawn(async move {
@@ -1001,13 +1013,12 @@ pub async fn run_by_id_handler(
             return None;
         };
         rd.filter_map(|e| e.ok()).find_map(|e| {
-            let folder = e.file_name().to_string_lossy().to_string();
             let text = std::fs::read_to_string(e.path().join("results.json")).ok()?;
-            let s = parse_run_summary(&text, &folder).ok()?;
-            if s.run_id != id_clone {
+            let v = serde_json::from_str::<Value>(&text).ok()?;
+            let run_id = v.get("run_id").and_then(|r| r.as_str())?;
+            if run_id != id_clone.as_str() {
                 return None;
             }
-            let v = serde_json::from_str::<Value>(&text).ok()?;
             Some(v)
         })
     })
@@ -1055,6 +1066,11 @@ pub async fn resume_handler(
         g.spawning = true;
         g.log.clear();
         g.exited = false;
+        // Clear stale process state from any prior run so a failed spawn cannot
+        // leave a dead pid in place that makes is_live_state return true.
+        g.pid = None;
+        g.run_folder = None;
+        g.current = None;
     }
     let dir = bench_dir();
     // ABSOLUTE: the --resume argument is cwd-resolved by bench.py.
@@ -1148,6 +1164,11 @@ pub async fn queue_advance_handler(
     if req.script_path.contains("..") {
         return axum::response::Json(
             json!({ "error": "path traversal sequences are not allowed", "success": false }),
+        );
+    }
+    if req.script_path.starts_with('/') {
+        return axum::response::Json(
+            json!({ "error": "absolute paths are not allowed", "success": false }),
         );
     }
     let script = req.script_path.clone();

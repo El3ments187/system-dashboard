@@ -81,11 +81,6 @@ function modelNamesFromProfiles(
   return [...new Set(names.filter(Boolean))];
 }
 
-export function isRunning(detail: BenchRunDetail | null): boolean {
-  if (!detail) return false;
-  return Object.keys(detail.live ?? {}).length > 0;
-}
-
 /**
  * tools/mockserver.py's DEFAULT port. Its own docstring records a real bug
  * where the port argument was silently ignored, so `mockserver.py tasks 8081`

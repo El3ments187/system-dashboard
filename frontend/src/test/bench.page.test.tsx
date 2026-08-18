@@ -1736,8 +1736,8 @@ describe("T58 language toggles", () => {
   });
 });
 
-// T59 — the footer reports the page's own numbers, not a second computation.
-describe("T59 footer is single-source", () => {
+// T59 — the hero stat strip reports the page's own numbers, not a second computation.
+describe("T59 hero stats are single-source", () => {
   // The original assertion checked that the hero's Elapsed matched
   // bench-progress-elapsed (same single-source value shown twice). T172
   // removed the hero Elapsed, so the check is obviated: only one surface
@@ -1747,19 +1747,19 @@ describe("T59 footer is single-source", () => {
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-pass-rate").textContent).not.toBe(
+      expect(screen.getByTestId("bench-stat-pass-rate").textContent).not.toBe(
         "—",
       ),
     );
     const solved =
       screen.getByTestId("bench-solved").parentElement?.textContent ?? "";
-    // "11 / 15 graded" → the same ratio the footer renders as a percentage.
+    // "11 / 15 graded" → the same ratio the stat strip renders as a percentage.
     // "Solved — samples11 / 15 graded" → the ratio Score is showing.
     const [num, den] = solved
       .split("/")
       .map((part) => Number(part.replace(/\D/g, "")));
     const expected = `${Math.round((num / den) * 100)}%`;
-    expect(screen.getByTestId("bench-footer-pass-rate").textContent).toBe(
+    expect(screen.getByTestId("bench-stat-pass-rate").textContent).toBe(
       expected,
     );
   });
@@ -1768,13 +1768,13 @@ describe("T59 footer is single-source", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
     for (const id of [
-      "bench-footer-generation-speed",
-      "bench-footer-samples-hr",
-      "bench-footer-pass-rate",
-      // bench-footer-remaining removed in T182: Remaining is a hero tile, not a stat row.
+      "bench-stat-generation-speed",
+      "bench-stat-samples-hr",
+      "bench-stat-pass-rate",
+      // bench-stat-remaining removed in T182: Remaining is a hero tile, not a stat row.
     ]) {
       expect(
         screen.getByTestId(id).textContent,
@@ -2629,13 +2629,13 @@ describe("T78 hero, History and Compare agree on alias vs model", () => {
   });
 });
 
-// T83 — the footer draws the design's bars, not a line.
+// T83 — the hero stat strip draws the design's bars, not a line.
 //
 // A line through the 1-2 points a run has early on is one long diagonal
 // across the whole strip, which is what the screenshots showed. Bars degrade
 // honestly. Also guards the shared-series bug found here: Samples/hr and
 // Elapsed were plotting the identical array.
-describe("T83 footer sparklines", () => {
+describe("T83 hero stat sparklines", () => {
   const withRecords = (n: number) => {
     const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
     const recs = (d as { records: Record<string, unknown>[] }).records;
@@ -2668,7 +2668,7 @@ describe("T83 footer sparklines", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed").textContent).toBe(
+      expect(screen.getByTestId("bench-stat-generation-speed").textContent).toBe(
         "—",
       ),
     );
@@ -2685,7 +2685,7 @@ describe("T83 footer sparklines", () => {
     // Their heights would be identical only if ratePerHourSeries wrongly reused
     // passSeries — a different bug, but this keeps the guard meaningful.
     // The original bug was ratePerHourSeries === elapsedSeries; that is best
-    // guarded at the footerFigures unit level when a compute.ts test suite
+    // guarded at the heroStatFigures unit level when a compute.ts test suite
     // is added.
     installFetch({ detail: withRecords(6) });
     render(<BenchPage />);
@@ -3215,8 +3215,8 @@ describe("T126 isLiveRun from process folder, not selected-run detail", () => {
   });
 });
 
-// T90 — the footer's fifth slot reports something that moves.
-describe("T90 footer shows Remaining, not an always-zero error count", () => {
+// T90 — the hero stat strip's fifth slot reports something that moves.
+describe("T90 hero stats show Remaining, not an always-zero error count", () => {
   it("replaces the Server errors slot", async () => {
     installFetch();
     render(<BenchPage />);
@@ -3224,7 +3224,7 @@ describe("T90 footer shows Remaining, not an always-zero error count", () => {
     await waitFor(() =>
       expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy(),
     );
-    expect(screen.queryByTestId("bench-footer-server-errors")).toBeNull();
+    expect(screen.queryByTestId("bench-stat-server-errors")).toBeNull();
   });
 
   it("dashes rather than guessing when no run is active", async () => {
@@ -3797,14 +3797,14 @@ describe("T95 taint badges name their own mechanism", () => {
   });
 });
 
-// ── T97 — the footer's two numbers must be reconcilable ────────────────────
+// ── T97 — the hero stat strip's two numbers must be reconcilable ────────────────────
 //
 // REMAINING 23m 51s beside SAMPLES/HR 16.5 with 11 samples left implied ~40m:
 // the bar contradicted itself. NOTE: this is an invariant guard, not the
 // red-first one — `installFetch` serves the same detail for every run id, so
 // a fixture's live run and its own history cannot diverge here. The
 // red-first proof for the estimator lives in bench.compute.test.ts (T97).
-describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
+describe("T97 hero-stat REMAINING agrees with its own SAMPLES/HR", () => {
   // Parsed by hand rather than by pattern: "12m 30s" is two tokens, and every
   // regex spelling of it trips the super-linear-backtracking rule.
   const secondsFromLabel = (text: string) => {
@@ -3855,7 +3855,7 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
     render(<BenchPage />);
 
     const remaining = await screen.findByTestId("bench-hero-remaining");
-    const rate = await screen.findByTestId("bench-footer-samples-hr");
+    const rate = await screen.findByTestId("bench-stat-samples-hr");
     // MetricTile puts data-testid on its container div; the value is in
     // .metric-tile-value to avoid the label text corrupting the time parse.
     const remainingValue = () =>
@@ -3868,7 +3868,7 @@ describe("T97 footer REMAINING agrees with its own SAMPLES/HR", () => {
     const perHour = Number(/[\d.]+/.exec(rate.textContent ?? "")?.[0] ?? 0);
     expect(
       perHour,
-      "the footer must report a rate to compare against",
+      "the hero stat strip must report a rate to compare against",
     ).toBeGreaterThan(0);
     const impliedSeconds = (left / perHour) * 3600;
     const shown = secondsFromLabel(remainingValue());
@@ -6164,14 +6164,14 @@ describe("T169 by_language order follows taskList first-appearance, not LANG_ORD
   });
 });
 
-// ── T154 — footer strip retired; figures move to Progress ─────────────────
+// ── T154 — stat strip figures moved to Progress ─────────────────
 //
 // BenchFooter is removed. Gen speed, Samples/hr, Pass rate and Remaining move
 // to the Progress card. Elapsed already lives in Progress — one copy only.
-// The bench-footer wrapper disappears; the individual stat testids remain.
+// The bench-stat wrapper disappears; the individual stat testids remain.
 
-describe("T154 footer strip retired, figures in Progress", () => {
-  it("bench-footer wrapper no longer renders", async () => {
+describe("T154 stat strip figures in Progress", () => {
+  it("bench-stat wrapper no longer renders", async () => {
     installFetch();
     render(<BenchPage />);
     // Wait for the page to fully load (Progress tiles are always rendered)
@@ -6179,8 +6179,8 @@ describe("T154 footer strip retired, figures in Progress", () => {
       expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy(),
     );
     expect(
-      screen.queryByTestId("bench-footer"),
-      "the footer wrapper must be gone",
+      screen.queryByTestId("bench-stat"),
+      "the stat wrapper must be gone",
     ).toBeNull();
   });
 
@@ -6191,16 +6191,16 @@ describe("T154 footer strip retired, figures in Progress", () => {
     await screen.findByTestId("bench-hero-remaining");
   });
 
-  it("Progress has exactly one Elapsed — no bench-footer-elapsed testid", async () => {
+  it("Progress has exactly one Elapsed — no bench-stat-elapsed testid", async () => {
     installFetch();
     render(<BenchPage />);
     // Wait for the page to load, then check synchronously.
     await waitFor(() =>
       expect(screen.getByTestId("bench-progress-tiles")).toBeTruthy(),
     );
-    // The footer's Elapsed (bench-footer-elapsed) must be gone. Progress keeps
+    // The footer's Elapsed (bench-stat-elapsed) must be gone. Progress keeps
     // its plain MetricTile for Elapsed but must NOT carry the footer testid.
-    expect(screen.queryByTestId("bench-footer-elapsed")).toBeNull();
+    expect(screen.queryByTestId("bench-stat-elapsed")).toBeNull();
   });
 
   it("Generation speed renders in Progress with a sparkline", async () => {
@@ -6212,7 +6212,7 @@ describe("T154 footer strip retired, figures in Progress", () => {
     render(<BenchPage />);
     await waitFor(() =>
       expect(
-        screen.getByTestId("bench-footer-generation-speed"),
+        screen.getByTestId("bench-stat-generation-speed"),
       ).toBeTruthy(),
     );
     const spark = document.querySelector(
@@ -6229,7 +6229,7 @@ describe("T154 footer strip retired, figures in Progress", () => {
     installFetch({ detail: d });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-samples-hr")).toBeTruthy(),
     );
     const spark = document.querySelector('[data-series="Samples/hr"]');
     expect(spark, "Samples/hr sparkline must be present").toBeTruthy();
@@ -6239,7 +6239,7 @@ describe("T154 footer strip retired, figures in Progress", () => {
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-pass-rate")).toBeTruthy(),
     );
     const spark = document.querySelector('[data-series="Pass rate"]');
     expect(spark, "Pass rate sparkline must be present").toBeTruthy();
@@ -6249,13 +6249,13 @@ describe("T154 footer strip retired, figures in Progress", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
     for (const id of [
-      "bench-footer-generation-speed",
-      "bench-footer-samples-hr",
-      "bench-footer-pass-rate",
-      // bench-footer-remaining removed in T182: Remaining is a hero tile.
+      "bench-stat-generation-speed",
+      "bench-stat-samples-hr",
+      "bench-stat-pass-rate",
+      // bench-stat-remaining removed in T182: Remaining is a hero tile.
     ]) {
       expect(
         screen.getByTestId(id).textContent,
@@ -6756,8 +6756,8 @@ describe("T172 hero Elapsed removed; Progress Elapsed survives", () => {
 
 // ── T175 — four throughput stats move from ScoreProgress to the hero ─────────
 //
-// T154 confirmed bench-footer-generation-speed, bench-footer-samples-hr,
-// bench-footer-pass-rate, and bench-footer-remaining exist somewhere on the
+// T154 confirmed bench-stat-generation-speed, bench-stat-samples-hr,
+// bench-stat-pass-rate, and bench-stat-remaining exist somewhere on the
 // page. T175 tightens this: they must live inside the hero card and must NOT
 // appear inside the Score & Progress card.
 describe("T175 four throughput stats on hero card", () => {
@@ -6769,9 +6769,9 @@ describe("T175 four throughput stats on hero card", () => {
         "buggy-model",
       ),
     );
-    expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
-    expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
-    expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-samples-hr")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-pass-rate")).toBeTruthy();
     // Remaining moved to hero tile in T182; still reachable via bench-hero-remaining.
     expect(screen.getByTestId("bench-hero-remaining")).toBeTruthy();
   });
@@ -6786,10 +6786,10 @@ describe("T175 four throughput stats on hero card", () => {
     );
     const heroStats = screen.getByTestId("bench-hero-stats");
     expect(
-      within(heroStats).getByTestId("bench-footer-generation-speed"),
+      within(heroStats).getByTestId("bench-stat-generation-speed"),
     ).toBeTruthy();
-    expect(within(heroStats).getByTestId("bench-footer-samples-hr")).toBeTruthy();
-    expect(within(heroStats).getByTestId("bench-footer-pass-rate")).toBeTruthy();
+    expect(within(heroStats).getByTestId("bench-stat-samples-hr")).toBeTruthy();
+    expect(within(heroStats).getByTestId("bench-stat-pass-rate")).toBeTruthy();
     // Remaining is a hero tile (T182) — lives in bench-hero-tiles, not bench-hero-stats.
     const heroTiles = screen.getByTestId("bench-hero-tiles");
     expect(within(heroTiles).getByTestId("bench-hero-remaining")).toBeTruthy();
@@ -6805,11 +6805,11 @@ describe("T175 four throughput stats on hero card", () => {
     );
     const spBody = screen.getByTestId("bench-score-progress-body");
     expect(
-      within(spBody).queryByTestId("bench-footer-generation-speed"),
+      within(spBody).queryByTestId("bench-stat-generation-speed"),
     ).toBeNull();
-    expect(within(spBody).queryByTestId("bench-footer-samples-hr")).toBeNull();
-    expect(within(spBody).queryByTestId("bench-footer-pass-rate")).toBeNull();
-    expect(within(spBody).queryByTestId("bench-footer-remaining")).toBeNull();
+    expect(within(spBody).queryByTestId("bench-stat-samples-hr")).toBeNull();
+    expect(within(spBody).queryByTestId("bench-stat-pass-rate")).toBeNull();
+    expect(within(spBody).queryByTestId("bench-stat-remaining")).toBeNull();
   });
 
   it("sparklines (data-series attributes) are present on the hero", async () => {
@@ -6820,7 +6820,7 @@ describe("T175 four throughput stats on hero card", () => {
     installFetch({ detail: d });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
     expect(document.querySelector('[data-series="Generation speed"]')).toBeTruthy();
     expect(document.querySelector('[data-series="Samples/hr"]')).toBeTruthy();
@@ -6837,7 +6837,7 @@ describe("T175 four throughput stats on hero card", () => {
     installFetch({ detail: d });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-samples-hr")).toBeTruthy(),
     );
     const genSpark = document.querySelector('[data-series="Generation speed"]');
     const samplesSpark = document.querySelector('[data-series="Samples/hr"]');
@@ -6851,9 +6851,9 @@ describe("T175 four throughput stats on hero card", () => {
     installFetch({ noDetail: true, runs: [] });
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
-    const stat = screen.getByTestId("bench-footer-generation-speed");
+    const stat = screen.getByTestId("bench-stat-generation-speed");
     expect(stat.textContent).toContain("—");
     expect(stat.textContent).not.toContain("0 t/s");
   });
@@ -8141,8 +8141,8 @@ describe("T182 hero stats: Remaining tile-only, scaled sparklines, stat borders"
     );
     // bench-hero-remaining is the tile (exactly one)
     expect(screen.queryAllByTestId("bench-hero-remaining")).toHaveLength(1);
-    // bench-footer-remaining (the old duplicate stat row) is gone
-    expect(screen.queryByTestId("bench-footer-remaining")).toBeNull();
+    // bench-stat-remaining (the old duplicate stat row) is gone
+    expect(screen.queryByTestId("bench-stat-remaining")).toBeNull();
   });
 
   // Item 0: Started tile still renders alongside Remaining.
@@ -8243,12 +8243,12 @@ describe("T182 hero stats: Remaining tile-only, scaled sparklines, stat borders"
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
     for (const id of [
-      "bench-footer-generation-speed",
-      "bench-footer-samples-hr",
-      "bench-footer-pass-rate",
+      "bench-stat-generation-speed",
+      "bench-stat-samples-hr",
+      "bench-stat-pass-rate",
     ]) {
       const valueEl = screen.getByTestId(id);
       const row = valueEl.parentElement as HTMLElement;
@@ -8264,23 +8264,23 @@ describe("T182 hero stats: Remaining tile-only, scaled sparklines, stat borders"
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-pass-rate")).toBeTruthy(),
     );
-    const passRate = screen.getByTestId("bench-footer-pass-rate");
+    const passRate = screen.getByTestId("bench-stat-pass-rate");
     const row = passRate.parentElement as HTMLElement;
     expect(row.style.borderBottom).toBeTruthy();
   });
 
-  // Stale-name report: bench-footer-* testids retained for historical compatibility.
-  it("bench-footer-generation-speed, samples-hr, pass-rate testids are unchanged", async () => {
+  // Stale-name report: bench-stat-* testids retained for historical compatibility.
+  it("bench-stat-generation-speed, samples-hr, pass-rate testids are unchanged", async () => {
     installFetch();
     render(<BenchPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy(),
+      expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy(),
     );
-    expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
-    expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
-    expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-generation-speed")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-samples-hr")).toBeTruthy();
+    expect(screen.getByTestId("bench-stat-pass-rate")).toBeTruthy();
   });
 });
 
@@ -8541,5 +8541,100 @@ describe("T200 a run only ever shows its own data", () => {
       expect(screen.getByTestId("bench-gauge-label").textContent).toBe("72.0"),
     );
     expect(screen.getByTestId("bench-gauge-label").textContent).toBe("72.0");
+  });
+});
+
+// T202 — miss cells fill solid red; error cells fill a muted red.
+//
+// jsdom does not load external stylesheets, so we inject a <style> block with
+// concrete rgb() values that mirror the class selectors in theme.css. The test
+// then asserts via getComputedStyle that:
+//   • .bench-att.miss elements resolve to an opaque background (not transparent)
+//   • .bench-att.error elements also resolve to an opaque background
+//   • the two backgrounds are distinct (different rgb values)
+// This fails if the class is removed from the element, if `background: none`
+// is added with !important, or if miss and error converge to the same colour.
+describe("T202 miss cells fill solid, error cells fill muted", () => {
+  let styleEl: HTMLStyleElement;
+
+  beforeEach(() => {
+    styleEl = document.createElement("style");
+    // Concrete colours that match the intensity relationship in theme.css:
+    // miss → bright red, error → muted red (≈35 % strength).
+    styleEl.textContent = [
+      ".bench-att.miss { background: rgb(200, 50, 50) !important; }",
+      ".bench-att.error { background: rgb(80, 20, 20) !important; }",
+    ].join("\n");
+    document.head.appendChild(styleEl);
+  });
+
+  afterEach(() => {
+    styleEl.remove();
+  });
+
+  it("miss cells carry a solid background fill", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    recs[0].status = "fail";
+    recs[0].solved = false;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('[data-cell-state="miss"]').length,
+      ).toBeGreaterThan(0),
+    );
+
+    const missCell = document.querySelector<HTMLElement>(
+      '[data-cell-state="miss"]',
+    )!;
+    expect(missCell.classList.contains("bench-att")).toBe(true);
+    expect(missCell.classList.contains("miss")).toBe(true);
+
+    const bg = getComputedStyle(missCell).backgroundColor;
+    expect(bg, "miss cell must have an opaque background fill").not.toBe("");
+    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(bg).not.toBe("transparent");
+  });
+
+  it("error cells carry a filled background distinct from miss", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    const recs = (d as { records: Record<string, unknown>[] }).records;
+    recs[0].status = "error";
+    recs[0].solved = false;
+    recs[1].status = "fail";
+    recs[1].solved = false;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('[data-cell-state="error"]').length,
+      ).toBeGreaterThan(0),
+    );
+
+    const errorCell = document.querySelector<HTMLElement>(
+      '[data-cell-state="error"]',
+    )!;
+    expect(errorCell.classList.contains("bench-att")).toBe(true);
+    expect(errorCell.classList.contains("error")).toBe(true);
+
+    const errorBg = getComputedStyle(errorCell).backgroundColor;
+    expect(errorBg, "error cell must have an opaque background fill").not.toBe(
+      "",
+    );
+    expect(errorBg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(errorBg).not.toBe("transparent");
+
+    // miss and error must be visually distinct — different rgb values.
+    const missCell = document.querySelector<HTMLElement>(
+      '[data-cell-state="miss"]',
+    )!;
+    const missBg = getComputedStyle(missCell).backgroundColor;
+    expect(
+      errorBg,
+      "error and miss cells must not share the same background colour",
+    ).not.toBe(missBg);
   });
 });

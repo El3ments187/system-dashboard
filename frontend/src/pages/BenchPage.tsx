@@ -50,7 +50,7 @@ import {
   historicalTaskMedian,
   isHeartbeatStale,
   benchLocalTime,
-  footerFigures,
+  heroStatFigures,
   runTaskAvg,
   serverExcludedCount,
   truncationState,
@@ -154,6 +154,21 @@ function Chip({ children, testId }: { children: React.ReactNode; testId?: string
  * `detail` is still the PREVIOUS run — which would otherwise light the gauge
  * at 100% over a run that has not produced a sample.
  */
+/**
+ * Parse a timestamp string that may lack a timezone suffix (bench.py emits
+ * `datetime.now().isoformat()` — local time, no Z). Strings with an explicit
+ * timezone are passed to Date.parse unmodified. Timezone-naive strings are
+ * split into components and fed to the Date constructor, which always
+ * interprets positional arguments as local time, regardless of engine version.
+ */
+function parseTimestamp(s: string): number {
+  if (/Z$|[+-]\d\d:\d\d$/.test(s)) return Date.parse(s);
+  const [datePart = "", timePart = "00:00:00"] = s.split("T");
+  const [yr = 0, mo = 1, dy = 1] = datePart.split("-").map(Number);
+  const [hr = 0, min = 0, sec = 0] = timePart.split(":").map(Number);
+  return new Date(yr, mo - 1, dy, hr, min, sec).getTime();
+}
+
 function computeDonePct(
   live: BenchLive,
   detail: BenchRunDetail | null,
@@ -266,6 +281,10 @@ function heroIdentity(
     // T185: disk-recovered runs have current.run === null; they are never
     // "warming up" (they have existing records). Warming only applies when
     // the dashboard spawned the run and has the CurrentRun metadata.
+    // NOTE: `current.run !== null` is fragile — it goes false briefly when the
+    // run_id races ahead of the current metadata. The identity guard in
+    // scopedDetail (detail.run_id !== selectedRunId) is the stronger safety
+    // net for those cases; warming guards only the UI copy and loading state.
     warming:
       current.running &&
       current.run !== null &&
@@ -363,7 +382,10 @@ function HeroCard({
   remainingSeconds: number | null;
 }) {
   const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
-  const figs = footerFigures(records, elapsedSeconds, running, remainingSeconds);
+  const figs = useMemo(
+    () => heroStatFigures(records, elapsedSeconds, running),
+    [records, elapsedSeconds, running],
+  );
   // A live run's own flags win; otherwise the selected run's stored config.
   // Warming is included: current.run?.langs comes from process state and is
   // available before results.json exists. Null means no filter (all langs),
@@ -759,7 +781,7 @@ function ProgressStat({
   value: string;
   data: Array<number | null>;
 }) {
-  const testId = `bench-footer-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
+  const testId = `bench-stat-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
     <div
       style={{
@@ -795,7 +817,6 @@ function ProgressStat({
 }
 function ScoreProgressCard({
   scoreDetail,
-  progressDetail,
   spawnedAttempts,
   status,
   live,
@@ -807,7 +828,6 @@ function ScoreProgressCard({
   median,
 }: {
   scoreDetail: BenchRunDetail | null;
-  progressDetail: BenchRunDetail | null;
   spawnedAttempts: number | null;
   status: RunStatus;
   live: BenchLive;
@@ -855,8 +875,8 @@ function ScoreProgressCard({
   })();
 
   // ── Progress data ───────────────────────────────────────────────
-  const onTask = onTaskDisplay(live, records, progressDetail?.config?.n ?? 1);
-  const progressScore = progressDetail?.summary?.score;
+  const onTask = onTaskDisplay(live, records, scoreDetail?.config?.n ?? 1);
+  const progressScore = scoreDetail?.summary?.score;
   const progressScoreDisplay =
     progressScore === null
       ? "\u2014"
@@ -867,11 +887,11 @@ function ScoreProgressCard({
   const samplesValue = (() => {
     if (live.total) return `${live.done ?? 0}/${live.total}`;
     if (warming) return "0";
-    const done = progressDetail?.summary?.samples ?? null;
+    const done = scoreDetail?.summary?.samples ?? null;
     return done === null ? null : `${done}/${done}`;
   })();
   const attemptValue = (() => {
-    const of = progressDetail?.config?.attempts ?? "?";
+    const of = scoreDetail?.config?.attempts ?? "?";
     if (live.current_attempt) return `${live.current_attempt}/${of}`;
     const last = records.length > 0 ? records[records.length - 1] : null;
     if (last?.attempts_used) return `${last.attempts_used}/${of}`;
@@ -890,7 +910,7 @@ function ScoreProgressCard({
     median,
     taskElapsed: live.task_elapsed,
     elapsed: elapsedSeconds,
-    samples: progressDetail?.summary?.samples ?? null,
+    samples: scoreDetail?.summary?.samples ?? null,
     fmtDuration: fmtUptime,
   });
 
@@ -1984,7 +2004,9 @@ export default function BenchPage() {
         remainingTasks.push(t.id);
     }
     return estimatedRunSeconds(
-      storedDetails,
+      // Exclude the currently running run: its records are also passed as
+      // liveRecords, and including the stored copy would double-count them.
+      storedDetails.filter((d) => d.run_id !== detail?.run_id),
       left,
       runTargetUrl(current, detail, bench.defaultUrl),
       bench.defaultUrl,
@@ -2005,9 +2027,9 @@ export default function BenchPage() {
 
 
 
-  const donePct = computeDonePct(live, detail, identity.warming);
-  // ONE clock. Progress renders this number (T154 retired the footer tile,
-  // T172 retired the hero tile). While warming, only the live counter is
+  const donePct = computeDonePct(live, scopedDetail, identity.warming);
+  // ONE clock. Progress renders this number (T154 moved the stat strip to the
+  // hero, T172 retired the hero elapsed tile). While warming, only the live counter is
   // trustworthy: `detail` is still the previous run.
   // ONE clock, computed correctly rather than duplicated. `live.run_elapsed`
   // only advances when a sample is SAVED — T98 measured the whole live block
@@ -2017,7 +2039,7 @@ export default function BenchPage() {
   // finished run keeps its own recorded total.
   const elapsedSeconds = (() => {
     if (running && !identity.warming && identity.startedAt) {
-      const started = Date.parse(identity.startedAt);
+      const started = parseTimestamp(identity.startedAt);
       if (Number.isFinite(started)) return Math.max(0, (now - started) / 1000);
     }
     if (identity.warming) return live.run_elapsed ?? null;
@@ -2134,7 +2156,7 @@ export default function BenchPage() {
             <HeroCard
               status={runState}
               identity={identity}
-              detail={detail}
+              detail={scopedDetail}
               check={check}
               live={live}
               truncation={truncation}
@@ -2151,7 +2173,6 @@ export default function BenchPage() {
           <PanelErrorBoundary panelName="Bench Score & Progress">
             <ScoreProgressCard
               scoreDetail={scopedDetail}
-              progressDetail={scopedDetail}
               spawnedAttempts={
                 current.running ? (current.run?.attempts ?? null) : null
               }

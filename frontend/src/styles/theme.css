@@ -1847,10 +1847,10 @@ main {
 .bench-att.solved.late {
   opacity: 0.55;
 }
+/* Solid red fill: it ran and the answer was wrong. Heavier than .error so the
+   two are separable at a glance by fill intensity without a new hue. */
 .bench-att.miss {
-  background: none;
-  border: 1.5px solid var(--danger);
-  opacity: 0.7;
+  background: var(--danger);
 }
 .bench-att.to {
   background: none;
@@ -1998,13 +1998,11 @@ main {
 }
 
 /* An `error` sample never produced runnable code — a crash, or a missing
-   export. Distinct from `miss` (it ran and got answers wrong): amber-red
-   dotted rather than the solid red outline, so the two are separable at a
-   glance without inventing a new hue. */
+   export. Distinct from `miss` (it ran and got answers wrong): a muted red
+   fill rather than a bright red fill, so the two are separable at a glance
+   by intensity without inventing a new hue. */
 .bench-att.error {
-  background: none;
-  border: 1.5px dotted var(--danger);
-  opacity: 0.85;
+  background: color-mix(in srgb, var(--danger) 35%, var(--bg-card));
 }
 
 /* Run status dot (T74). Colour is a second signal only — the label beside it

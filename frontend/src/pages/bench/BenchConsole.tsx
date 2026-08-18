@@ -13,8 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { classifyBenchLine, type BenchLogLevel } from "./compute";
-
-const MONO = '"JetBrains Mono", "Fira Code", monospace';
+import { MONO } from "./parts";
 
 const LEVELS: BenchLogLevel[] = ["info", "warn", "error"];
 
@@ -65,6 +64,7 @@ export function BenchConsole({
       if (freshStart) {
         freshStart = false;
         offsetRef.current = 0;
+        followRef.current = true;
         if (!cancelled) setLines([]);
       }
       try {
@@ -94,7 +94,9 @@ export function BenchConsole({
         cancelled = true;
       };
     }
-    const id = setInterval(() => void tick(), 1000);
+    const id = setInterval(() => {
+      if (!document.hidden) void tick();
+    }, 1000);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -115,10 +117,12 @@ export function BenchConsole({
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return lines.filter((l) => {
-      if (!filters[classifyBenchLine(l)]) return false;
-      return !q || l.toLowerCase().includes(q);
-    });
+    return lines
+      .map((l): [BenchLogLevel, string] => [classifyBenchLine(l), l])
+      .filter(([level, l]) => {
+        if (!filters[level]) return false;
+        return !q || l.toLowerCase().includes(q);
+      });
   }, [lines, filters, query]);
 
   // Follow the tail unless the reader has scrolled away from it.
@@ -237,8 +241,8 @@ export function BenchConsole({
               : "No lines match the current filters."}
           </div>
         ) : (
-          visible.map((l, i) => (
-            <div key={i} style={{ color: LEVEL_COLOR[classifyBenchLine(l)] }}>
+          visible.map(([level, l], i) => (
+            <div key={i} style={{ color: LEVEL_COLOR[level] }}>
               {l}
             </div>
           ))

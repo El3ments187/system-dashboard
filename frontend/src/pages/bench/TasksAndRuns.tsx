@@ -70,6 +70,29 @@ const cmpCols = (n: number) => `${LANG_LABEL_PX}px repeat(${n}, 1fr) 40px`;
 // cmpCols (which has a Δ column instead of the last two value columns).
 const THIS_RUN_LANG_COLS = `${LANG_LABEL_PX}px 1fr 1fr 1fr 1fr`;
 
+type NormalizedLangEntry = {
+  score: number | null;
+  passes: number | null;
+  tests: number | null;
+  speed: number | null;
+};
+
+function normalizeLangEntry(v: unknown): NormalizedLangEntry {
+  if (typeof v !== "object" || v === null) {
+    return { score: typeof v === "number" ? v : null, passes: null, tests: null, speed: null };
+  }
+  const o = v as Record<string, unknown>;
+  return {
+    score: (o.score as number | null | undefined) ?? null,
+    passes:
+      (o.passes as number | null | undefined) ??
+      (o.correctness as number | null | undefined) ??
+      null,
+    tests: (o.tests as number | null | undefined) ?? null,
+    speed: (o.speed as number | null | undefined) ?? null,
+  };
+}
+
 /**
  * Each cutoff names its OWN remedy. They are not interchangeable: raising
  * `--max-tokens` does nothing for a bench.py budget stop, and `--nudge-at`
@@ -490,16 +513,7 @@ export function TasksAndRuns({
                 </div>
                 {sortByLangOrder(Object.keys(byLang), taskLangOrder).map(
                   (lang) => {
-                    const v = byLang[lang];
-                    const isLegacy = typeof v !== "object" || v === null;
-                    const passes = isLegacy
-                      ? null
-                      : ((v as Record<string, unknown>).passes as number | null | undefined) ??
-                        ((v as Record<string, unknown>).correctness as number | null | undefined) ??
-                        null;
-                    const tests = isLegacy
-                      ? null
-                      : ((v as Record<string, unknown>).tests as number | null | undefined) ?? null;
+                    const entry = normalizeLangEntry(byLang[lang]);
                     return (
                       <div
                         key={lang}
@@ -512,24 +526,16 @@ export function TasksAndRuns({
                       >
                         <span>{lang}</span>
                         <span style={{ textAlign: "right" }}>
-                          {isLegacy
-                            ? (v as unknown as number).toFixed(1)
-                            : (v as Record<string, unknown>).score != null
-                              ? ((v as Record<string, unknown>).score as number).toFixed(1)
-                              : "—"}
+                          {entry.score != null ? entry.score.toFixed(1) : "—"}
                         </span>
                         <span style={{ textAlign: "right" }}>
-                          {passes != null ? passes.toFixed(1) : "—"}
+                          {entry.passes != null ? entry.passes.toFixed(1) : "—"}
                         </span>
                         <span style={{ textAlign: "right" }}>
-                          {tests != null ? tests.toFixed(1) : "—"}
+                          {entry.tests != null ? entry.tests.toFixed(1) : "—"}
                         </span>
                         <span style={{ textAlign: "right" }}>
-                          {isLegacy
-                            ? "—"
-                            : (v as Record<string, unknown>).speed != null
-                              ? ((v as Record<string, unknown>).speed as number).toFixed(1)
-                              : "—"}
+                          {entry.speed != null ? entry.speed.toFixed(1) : "—"}
                         </span>
                       </div>
                     );
@@ -1509,6 +1515,11 @@ function ComparePane({
     setSelected(next.filter(Boolean));
   };
 
+  const allSlotOptions = useMemo(
+    () => slots.map((_, i) => compareSlotOptions(runs, slots, i, bench.defaultUrl)),
+    [runs, slots, bench.defaultUrl],
+  );
+
   return (
     <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 160 }}>
       <div
@@ -1520,7 +1531,7 @@ function ComparePane({
         }}
       >
         {slots.map((slotValue, i) => {
-          const options = compareSlotOptions(runs, slots, i, bench.defaultUrl);
+          const options = allSlotOptions[i];
           return (
             <label
               key={i}
