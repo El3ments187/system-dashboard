@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ArrowUpDown,
   Search,
+  Star,
   X,
 } from "lucide-react";
 import type {
@@ -63,13 +64,36 @@ const EMPTY_STATE_STYLE: React.CSSProperties = {
   gap: 8,
 };
 
-// Extracted to avoid a nested ternary in the render (this file's own
-// established pattern — see computeX/splitSegments in Sparkline.tsx for
-// the same reasoning). Returns null when the table should render normally.
+const FAVORITES_KEY = "run-models-favorites";
+
+function loadFavorites(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFavorites(favorites: Set<string>): void {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+  } catch {
+    // Private browsing or quota exhaustion — in-session state is still intact.
+  }
+}
+
+// Extracted to avoid a nested ternary in the render.
+// Precedence: no profiles → no favourites (filter on) → no search match.
 function renderEmptyState(
   totalCount: number,
   filteredCount: number,
   searchQuery: string,
+  showOnlyFavorites: boolean,
+  favoritesInTotal: number,
 ): React.ReactNode | null {
   if (totalCount === 0) {
     return (
@@ -79,11 +103,23 @@ function renderEmptyState(
       </div>
     );
   }
+  if (showOnlyFavorites && favoritesInTotal === 0) {
+    return (
+      <div style={EMPTY_STATE_STYLE}>
+        <Star size={24} style={{ opacity: 0.35 }} />
+        No favourites yet — click ★ on a model to star it.
+      </div>
+    );
+  }
   if (filteredCount === 0) {
     return (
       <div style={EMPTY_STATE_STYLE}>
         <Search size={24} style={{ opacity: 0.35 }} />
-        No models match &quot;{searchQuery}&quot;.
+        {showOnlyFavorites ? (
+          <>No favourites match &quot;{searchQuery}&quot;.</>
+        ) : (
+          <>No models match &quot;{searchQuery}&quot;.</>
+        )}
       </div>
     );
   }
@@ -102,6 +138,10 @@ export function RunModelsSection() {
     column: null,
     direction: "none",
   });
+  const [favorites, setFavorites] = useState<Set<string>>(() =>
+    loadFavorites(),
+  );
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
 
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -143,15 +183,30 @@ export function RunModelsSection() {
     });
   }, []);
 
+  const toggleFavorite = useCallback((scriptPath: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(scriptPath)) {
+        next.delete(scriptPath);
+      } else {
+        next.add(scriptPath);
+      }
+      saveFavorites(next);
+      return next;
+    });
+  }, []);
+
   const getFilteredProfiles = useCallback((): LaunchProfile[] => {
     const q = searchQuery.trim().toLowerCase();
-    if (q === "") return profiles;
-    // Match on the model's display name — the same string the MODEL
-    // column renders, so "finding a model" means exactly what the user
-    // sees on screen. Substring, not fuzzy: predictable and fast for a
-    // list of scripts a person named themselves.
-    return profiles.filter((p) => p.name.toLowerCase().includes(q));
-  }, [profiles, searchQuery]);
+    let filtered =
+      q === ""
+        ? profiles
+        : profiles.filter((p) => p.name.toLowerCase().includes(q));
+    if (showOnlyFavorites) {
+      filtered = filtered.filter((p) => favorites.has(p.script_path));
+    }
+    return filtered;
+  }, [profiles, searchQuery, showOnlyFavorites, favorites]);
 
   const getSortedProfiles = useCallback((): LaunchProfile[] => {
     const filtered = getFilteredProfiles();
@@ -255,8 +310,13 @@ export function RunModelsSection() {
     }
   };
 
+  // Star column (20px) precedes the existing # column (24px).
   const COL_GRID =
-    "24px 90px minmax(210px, 1fr) 70px 90px 70px 80px 80px 80px 70px 90px";
+    "20px 24px 90px minmax(210px, 1fr) 70px 90px 70px 80px 80px 80px 70px 90px";
+
+  const favoritesInTotal = profiles.filter((p) =>
+    favorites.has(p.script_path),
+  ).length;
 
   return (
     <div
@@ -325,6 +385,33 @@ export function RunModelsSection() {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            aria-pressed={showOnlyFavorites}
+            onClick={() => setShowOnlyFavorites((v) => !v)}
+            title={
+              showOnlyFavorites ? "Show all models" : "Show favourites only"
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              fontSize: 10,
+              fontWeight: 600,
+              background: showOnlyFavorites
+                ? "var(--accent-tint-10)"
+                : "var(--bg-card)",
+              border: `1px solid ${showOnlyFavorites ? "var(--accent-tint-40)" : "var(--border-color)"}`,
+              borderRadius: 6,
+              cursor: "pointer",
+              color: showOnlyFavorites
+                ? "var(--accent-primary)"
+                : "var(--text-muted)",
+            }}
+          >
+            <Star size={10} fill={showOnlyFavorites ? "currentColor" : "none"} />
+            Favourites
+          </button>
           <div
             style={{
               display: "flex",
@@ -411,6 +498,17 @@ export function RunModelsSection() {
           flexShrink: 0,
         }}
       >
+        {/* Star column header — not sortable */}
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--text-muted)",
+            textAlign: "center",
+          }}
+        >
+          ★
+        </span>
         <span
           style={{
             fontSize: 10,
@@ -530,6 +628,8 @@ export function RunModelsSection() {
         profiles.length,
         getFilteredProfiles().length,
         searchQuery,
+        showOnlyFavorites,
+        favoritesInTotal,
       ) ?? (
         <div
           style={
@@ -570,6 +670,7 @@ export function RunModelsSection() {
                   color:
                     "color-mix(in srgb, var(--accent-primary) 80%, var(--text-primary))",
                 };
+            const isFavorite = favorites.has(profile.script_path);
 
             return (
               <div
@@ -591,6 +692,31 @@ export function RunModelsSection() {
                   minHeight: 26,
                 }}
               >
+                {/* Star toggle */}
+                <button
+                  onClick={() => toggleFavorite(profile.script_path)}
+                  aria-pressed={isFavorite}
+                  aria-label={`${isFavorite ? "Unstar" : "Star"} ${profile.name}`}
+                  title={
+                    isFavorite
+                      ? "Remove from favourites"
+                      : "Add to favourites"
+                  }
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: isFavorite
+                      ? "var(--accent-primary)"
+                      : "var(--text-muted)",
+                  }}
+                >
+                  <Star size={12} fill={isFavorite ? "currentColor" : "none"} />
+                </button>
                 <span
                   style={{
                     fontSize: 10,

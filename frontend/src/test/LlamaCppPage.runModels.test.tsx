@@ -611,3 +611,237 @@ describe("RunModelsSection search", () => {
     expect(screen.queryByLabelText("Clear search")).not.toBeInTheDocument();
   });
 });
+
+// ─── T201 Favourites ─────────────────────────────────────────────────
+
+const STORAGE_KEY = "run-models-favorites";
+
+function twoProfilesForFav() {
+  return profilesResponse({
+    profiles: [
+      {
+        id: "p1",
+        name: "qwen-35b",
+        script_path: "/scripts/qwen.sh",
+        file_hash: "aaa",
+        parsed_args: null,
+        filename_meta: null,
+        warning: null,
+      },
+      {
+        id: "p2",
+        name: "gemma-27b",
+        script_path: "/scripts/gemma.sh",
+        file_hash: "bbb",
+        parsed_args: null,
+        filename_meta: null,
+        warning: null,
+      },
+    ],
+    states: {},
+    metadata: {},
+  });
+}
+
+describe("T201 favourites — star toggle and filter", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("each model row has a star button with aria-pressed=false initially", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const starBtns = screen.getAllByRole("button", { name: /Star qwen-35b|Star gemma-27b/i });
+    expect(starBtns.length).toBeGreaterThanOrEqual(1);
+    for (const btn of starBtns) {
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+    }
+  });
+
+  it("clicking a star button marks it as pressed and writes to localStorage", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const starBtn = screen.getByRole("button", { name: /Star qwen-35b/i });
+    expect(starBtn).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(starBtn);
+
+    expect(starBtn).toHaveAttribute("aria-pressed", "true");
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    expect(stored).toContain("/scripts/qwen.sh");
+  });
+
+  it("clicking the star again removes the favourite", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const starBtn = screen.getByRole("button", { name: /Star qwen-35b/i });
+    fireEvent.click(starBtn); // star
+    expect(starBtn).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(starBtn); // unstar
+    expect(starBtn).toHaveAttribute("aria-pressed", "false");
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    expect(stored).not.toContain("/scripts/qwen.sh");
+  });
+
+  it("filter toggle button has aria-pressed reflecting state", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const filterBtn = screen.getByRole("button", { name: /favourites/i });
+    expect(filterBtn).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(filterBtn);
+    expect(filterBtn).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(filterBtn);
+    expect(filterBtn).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("filter on with zero favourites shows the favourites empty state", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const filterBtn = screen.getByRole("button", { name: /favourites/i });
+    fireEvent.click(filterBtn);
+    expect(
+      screen.getByText(/No favourites yet/i),
+    ).toBeInTheDocument();
+    // Must not show "No profiles" or "No models match"
+    expect(screen.queryByText(/No profiles found/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No models match/i)).not.toBeInTheDocument();
+  });
+
+  it("filter on with one favourite shows only that model", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Star qwen only
+    fireEvent.click(screen.getByRole("button", { name: /Star qwen-35b/i }));
+    // Enable filter
+    fireEvent.click(screen.getByRole("button", { name: /favourites/i }));
+    expect(screen.getByText("qwen-35b")).toBeInTheDocument();
+    expect(screen.queryByText("gemma-27b")).not.toBeInTheDocument();
+  });
+
+  it("filter + search composed: only favourites matching the query appear", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Star both
+    fireEvent.click(screen.getByRole("button", { name: /Star qwen-35b/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Star gemma-27b/i }));
+    // Enable filter and search for "gemma"
+    fireEvent.click(screen.getByRole("button", { name: /favourites/i }));
+    fireEvent.change(screen.getByPlaceholderText("Search models…"), {
+      target: { value: "gemma" },
+    });
+    expect(screen.queryByText("qwen-35b")).not.toBeInTheDocument();
+    expect(screen.getByText("gemma-27b")).toBeInTheDocument();
+  });
+
+  it("filter on + search that clears favourites shows 'no favourites match' not 'no models match'", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Star only qwen
+    fireEvent.click(screen.getByRole("button", { name: /Star qwen-35b/i }));
+    // Filter and search for something that doesn't match qwen
+    fireEvent.click(screen.getByRole("button", { name: /favourites/i }));
+    fireEvent.change(screen.getByPlaceholderText("Search models…"), {
+      target: { value: "zzz-no-match" },
+    });
+    expect(screen.getByText(/No favourites match/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No models match/i)).not.toBeInTheDocument();
+  });
+
+  it("malformed storage — non-JSON string — renders empty set without throwing", () => {
+    localStorage.setItem(STORAGE_KEY, "not-valid-json{{{");
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    expect(() => render(<RunModelsSection />)).not.toThrow();
+  });
+
+  it("malformed storage — wrong JSON type (number) — renders empty set", async () => {
+    localStorage.setItem(STORAGE_KEY, "42");
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // No crash; filter button should still work
+    const filterBtn = screen.getByRole("button", { name: /favourites/i });
+    fireEvent.click(filterBtn);
+    expect(screen.getByText(/No favourites yet/i)).toBeInTheDocument();
+  });
+
+  it("stored script_path no longer in profiles is ignored (stale entry)", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(["/scripts/deleted.sh"]));
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Enable filter — stale entry should not cause a crash or show a model
+    fireEvent.click(screen.getByRole("button", { name: /favourites/i }));
+    expect(screen.getByText(/No favourites yet/i)).toBeInTheDocument();
+  });
+
+  it("favourites persist across remounts via localStorage", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    const { unmount } = render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Star qwen-35b/i }));
+    unmount();
+
+    // Second mount reads from localStorage
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const starBtn = screen.getByRole("button", { name: /Unstar qwen-35b/i });
+    expect(starBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("star is not in SORTABLE_COLUMNS — sorting by name still works with filter on", async () => {
+    global.fetch = mockFetchOnce(twoProfilesForFav());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Star both, enable filter
+    fireEvent.click(screen.getByRole("button", { name: /Star qwen-35b/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Star gemma-27b/i }));
+    fireEvent.click(screen.getByRole("button", { name: /favourites/i }));
+    // Both visible
+    expect(screen.getByText("qwen-35b")).toBeInTheDocument();
+    expect(screen.getByText("gemma-27b")).toBeInTheDocument();
+    // Click MODEL sort — should not throw and both rows still visible
+    const modelSortBtn = screen.getAllByRole("button").find(
+      (b) => b.textContent?.includes("MODEL"),
+    );
+    expect(modelSortBtn).toBeDefined();
+    fireEvent.click(modelSortBtn!);
+    expect(screen.getByText("qwen-35b")).toBeInTheDocument();
+    expect(screen.getByText("gemma-27b")).toBeInTheDocument();
+  });
+});
