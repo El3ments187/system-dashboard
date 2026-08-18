@@ -81,6 +81,23 @@ pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, 
         None | Some(Value::Null) => true,
         _ => false,
     };
+    // A run is finished only when it actually covered its task set.  A run that
+    // stopped early (25/27 tasks) has live=={} but suite_tasks > tasks — it is
+    // interrupted and must be offered Resume, not silently treated as done.
+    // Runs without suite_tasks (pre-157 format) fall back to live=={} alone.
+    let tasks_covered = v
+        .get("summary")
+        .and_then(|s| s.get("suite_tasks"))
+        .and_then(|st| st.as_u64())
+        .map(|suite_tasks| {
+            let tasks = v
+                .get("summary")
+                .and_then(|s| s.get("tasks"))
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            tasks >= suite_tasks
+        })
+        .unwrap_or(true);
     Ok(RunSummary {
         run_id: v
             .get("run_id")
@@ -109,7 +126,7 @@ pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, 
             .unwrap_or_default(),
         summary: v.get("summary").cloned().unwrap_or(Value::Null),
         config: v.get("config").cloned().unwrap_or(Value::Null),
-        finished: live_empty,
+        finished: live_empty && tasks_covered,
     })
 }
 
@@ -651,6 +668,7 @@ pub struct ResumeRequest {
     pub attempts: Option<u32>,
     pub n: Option<u32>,
     pub url: Option<String>,
+    pub model: Option<String>,
     pub temperature: Option<f64>,
     pub time_budget: Option<f64>,
     pub time_step: Option<f64>,
@@ -716,6 +734,10 @@ impl ResumeRequest {
         }
         if let Some(v) = &self.url {
             a.push("-u".into());
+            a.push(v.clone());
+        }
+        if let Some(v) = &self.model {
+            a.push("-m".into());
             a.push(v.clone());
         }
         // Absent temperature is the run having recorded `null` — the flag then
@@ -1119,10 +1141,14 @@ pub async fn queue_advance_handler(
     axum::extract::Json(req): axum::extract::Json<QueueAdvanceRequest>,
 ) -> axum::response::Json<Value> {
     if req.script_path.is_empty() {
-        return axum::response::Json(json!({ "error": "script_path must not be empty", "success": false }));
+        return axum::response::Json(
+            json!({ "error": "script_path must not be empty", "success": false }),
+        );
     }
     if req.script_path.contains("..") {
-        return axum::response::Json(json!({ "error": "path traversal sequences are not allowed", "success": false }));
+        return axum::response::Json(
+            json!({ "error": "path traversal sequences are not allowed", "success": false }),
+        );
     }
     let script = req.script_path.clone();
     let launched =
@@ -1193,6 +1219,98 @@ mod tests {
         assert!(
             !parse_run_summary(RUNNING, "r").unwrap().finished,
             "a non-empty live block must mean RUNNING"
+        );
+    }
+
+    // T193 — ResumeRequest carries the model flag through to_args.
+    #[test]
+    fn t193_resume_to_args_includes_model_flag() {
+        let req = ResumeRequest {
+            folder: "run_20260808".to_string(),
+            model: Some("gemma-4-27B".to_string()),
+            ..Default::default()
+        };
+        let args = req.to_args("/runs/run_20260808");
+        let pos = args
+            .iter()
+            .position(|a| a == "-m")
+            .expect("-m flag must appear in to_args when model is Some");
+        assert_eq!(args[pos + 1], "gemma-4-27B");
+    }
+
+    #[test]
+    fn t193_resume_to_args_omits_model_flag_when_none() {
+        let req = ResumeRequest {
+            folder: "run_20260808".to_string(),
+            model: None,
+            ..Default::default()
+        };
+        let args = req.to_args("/runs/run_20260808");
+        assert!(
+            !args.contains(&"-m".to_string()),
+            "-m must be absent from to_args when model is None"
+        );
+    }
+
+    #[test]
+    fn t193_resume_to_args_always_starts_with_resume_path() {
+        let req = ResumeRequest {
+            folder: "run_20260808".to_string(),
+            model: Some("x".to_string()),
+            temperature: Some(0.6),
+            ..Default::default()
+        };
+        let args = req.to_args("/absolute/path/to/run");
+        assert_eq!(args[0], "--resume");
+        assert_eq!(args[1], "/absolute/path/to/run");
+    }
+
+    // T193b — finished is task-coverage based, not just live=={}.
+    #[test]
+    fn t193b_interrupted_run_is_not_finished_when_tasks_lt_suite_tasks() {
+        let json = r#"{
+            "run_id":"r1","suite_hash":"abc","created":"2026-08-01T00:00:00",
+            "models":["m"],
+            "summary":{"tasks":25,"suite_tasks":27,"samples":0,"mean_points":0,
+                        "max_points":0,"solved":0,"first_try":0,"tests_passed":0,
+                        "tests_expected":0,"seconds":0,"unsolved":[]},
+            "config":{},"live":{}
+        }"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(
+            !s.finished,
+            "25/27 tasks with live=={{}} must be interrupted (finished=false), not finished"
+        );
+    }
+
+    #[test]
+    fn t193b_complete_run_is_finished_when_tasks_eq_suite_tasks() {
+        let json = r#"{
+            "run_id":"r1","suite_hash":"abc","created":"2026-08-01T00:00:00",
+            "models":["m"],
+            "summary":{"tasks":27,"suite_tasks":27,"samples":0,"mean_points":0,
+                        "max_points":0,"solved":0,"first_try":0,"tests_passed":0,
+                        "tests_expected":0,"seconds":0,"unsolved":[]},
+            "config":{},"live":{}
+        }"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(s.finished, "27/27 tasks with live=={{}} must be finished");
+    }
+
+    #[test]
+    fn t193b_no_suite_tasks_falls_back_to_live_empty() {
+        let json = r#"{
+            "run_id":"r1","suite_hash":"abc","created":"2026-08-01T00:00:00",
+            "models":["m"],
+            "summary":{"tasks":4,"samples":0,"mean_points":0,"max_points":0,
+                        "solved":0,"first_try":0,"tests_passed":0,"tests_expected":0,
+                        "seconds":0,"unsolved":[]},
+            "config":{},"live":{}
+        }"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(
+            s.finished,
+            "without suite_tasks, live=={{}} alone must mean finished (pre-157 format)"
         );
     }
 
@@ -1346,6 +1464,7 @@ mod tests {
             attempts: Some(3),
             n: Some(1),
             url: Some("http://localhost:8081".into()),
+            model: None,
             temperature: Some(0.2),
             time_budget: Some(15.0),
             time_step: Some(30.0),

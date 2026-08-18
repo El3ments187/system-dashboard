@@ -1945,7 +1945,19 @@ export default function BenchPage() {
   // budget and truncation WARNINGS, which is how a brand-new run displayed
   // "5 samples were cut off" belonging to its predecessor. A stale warning is
   // worse than a stale number: it reports a problem the run has not had.
-  const scopedDetail = identity.warming ? null : detail;
+  //
+  // Identity guard (stronger than warming alone): a detail whose run_id does
+  // not match the selected run must never render, regardless of warming. This
+  // covers the case where current.run is null (warming goes false) but the
+  // detail fetch for the new run has not yet succeeded — so detail still
+  // carries the PREVIOUS run's data while selectedRunId already points to the
+  // new one. The failing-state values were: current.running=true,
+  // current.run=null (warming=false via the fragile clause), detail.run_id=old,
+  // selectedRunId=new. The stale detail passed straight through.
+  const scopedDetail =
+    identity.warming || (detail !== null && detail.run_id !== bench.selectedRunId)
+      ? null
+      : detail;
   const records = useMemo(() => scopedDetail?.records ?? [], [scopedDetail]);
   // Memoised: `?? {}` allocates a new object every render, which made every
   // useMemo depending on `live` recompute unconditionally.
@@ -2139,7 +2151,7 @@ export default function BenchPage() {
           <PanelErrorBoundary panelName="Bench Score & Progress">
             <ScoreProgressCard
               scoreDetail={scopedDetail}
-              progressDetail={detail}
+              progressDetail={scopedDetail}
               spawnedAttempts={
                 current.running ? (current.run?.attempts ?? null) : null
               }

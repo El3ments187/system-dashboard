@@ -7921,7 +7921,7 @@ describe("T190 Compare block grid alignment", () => {
   it("score strip and every lang row share the same gridTemplateColumns (2 runs)", async () => {
     install190([makeRun190("t190-a", SUM_A, TASKS_190), makeRun190("t190-b", SUM_B, TASKS_190)]);
     const strip = await openCompare190();
-    const expected = "46px repeat(2, 1fr) 40px";
+    const expected = "64px repeat(2, 1fr) 40px";
     expect(strip.style.gridTemplateColumns).toBe(expected);
     const langRows = screen.getAllByTestId("bench-compare-lang-row");
     expect(langRows.length).toBeGreaterThan(0);
@@ -7939,7 +7939,7 @@ describe("T190 Compare block grid alignment", () => {
       makeRun190("t190-c3", SUM_C, TASKS_190),
     ]);
     const strip = await openCompare190();
-    const expected = "46px repeat(3, 1fr) 40px";
+    const expected = "64px repeat(3, 1fr) 40px";
     expect(strip.style.gridTemplateColumns).toBe(expected);
     const langRows = screen.getAllByTestId("bench-compare-lang-row");
     for (const row of langRows) {
@@ -8281,5 +8281,265 @@ describe("T182 hero stats: Remaining tile-only, scaled sparklines, stat borders"
     expect(screen.getByTestId("bench-footer-generation-speed")).toBeTruthy();
     expect(screen.getByTestId("bench-footer-samples-hr")).toBeTruthy();
     expect(screen.getByTestId("bench-footer-pass-rate")).toBeTruthy();
+  });
+});
+
+// ── T193 — Resume sends model from run.models, not config.model ──────────────
+describe("T193 resume sends model from run.models", () => {
+  function installWithResumableRun(models: string[]) {
+    installFetch({ runs: [runRow({ finished: false, models })] });
+    // Wrap global.fetch to capture /api/bench/resume bodies.
+    const base = global.fetch as ReturnType<typeof vi.fn>;
+    const bodies: string[] = [];
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/bench/resume")) {
+        bodies.push((init?.body as string) ?? "");
+      }
+      return (base as unknown as typeof fetch)(input, init);
+    }) as unknown as typeof fetch;
+    return bodies;
+  }
+
+  async function openHistAndClickResume() {
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("bench-tab-hist"));
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-resume")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("bench-resume"));
+  }
+
+  it("resume body contains model from run.models[0], not config.model", async () => {
+    const bodies = installWithResumableRun(["seedA"]);
+    await openHistAndClickResume();
+    await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
+    const body = JSON.parse(bodies[0]) as Record<string, unknown>;
+    expect(body.model, "model must come from run.models[0]").toBe("seedA");
+    // benchRun.config.model is "buggy-model" — must not be used
+    expect(body.model).not.toBe("buggy-model");
+  });
+
+  it("resume body omits model when models array is empty", async () => {
+    const bodies = installWithResumableRun([]);
+    await openHistAndClickResume();
+    await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
+    const body = JSON.parse(bodies[0]) as Record<string, unknown>;
+    expect(body.model).toBeUndefined();
+  });
+
+  it("resume body includes all 5 compat settings", async () => {
+    const bodies = installWithResumableRun(["seedA"]);
+    await openHistAndClickResume();
+    await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
+    const body = JSON.parse(bodies[0]) as Record<string, unknown>;
+    // Every setting bench.py's resume guard compares must be present.
+    expect("attempts" in body).toBe(true);
+    expect("n" in body).toBe(true);
+    expect("temperature" in body).toBe(true);
+    expect("time_budget" in body).toBe(true);
+    expect("time_step" in body).toBe(true);
+  });
+});
+
+// ── T193b — finished means covered task set, not just not-running ─────────────
+describe("T193b finished means covered task set", () => {
+  it("run with finished:false shows Resume button (interrupted)", async () => {
+    installFetch({ runs: [runRow({ finished: false })] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("bench-tab-hist"));
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-resume")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("bench-resume")).toBeTruthy();
+  });
+
+  it("run with finished:true does NOT show Resume button (complete)", async () => {
+    installFetch({ runs: [runRow({ finished: true })] });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-task-avg")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("bench-tab-hist"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-interrupted")).toBeNull(),
+    );
+    expect(screen.queryByTestId("bench-resume")).toBeNull();
+  });
+});
+
+// ── T195 — This Run lang block uses px constants; no ch unit; shared template ─
+describe("T195 lang label column uses px; no ch; template shared across rows", () => {
+  const SUM_195 = {
+    ...benchRun.summary,
+    score: 72.3,
+    by_language: {
+      gdscript: { score: 70.8, passes: 62.0, tests: 88.0, speed: 17.5 },
+      js: { score: 80.0, passes: 72.0, tests: 95.0, speed: 20.0 },
+    },
+  };
+
+  async function openLangBreakdown() {
+    installFetch({ detail: { ...benchRun, summary: SUM_195 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-lang-breakdown");
+  }
+
+  it("bench-lang-row and bench-lang-all-row testids resolve", async () => {
+    await openLangBreakdown();
+    expect(screen.queryAllByTestId("bench-lang-row").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("bench-lang-all-row")).toBeTruthy();
+  });
+
+  it("all bench-lang-row elements share one identical gridTemplateColumns", async () => {
+    await openLangBreakdown();
+    const rows = screen.getAllByTestId("bench-lang-row");
+    const templates = rows.map((r) => r.style.gridTemplateColumns);
+    const first = templates[0];
+    expect(first).not.toBe(""); // must be set
+    for (const t of templates) {
+      expect(t).toBe(first);
+    }
+    // header and all-row must match too
+    expect(screen.getByTestId("bench-lang-table-header").style.gridTemplateColumns).toBe(first);
+    expect(screen.getByTestId("bench-lang-all-row").style.gridTemplateColumns).toBe(first);
+  });
+
+  it("gridTemplateColumns contains no ch unit", async () => {
+    await openLangBreakdown();
+    const rows = screen.getAllByTestId("bench-lang-row");
+    for (const row of rows) {
+      expect(row.style.gridTemplateColumns).not.toMatch(/\dch/);
+    }
+    expect(screen.getByTestId("bench-lang-table-header").style.gridTemplateColumns).not.toMatch(/\dch/);
+    expect(screen.getByTestId("bench-lang-all-row").style.gridTemplateColumns).not.toMatch(/\dch/);
+  });
+
+  it("label column is at least 60px wide — fits gdscript at 12px mono", async () => {
+    await openLangBreakdown();
+    const header = screen.getByTestId("bench-lang-table-header");
+    const labelPx = parseInt(header.style.gridTemplateColumns.split(" ")[0], 10);
+    // 64px gives ~6px headroom over gdscript at 12px mono (8 chars × 7.2px ≈ 57.6px).
+    expect(labelPx).toBeGreaterThanOrEqual(60);
+  });
+
+  // Note: two elements share data-testid="bench-lang-breakdown" — the scored block
+  // and a pre-scoring fallback. They are alternative branches (only one renders at a
+  // time), so getByTestId finds one. Reported here; a later pass should give the
+  // fallback its own id.
+  it("bench-lang-breakdown testid resolves", async () => {
+    await openLangBreakdown();
+    expect(screen.getByTestId("bench-lang-breakdown")).toBeTruthy();
+  });
+});
+
+// ── T200 — a run only ever shows its own data ─────────────────────────────────
+//
+// Failing state: current.running=true, current.run=null (warming=false via the
+// fragile `current.run !== null` clause), detail.run_id="7ea23..." (old run),
+// selectedRunId="new-run-id" (auto-selected from runs list). The identity guard
+// `detail.run_id !== selectedRunId` catches this and returns null regardless of
+// warming.
+describe("T200 a run only ever shows its own data", () => {
+  const WITH_SCORE = { ...benchRun.summary, score: 95.5 };
+  const STALE_DETAIL = { ...benchRun, summary: WITH_SCORE };
+
+  it("identity guard: stale detail whose run_id mismatches selectedRunId renders no score", async () => {
+    // Runs list has "t200-new"; detail endpoint returns benchRun (run_id="7ea23...").
+    // After auto-select: selectedRunId="t200-new", detail.run_id="7ea23..." → guard fires.
+    installFetch({
+      runs: [runRow({ run_id: "t200-new", folder: "t200-new-folder", finished: false })],
+      detail: STALE_DETAIL,
+      current: { running: true, run: null }, // warming=false (current.run===null)
+    });
+    render(<BenchPage />);
+    // Wait for the fetch cycle: bench-task-avg indicates the tasks endpoint returned.
+    await waitFor(() => expect(screen.getByTestId("bench-task-avg")).toBeTruthy());
+    // Identity guard fires → scopedDetail=null → gauge shows "—".
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("—");
+    expect(screen.getByTestId("bench-gauge-label").textContent).not.toBe("95.5");
+  });
+
+  it("warming run with a previous run's detail renders no score and no budget or truncation warning", async () => {
+    // Old run in list (same run_id as detail). New run spawned at a different folder.
+    // showingSpawnedRun=false → warming=true → scopedDetail=null.
+    installFetch({
+      runs: [runRow({ run_id: benchRun.run_id, folder: "old-folder", finished: true, summary: WITH_SCORE })],
+      detail: STALE_DETAIL,
+      current: {
+        running: true,
+        run: {
+          pid: 99999,
+          folder: "new-spawned-folder",
+          model: null,
+          label: null,
+          langs: null,
+          url: null,
+          attempts: null,
+          n: null,
+          temperature: null,
+          started: "2026-08-17T00:00:00",
+        },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() => expect(screen.getByTestId("bench-task-avg")).toBeTruthy());
+    // warming=true → scopedDetail=null → no score, no warnings.
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("—");
+    expect(screen.queryByTestId("bench-budget-banner")).toBeNull();
+    expect(screen.queryByTestId("bench-truncation-banner")).toBeNull();
+  });
+
+  it("finished run correctly renders its own score", async () => {
+    // detail.run_id = benchRun.run_id = selectedRunId. Not running. Guard passes.
+    installFetch({
+      runs: [runRow({ run_id: benchRun.run_id, finished: true, summary: WITH_SCORE })],
+      detail: STALE_DETAIL,
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-gauge-label").textContent).toBe("95.5"),
+    );
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("95.5");
+  });
+
+  it("disk-recovered run (running=true, current.run=null) with records renders its figures", async () => {
+    // current.run=null → warming=false. But detail.run_id=selectedRunId → guard passes.
+    installFetch({
+      runs: [runRow({ run_id: benchRun.run_id, finished: false, summary: WITH_SCORE })],
+      detail: STALE_DETAIL,
+      current: { running: true, run: null },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-gauge-label").textContent).toBe("95.5"),
+    );
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("95.5");
+  });
+
+  // T193 landed — resume produces a new run_id. The resumed run carries forward
+  // prior records so it shows a non-zero sample count from the first render.
+  it("resumed run (T193): new run_id, carried-forward samples render immediately", async () => {
+    const RESUMED_DETAIL = {
+      ...benchRun,
+      run_id: "t200-resumed",
+      summary: { ...benchRun.summary, score: 72.0, samples: 25 },
+    };
+    installFetch({
+      runs: [runRow({ run_id: "t200-resumed", folder: "t200-resume-folder", finished: false })],
+      detail: RESUMED_DETAIL,
+      current: { running: true, run: null }, // disk-recovered shape after resume
+    });
+    render(<BenchPage />);
+    // detail.run_id="t200-resumed" = selectedRunId → guard passes → renders score.
+    await waitFor(() =>
+      expect(screen.getByTestId("bench-gauge-label").textContent).toBe("72.0"),
+    );
+    expect(screen.getByTestId("bench-gauge-label").textContent).toBe("72.0");
   });
 });

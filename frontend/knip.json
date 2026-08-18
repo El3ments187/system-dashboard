@@ -15,8 +15,7 @@
   "ignore": ["tests/**", "playwright.config.ts", "playwright.slow.config.ts"],
   "ignoreDependencies": [
     "puppeteer",
-    "@testing-library/user-event",
-    "depcheck"
+    "@testing-library/user-event"
   ],
   "ignoreBinaries": ["playwright"],
   "ignoreExportsUsedInFile": true

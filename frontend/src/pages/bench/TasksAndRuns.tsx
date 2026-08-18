@@ -60,10 +60,15 @@ const COMPARE_SLOTS = 3;
 
 /** Column gap shared by every row in the Compare score+language block. */
 const CMP_COL_GAP = 12;
-// 46px ≈ 7ch at 11px mono; 40px ≈ 6ch at 11px.  Using px so a font-size
-// change cannot shift the columns — ch is font-relative and would undo alignment.
-// Label sized for "Speed" with margin; Δ sized for "+100.0" (widest renderDiff output).
-const cmpCols = (n: number) => `46px repeat(${n}, 1fr) 40px`;
+// Widest language label is "gdscript" (8 chars). At 12px mono ≈7.2px/ch → 57.6px;
+// 64px gives ~6px headroom at that font size and more at This Run's 11px.
+// Both blocks share this constant so adding a ninth-character language triggers one change.
+const LANG_LABEL_PX = 64;
+// 40px ≈ 6ch at 11px mono; sized for "+100.0" (widest renderDiff output).
+const cmpCols = (n: number) => `${LANG_LABEL_PX}px repeat(${n}, 1fr) 40px`;
+// This Run's lang block: 5 columns (lang score passes tests speed). Separate from
+// cmpCols (which has a Δ column instead of the last two value columns).
+const THIS_RUN_LANG_COLS = `${LANG_LABEL_PX}px 1fr 1fr 1fr 1fr`;
 
 /**
  * Each cutoff names its OWN remedy. They are not interchangeable: raising
@@ -467,8 +472,8 @@ export function TasksAndRuns({
                   data-testid="bench-lang-table-header"
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
-                    gap: "0 12px",
+                    gridTemplateColumns: THIS_RUN_LANG_COLS,
+                    gap: `0 ${CMP_COL_GAP}px`,
                     fontWeight: 600,
                     fontSize: 9,
                     letterSpacing: "0.5px",
@@ -501,8 +506,8 @@ export function TasksAndRuns({
                         data-testid="bench-lang-row"
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
-                          gap: "0 12px",
+                          gridTemplateColumns: THIS_RUN_LANG_COLS,
+                          gap: `0 ${CMP_COL_GAP}px`,
                         }}
                       >
                         <span>{lang}</span>
@@ -535,8 +540,8 @@ export function TasksAndRuns({
                     data-testid="bench-lang-all-row"
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "7ch 1fr 1fr 1fr 1fr",
-                      gap: "0 12px",
+                      gridTemplateColumns: THIS_RUN_LANG_COLS,
+                      gap: `0 ${CMP_COL_GAP}px`,
                       borderTop: "1px solid var(--border-color)",
                       marginTop: 3,
                       paddingTop: 3,
@@ -1403,6 +1408,7 @@ function HistoryPane({
                             attempts: run.config?.attempts,
                             n: run.config?.n,
                             url: run.config?.url,
+                            model: run.models[0],
                             temperature: run.config?.temperature ?? null,
                             time_budget: run.config?.time_budget,
                             time_step: run.config?.time_step,
