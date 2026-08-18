@@ -874,7 +874,8 @@ function ScoreProgressCard({
   const summary = scoreDetail?.summary;
   const hasScore = summary !== undefined && summary.score !== undefined;
   const score = summary?.score;
-  const corrWeighted = summary?.correctness_weighted;
+  const passesWeighted = summary?.passes_weighted;
+  const testsWeighted = summary?.tests_weighted;
   const speedWeighted = summary?.speed_weighted;
   const partial = summary?.partial;
   const suiteTasksCount = summary?.suite_tasks;
@@ -1060,30 +1061,40 @@ function ScoreProgressCard({
               />
             </div>
 
-            {corrWeighted !== undefined && speedWeighted !== undefined && (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, 1fr)",
-                  gap: 6,
-                }}
-              >
-                <MetricTile
-                  mono
-                  label="Correctness (80%)"
-                  value={corrWeighted.toFixed(1)}
-                  valueSize={15}
-                  style={TIGHT_TILE}
-                  title="correctness_weighted: per-task tier score averaged across languages, weighted at 80% of the headline score."
-                />
-                <MetricTile
-                  mono
-                  label="Speed (20%)"
-                  value={speedWeighted.toFixed(1)}
-                  valueSize={15}
-                  style={TIGHT_TILE}
-                  title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
-                />
+            {(passesWeighted !== undefined ||
+              testsWeighted !== undefined ||
+              speedWeighted !== undefined) && (
+              <div style={{ display: "flex", gap: 6 }}>
+                {passesWeighted !== undefined && (
+                  <MetricTile
+                    mono
+                    label="Passes (70%)"
+                    value={passesWeighted.toFixed(1)}
+                    valueSize={15}
+                    style={{ ...TIGHT_TILE, flex: 1 }}
+                    title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
+                  />
+                )}
+                {testsWeighted !== undefined && (
+                  <MetricTile
+                    mono
+                    label="Tests (10%)"
+                    value={testsWeighted.toFixed(1)}
+                    valueSize={15}
+                    style={{ ...TIGHT_TILE, flex: 1 }}
+                    title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
+                  />
+                )}
+                {speedWeighted !== undefined && (
+                  <MetricTile
+                    mono
+                    label="Speed (20%)"
+                    value={speedWeighted.toFixed(1)}
+                    valueSize={15}
+                    style={{ ...TIGHT_TILE, flex: 1 }}
+                    title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+                  />
+                )}
               </div>
             )}
           </div>

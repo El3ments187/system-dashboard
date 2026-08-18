@@ -67,7 +67,8 @@ export interface BenchLive {
 
 export interface ByLanguageEntry {
   score: number;
-  correctness: number;
+  /** Absent on -185+ runs (replaced by passes/tests split). */
+  correctness?: number;
   speed: number | null;
   passes?: number;
   tests?: number;
@@ -89,11 +90,19 @@ export interface BenchSummary {
   /** null means "no score": multi-model file or nothing graded. NOT zero. */
   score?: number | null;
   correctness_100?: number;
+  /** localbench -165: replaced by passes_weighted + tests_weighted in -185. */
   correctness_weighted?: number;
+  /** localbench -185+: pass-rate component, 70% of score. */
+  passes_weighted?: number;
+  /** localbench -185+: partial-credit test component, 10% of score. */
+  tests_weighted?: number;
   speed_weighted?: number;
   passes_100?: number;
   tests_100?: number;
+  speed_100?: number;
+  /** localbench -165: renamed to median_minutes in -185. */
   median_solved_minutes?: number;
+  median_minutes?: number;
   suite_tasks?: number;
   partial?: boolean;
   // -165+: per-language breakdown (score, correctness, speed per lang)

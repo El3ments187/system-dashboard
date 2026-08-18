@@ -5413,6 +5413,7 @@ describe("T153 Started tile and History date show local time", () => {
 //
 // PRE-157 RUNS ARE THE COMMON PATH today — the fallback tests run first.
 describe("T149 localbench 0–100 score", () => {
+  // localbench -165 fixture (correctness_weighted era)
   const SCORED_SUMMARY = {
     ...benchRun.summary,
     score: 71.9,
@@ -5426,6 +5427,27 @@ describe("T149 localbench 0–100 score", () => {
       java: { score: 66.5, correctness: 58.8, speed: 19.5 },
       js: { score: 70.4, correctness: 64.3, speed: 19.0 },
       ts: { score: 78.7, correctness: 74.3, speed: 19.3 },
+    },
+  };
+
+  // localbench -251 fixture (passes_weighted + tests_weighted + speed_weighted)
+  // 42.0 + 7.7 + 17.3 = 67.0
+  const SCORED_SUMMARY_251 = {
+    ...benchRun.summary,
+    score: 67.0,
+    passes_100: 60.0,
+    tests_100: 77.0,
+    speed_100: 86.5,
+    passes_weighted: 42.0,
+    tests_weighted: 7.7,
+    speed_weighted: 17.3,
+    median_minutes: 3.2,
+    suite_tasks: 27,
+    partial: false,
+    by_language: {
+      java: { score: 64.1, speed: 18.0, passes: 58, tests: 82 },
+      js: { score: 68.3, speed: 17.5, passes: 62, tests: 80 },
+      ts: { score: 68.6, speed: 16.4, passes: 60, tests: 69 },
     },
   };
 
@@ -5467,17 +5489,29 @@ describe("T149 localbench 0–100 score", () => {
     expect(screen.getByTestId("bench-task-avg")).toBeTruthy();
   });
 
-  it("correctness_weighted and speed_weighted both render (wiring guard)", async () => {
+  it("passes_weighted/tests_weighted/speed_weighted all render (-251 wiring guard)", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY_251 } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("42.0"); // passes_weighted (70%)
+    expect(body).toContain("7.7");  // tests_weighted (10%)
+    expect(body).toContain("17.3"); // speed_weighted (20%)
+    // 42.0 + 7.7 + 17.3 = 67.0 — all four must appear, proving no wire cross
+    expect(body).toContain("67.0");
+  });
+
+  it("speed_weighted renders alone on -165 runs (per-tile degradation)", async () => {
     installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
     render(<BenchPage />);
     await waitFor(() =>
       expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
     );
     const body = document.body.textContent ?? "";
-    expect(body).toContain("52.6"); // correctness_weighted
-    expect(body).toContain("19.3"); // speed_weighted
-    // 52.6 + 19.3 = 71.9 (all three must appear, proving no wire cross)
-    expect(body).toContain("71.9");
+    // -165 fixture has speed_weighted but not passes_weighted/tests_weighted
+    expect(body).toContain("19.3"); // speed_weighted still renders
   });
 
   // ── null / zero edge cases ────────────────────────────────────────────────
