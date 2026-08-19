@@ -1240,6 +1240,7 @@ function ActionButton({
       disabled={disabled}
       title={title}
       data-testid={`bench-action-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+      className="btn-glow"
       style={{
         font: "600 11px Inter, system-ui, sans-serif",
         letterSpacing: "0.4px",
@@ -1281,14 +1282,16 @@ function Field({
   hint,
   hintAccent,
   children,
+  span,
 }: {
   label: React.ReactNode;
   hint?: React.ReactNode;
   hintAccent?: boolean;
   children: React.ReactNode;
+  span?: boolean;
 }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+    <label style={{ display: "flex", flexDirection: "column", gap: 3, ...(span ? { gridColumn: "1 / -1" } : {}) }}>
       <span style={LABEL_STYLE}>{label}</span>
       {children}
       {hint && (
@@ -1581,7 +1584,7 @@ function RunSetupCard({
               anything. bench.py's own help says to omit it and use whatever
               the server reports. The dropdown is an autocomplete for stating
               an expectation, not a picker. */}
-          <Field label="Model ID" hint="Blank = trust the server">
+          <Field label="Model ID" hint="Blank = trust the server" span>
             {/* A datalist, not a <select>: it gives the dropdown while
                 leaving the field free-text, so a model Run Models has never
                 seen (a differently-named mock, say) stays enterable rather
@@ -1611,7 +1614,7 @@ function RunSetupCard({
             </datalist>
           </Field>
 
-          <Field label="Benchmark Alias" hint="Optional — names this run">
+          <Field label="Benchmark Alias" hint="Optional — names this run" span>
             <input
               data-testid="bench-field-label"
               id="bench-label"
@@ -1661,6 +1664,7 @@ function RunSetupCard({
                         : `Cannot run ${t.lang} — ${t.reason}. ${t.tasks} tasks skipped.`
                     }
                     onClick={() => toggleLang(t.lang)}
+                    className="btn-glow"
                     style={{
                       font: `600 11px ${MONO}`,
                       padding: "5px 11px",
