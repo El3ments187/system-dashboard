@@ -7227,8 +7227,62 @@ describe("T180 Run Setup fills column; top-row alignItems stretch", () => {
       }
       el = el.parentElement;
     }
-    expect(gridEl, "top-row grid must be found").not.toBeNull();
+     expect(gridEl, "top-row grid must be found").not.toBeNull();
     expect(gridEl?.style.alignItems).toBe("stretch");
+  });
+});
+
+// ── T210 — Model ID and Benchmark Alias span the Run Setup grid ──────────
+describe("T210 Model ID and Benchmark Alias span the Run Setup grid", () => {
+  it("outer grid still reports '1fr 1fr' — container was not changed", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const modelInput = await screen.findByTestId("bench-field-model");
+    const modelLabel = modelInput.closest("label") as HTMLElement;
+    const grid = modelLabel.parentElement as HTMLElement;
+    expect(grid.style.gridTemplateColumns).toBe("1fr 1fr");
+  });
+
+  it("Model ID <label> spans full width via gridColumn: 1 / -1", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const modelInput = await screen.findByTestId("bench-field-model");
+    const label = modelInput.closest("label") as HTMLElement;
+    expect(label.style.gridColumn).toBe("1 / -1");
+  });
+
+  it("Benchmark Alias <label> spans full width via gridColumn: 1 / -1", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const aliasInput = await screen.findByTestId("bench-field-label");
+    const label = aliasInput.closest("label") as HTMLElement;
+    expect(label.style.gridColumn).toBe("1 / -1");
+  });
+
+  it("Attempts does NOT span — paired fields stay two-across", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const input = await screen.findByTestId("bench-field-attempts");
+    const label = input.closest("label") as HTMLElement;
+    expect(label.style.gridColumn).toBe("");
+  });
+
+  it("Samples, Max tokens and Nudge at do NOT span", async () => {
+    installFetch();
+    render(<BenchPage />);
+    await screen.findByTestId("bench-field-attempts");
+    for (const id of ["bench-field-n", "bench-field-max-tokens", "bench-field-nudge-at"]) {
+      const input = screen.getByTestId(id);
+      const label = input.closest("label") as HTMLElement;
+      expect(label.style.gridColumn, `${id} must not span`).toBe("");
+    }
+  });
+
+  it("bench-field-model and bench-field-label still resolve", async () => {
+    installFetch();
+    render(<BenchPage />);
+    expect(await screen.findByTestId("bench-field-model")).toBeInTheDocument();
+    expect(screen.getByTestId("bench-field-label")).toBeInTheDocument();
   });
 });
 
@@ -8680,5 +8734,160 @@ describe("T202 miss cells fill solid, error cells fill muted", () => {
       errorBg,
       "error and miss cells must not share the same background colour",
     ).not.toBe(missBg);
+  });
+});
+
+// ── T211 — Task table header renames ─────────────────────────────────────
+describe("T211 task table header renames", () => {
+  it("task table renders: Language, Samples, Average points, Average time", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const thead = container.querySelector("thead")!;
+    const texts = Array.from(thead.querySelectorAll("th")).map(
+      (th) => th.textContent?.trim() ?? "",
+    );
+    expect(texts).toContain("Language");
+    expect(texts).toContain("Samples");
+    expect(texts).toContain("Average points");
+    expect(texts).toContain("Average time");
+    expect(texts).not.toContain("Lang");
+    expect(texts).not.toContain("x̄ pts");
+    expect(texts).not.toContain("Gen x̄");
+  });
+
+  it("no rendered <th> contains the x̄ character", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const allTh = Array.from(container.querySelectorAll("th"));
+    const withXbar = allTh.filter((th) => th.textContent?.includes("x̄"));
+    expect(withXbar, "x̄ must not appear in any table header").toHaveLength(0);
+  });
+
+  it("by-language section shows Language, not Lang", async () => {
+    // by_language must be present in summary for the by-language panel to render
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...(benchRun.summary as Record<string, unknown>),
+          by_language: { js: { score: 60.0, passes: 50.0, tests: 75.0, speed: 19.0 } },
+        },
+      },
+    });
+    const { container } = render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    // Poll until the by-language panel renders its Language header
+    await waitFor(() => {
+      const spans = Array.from(container.querySelectorAll("span"));
+      expect(spans.some((s) => s.textContent?.trim() === "Language")).toBe(true);
+    });
+    const spanTexts = Array.from(container.querySelectorAll("span")).map(
+      (s) => s.textContent?.trim(),
+    );
+    expect(spanTexts).not.toContain("Lang");
+  });
+});
+
+// ── T212 — Attempts column ────────────────────────────────────────────────
+describe("T212 Attempts column", () => {
+  it("column order is Task · Language · Samples · Attempts · Average points · Solved · Average time", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const thead = container.querySelector("thead")!;
+    const texts = Array.from(thead.querySelectorAll("th")).map(
+      (th) => th.textContent?.trim() ?? "",
+    );
+    expect(texts).toEqual([
+      "Task",
+      "Language",
+      "Samples",
+      "Attempts",
+      "Average points",
+      "Solved",
+      "Average time",
+    ]);
+  });
+
+  it("solved task (first attempt) renders 1", async () => {
+    // fixture: js/formula_engine — all 3 samples have attempts_used=1, solved=true
+    installFetch();
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("bench-task-row");
+      const formulaRow = rows.find((r) => r.textContent?.includes("formula_engine"))!;
+      expect(within(formulaRow).getByTestId("bench-task-attempts").textContent).toBe("1");
+    });
+  });
+
+  it("failed task that used all three attempts renders 3, not —", async () => {
+    // fixture: js/retry_backoff — all 3 samples have attempts_used=3, solved=false
+    installFetch();
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    const retryRow = rows.find((r) => r.textContent?.includes("retry_backoff"))!;
+    const cell = within(retryRow).getByTestId("bench-task-attempts");
+    expect(cell.textContent).not.toBe("—");
+    expect(cell.textContent).toBe("3");
+  });
+
+  it("queued task renders — in the Attempts cell", async () => {
+    // Add a task to the roster that has no records — it will be queued
+    installFetch({
+      taskList: {
+        ...TASK_LIST,
+        tasks: [
+          ...TASK_LIST.tasks,
+          { number: 99, id: "js/queued_placeholder", lang: "js", difficulty: "easy", kind: "fix", assertions: 1 },
+        ],
+      },
+    });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const rows = screen.getAllByTestId("bench-task-row");
+    const queuedRow = rows.find((r) => r.textContent?.includes("queued_placeholder"))!;
+    const cell = within(queuedRow).getByTestId("bench-task-attempts");
+    expect(cell.textContent).toBe("—");
+  });
+
+  it("multi-sample: Attempts shows max attempts_used across samples", async () => {
+    // Give js/formula_engine varied attempts: sample 0 → 1 (solved), samples 1&2 → 3 (failed)
+    // max(1, 3, 3) = 3; confirms max rule, not mean
+    const base = (benchRun as unknown as { records: Record<string, unknown>[] }).records;
+    const modifiedRecords = base.map((r) =>
+      r["task"] === "js/formula_engine"
+        ? { ...r, attempts_used: r["sample"] === 0 ? 1 : 3, solved: r["sample"] === 0 }
+        : r,
+    );
+    installFetch({ detail: { ...benchRun, records: modifiedRecords } });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("bench-task-row");
+      const formulaRow = rows.find((r) => r.textContent?.includes("formula_engine"))!;
+      expect(within(formulaRow).getByTestId("bench-task-attempts").textContent).toBe("3");
+    });
+  });
+
+  it("drilldown row colSpan equals 7", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    fireEvent.click(rows[0]);
+    await waitFor(() => {
+      const cell = container.querySelector("td[colspan='7']");
+      expect(cell).not.toBeNull();
+    });
+  });
+
+  it("Samples strip still renders its cells after Attempts column insert", async () => {
+    installFetch();
+    const { container } = render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const stripCells = container.querySelectorAll("[data-cell-state]");
+    expect(stripCells.length).toBeGreaterThan(0);
   });
 });

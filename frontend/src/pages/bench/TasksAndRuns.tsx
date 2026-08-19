@@ -463,6 +463,7 @@ export function TasksAndRuns({
               type="button"
               onClick={refresh}
               aria-label="Refresh runs"
+              className="btn-glow"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -509,7 +510,7 @@ export function TasksAndRuns({
                     marginBottom: 3,
                   }}
                 >
-                  <span>Lang</span>
+                  <span>Language</span>
                   <span style={{ textAlign: "right" }}>Score</span>
                   <span style={{ textAlign: "right" }}>Passes</span>
                   <span style={{ textAlign: "right" }}>Tests</span>
@@ -748,13 +749,14 @@ function ThisRunPane({
           <thead>
             <tr>
               <th style={TH}>Task</th>
-              <th style={TH}>Lang</th>
-              <th style={TH}>
-                Samples ×{expectedSamples} — attempts within each
+              <th style={TH}>Language</th>
+              <th style={TH} title={`×${expectedSamples} samples per task`}>
+                Samples
               </th>
-              <th style={{ ...TH, textAlign: "right" }}>x̄ pts</th>
+              <th style={{ ...TH, textAlign: "right" }}>Attempts</th>
+              <th style={{ ...TH, textAlign: "right" }}>Average points</th>
               <th style={{ ...TH, textAlign: "right" }}>Solved</th>
-              <th style={{ ...TH, textAlign: "right" }}>Gen x̄</th>
+              <th style={{ ...TH, textAlign: "right" }}>Average time</th>
             </tr>
           </thead>
           <tbody>
@@ -769,6 +771,10 @@ function ThisRunPane({
                   ? null
                   : graded.reduce((s, r) => s + r.gen_seconds, 0) /
                     graded.length;
+              const maxAttempts =
+                rs.length === 0
+                  ? null
+                  : Math.max(...rs.map((r) => r.attempts_used));
               const tainted = rowTaint(
                 rs.map((r) => indexOf.get(r) ?? -1),
                 trunc,
@@ -827,6 +833,16 @@ function ThisRunPane({
                       />
                     </td>
                     <td
+                      style={{ ...TD, textAlign: "right" }}
+                      data-testid="bench-task-attempts"
+                    >
+                      {maxAttempts === null ? (
+                        <span style={{ color: "var(--text-muted)" }}>—</span>
+                      ) : (
+                        maxAttempts
+                      )}
+                    </td>
+                    <td
                       style={{ ...TD, textAlign: "right", fontWeight: 700 }}
                       data-testid="bench-task-mean"
                     >
@@ -860,7 +876,7 @@ function ThisRunPane({
                   {openTask === task && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         style={{
                           ...TD,
                           whiteSpace: "normal",
@@ -1610,8 +1626,8 @@ function ComparePane({
             Comparing <b>{chosenRows.length} runs</b> · edition{" "}
             <b style={{ fontFamily: MONO }}>{chosenRows[0]?.suite_hash}</b> ·{" "}
             <b>{compareNotation(chosenRows[0]?.config)}</b>. Each cell is one
-            square per sample and the task's x̄ over samples; Δ is the spread of
-            those x̄s.
+            square per sample and the task's average over samples; Δ is the
+            spread of those averages.
           </div>
           {coverageNote && (
             <div
@@ -1871,7 +1887,7 @@ function ComparePane({
                     marginBottom: 2,
                   }}
                 >
-                  <span>Lang</span>
+                  <span>Language</span>
                   {chosenRows.map((r) => {
                     const naming = runNaming(r.models, r.config);
                     return (
@@ -2000,7 +2016,7 @@ function ComparePane({
                   );
                 })}
                 <th style={{ ...TH, textAlign: "right" }}>Δ spread</th>
-                <th style={{ ...TH, textAlign: "right" }}>Gen x̄ (s)</th>
+                <th style={{ ...TH, textAlign: "right" }}>Average time (s)</th>
               </tr>
             </thead>
             <tbody>
