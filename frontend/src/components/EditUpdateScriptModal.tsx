@@ -84,6 +84,7 @@ export default function EditUpdateScriptModal({
           </div>
           <button
             onClick={onClose}
+            className="ghost-hover"
             style={{
               padding: "2px 6px",
               background: "transparent",
@@ -137,6 +138,7 @@ export default function EditUpdateScriptModal({
         >
           <button
             onClick={() => setValue(defaultScript)}
+            className="btn-glow"
             style={{
               padding: "8px 12px",
               fontSize: 12,
@@ -153,6 +155,7 @@ export default function EditUpdateScriptModal({
           <div style={{ flex: 1 }} />
           <button
             onClick={onClose}
+            className="btn-glow"
             style={{
               padding: "8px 12px",
               fontSize: 12,
@@ -172,6 +175,7 @@ export default function EditUpdateScriptModal({
               onSave(value);
               onClose();
             }}
+            className="btn-glow"
             style={{
               padding: "8px 14px",
               fontSize: 12,

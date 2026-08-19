@@ -232,21 +232,7 @@ export default function LlamaCppTerminalViewer() {
             cleanup();
             window.history.back();
           }}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            background: "none",
-            border: "none",
-            color: "#999",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 500,
-            padding: "4px 8px",
-            borderRadius: 4,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#999")}
+          className="terminal-nav-btn"
         >
           <ArrowLeft size={14} /> Back
         </button>
@@ -254,21 +240,8 @@ export default function LlamaCppTerminalViewer() {
         <button
           onClick={closeTerminal}
           title="Close terminal and tab"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            background: "none",
-            border: "none",
-            color: "#999",
-            cursor: "pointer",
-            fontSize: 11,
-            fontWeight: 500,
-            padding: "4px 8px",
-            borderRadius: 4,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#f44747")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#999")}
+          className="terminal-nav-btn terminal-close-btn"
+          style={{ fontSize: 11 }}
         >
           <X size={14} /> Close
         </button>
@@ -288,6 +261,7 @@ export default function LlamaCppTerminalViewer() {
                 cleanup();
                 window.location.href = "/llama-cpp";
               }}
+              className="btn-glow"
               style={{
                 background: "#2a2a2a",
                 border: "none",

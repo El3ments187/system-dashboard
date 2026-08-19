@@ -165,6 +165,7 @@ export function SubTabs({
           onClick={() => onChange(t.id)}
           aria-pressed={active === t.id}
           data-testid={`bench-tab-${t.id}`}
+          className="btn-glow"
           style={{
             font: "600 10px Inter, system-ui, sans-serif",
             letterSpacing: "0.5px",

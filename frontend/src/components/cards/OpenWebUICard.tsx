@@ -180,6 +180,7 @@ export default function OpenWebUICard() {
               <button
                 onClick={runTest}
                 disabled={testing}
+                className="btn-glow"
                 style={{
                   flex: 1,
                   display: "flex",
@@ -247,6 +248,7 @@ export default function OpenWebUICard() {
               <button
                 data-accent-el=""
                 onClick={() => command.trim() && setRunCommand(command)}
+                className="btn-glow"
                 style={{
                   padding: "6px 12px",
                   fontSize: 10,

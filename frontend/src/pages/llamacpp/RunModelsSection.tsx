@@ -391,6 +391,7 @@ export function RunModelsSection() {
             title={
               showOnlyFavorites ? "Show all models" : "Show favourites only"
             }
+            className="btn-glow"
             style={{
               display: "flex",
               alignItems: "center",
@@ -447,6 +448,7 @@ export function RunModelsSection() {
                 onClick={() => setSearchQuery("")}
                 aria-label="Clear search"
                 title="Clear search"
+                className="ghost-hover"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -465,6 +467,7 @@ export function RunModelsSection() {
             data-accent-el=""
             onClick={() => loadProfiles()}
             disabled={loading}
+            className="btn-glow"
             style={{
               display: "flex",
               alignItems: "center",
@@ -548,6 +551,7 @@ export function RunModelsSection() {
               onClick={() => handleSort(col)}
               tabIndex={0}
               aria-sort={ariaValue}
+              className="btn-glow"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -702,6 +706,7 @@ export function RunModelsSection() {
                       ? "Remove from favourites"
                       : "Add to favourites"
                   }
+                  className="ghost-hover"
                   style={{
                     background: "transparent",
                     border: "none",
@@ -852,6 +857,7 @@ export function RunModelsSection() {
                           ? `Runs: ${profileMeta.run_count}\nLast run: ${formatLastRunDate(profileMeta.last_run_date)}`
                           : undefined
                       }
+                      className="btn-glow"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -878,6 +884,7 @@ export function RunModelsSection() {
                           ? `Runs: ${profileMeta.run_count}\nLast run: ${formatLastRunDate(profileMeta.last_run_date)}`
                           : undefined
                       }
+                      className="btn-glow"
                       style={{
                         display: "flex",
                         alignItems: "center",

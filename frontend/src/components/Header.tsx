@@ -378,6 +378,7 @@ export default function Header({
                   </span>
                   <button
                     onClick={clearAlerts}
+                    className="ghost-hover"
                     style={{
                       background: "transparent",
                       border: "none",

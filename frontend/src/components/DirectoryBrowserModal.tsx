@@ -178,6 +178,7 @@ export default function DirectoryBrowserModal({
           </div>
           <button
             onClick={onClose}
+            className="ghost-hover"
             style={{
               padding: "2px 6px",
               background: "transparent",
@@ -202,6 +203,7 @@ export default function DirectoryBrowserModal({
         >
           <button
             onClick={goUp}
+            className="btn-glow"
             style={{
               display: "flex",
               alignItems: "center",
@@ -256,6 +258,7 @@ export default function DirectoryBrowserModal({
         >
           <button
             onClick={onClose}
+            className="btn-glow"
             style={{
               flex: 1,
               padding: "8px 10px",
@@ -276,6 +279,7 @@ export default function DirectoryBrowserModal({
               onSelect(currentPath);
               onClose();
             }}
+            className="btn-glow"
             style={{
               flex: 1,
               padding: "8px 10px",

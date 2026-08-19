@@ -80,6 +80,7 @@ export default function UpdateOutputModal({
           </div>
           <button
             onClick={onClose}
+            className="ghost-hover"
             style={{
               padding: "2px 6px",
               background: "transparent",
@@ -88,7 +89,6 @@ export default function UpdateOutputModal({
               cursor: "pointer",
               color: "#ccc",
             }}
-            title="Close (Esc)"
           >
             <X size={14} />
           </button>

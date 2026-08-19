@@ -1484,7 +1484,14 @@ main {
   white-space: nowrap;
 }
 
+.dash-nav-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
 .dash-nav-btn.active {
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
   font-weight: 600;
 }
 
@@ -1515,6 +1522,11 @@ main {
   line-height: inherit;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+button.status-chip:hover:not(:disabled) {
+  filter: brightness(1.12);
+  transition: filter 120ms;
 }
 
 .chip-label {
@@ -2033,4 +2045,54 @@ main {
   background: transparent;
   border: 1.5px solid var(--text-muted);
   animation: none;
+}
+
+/* ── Hover utilities for inline-styled buttons ──────────────────────────── */
+
+/* Brightens any filled/colored button on hover regardless of inline background */
+.btn-glow {
+  transition: filter 120ms, opacity 120ms;
+}
+.btn-glow:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+.btn-glow:active:not(:disabled) {
+  filter: brightness(0.88);
+  opacity: 0.9;
+}
+
+/* Ghost/transparent buttons: gains a subtle background tint on hover */
+.ghost-hover {
+  transition: background 120ms, color 120ms;
+}
+.ghost-hover:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent) !important;
+}
+.ghost-hover:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent) !important;
+}
+
+/* LlamaCppTerminalViewer nav buttons (replaces JS onMouseEnter/Leave) */
+.terminal-nav-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 120ms, background 120ms;
+  font-family: inherit;
+}
+.terminal-nav-btn:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.08);
+}
+.terminal-nav-btn.terminal-close-btn:hover {
+  color: #f44747;
+  background: rgba(244, 71, 71, 0.1);
 }

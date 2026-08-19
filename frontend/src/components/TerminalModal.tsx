@@ -345,6 +345,7 @@ export default function TerminalModal({
           </div>
           <button
             onClick={onClose}
+            className="ghost-hover"
             style={{
               padding: "2px 6px",
               background: "transparent",

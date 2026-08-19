@@ -84,6 +84,7 @@ export default function PanelErrorState({
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => setShowDetails(!showDetails)}
+            className="btn-glow"
             style={{
               background: "var(--bg-secondary)",
               border: "1px solid var(--border-color)",
@@ -95,15 +96,6 @@ export default function PanelErrorState({
               display: "flex",
               alignItems: "center",
               gap: 4,
-              transition: "var(--transition-fast)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--bg-card-hover)";
-              e.currentTarget.style.borderColor = "var(--accent-primary)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "var(--bg-secondary)";
-              e.currentTarget.style.borderColor = "var(--border-color)";
             }}
           >
             {showDetails ? (

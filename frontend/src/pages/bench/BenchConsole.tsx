@@ -164,6 +164,7 @@ export function BenchConsole({
             aria-pressed={filters[lvl]}
             data-testid={`bench-log-level-${lvl}`}
             onClick={() => setFilters((f) => ({ ...f, [lvl]: !f[lvl] }))}
+            className="btn-glow"
             style={{
               background: filters[lvl] ? "var(--bg-secondary)" : "none",
               font: `600 9px ${MONO}`,

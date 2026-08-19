@@ -1479,7 +1479,7 @@ export default function LlamaCppPage() {
                       {behind} build{behind === 1 ? "" : "s"} behind
                     </span>
                     <button
-                      className="accent-glow-target"
+                      className="accent-glow-target btn-glow"
                       data-accent-el=""
                       onClick={mgmt.runUpdate}
                       disabled={!hasDir || mgmt.updateState === "running"}
@@ -1588,6 +1588,7 @@ export default function LlamaCppPage() {
                     <button
                       data-accent-el=""
                       onClick={() => mgmt.setOutputOpen(true)}
+                      className="btn-glow"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1621,6 +1622,7 @@ export default function LlamaCppPage() {
                     data-accent-el=""
                     onClick={() => mgmt.openTerminal()}
                     disabled={!hasDir}
+                    className="btn-glow"
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -1654,6 +1656,7 @@ export default function LlamaCppPage() {
                       )
                     }
                     disabled={!mgmt.readmeUrl}
+                    className="btn-glow"
                     style={{
                       display: "flex",
                       flexDirection: "column",
