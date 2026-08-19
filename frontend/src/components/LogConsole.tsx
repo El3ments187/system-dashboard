@@ -247,6 +247,7 @@ function ToolbarBtn({
   return (
     <button
       data-accent-el=""
+      className="log-toolbar-btn"
       onClick={onClick}
       title={title}
       style={{
@@ -381,6 +382,7 @@ export function LogConsole({
     "filter",
   );
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [confirmedBtn, setConfirmedBtn] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -608,6 +610,8 @@ export function LogConsole({
       }
     }
     setLogs([]);
+    setConfirmedBtn("clear");
+    setTimeout(() => setConfirmedBtn(null), 1000);
   }, [activeProfileId]);
 
   const levelFilteredLogs = useMemo(
@@ -665,14 +669,24 @@ export function LogConsole({
     }
   }, [filteredLogs, paused]);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     const text = filteredLogs
       .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.text}`)
       .join("\n");
+    let ok = false;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        ok = fallbackCopy(text);
+      }
     } else {
-      fallbackCopy(text);
+      ok = fallbackCopy(text);
+    }
+    if (ok) {
+      setConfirmedBtn("copy");
+      setTimeout(() => setConfirmedBtn(null), 1000);
     }
   }, [filteredLogs]);
 
@@ -690,6 +704,8 @@ export function LogConsole({
     a.download = `llama-console-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+    setConfirmedBtn("save");
+    setTimeout(() => setConfirmedBtn(null), 1000);
   }, [filteredLogs]);
 
   const toggleFilter = useCallback((level: LogLevel) => {
@@ -817,17 +833,27 @@ export function LogConsole({
               </>
             )}
           </ToolbarBtn>
-          <ToolbarBtn onClick={handleClear} title="Clear logs">
-            <Trash2 size={9} /> Clear
+          <ToolbarBtn
+            active={confirmedBtn === "clear"}
+            onClick={handleClear}
+            title="Clear logs"
+          >
+            <Trash2 size={9} />{" "}
+            {confirmedBtn === "clear" ? "Cleared" : "Clear"}
           </ToolbarBtn>
           <ToolbarBtn
+            active={confirmedBtn === "copy"}
             onClick={handleCopy}
             title="Copy visible logs to clipboard"
           >
-            <Copy size={9} /> Copy
+            <Copy size={9} /> {confirmedBtn === "copy" ? "Copied" : "Copy"}
           </ToolbarBtn>
-          <ToolbarBtn onClick={handleDownload} title="Download logs as .txt">
-            <Download size={9} /> Save
+          <ToolbarBtn
+            active={confirmedBtn === "save"}
+            onClick={handleDownload}
+            title="Download logs as .txt"
+          >
+            <Download size={9} /> {confirmedBtn === "save" ? "Saved" : "Save"}
           </ToolbarBtn>
           <ToolbarBtn
             active={wrap}
@@ -1033,13 +1059,14 @@ export function LogConsole({
   );
 }
 
-function fallbackCopy(text: string) {
+function fallbackCopy(text: string): boolean {
   const ta = document.createElement("textarea");
   ta.value = text;
   ta.style.position = "fixed";
   ta.style.opacity = "0";
   document.body.appendChild(ta);
   ta.select();
-  document.execCommand("copy");
+  const ok = document.execCommand("copy");
   document.body.removeChild(ta);
+  return ok;
 }

@@ -1388,6 +1388,15 @@ main {
   cursor: not-allowed;
 }
 
+.log-toolbar-btn:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.log-toolbar-btn:active:not(:disabled) {
+  opacity: 0.75;
+}
+
 .settings-btn-accent {
   background: var(--accent-glow);
   border: 1px solid var(--accent-primary);

@@ -741,6 +741,166 @@ describe("LogConsole active-profile detection debounces a stop", () => {
   });
 });
 
+// ─── T207 toolbar: hover class and action confirmations ───────────────
+
+describe("T207 toolbar buttons — class and confirmation flash", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("all six toolbar buttons carry the log-toolbar-btn CSS class", async () => {
+    render(<LogConsole />);
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll(".log-toolbar-btn").length,
+      ).toBeGreaterThanOrEqual(6),
+    );
+    const texts = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".log-toolbar-btn"),
+    ).map((b) => b.textContent ?? "");
+    expect(texts.some((t) => /pause|resume/i.test(t))).toBe(true);
+    expect(texts.some((t) => /clear/i.test(t))).toBe(true);
+    expect(texts.some((t) => /copy/i.test(t))).toBe(true);
+    expect(texts.some((t) => /save/i.test(t))).toBe(true);
+    expect(texts.some((t) => /wrap/i.test(t))).toBe(true);
+    expect(texts.some((t) => /hide idle/i.test(t))).toBe(true);
+  });
+
+  it("Pause toggle: active state persists until toggled back", async () => {
+    render(<LogConsole />);
+    await waitFor(() =>
+      expect(screen.getByTitle("Pause auto-scroll")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByTitle("Pause auto-scroll"));
+    expect(screen.getByTitle("Resume auto-scroll")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Resume auto-scroll"));
+    expect(screen.getByTitle("Pause auto-scroll")).toBeInTheDocument();
+  });
+
+  it("Clear: shows 'Cleared' immediately then reverts after ~1 s", async () => {
+    // Render with real timers so the component mounts normally, then switch to
+    // fake timers before the click so the 1s revert timeout can be advanced.
+    render(<LogConsole />);
+    const clearBtn = screen.getByTitle("Clear logs");
+    expect(clearBtn.textContent).toContain("Clear");
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(clearBtn);
+    });
+    expect(clearBtn.textContent).toContain("Cleared");
+
+    act(() => {
+      vi.advanceTimersByTime(1100);
+    });
+    expect(clearBtn.textContent).not.toContain("Cleared");
+    expect(clearBtn.textContent).toContain("Clear");
+  });
+
+  it("Copy: fallback path (execCommand=true) confirms; reverts after ~1 s", async () => {
+    // jsdom has no navigator.clipboard — fallbackCopy runs automatically
+    document.execCommand = vi.fn().mockReturnValue(true);
+
+    render(<LogConsole />);
+    const copyBtn = screen.getByTitle("Copy visible logs to clipboard");
+
+    // Switch to fake timers AFTER render so waitFor's internal setTimeout still fires.
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
+    expect(copyBtn.textContent).toContain("Copied");
+
+    act(() => {
+      vi.advanceTimersByTime(1100);
+    });
+    expect(copyBtn.textContent).not.toContain("Copied");
+    expect(copyBtn.textContent).toContain("Copy");
+  });
+
+  it("Copy: fallback path (execCommand=false) shows no confirmation", async () => {
+    document.execCommand = vi.fn().mockReturnValue(false);
+
+    render(<LogConsole />);
+    await waitFor(() =>
+      expect(
+        screen.getByTitle("Copy visible logs to clipboard"),
+      ).toBeInTheDocument(),
+    );
+    const copyBtn = screen.getByTitle("Copy visible logs to clipboard");
+
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
+    expect(copyBtn.textContent).not.toContain("Copied");
+  });
+
+  it("Copy: clipboard API confirms on success; reverts after ~1 s", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+      writable: true,
+    });
+
+    render(<LogConsole />);
+    const copyBtn = screen.getByTitle("Copy visible logs to clipboard");
+
+    // Switch to fake timers AFTER render so waitFor's internal setTimeout still fires.
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(copyBtn);
+      // flush the resolved writeText promise
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(copyBtn.textContent).toContain("Copied");
+
+    act(() => {
+      vi.advanceTimersByTime(1100);
+    });
+    expect(copyBtn.textContent).not.toContain("Copied");
+
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it("Copy: clipboard API rejected + execCommand=false → no confirmation", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+      configurable: true,
+      writable: true,
+    });
+    document.execCommand = vi.fn().mockReturnValue(false);
+
+    render(<LogConsole />);
+    await waitFor(() =>
+      expect(
+        screen.getByTitle("Copy visible logs to clipboard"),
+      ).toBeInTheDocument(),
+    );
+    const copyBtn = screen.getByTitle("Copy visible logs to clipboard");
+
+    await act(async () => {
+      fireEvent.click(copyBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(copyBtn.textContent).not.toContain("Copied");
+
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+  });
+});
+
 // ─── Recovered-process console message ────────────────────────────────
 
 describe("LogConsole recovered-process message", () => {
