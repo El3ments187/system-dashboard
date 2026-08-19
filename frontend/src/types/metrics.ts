@@ -182,6 +182,11 @@ export interface AiMetrics {
   busy_slots: number | null;
   context_tokens: number | null;
   max_context: number | null;
+  n_tokens_max?: number | null;
+  spec_draft_tokens?: number | null;
+  spec_accepted_tokens?: number | null;
+  prompt_tokens_cached?: number | null;
+  n_decode_total?: number | null;
 
   // Per-slot state parsed from /slots endpoint
   slots?: LlamaSlot[] | null;

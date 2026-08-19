@@ -209,8 +209,9 @@ export default function LlamaCppPage() {
     params?: string;
     quant?: string;
   } | null>(null);
-  const [cacheHits, setCacheHits] = useState(0);
-  const prevTokCachedRef = useRef<number | null>(null);
+  const [heldGenTps, setHeldGenTps] = useState<number | null>(null);
+  const [heldPromptTps, setHeldPromptTps] = useState<number | null>(null);
+  const prevModelRef = useRef<string>("");
   const [lastGenProgress, setLastGenProgress] = useState<number>(0);
 
   useEffect(() => {
@@ -283,12 +284,24 @@ export default function LlamaCppPage() {
   }
 
   useEffect(() => {
-    const prev = prevTokCachedRef.current;
-    prevTokCachedRef.current = tokCached;
-    if ((prev == null || prev === 0) && tokCached != null && tokCached > 0) {
-      setCacheHits((n) => n + 1);
+    if (m?.gen_tps != null) setHeldGenTps(m.gen_tps);
+    if (m?.prompt_tps != null) setHeldPromptTps(m.prompt_tps);
+  }, [m?.gen_tps, m?.prompt_tps]);
+
+  useEffect(() => {
+    if (prevModelRef.current !== fullModelPath) {
+      prevModelRef.current = fullModelPath;
+      setHeldGenTps(null);
+      setHeldPromptTps(null);
     }
-  }, [tokCached]);
+  }, [fullModelPath]);
+
+  useEffect(() => {
+    if (!llamaOnline) {
+      setHeldGenTps(null);
+      setHeldPromptTps(null);
+    }
+  }, [llamaOnline]);
 
   const ctxColor = getCtxColor(contextPct);
   const hasDir = !!mgmt.dirPath;
@@ -761,7 +774,7 @@ export default function LlamaCppPage() {
                     marginBottom: 2,
                   }}
                 >
-                  Generation Speed
+                  Last Generation Speed
                 </div>
                 <div
                   style={{ display: "flex", alignItems: "baseline", gap: 3 }}
@@ -770,14 +783,18 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 24,
                       fontWeight: 700,
-                      color: "var(--text-primary)",
+                      color: m?.gen_tps != null ? "var(--text-primary)" : "var(--text-muted)",
                       fontFamily: MONO,
                       lineHeight: 1,
                     }}
                   >
-                    {m?.gen_tps != null ? m.gen_tps.toFixed(1) : "—"}
+                    {m?.gen_tps != null
+                      ? m.gen_tps.toFixed(1)
+                      : heldGenTps != null
+                        ? heldGenTps.toFixed(1)
+                        : "—"}
                   </span>
-                  {m?.gen_tps != null && (
+                  {(m?.gen_tps != null || heldGenTps != null) && (
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       {" "}
                       t/s
@@ -832,7 +849,7 @@ export default function LlamaCppPage() {
                     marginBottom: 2,
                   }}
                 >
-                  Prompt Speed
+                  Last Prompt Speed
                 </div>
                 <div
                   style={{ display: "flex", alignItems: "baseline", gap: 3 }}
@@ -841,14 +858,18 @@ export default function LlamaCppPage() {
                     style={{
                       fontSize: 24,
                       fontWeight: 700,
-                      color: "var(--text-primary)",
+                      color: m?.prompt_tps != null ? "var(--text-primary)" : "var(--text-muted)",
                       fontFamily: MONO,
                       lineHeight: 1,
                     }}
                   >
-                    {m?.prompt_tps != null ? m.prompt_tps.toFixed(1) : "—"}
+                    {m?.prompt_tps != null
+                      ? m.prompt_tps.toFixed(1)
+                      : heldPromptTps != null
+                        ? heldPromptTps.toFixed(1)
+                        : "—"}
                   </span>
-                  {m?.prompt_tps != null && (
+                  {(m?.prompt_tps != null || heldPromptTps != null) && (
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       {" "}
                       t/s
@@ -1057,16 +1078,24 @@ export default function LlamaCppPage() {
                         testId: "ctx-remaining",
                       },
                       {
-                        label: "Cache Hits",
-                        value: String(cacheHits),
+                        label: "Cache Rate",
+                        value: (() => {
+                          const cached = m?.prompt_tokens_cached;
+                          const prompt = m?.token_usage?.prompt_tokens;
+                          if (cached == null || prompt == null) return null;
+                          const denom = prompt + cached;
+                          return denom > 0
+                            ? `${((cached / denom) * 100).toFixed(1)}%`
+                            : null;
+                        })(),
                         span: false,
                         testId: "ctx-cache-hits",
                       },
                       {
                         label: "Largest Seen",
                         value:
-                          m?.context_tokens != null
-                            ? m.context_tokens.toLocaleString()
+                          m?.n_tokens_max != null
+                            ? m.n_tokens_max.toLocaleString()
                             : null,
                         span: true,
                         testId: "ctx-largest-seen",
@@ -1385,6 +1414,19 @@ export default function LlamaCppPage() {
                   valueColor={m?.speculative ? "var(--success)" : undefined}
                   testId="runtime-speculative"
                 />
+                {m?.spec_draft_tokens != null &&
+                  m?.spec_accepted_tokens != null && (
+                    <KvRow
+                      icon={<Zap size={11} />}
+                      label="Draft accept"
+                      value={
+                        m.spec_draft_tokens > 0
+                          ? `${((m.spec_accepted_tokens / m.spec_draft_tokens) * 100).toFixed(1)}%`
+                          : "—"
+                      }
+                      testId="runtime-draft-accept"
+                    />
+                  )}
                 <KvRow
                   icon={<Database size={11} />}
                   label="Tokens Cached"

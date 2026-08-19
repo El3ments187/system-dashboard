@@ -248,6 +248,9 @@ pub struct LlamaMetrics {
     pub requests_processing: f64,
     pub requests_deferred: f64,
     pub n_busy_slots_per_decode: f64,
+    pub spec_draft_tokens_total: f64,
+    pub spec_accepted_tokens_total: f64,
+    pub prompt_tokens_cached_total: f64,
 }
 
 /// Parsed /props endpoint from llama-server
@@ -386,6 +389,16 @@ pub struct AiMetrics {
     pub context_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_tokens_max: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_draft_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_accepted_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_cached: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_decode_total: Option<i64>,
 
     /// Per-slot state parsed from /slots endpoint
     #[serde(skip_serializing_if = "Option::is_none")]

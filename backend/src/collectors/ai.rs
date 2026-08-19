@@ -381,6 +381,9 @@ fn parse_prometheus_metrics(body: &str) -> LlamaMetrics {
             "llamacpp:requests_processing" => m.requests_processing = value,
             "llamacpp:requests_deferred" => m.requests_deferred = value,
             "llamacpp:n_busy_slots_per_decode" => m.n_busy_slots_per_decode = value,
+            "llamacpp:spec_decode_num_draft_tokens_total" => m.spec_draft_tokens_total = value,
+            "llamacpp:spec_decode_num_accepted_tokens_total" => m.spec_accepted_tokens_total = value,
+            "llamacpp:prompt_tokens_cached_total" => m.prompt_tokens_cached_total = value,
             _ => {}
         }
     }
@@ -718,6 +721,31 @@ fn compute_derived_metrics(prom: &LlamaMetrics, props: Option<&LlamaProps>) -> A
         },
         context_tokens: None,
         max_context: props.and_then(|p| p.n_ctx),
+        n_tokens_max: if prom.n_tokens_max > 0.0 {
+            Some(prom.n_tokens_max as i64)
+        } else {
+            None
+        },
+        spec_draft_tokens: if prom.spec_draft_tokens_total > 0.0 {
+            Some(prom.spec_draft_tokens_total as i64)
+        } else {
+            None
+        },
+        spec_accepted_tokens: if prom.spec_accepted_tokens_total > 0.0 {
+            Some(prom.spec_accepted_tokens_total as i64)
+        } else {
+            None
+        },
+        prompt_tokens_cached: if prom.prompt_tokens_cached_total > 0.0 {
+            Some(prom.prompt_tokens_cached_total as i64)
+        } else {
+            None
+        },
+        n_decode_total: if prom.n_decode_total > 0.0 {
+            Some(prom.n_decode_total as i64)
+        } else {
+            None
+        },
     }
 }
 
@@ -744,6 +772,11 @@ struct AiDerivedMetrics {
     busy_slots: Option<u32>,
     context_tokens: Option<u32>,
     max_context: Option<u32>,
+    n_tokens_max: Option<i64>,
+    spec_draft_tokens: Option<i64>,
+    spec_accepted_tokens: Option<i64>,
+    prompt_tokens_cached: Option<i64>,
+    n_decode_total: Option<i64>,
 }
 
 /// Poll OpenWebUI for chat history count and models list.
@@ -1003,6 +1036,11 @@ pub async fn collect_ai_metrics(
             busy_slots: None,
             context_tokens: props.as_ref().and_then(|p| p.context_tokens),
             max_context: None,
+            n_tokens_max: None,
+            spec_draft_tokens: None,
+            spec_accepted_tokens: None,
+            prompt_tokens_cached: None,
+            n_decode_total: None,
         }
     };
     if derived.max_context.is_none() {
@@ -1108,6 +1146,11 @@ pub async fn collect_ai_metrics(
         busy_slots: derived.busy_slots,
         context_tokens: derived.context_tokens,
         max_context: derived.max_context,
+        n_tokens_max: derived.n_tokens_max,
+        spec_draft_tokens: derived.spec_draft_tokens,
+        spec_accepted_tokens: derived.spec_accepted_tokens,
+        prompt_tokens_cached: derived.prompt_tokens_cached,
+        n_decode_total: derived.n_decode_total,
         slots: slot_list.filter(|s| !s.is_empty()),
         model_alias: props.as_ref().and_then(|p| p.model_alias.clone()),
         model_path: props.as_ref().and_then(|p| p.model_path.clone()),

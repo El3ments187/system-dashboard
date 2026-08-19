@@ -428,7 +428,7 @@ describe("LlamaCppPage context section", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Rate").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Total Sent").length).toBeGreaterThan(0);
   });
 });
@@ -540,7 +540,7 @@ describe("LlamaCppPage server activity section", () => {
     expect(screen.getAllByText("Throughput").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Total Sent").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Active Req").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Rate").length).toBeGreaterThan(0);
   });
 
   it("always renders Throughput card", async () => {
@@ -1029,7 +1029,7 @@ describe("LlamaCppPage Gen TPS display", () => {
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     // The label div and value span share a parent container div
-    const labelDiv = screen.getByText("Generation Speed").closest("div");
+    const labelDiv = screen.getByText("Last Generation Speed").closest("div");
     const container = labelDiv?.parentElement;
     expect(container?.textContent).toContain("—");
   });
@@ -1122,13 +1122,13 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     expect(screen.queryByText("999")).not.toBeInTheDocument();
   });
 
-  it("renders Cache Hits label and does not crash when slot0 is absent", async () => {
+  it("renders Cache Rate label and does not crash when slot0 is absent", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({ tokens_cached: null, slots: undefined }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Rate").length).toBeGreaterThan(0);
   });
 
   it("Runtime Tokens Cached derives from slot n_prompt_tokens_cache", async () => {
@@ -1153,60 +1153,23 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("cache-hits counter increments only on null/0→positive rising edges (sequence: 0→null→5→5→0→3)", async () => {
-    const withCache = (n: number | null | undefined) =>
+  it("Cache Rate tile shows correct percentage from prompt_tokens_cached", async () => {
+    // cached=300, prompt=700 → denom=1000 → 300/1000*100 = 30.0%
+    mockedCtx.mockReturnValue(
       baseCtx({
-        tokens_cached: null,
-        slots: [
-          {
-            id: 0,
-            n_ctx: 8192,
-            n_prompt_tokens: 100,
-            is_processing: false,
-            ...(n != null ? { n_prompt_tokens_cache: n } : {}),
-          },
-        ],
-      });
-    const withCacheZero = () =>
-      baseCtx({
-        tokens_cached: null,
-        slots: [
-          {
-            id: 0,
-            n_ctx: 8192,
-            n_prompt_tokens: 100,
-            is_processing: false,
-            n_prompt_tokens_cache: 0,
-          },
-        ],
-      });
-
-    // Step 1: tokCached = 0 (no rising edge since 0 is not > 0)
-    mockedCtx.mockReturnValue(withCacheZero());
-    const { rerender } = render(<LlamaCppPage />);
+        prompt_tokens_cached: 300,
+        token_usage: {
+          total_tokens: 1000,
+          prompt_tokens: 700,
+          completion_tokens: 300,
+          cached_tokens: 300,
+        },
+      }),
+    );
+    render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-
-    // Step 2: tokCached = null (n_prompt_tokens_cache absent → falls back to tokens_cached=null)
-    mockedCtx.mockReturnValue(withCache(undefined));
-    rerender(<LlamaCppPage />);
-
-    // Step 3: tokCached = 5 → RISING EDGE (prev=null) → cacheHits = 1
-    mockedCtx.mockReturnValue(withCache(5));
-    rerender(<LlamaCppPage />);
-
-    // Step 4: tokCached = 5 (same value, no edge)
-    rerender(<LlamaCppPage />);
-
-    // Step 5: tokCached = 0 (falling edge, no increment)
-    mockedCtx.mockReturnValue(withCacheZero());
-    rerender(<LlamaCppPage />);
-
-    // Step 6: tokCached = 3 → RISING EDGE (prev=0) → cacheHits = 2
-    mockedCtx.mockReturnValue(withCache(3));
-    rerender(<LlamaCppPage />);
-
     const tile = screen.getByTestId("ctx-cache-hits");
-    expect(within(tile).getByText("2")).toBeInTheDocument();
+    expect(within(tile).getByText("30.0%")).toBeInTheDocument();
   });
 
   it("history buffer caps at 120 and resets cleanly on model change", async () => {
@@ -1241,7 +1204,7 @@ describe("LlamaCppPage Tok Cached Live Activity", () => {
     rerender(<LlamaCppPage />);
 
     // Component still renders correctly after cap + reset
-    expect(screen.getAllByText("Cache Hits").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cache Rate").length).toBeGreaterThan(0);
   });
 });
 
@@ -1589,13 +1552,13 @@ describe("LlamaCppPage Context tiles by testid", () => {
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("ctx-cache-hits")).toHaveTextContent("0");
+    expect(screen.getByTestId("ctx-cache-hits")).toHaveTextContent("—");
   });
 
-  it("ctx-largest-seen shows context_tokens from metrics", async () => {
+  it("ctx-largest-seen shows n_tokens_max from metrics", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
-        context_tokens: 65536,
+        n_tokens_max: 65536,
         slots: [
           { id: 0, n_ctx: 131072, n_prompt_tokens: 100, is_processing: false },
         ],

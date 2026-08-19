@@ -864,10 +864,10 @@ pub async fn start_handler(
             }
             // T135: persist the pid so stop_handler can recover it after a
             // dashboard restart, when BenchState.pid would otherwise be None.
-            if let Some(ref f) = folder {
-                if let Err(e) = std::fs::write(runs_dir().join(f).join("pid"), pid.to_string()) {
-                    eprintln!("bench: failed to write pid file: {e}");
-                }
+            if let Some(ref f) = folder
+                && let Err(e) = std::fs::write(runs_dir().join(f).join("pid"), pid.to_string())
+            {
+                eprintln!("bench: failed to write pid file: {e}");
             }
             // Everything the hero's identity row needs, before results.json
             // exists at all.
