@@ -8827,11 +8827,14 @@ describe("T212 Attempts column", () => {
     // fixture: js/retry_backoff — all 3 samples have attempts_used=3, solved=false
     installFetch();
     render(<BenchPage />);
-    const rows = await screen.findAllByTestId("bench-task-row");
-    const retryRow = rows.find((r) => r.textContent?.includes("retry_backoff"))!;
-    const cell = within(retryRow).getByTestId("bench-task-attempts");
-    expect(cell.textContent).not.toBe("—");
-    expect(cell.textContent).toBe("3");
+    await screen.findAllByTestId("bench-task-row");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("bench-task-row");
+      const retryRow = rows.find((r) => r.textContent?.includes("retry_backoff"))!;
+      const cell = within(retryRow).getByTestId("bench-task-attempts");
+      expect(cell.textContent).not.toBe("—");
+      expect(cell.textContent).toBe("3");
+    });
   });
 
   it("queued task renders — in the Attempts cell", async () => {
