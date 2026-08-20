@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within, act } from "@testing-library/react";
 import benchRun from "./fixtures/benchRun.json";
 
 class MockResizeObserver {
@@ -7809,10 +7809,12 @@ describe("T186 Resume button in Run Setup", () => {
     });
 
     // Resolve so the component can clean up.
-    resolveResume({
-      ok: true,
-      json: () => Promise.resolve({ success: true }),
-    } as Response);
+    await act(async () => {
+      resolveResume({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    });
   });
 });
 

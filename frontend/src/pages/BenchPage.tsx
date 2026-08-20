@@ -165,13 +165,6 @@ function Chip({ children, testId }: { children: React.ReactNode; testId?: string
 }
 
 /**
- * Progress is the live counter while running, and complete once finished.
- *
- * `warming` short-circuits to 0: a spawned run has no results.json yet, and
- * `detail` is still the PREVIOUS run — which would otherwise light the gauge
- * at 100% over a run that has not produced a sample.
- */
-/**
  * Parse a timestamp string that may lack a timezone suffix (bench.py emits
  * `datetime.now().isoformat()` — local time, no Z). Strings with an explicit
  * timezone are passed to Date.parse unmodified. Timezone-naive strings are
