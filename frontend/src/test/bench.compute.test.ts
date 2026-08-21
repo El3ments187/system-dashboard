@@ -131,11 +131,11 @@ describe("T10 strip cell mapping", () => {
       "miss",
     );
   });
-  it("maps timeout and format to the amber cell", () => {
+  it("timeout maps to 'timeout' and format maps to 'format' — not merged", () => {
     expect(cellState(rec({ status: "timeout", solved: false }))).toBe(
       "timeout",
     );
-    expect(cellState(rec({ status: "format", solved: false }))).toBe("timeout");
+    expect(cellState(rec({ status: "format", solved: false }))).toBe("format");
   });
   it("maps server to its own state, never to a failure", () => {
     const state = cellState(

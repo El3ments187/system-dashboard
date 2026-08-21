@@ -534,6 +534,17 @@ function HeroCard({
           </div>
         )}
 
+        {detail?.status === "aborted" && detail.status_note && (
+          <div
+            className="bench-banner"
+            data-testid="bench-aborted-banner"
+            style={{ margin: "0 0 10px", padding: "5px 10px", fontSize: 11 }}
+          >
+            <TriangleAlert size={13} />
+            <span>{detail.status_note}</span>
+          </div>
+        )}
+
         {serverErrors >= 1 && (
           <div
             className="bench-banner"
@@ -951,30 +962,90 @@ function ScoreProgressCard({
 
           {/* Score & metric tiles — fill the width between rings */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            {/* Only the headline number earns the banner. With a score that is
-                Score; without one, Task-avg is the number to rank on and takes
-                the treatment instead. The rest are ordinary tiles. */}
-            {hasScore ? (
-              <BannerTile
-                label={scoreTileLabel}
-                title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
-                testId="bench-headline-score"
-                value={scoreDisplay}
-                suffix="/ 100"
-                percent={score ?? 0}
-              />
+            {/* T219: when all three score components are present (-185+), put
+                banner + PASSES + TESTS + SPEED in a 4-col grid. Otherwise
+                the banner stands alone and any partial set falls back to a
+                flex row (the -165 speed_weighted-only case). */}
+            {passesWeighted !== undefined &&
+            testsWeighted !== undefined &&
+            speedWeighted !== undefined ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                  gap: 6,
+                  alignItems: "stretch",
+                }}
+              >
+                {hasScore ? (
+                  <BannerTile
+                    label={scoreTileLabel}
+                    title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                    testId="bench-headline-score"
+                    value={scoreDisplay}
+                    suffix="/ 100"
+                    percent={score ?? 0}
+                  />
+                ) : (
+                  <BannerTile
+                    label="Task-avg — the number to rank on"
+                    title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
+                    testId="bench-task-avg"
+                    value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
+                    suffix={`/ ${maxPoints ?? "\u2014"}`}
+                    percent={
+                      taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
+                    }
+                  />
+                )}
+                <MetricTile
+                  mono
+                  label="Passes (70%)"
+                  value={passesWeighted.toFixed(1)}
+                  valueSize={15}
+                  style={TIGHT_TILE}
+                  title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
+                />
+                <MetricTile
+                  mono
+                  label="Tests (10%)"
+                  value={testsWeighted.toFixed(1)}
+                  valueSize={15}
+                  style={TIGHT_TILE}
+                  title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
+                />
+                <MetricTile
+                  mono
+                  label="Speed (20%)"
+                  value={speedWeighted.toFixed(1)}
+                  valueSize={15}
+                  style={TIGHT_TILE}
+                  title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+                />
+              </div>
             ) : (
-              <BannerTile
-                label="Task-avg — the number to rank on"
-                title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
-                testId="bench-task-avg"
-                value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
-                suffix={`/ ${maxPoints ?? "\u2014"}`}
-                percent={
-                  taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
-                }
-              />
-            )}
+              <>
+                {hasScore ? (
+                  <BannerTile
+                    label={scoreTileLabel}
+                    title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                    testId="bench-headline-score"
+                    value={scoreDisplay}
+                    suffix="/ 100"
+                    percent={score ?? 0}
+                  />
+                ) : (
+                  <BannerTile
+                    label="Task-avg — the number to rank on"
+                    title="Mean over tasks of each task's mean over samples. Task-weighted, so every task counts equally regardless of how many samples it got — unlike summary.mean_points, which is sample-weighted and diverges when sample counts are unbalanced. Uses a 3/2/1 curve (attempt 1/2/3), not the 100/80/60 tier used by the 0–100 score, so the two diverge for runs where most solves come on later attempts."
+                    testId="bench-task-avg"
+                    value={taskAvg === null ? "\u2014" : taskAvg.toFixed(2)}
+                    suffix={`/ ${maxPoints ?? "\u2014"}`}
+                    percent={
+                      taskAvg === null || !maxPoints ? 0 : (taskAvg / maxPoints) * 100
+                    }
+                  />
+                )}
 
             <div
               style={{
@@ -1054,41 +1125,43 @@ function ScoreProgressCard({
               />
             </div>
 
-            {(passesWeighted !== undefined ||
-              testsWeighted !== undefined ||
-              speedWeighted !== undefined) && (
-              <div style={{ display: "flex", gap: 6 }}>
-                {passesWeighted !== undefined && (
-                  <MetricTile
-                    mono
-                    label="Passes (70%)"
-                    value={passesWeighted.toFixed(1)}
-                    valueSize={15}
-                    style={{ ...TIGHT_TILE, flex: 1 }}
-                    title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
-                  />
+                {(passesWeighted !== undefined ||
+                  testsWeighted !== undefined ||
+                  speedWeighted !== undefined) && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {passesWeighted !== undefined && (
+                      <MetricTile
+                        mono
+                        label="Passes (70%)"
+                        value={passesWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
+                      />
+                    )}
+                    {testsWeighted !== undefined && (
+                      <MetricTile
+                        mono
+                        label="Tests (10%)"
+                        value={testsWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
+                      />
+                    )}
+                    {speedWeighted !== undefined && (
+                      <MetricTile
+                        mono
+                        label="Speed (20%)"
+                        value={speedWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+                      />
+                    )}
+                  </div>
                 )}
-                {testsWeighted !== undefined && (
-                  <MetricTile
-                    mono
-                    label="Tests (10%)"
-                    value={testsWeighted.toFixed(1)}
-                    valueSize={15}
-                    style={{ ...TIGHT_TILE, flex: 1 }}
-                    title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
-                  />
-                )}
-                {speedWeighted !== undefined && (
-                  <MetricTile
-                    mono
-                    label="Speed (20%)"
-                    value={speedWeighted.toFixed(1)}
-                    valueSize={15}
-                    style={{ ...TIGHT_TILE, flex: 1 }}
-                    title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
-                  />
-                )}
-              </div>
+              </>
             )}
           </div>
 

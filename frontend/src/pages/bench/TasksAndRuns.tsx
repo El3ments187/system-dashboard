@@ -14,11 +14,13 @@ import { fmtNum } from "../llamacpp/parts";
 import { fmtUptime } from "../llamaCppUtils";
 import {
   AttemptCell,
+  AttemptPanel,
   AttemptStrip,
   KOfN,
   MONO,
   navigateTo,
   PANEL_CARD_STYLE,
+  SampleStrip,
   StripLegend,
   SubTabs,
   type BenchTab,
@@ -52,7 +54,7 @@ import {
   truncationState,
 } from "./compute";
 import type { BenchData } from "./useBenchData";
-import type { BenchRecord, BenchRunDetail, BenchRunRow } from "./types";
+import type { BenchAttempt, BenchRecord, BenchRunDetail, BenchRunRow } from "./types";
 
 
 
@@ -695,6 +697,15 @@ function ThisRunPane({
   }, [records]);
   const expectedSamples = detail?.config?.n ?? 1;
 
+  // T224: tracks the attempt cell the user last clicked.
+  const [openAttempt, setOpenAttempt] = useState<{
+    task: string;
+    sample: number;
+    record: BenchRecord;
+    attemptNum: number;
+    att: BenchAttempt;
+  } | null>(null);
+
   // Rows come from the ROSTER, not from the records, so every task this run
   // covers is visible from the first render instead of the table growing one
   // row at a time while the hero already says "27 of 27". A task with no
@@ -771,10 +782,6 @@ function ThisRunPane({
                   ? null
                   : graded.reduce((s, r) => s + r.gen_seconds, 0) /
                     graded.length;
-              const maxAttempts =
-                rs.length === 0
-                  ? null
-                  : Math.max(...rs.map((r) => r.attempts_used));
               const tainted = rowTaint(
                 rs.map((r) => indexOf.get(r) ?? -1),
                 trunc,
@@ -826,21 +833,46 @@ function ThisRunPane({
                       </span>
                     </td>
                     <td style={TD}>
-                      <AttemptStrip
+                      <SampleStrip
                         records={rs}
                         expectedSamples={expectedSamples}
                         live={task === detail?.live?.current_task}
                       />
                     </td>
                     <td
-                      style={{ ...TD, textAlign: "right" }}
+                      style={{ ...TD, display: "flex", justifyContent: "flex-end", alignItems: "center" }}
                       data-testid="bench-task-attempts"
                     >
-                      {maxAttempts === null ? (
-                        <span style={{ color: "var(--text-muted)" }}>—</span>
-                      ) : (
-                        maxAttempts
-                      )}
+                      <AttemptStrip
+                        records={rs}
+                        expectedSamples={expectedSamples}
+                        attempts={detail?.config?.attempts}
+                        live={task === detail?.live?.current_task}
+                        currentAttempt={
+                          task === detail?.live?.current_task
+                            ? detail?.live?.current_attempt
+                            : undefined
+                        }
+                        onAttemptClick={(record, attemptNum) => {
+                          const att = record.attempts?.find(
+                            (a) => a.attempt === attemptNum,
+                          );
+                          if (!att) return;
+                          setOpenAttempt(
+                            openAttempt?.task === task &&
+                            openAttempt.record === record &&
+                            openAttempt.attemptNum === attemptNum
+                              ? null
+                              : {
+                                  task,
+                                  sample: record.sample,
+                                  record,
+                                  attemptNum,
+                                  att,
+                                },
+                          );
+                        }}
+                      />
                     </td>
                     <td
                       style={{ ...TD, textAlign: "right", fontWeight: 700 }}
@@ -884,6 +916,25 @@ function ThisRunPane({
                         }}
                       >
                         <Drilldown records={rs} />
+                      </td>
+                    </tr>
+                  )}
+                  {openAttempt?.task === task && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        style={{
+                          ...TD,
+                          whiteSpace: "normal",
+                          background: "var(--bg-secondary)",
+                          borderTop: "1px solid var(--border-light)",
+                        }}
+                      >
+                        <AttemptPanel
+                          attempt={openAttempt.att}
+                          task={task}
+                          sample={openAttempt.sample}
+                        />
                       </td>
                     </tr>
                   )}

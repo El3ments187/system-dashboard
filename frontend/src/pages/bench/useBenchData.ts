@@ -437,7 +437,10 @@ export function useBenchData(): BenchData {
         );
         if (cancelled) return;
         setDetail(d);
-        lastKnownLive = Object.keys(d.live ?? {}).length > 0;
+        lastKnownLive =
+          d.status != null
+            ? d.status === "running"
+            : Object.keys(d.live ?? {}).length > 0;
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "bench run fetch failed");

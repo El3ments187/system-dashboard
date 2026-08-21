@@ -4,6 +4,26 @@
  * against a real file — do not rename them here.
  */
 
+/** One entry in a sample's `attempts[]` log. Present from localbench -277+. */
+export interface BenchAttempt {
+  attempt: number;
+  status: "pass" | "fail" | "error" | "timeout" | "format" | "server";
+  gen_seconds?: number;
+  test_seconds?: number;
+  tests_passed?: number;
+  tests_failed?: number;
+  /** Total tokens in this attempt's generation call. */
+  tokens?: number;
+  prompt_tokens?: number;
+  thinking_tokens?: number;
+  answer_tokens?: number;
+  tokens_estimated?: boolean;
+  finish_reason?: string;
+  code_blocks?: number;
+  nudges?: number;
+  cut_mid_block?: boolean;
+}
+
 /** One sample. localbench writes 41 fields; these are the ones the page uses. */
 export interface BenchRecord {
   task: string;
@@ -51,6 +71,8 @@ export interface BenchRecord {
   cut_mid_block: boolean;
   stopped_at_budget: boolean;
   detail: string;
+  /** Per-attempt log. Present from localbench -277+. Absent on older files. */
+  attempts?: BenchAttempt[];
 }
 
 /** Present only while a run is in flight. `{}` means FINISHED. */
@@ -161,6 +183,13 @@ export interface BenchRunDetail {
   records: BenchRecord[];
   /** `{}` (empty object) means the run FINISHED. Non-empty means still live. */
   live: BenchLive;
+  /**
+   * "running" | "finished" | "aborted". Present from localbench -277+.
+   * Absent on older files — fall back to `live == {}` when missing.
+   */
+  status?: "running" | "finished" | "aborted";
+  /** Human-readable note set by localbench when status is "aborted". */
+  status_note?: string;
 }
 
 /**
@@ -238,6 +267,7 @@ export type CellState =
   | "miss"
   | "error"
   | "timeout"
+  | "format"
   | "server"
   | "live"
   | "pending";

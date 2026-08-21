@@ -4,7 +4,7 @@
  * components, and nothing else in the app should grow a dependency on them.
  */
 import type { CSSProperties } from "react";
-import type { BenchRecord, CellState } from "./types";
+import type { BenchAttempt, BenchRecord, CellState } from "./types";
 import { cellState } from "./compute";
 
 export const MONO = '"JetBrains Mono", "Fira Code", monospace';
@@ -25,6 +25,7 @@ const CELL_CLASS: Record<CellState, string> = {
   miss: "bench-att miss",
   error: "bench-att error",
   timeout: "bench-att to",
+  format: "bench-att format",
   server: "bench-att server",
   live: "bench-att live",
   pending: "bench-att pending",
@@ -36,7 +37,9 @@ const CELL_TITLE: Record<CellState, string> = {
   miss: "Failed after every attempt",
   error:
     "Crashed or produced nothing runnable — the code never got as far as being wrong",
-  timeout: "Timed out or the reply could not be parsed",
+  timeout: "Code ran but never finished — test or compile process was killed at the time limit",
+  format:
+    "No runnable code came out of the reply — no code block found, or every one was empty",
   server: "The endpoint never answered — excluded from every rate, not a zero",
   live: "Running now — no result yet",
   pending: "Not run yet",
@@ -55,11 +58,13 @@ export function navigateTo(path: string) {
 export function AttemptCell({
   state,
   decorative,
+  onClick,
 }: {
   state: CellState;
   /** A legend swatch, not a sample. Excluded from the cell test ids so a
    *  count of real cells is never inflated by the key below the table. */
   decorative?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <i
@@ -67,18 +72,68 @@ export function AttemptCell({
       title={CELL_TITLE[state]}
       data-cell-state={decorative ? undefined : state}
       data-testid={decorative ? undefined : `bench-cell-${state}`}
+      onClick={onClick}
+      style={onClick ? { cursor: "pointer" } : undefined}
     />
   );
 }
 
+/** One cell per sample, the outer grouping signal for the Samples column. */
+export function SampleStrip({
+  records,
+  expectedSamples,
+  live,
+}: {
+  records: BenchRecord[];
+  expectedSamples?: number;
+  live?: boolean;
+}) {
+  const bySample = [...records].sort((a, b) => a.sample - b.sample);
+  const groups = new Map<number, BenchRecord[]>();
+  for (const r of bySample) {
+    const g = groups.get(r.sample);
+    if (g) g.push(r);
+    else groups.set(r.sample, [r]);
+  }
+  const total = Math.max(expectedSamples ?? 0, groups.size);
+  const liveSample = live ? groups.size : -1;
+  const out: React.ReactNode[] = [];
+  for (let s = 0; s < total; s += 1) {
+    const rs = groups.get(s);
+    if (s > 0) out.push(<span key={`d${s}`} className="bench-sdiv" />);
+    let content: React.ReactNode;
+    if (rs && rs.length > 0) {
+      content = rs.map((r, i) => <AttemptCell key={i} state={cellState(r)} />);
+    } else if (s === liveSample) {
+      content = <AttemptCell state="live" />;
+    } else {
+      content = <AttemptCell state="pending" />;
+    }
+    out.push(
+      <span key={`g${s}`} className="bench-sgrp">
+        {content}
+      </span>,
+    );
+  }
+  return <span className="bench-strip">{out}</span>;
+}
+
 /**
- * One square per sample, grouped so the `--n` boundary is visible. A sample
- * is a fresh conversation; the attempts inside it are retries.
+ * Per-attempt cells for one task, grouped by sample so the `--n` boundary
+ * is visible. Each sample group shows one cell per attempt:
+ *   attempts 1…(attempts_used−1) → miss (ran, didn't solve)
+ *   attempt attempts_used         → final outcome (cellState)
+ *   attempts after attempts_used  → pending (never ran)
+ * `server` is the exception: the endpoint never answered, so no attempt ran —
+ * the whole group renders as a single server cell with no invented misses.
  */
 export function AttemptStrip({
   records,
   expectedSamples,
   live,
+  attempts,
+  currentAttempt,
+  onAttemptClick,
 }: {
   records: BenchRecord[];
   expectedSamples?: number;
@@ -88,7 +143,19 @@ export function AttemptStrip({
    * the live cell is derived from how many samples have already landed.
    */
   live?: boolean;
+  /** From detail.config.attempts. Falls back to max attempts_used seen. */
+  attempts?: number;
+  /** From detail.live.current_attempt — only relevant when live is true. */
+  currentAttempt?: number;
+  /** T224: called when an attempt cell is clicked (only when attempts[] present). */
+  onAttemptClick?: (record: BenchRecord, attemptNum: number) => void;
 }) {
+  // Fall back to the highest attempts_used across all records when the config
+  // field is absent (runs predating the field).
+  const attemptsCount =
+    attempts ??
+    (records.length > 0 ? Math.max(...records.map((r) => r.attempts_used)) : 1);
+
   const bySample = [...records].sort((a, b) => a.sample - b.sample);
   const groups = new Map<number, BenchRecord[]>();
   for (const r of bySample) {
@@ -105,11 +172,76 @@ export function AttemptStrip({
     if (s > 0) out.push(<span key={`d${s}`} className="bench-sdiv" />);
     let content: React.ReactNode;
     if (rs && rs.length > 0) {
-      content = rs.map((r, i) => <AttemptCell key={i} state={cellState(r)} />);
+      const r = rs[0];
+      if (r.status === "server") {
+        // Endpoint never answered — no attempt ran, so no invented miss cells.
+        content = <AttemptCell state="server" />;
+      } else if (r.attempts && r.attempts.length > 0) {
+        // T222: use the per-attempt log when available (-277+).
+        const cells: React.ReactNode[] = [];
+        for (let a = 1; a <= attemptsCount; a++) {
+          const att = r.attempts.find((x: BenchAttempt) => x.attempt === a);
+          if (att) {
+            let state: CellState;
+            if (att.status === "pass") {
+              state = a === 1 ? "solved" : "solved-late";
+            } else if (att.status === "fail") {
+              state = "miss";
+            } else {
+              state = att.status;
+            }
+            cells.push(
+              <AttemptCell
+                key={a}
+                state={state}
+                onClick={onAttemptClick ? () => onAttemptClick(r, a) : undefined}
+              />,
+            );
+          } else {
+            cells.push(<AttemptCell key={a} state="pending" />);
+          }
+        }
+        content = cells;
+      } else {
+        // Fallback derivation: attempts 1…N-1 = miss, N = final outcome.
+        const finalState = cellState(r);
+        const cells: React.ReactNode[] = [];
+        for (let a = 1; a <= attemptsCount; a++) {
+          if (a < r.attempts_used) {
+            cells.push(<AttemptCell key={a} state="miss" />);
+          } else if (a === r.attempts_used) {
+            cells.push(<AttemptCell key={a} state={finalState} />);
+          } else {
+            cells.push(<AttemptCell key={a} state="pending" />);
+          }
+        }
+        content = cells;
+      }
     } else if (s === liveSample) {
-      content = <AttemptCell state="live" />;
+      if (currentAttempt !== undefined) {
+        // Precise: earlier attempts failed, current is live, later haven't started.
+        const cells: React.ReactNode[] = [];
+        for (let a = 1; a <= attemptsCount; a++) {
+          if (a < currentAttempt) {
+            cells.push(<AttemptCell key={a} state="miss" />);
+          } else if (a === currentAttempt) {
+            cells.push(<AttemptCell key={a} state="live" />);
+          } else {
+            cells.push(<AttemptCell key={a} state="pending" />);
+          }
+        }
+        content = cells;
+      } else {
+        // current_attempt absent: cannot claim which attempt is live.
+        content = Array.from({ length: attemptsCount }, (_, i) => (
+          <AttemptCell key={i} state="live" />
+        ));
+      }
     } else {
-      content = <AttemptCell state="pending" />;
+      // Sample hasn't started yet — all attempts pending.
+      content = Array.from({ length: attemptsCount }, (_, i) => (
+        <AttemptCell key={i} state="pending" />
+      ));
     }
     out.push(
       <span key={`g${s}`} className="bench-sgrp">
@@ -192,7 +324,8 @@ export function StripLegend() {
     ["solved-late", "On retry (−1 pt each)"],
     ["miss", "Failed"],
     ["error", "Crashed / nothing runnable"],
-    ["timeout", "Timeout/format"],
+    ["timeout", "Timeout"],
+    ["format", "Format — no code block"],
     ["server", "Excluded"],
     ["live", "In progress"],
   ];
@@ -218,6 +351,79 @@ export function StripLegend() {
         </span>
       ))}
       <span>│ Separates samples (--n)</span>
+    </div>
+  );
+}
+
+function fmt1(n: number | undefined, unit: string) {
+  return n == null ? "—" : `${n.toFixed(1)} ${unit}`;
+}
+
+/** T224: per-attempt detail panel, shown when an attempt cell is clicked. */
+export function AttemptPanel({
+  attempt,
+  task,
+  sample,
+}: {
+  attempt: BenchAttempt;
+  task: string;
+  sample: number;
+}) {
+  const est = attempt.tokens_estimated ? "~" : "";
+  const rows: Array<[string, string]> = [
+    ["Gen", fmt1(attempt.gen_seconds, "s")],
+    ["Test", fmt1(attempt.test_seconds, "s")],
+    [
+      "Tests",
+      attempt.tests_passed == null
+        ? "—"
+        : `${attempt.tests_passed} / ${(attempt.tests_passed ?? 0) + (attempt.tests_failed ?? 0)}`,
+    ],
+    ["Tokens", attempt.tokens == null ? "—" : `${est}${attempt.tokens.toLocaleString()}`],
+    [
+      "Prompt",
+      attempt.prompt_tokens == null ? "—" : `${est}${attempt.prompt_tokens.toLocaleString()}`,
+    ],
+    ...(attempt.thinking_tokens != null
+      ? ([["Thinking", `${attempt.thinking_tokens.toLocaleString()} tok`]] as Array<
+          [string, string]
+        >)
+      : []),
+    ["Blocks", attempt.code_blocks == null ? "—" : String(attempt.code_blocks)],
+    ...(attempt.nudges != null && attempt.nudges > 0
+      ? ([["Nudges", String(attempt.nudges)]] as Array<[string, string]>)
+      : []),
+    ...(attempt.finish_reason != null && attempt.finish_reason !== "stop"
+      ? ([["Finish", attempt.finish_reason]] as Array<[string, string]>)
+      : []),
+    ...(attempt.cut_mid_block
+      ? ([["Cut mid-block", "yes"]] as Array<[string, string]>)
+      : []),
+  ];
+  return (
+    <div
+      data-testid="bench-attempt-panel"
+      style={{ padding: "8px 12px", font: `11px ${MONO}` }}
+    >
+      <div
+        style={{
+          font: "600 9px Inter, system-ui, sans-serif",
+          letterSpacing: "0.6px",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          marginBottom: 6,
+        }}
+      >
+        {task} · sample {sample} · attempt {attempt.attempt}
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        {rows.map(([label, value]) => (
+          <span key={label} style={{ color: "var(--text-muted)" }}>
+            {label}:{" "}
+            <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{value}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

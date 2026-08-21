@@ -1878,6 +1878,9 @@ button.status-chip:hover:not(:disabled) {
   border: 1.5px solid var(--warning);
   opacity: 0.8;
 }
+.bench-att.format {
+  background: var(--warning);
+}
 /* Dashed and hollow: the endpoint never answered. Excluded from every
    rate, and deliberately not readable as a zero. */
 .bench-att.server {

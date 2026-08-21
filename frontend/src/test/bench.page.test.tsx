@@ -26,6 +26,8 @@ vi.mock("../context/AlertsContext", () => ({
 import BenchPage from "../pages/BenchPage";
 import { LOCALBENCH_DEFAULTS, compareSlotOptions } from "../pages/bench/compute";
 import Header from "../components/Header";
+import { AttemptStrip, SampleStrip } from "../pages/bench/parts";
+import type { BenchRecord } from "../pages/bench/types";
 
 // Mutable so a test can change what the ACTIVE model reports — the source
 // Run Setup's temperature and the hero's primary name both read.
@@ -393,19 +395,25 @@ describe("T10 live and pending strip cells", () => {
     installFetch({ detail });
     render(<BenchPage />);
 
+    // T221: live sample now renders one live cell in SAMPLES (SampleStrip) and one
+    // in ATTEMPTS (AttemptStrip) — two total for the one in-flight sample.
     await waitFor(() =>
-      expect(screen.queryAllByTestId("bench-cell-live")).toHaveLength(1),
+      expect(screen.queryAllByTestId("bench-cell-live")).toHaveLength(2),
     );
     // Scoped to the in-flight task's OWN row: since T80 the table renders
     // the whole roster, so every queued task contributes pending cells too
     // and a page-wide count no longer isolates this strip.
     const liveRow = screen
-      .getByTestId("bench-cell-live")
+      .getAllByTestId("bench-cell-live")[0]
       .closest('[data-testid="bench-task-row"]')!;
-    // n=3, one recorded sample, one live → exactly one still pending here.
+    // T221 re-derivation: attempts=3, current_attempt=1, n=3.
+    // SAMPLES (SampleStrip): sample 0 → miss; sample 1 → live; sample 2 → pending. (1 pending)
+    // ATTEMPTS (AttemptStrip): sample 0 → miss×3 (0 pending); sample 1 → live+pending×2 (2 pending);
+    //   sample 2 → pending×3 (3 pending). Total ATTEMPTS pending = 5.
+    // Total pending in liveRow = 1 + 5 = 6.
     expect(
       liveRow.querySelectorAll('[data-testid="bench-cell-pending"]'),
-    ).toHaveLength(1);
+    ).toHaveLength(6);
   });
 
   it("shows no live cell once the run has finished", async () => {
@@ -1636,7 +1644,8 @@ describe("T148 StripLegend capitalisation", () => {
     expect(bodyText).toMatch(/On retry/);
     expect(bodyText).toMatch(/Failed/);
     expect(bodyText).toMatch(/Crashed \/ nothing runnable/);
-    expect(bodyText).toMatch(/Timeout\/format/);
+    expect(bodyText).toMatch(/Timeout/);
+    expect(bodyText).toMatch(/Format — no code block/);
     expect(bodyText).toMatch(/Excluded/);
     expect(bodyText).toMatch(/In progress/);
     expect(bodyText).toMatch(/│ Separates samples/);
@@ -8813,34 +8822,39 @@ describe("T212 Attempts column", () => {
     ]);
   });
 
-  it("solved task (first attempt) renders 1", async () => {
+  it("solved task (first attempt) — Attempts strip has solved cells, no miss", async () => {
     // fixture: js/formula_engine — all 3 samples have attempts_used=1, solved=true
+    // T221: ATTEMPTS renders AttemptStrip — each sample group: solved + pending×2
     installFetch();
     render(<BenchPage />);
     await screen.findAllByTestId("bench-task-row");
     await waitFor(() => {
       const rows = screen.getAllByTestId("bench-task-row");
       const formulaRow = rows.find((r) => r.textContent?.includes("formula_engine"))!;
-      expect(within(formulaRow).getByTestId("bench-task-attempts").textContent).toBe("1");
+      const attCell = within(formulaRow).getByTestId("bench-task-attempts");
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-solved"]').length).toBeGreaterThan(0);
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-miss"]').length).toBe(0);
     });
   });
 
-  it("failed task that used all three attempts renders 3, not —", async () => {
+  it("failed task (all three attempts) — Attempts strip has miss cells, no solved", async () => {
     // fixture: js/retry_backoff — all 3 samples have attempts_used=3, solved=false
+    // T221: ATTEMPTS renders AttemptStrip — each sample group: miss×3
     installFetch();
     render(<BenchPage />);
     await screen.findAllByTestId("bench-task-row");
     await waitFor(() => {
       const rows = screen.getAllByTestId("bench-task-row");
       const retryRow = rows.find((r) => r.textContent?.includes("retry_backoff"))!;
-      const cell = within(retryRow).getByTestId("bench-task-attempts");
-      expect(cell.textContent).not.toBe("—");
-      expect(cell.textContent).toBe("3");
+      const attCell = within(retryRow).getByTestId("bench-task-attempts");
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-miss"]').length).toBeGreaterThan(0);
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-solved"]').length).toBe(0);
     });
   });
 
-  it("queued task renders — in the Attempts cell", async () => {
+  it("queued task — Attempts strip shows pending cells (no — text)", async () => {
     // Add a task to the roster that has no records — it will be queued
+    // T221: ATTEMPTS renders AttemptStrip with no records → all pending cells
     installFetch({
       taskList: {
         ...TASK_LIST,
@@ -8854,13 +8868,14 @@ describe("T212 Attempts column", () => {
     await screen.findAllByTestId("bench-task-row");
     const rows = screen.getAllByTestId("bench-task-row");
     const queuedRow = rows.find((r) => r.textContent?.includes("queued_placeholder"))!;
-    const cell = within(queuedRow).getByTestId("bench-task-attempts");
-    expect(cell.textContent).toBe("—");
+    const attCell = within(queuedRow).getByTestId("bench-task-attempts");
+    expect(attCell.querySelectorAll('[data-testid="bench-cell-pending"]').length).toBeGreaterThan(0);
+    expect(attCell.textContent).not.toBe("—");
   });
 
-  it("multi-sample: Attempts shows max attempts_used across samples", async () => {
+  it("multi-sample: Attempts strip shows miss cells for samples that used all 3 attempts", async () => {
     // Give js/formula_engine varied attempts: sample 0 → 1 (solved), samples 1&2 → 3 (failed)
-    // max(1, 3, 3) = 3; confirms max rule, not mean
+    // T221: ATTEMPTS renders AttemptStrip — samples 1&2 each show miss×3
     const base = (benchRun as unknown as { records: Record<string, unknown>[] }).records;
     const modifiedRecords = base.map((r) =>
       r["task"] === "js/formula_engine"
@@ -8873,7 +8888,9 @@ describe("T212 Attempts column", () => {
     await waitFor(() => {
       const rows = screen.getAllByTestId("bench-task-row");
       const formulaRow = rows.find((r) => r.textContent?.includes("formula_engine"))!;
-      expect(within(formulaRow).getByTestId("bench-task-attempts").textContent).toBe("3");
+      const attCell = within(formulaRow).getByTestId("bench-task-attempts");
+      // 2 failed samples × 3 miss cells each = 6 miss cells
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-miss"]').length).toBe(6);
     });
   });
 
@@ -8894,5 +8911,273 @@ describe("T212 Attempts column", () => {
     await screen.findAllByTestId("bench-task-row");
     const stripCells = container.querySelectorAll("[data-cell-state]");
     expect(stripCells.length).toBeGreaterThan(0);
+  });
+});
+
+// ── T220 — AttemptStrip: one cell per attempt ────────────────────────────────
+//
+// Previously AttemptStrip rendered one cell per SAMPLE — attempts inside a
+// sample were invisible. T220 changes each sample group to one cell per
+// attempt, so failed retries become visible (miss miss miss vs a single miss).
+//
+// Tested directly on AttemptStrip to stay fast and isolated from page state.
+
+describe("T220 AttemptStrip: per-attempt cells", () => {
+  function makeRec(
+    fields: Partial<{
+      sample: number;
+      status: BenchRecord["status"];
+      solved: boolean;
+      first_try: boolean;
+      attempts_used: number;
+    }>,
+  ): BenchRecord {
+    return {
+      task: "js/foo",
+      lang: "js",
+      number: 1,
+      sample: fields.sample ?? 0,
+      status: fields.status ?? "fail",
+      points: 0,
+      max_points: 3,
+      solved: fields.solved ?? false,
+      first_try: fields.first_try ?? false,
+      attempts_used: fields.attempts_used ?? 1,
+      tests_passed: 0,
+      tests_failed: 0,
+      tests_total: 0,
+      tests_expected: 0,
+      first_tests_passed: 0,
+      first_tests_total: 0,
+      first_failed: [],
+      failed_assertions: [],
+      seconds: 0,
+      gen_seconds: 0,
+      test_seconds: 0,
+      completion_tokens: 0,
+      prompt_tokens: 0,
+      total_tokens: 0,
+      tokens_estimated: false,
+      nudged: 0,
+      truncated: false,
+      cut_mid_block: false,
+      stopped_at_budget: false,
+      detail: "",
+    };
+  }
+
+  it("attempts_used=3, solved=false renders three miss cells (confirmed red first)", () => {
+    // Old: rendered one miss cell. Now: three miss cells.
+    const r = makeRec({ attempts_used: 3, solved: false, status: "fail" });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    const cells = Array.from(container.querySelectorAll("[data-cell-state]"));
+    expect(cells).toHaveLength(3);
+    expect(cells.map((c) => c.getAttribute("data-cell-state"))).toEqual([
+      "miss", "miss", "miss",
+    ]);
+  });
+
+  it("attempts_used=2, solved=true renders miss / solved-late / pending in that order", () => {
+    // solved on 2nd attempt → first_try=false → cellState returns solved-late.
+    const r = makeRec({ attempts_used: 2, solved: true, first_try: false, status: "pass" });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    const cells = Array.from(container.querySelectorAll("[data-cell-state]"));
+    expect(cells).toHaveLength(3);
+    expect(cells.map((c) => c.getAttribute("data-cell-state"))).toEqual([
+      "miss", "solved-late", "pending",
+    ]);
+  });
+
+  it("task with no record renders three pending cells", () => {
+    const { container } = render(
+      <AttemptStrip records={[]} attempts={3} expectedSamples={1} />,
+    );
+    const cells = Array.from(container.querySelectorAll("[data-cell-state]"));
+    expect(cells).toHaveLength(3);
+    expect(cells.every((c) => c.getAttribute("data-cell-state") === "pending")).toBe(true);
+  });
+
+  it("status=server renders one server cell for the whole group — no miss cells invented", () => {
+    const r = makeRec({ status: "server", attempts_used: 3, solved: false });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    expect(container.querySelectorAll('[data-cell-state="server"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-cell-state="miss"]')).toHaveLength(0);
+  });
+
+  it("--n 3: three groups of three cells and exactly two separators", () => {
+    const records = [
+      makeRec({ sample: 0, attempts_used: 3, solved: false, status: "fail" }),
+      makeRec({ sample: 1, attempts_used: 3, solved: false, status: "fail" }),
+      makeRec({ sample: 2, attempts_used: 3, solved: false, status: "fail" }),
+    ];
+    const { container } = render(
+      <AttemptStrip records={records} attempts={3} expectedSamples={3} />,
+    );
+    // 3 groups × 3 attempts = 9 cells; 2 separators between groups.
+    expect(container.querySelectorAll("[data-cell-state]")).toHaveLength(9);
+    expect(container.querySelectorAll(".bench-sdiv")).toHaveLength(2);
+  });
+
+  it("attempts absent: falls back to max attempts_used — no zero cells rendered", () => {
+    // Two samples: max(attempts_used) = 2 → 2 cells per group = 4 total.
+    const records = [
+      makeRec({ sample: 0, attempts_used: 1, solved: true, first_try: true, status: "pass" }),
+      makeRec({ sample: 1, attempts_used: 2, solved: false, status: "fail" }),
+    ];
+    const { container } = render(
+      <AttemptStrip records={records} expectedSamples={2} />,
+    );
+    // fallback attemptsCount = max(1, 2) = 2 → 2 cells per group × 2 groups = 4.
+    expect(container.querySelectorAll("[data-cell-state]")).toHaveLength(4);
+  });
+
+  it("live with current_attempt=2 renders miss / live / pending", () => {
+    // Fixture: attempt 1 already failed, attempt 2 is running, attempt 3 not started.
+    const { container } = render(
+      <AttemptStrip
+        records={[]}
+        attempts={3}
+        expectedSamples={1}
+        live
+        currentAttempt={2}
+      />,
+    );
+    const cells = Array.from(container.querySelectorAll("[data-cell-state]"));
+    expect(cells).toHaveLength(3);
+    expect(cells.map((c) => c.getAttribute("data-cell-state"))).toEqual([
+      "miss", "live", "pending",
+    ]);
+  });
+
+  it("live with current_attempt absent renders all cells as live — no attempt claimed as failed", () => {
+    // current_attempt field not present: can't know which attempt is running.
+    const { container } = render(
+      <AttemptStrip records={[]} attempts={3} expectedSamples={1} live />,
+    );
+    const cells = Array.from(container.querySelectorAll("[data-cell-state]"));
+    expect(cells).toHaveLength(3);
+    expect(cells.every((c) => c.getAttribute("data-cell-state") === "live")).toBe(true);
+    expect(container.querySelectorAll('[data-cell-state="miss"]')).toHaveLength(0);
+  });
+
+  it("ATTEMPTS column (bench-task-attempts) now renders the attempt strip (T221)", async () => {
+    // T221 moved the AttemptStrip into this column; it no longer shows a bare number.
+    // js/retry_backoff: attempts_used=3, solved=false → miss×3 per sample group.
+    installFetch();
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const attCols = screen.queryAllByTestId("bench-task-attempts");
+    expect(attCols.length).toBeGreaterThan(0);
+    await waitFor(() => {
+      const rows = screen.queryAllByTestId("bench-task-row");
+      const retryRow = rows.find(
+        (r) => r.querySelector("td")?.textContent?.includes("retry_backoff"),
+      );
+      expect(retryRow).toBeDefined();
+      const attCell = within(retryRow!).getByTestId("bench-task-attempts");
+      expect(attCell.querySelectorAll('[data-testid="bench-cell-miss"]').length).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ── T221 — AttemptStrip moves to Attempts column; SampleStrip in Samples ─────
+//
+// T220 put per-attempt cells in the SAMPLES column — correct derivation, wrong
+// column. T221 moves AttemptStrip to ATTEMPTS and restores one-cell-per-sample
+// (SampleStrip) to SAMPLES.
+//
+// Tests changed twice (derived, not adjusted):
+//   T10 pending count: 1 (pre-T220) → 5 (T220, strip in SAMPLES) → 6 (T221,
+//     SAMPLES=1 pending + ATTEMPTS=5 pending).
+//   T220 "ATTEMPTS column" test: asserted textContent "3" (number) → asserts
+//     miss cells (T221, strip now in ATTEMPTS).
+
+describe("T221 AttemptStrip in Attempts column; SampleStrip in Samples column", () => {
+  function makeRec(
+    fields: Partial<{
+      sample: number;
+      status: BenchRecord["status"];
+      solved: boolean;
+      first_try: boolean;
+      attempts_used: number;
+    }>,
+  ): BenchRecord {
+    return {
+      task: "js/foo",
+      lang: "js",
+      number: 1,
+      sample: fields.sample ?? 0,
+      status: fields.status ?? "fail",
+      solved: fields.solved ?? false,
+      first_try: fields.first_try ?? false,
+      attempts_used: fields.attempts_used ?? 1,
+      points: 0,
+      gen_seconds: 1,
+      tests_passed: 0,
+      tests_failed: 1,
+    };
+  }
+
+  it("--n 1 attempts=3: SAMPLES has 1 cell, ATTEMPTS has 3 cells — the pairing that was the bug", () => {
+    const rec = makeRec({ sample: 0, status: "fail", solved: false, attempts_used: 1 });
+    const { container: sampC } = render(<SampleStrip records={[rec]} expectedSamples={1} />);
+    const { container: attC } = render(<AttemptStrip records={[rec]} expectedSamples={1} attempts={3} />);
+    expect(sampC.querySelectorAll("[data-cell-state]").length).toBe(1);
+    expect(attC.querySelectorAll("[data-cell-state]").length).toBe(3);
+  });
+
+  it("solved-on-2: SAMPLES shows single solved-late; ATTEMPTS shows miss/solved-late/pending", () => {
+    // solved=true, first_try=false, attempts_used=2 → cellState = solved-late
+    const rec = makeRec({ sample: 0, solved: true, first_try: false, attempts_used: 2 });
+    const { container: sampC } = render(<SampleStrip records={[rec]} expectedSamples={1} />);
+    const { container: attC } = render(<AttemptStrip records={[rec]} expectedSamples={1} attempts={3} />);
+    const sampStates = Array.from(sampC.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+    expect(sampStates).toEqual(["solved-late"]);
+    const attStates = Array.from(attC.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+    expect(attStates).toEqual(["miss", "solved-late", "pending"]);
+  });
+
+  it("queued task (no records): SAMPLES 1 pending, ATTEMPTS 3 pending", () => {
+    const { container: sampC } = render(<SampleStrip records={[]} expectedSamples={1} />);
+    const { container: attC } = render(<AttemptStrip records={[]} expectedSamples={1} attempts={3} />);
+    expect(sampC.querySelectorAll('[data-testid="bench-cell-pending"]').length).toBe(1);
+    expect(attC.querySelectorAll('[data-testid="bench-cell-pending"]').length).toBe(3);
+  });
+
+  it("--n 3: SAMPLES shows 3 cells + 2 separators; ATTEMPTS shows 9 cells + 2 separators", () => {
+    const records = [0, 1, 2].map((s) =>
+      makeRec({ sample: s, status: "fail", solved: false, attempts_used: 3 }),
+    );
+    const { container: sampC } = render(<SampleStrip records={records} expectedSamples={3} />);
+    const { container: attC } = render(<AttemptStrip records={records} expectedSamples={3} attempts={3} />);
+    expect(sampC.querySelectorAll("[data-cell-state]").length).toBe(3);
+    expect(sampC.querySelectorAll(".bench-sdiv").length).toBe(2);
+    expect(attC.querySelectorAll("[data-cell-state]").length).toBe(9);
+    expect(attC.querySelectorAll(".bench-sdiv").length).toBe(2);
+  });
+
+  it("live with current_attempt=2: ATTEMPTS shows miss+live+pending; SAMPLES shows miss+live", () => {
+    // sample 0 recorded (miss×3 used up), sample 1 live on attempt 2
+    const rec = makeRec({ sample: 0, status: "fail", solved: false, attempts_used: 3 });
+    const { container: attC } = render(
+      <AttemptStrip records={[rec]} expectedSamples={2} attempts={3} live currentAttempt={2} />,
+    );
+    const { container: sampC } = render(
+      <SampleStrip records={[rec]} expectedSamples={2} live />,
+    );
+    const attStates = Array.from(attC.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+    // sample 0: miss×3; sample 1 live attempt 2: miss + live + pending
+    expect(attStates).toEqual(["miss", "miss", "miss", "miss", "live", "pending"]);
+    const sampStates = Array.from(sampC.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+    // sample 0: miss; sample 1: live
+    expect(sampStates).toEqual(["miss", "live"]);
   });
 });

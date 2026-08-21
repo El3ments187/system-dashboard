@@ -30,8 +30,8 @@ export function gradedRecords(records: BenchRecord[]): BenchRecord[] {
 export function cellState(record: BenchRecord): CellState {
   if (record.status === "server") return "server";
   if (record.solved) return record.first_try ? "solved" : "solved-late";
-  if (record.status === "timeout" || record.status === "format")
-    return "timeout";
+  if (record.status === "timeout") return "timeout";
+  if (record.status === "format") return "format";
   // `error` is the code never running — a crash, or a missing export. `fail`
   // is code that ran and got answers wrong. Different problems, different
   // fixes; the first real run was 12 of the former and 10 of the latter.
