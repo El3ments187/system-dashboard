@@ -26,8 +26,9 @@ vi.mock("../context/AlertsContext", () => ({
 import BenchPage from "../pages/BenchPage";
 import { LOCALBENCH_DEFAULTS, compareSlotOptions } from "../pages/bench/compute";
 import Header from "../components/Header";
-import { AttemptStrip, SampleStrip } from "../pages/bench/parts";
-import type { BenchRecord } from "../pages/bench/types";
+import { AttemptCell, AttemptStrip, SampleStrip } from "../pages/bench/parts";
+import MetricTile from "../components/shared/MetricTile";
+import type { BenchAttempt, BenchRecord } from "../pages/bench/types";
 
 // Mutable so a test can change what the ACTIVE model reports — the source
 // Run Setup's temperature and the hero's primary name both read.
@@ -2288,7 +2289,7 @@ describe("T69 both remedies name a control this page has", () => {
     const nudge = screen.getByTestId(
       "bench-field-nudge-at",
     ) as HTMLInputElement;
-    expect(nudge.value, "bench.py's own default").toBe("32768");
+    expect(nudge.value, "bench.py's own default").toBe("0");
   });
 });
 
@@ -4144,7 +4145,7 @@ describe("T99 Run Setup defaults and reset", () => {
     );
     expect(val("bench-field-n"), "bench.py --n default").toBe("1");
     expect(val("bench-field-max-tokens")).toBe("0");
-    expect(val("bench-field-nudge-at")).toBe("32768");
+    expect(val("bench-field-nudge-at")).toBe("0");
     expect(val("bench-field-label")).toBe("");
   });
 
@@ -4174,7 +4175,7 @@ describe("T99 Run Setup defaults and reset", () => {
     await waitFor(() => expect(val("bench-field-attempts")).toBe("3"));
     expect(val("bench-field-n")).toBe("1");
     expect(val("bench-field-max-tokens")).toBe("0");
-    expect(val("bench-field-nudge-at")).toBe("32768");
+    expect(val("bench-field-nudge-at")).toBe("0");
     expect(val("bench-field-label")).toBe("");
     expect(
       screen.getByTestId("bench-lang-js").getAttribute("aria-pressed"),
@@ -5573,7 +5574,7 @@ describe("T149 localbench 0–100 score", () => {
 
   // ── partial caveat ────────────────────────────────────────────────────────
 
-  it("partial: true shows suite coverage caveat", async () => {
+  it("partial: true shows suite coverage in the score tile label", async () => {
     installFetch({
       detail: {
         ...benchRun,
@@ -5581,19 +5582,19 @@ describe("T149 localbench 0–100 score", () => {
       },
     });
     render(<BenchPage />);
-    await waitFor(() =>
-      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
-    );
-    expect(document.body.textContent).toMatch(/partial|not comparable/i);
+    const tile = await screen.findByTestId("bench-headline-score");
+    // Label is on the sibling div above the testId div; grab the parent's text.
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).toMatch(/\d+\s+of\s+27/i);
   });
 
-  it("partial: false shows no partial caveat", async () => {
+  it("partial: false — score tile reads exactly 'Score / 100', no caveat", async () => {
     installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY } });
     render(<BenchPage />);
-    await waitFor(() =>
-      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
-    );
-    expect(document.body.textContent).not.toMatch(/not comparable/i);
+    await screen.findByTestId("bench-headline-score");
+    const tile = screen.getByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).not.toMatch(/of\s+\d+\s+tasks/i);
   });
 
   // ── special summary shapes ────────────────────────────────────────────────
@@ -5931,6 +5932,99 @@ describe("T149 localbench 0–100 score", () => {
     const strip = await screen.findByTestId("bench-compare-scores");
     expect(strip.textContent).toContain("71.9"); // scored run
     expect(strip.textContent).toContain("—"); // pre-157 → "—", not "0"
+  });
+});
+
+// ── T226 — Score card second-row tiles always render ─────────────────────────
+//
+// T219 introduced a ternary: 4-col grid (hasAllWeighted) vs standalone banner
+// (else). The six second-row metric tiles were accidentally placed inside the
+// else branch and disappeared whenever all three weighted components were
+// present. The fix moved the tile grid outside the ternary so it always renders.
+
+describe("T226 Score card second-row tiles always render", () => {
+  const SCORED_251 = {
+    ...benchRun.summary,
+    score: 67.0,
+    passes_100: 60.0,
+    tests_100: 77.0,
+    speed_100: 86.5,
+    passes_weighted: 42.0,
+    tests_weighted: 7.7,
+    speed_weighted: 17.3,
+    median_minutes: 3.2,
+    suite_tasks: 27,
+    partial: false,
+  };
+
+  it("hasAllWeighted: five always-present second-row tiles render (regression guard)", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_251 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    // These five tiles live only in the second-row grid — their presence proves
+    // the grid rendered even when hasAllWeighted is true.
+    expect(screen.getByTestId("bench-solved")).toBeTruthy();
+    expect(screen.getByTestId("bench-first-try")).toBeTruthy();
+    expect(screen.getByTestId("bench-raw-assertions")).toBeTruthy();
+    expect(screen.getByTestId("bench-flaky")).toBeTruthy();
+    expect(screen.getByTestId("bench-server-excluded")).toBeTruthy();
+  });
+
+  it("hasAllWeighted: bench-task-avg compact tile also renders in the second row", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_251 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    // With hasScore=true, the second-row grid adds bench-task-avg as its first tile.
+    expect(screen.getAllByTestId("bench-task-avg").length).toBeGreaterThan(0);
+  });
+
+  it("hasAllWeighted: top row carries all three weighted component values", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_251 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("42.0"); // passes_weighted (70%)
+    expect(body).toContain("7.7");  // tests_weighted (10%)
+    expect(body).toContain("17.3"); // speed_weighted (20%)
+  });
+
+  it("partial run (hasAllWeighted): second-row tiles still render", async () => {
+    installFetch({
+      detail: { ...benchRun, summary: { ...SCORED_251, partial: true } },
+    });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    expect(screen.getByTestId("bench-solved")).toBeTruthy();
+    expect(screen.getByTestId("bench-flaky")).toBeTruthy();
+  });
+
+  it("speed_weighted-only run (hasScore, !hasAllWeighted): second-row tiles render in else branch", async () => {
+    // Scored but only speed_weighted — the else branch of the T219 ternary.
+    // Tiles must still render; this guards the non-hasAllWeighted path too.
+    const scoredSpeedOnly = {
+      ...benchRun.summary,
+      score: 71.9,
+      speed_weighted: 19.3,
+      suite_tasks: 27,
+    };
+    installFetch({ detail: { ...benchRun, summary: scoredSpeedOnly } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    expect(screen.getByTestId("bench-solved")).toBeTruthy();
+    expect(screen.getByTestId("bench-first-try")).toBeTruthy();
+  });
+
+  it("pre-157 run (no score, no hasAllWeighted): five second-row tiles render", async () => {
+    installFetch(); // benchRun.summary has no score, no weighted components
+    render(<BenchPage />);
+    // bench-task-avg here is the BannerTile in the else branch, not the grid tile
+    await screen.findByTestId("bench-task-avg");
+    expect(screen.queryByTestId("bench-headline-score")).toBeNull();
+    expect(screen.getByTestId("bench-solved")).toBeTruthy();
+    expect(screen.getByTestId("bench-first-try")).toBeTruthy();
+    expect(screen.getByTestId("bench-raw-assertions")).toBeTruthy();
+    expect(screen.getByTestId("bench-flaky")).toBeTruthy();
+    expect(screen.getByTestId("bench-server-excluded")).toBeTruthy();
   });
 });
 
@@ -6406,31 +6500,34 @@ describe("T158 hero model name: auto-fit, accented quant, no hard 30-char cap", 
   });
 });
 
-// ── T170 — nudge-at default doubled; dashboard must track LOCALBENCH_DEFAULTS ─
+// ── T170 — nudge-at default tracks upstream; dashboard must track LOCALBENCH_DEFAULTS ─
 //
 // bench.py introduced DEFAULT_NUDGE_AT = 32768 at -157 (was a 16384 literal
 // in -129). The constant in compute.ts still shipped 16384, seeding every
 // dashboard-launched run with half the upstream budget.
-describe("T170 nudge-at default: LOCALBENCH_DEFAULTS.nudgeAt matches upstream 32768", () => {
-  it("LOCALBENCH_DEFAULTS.nudgeAt is 32768", () => {
+//
+// bench.py -277 changed the default to 0 (0 = nudging off). The constant and
+// the seeded field must track it.
+describe("T170 nudge-at default: LOCALBENCH_DEFAULTS.nudgeAt matches upstream 0", () => {
+  it("LOCALBENCH_DEFAULTS.nudgeAt is 0", () => {
     expect(
       LOCALBENCH_DEFAULTS.nudgeAt,
       "constant must track bench.py's DEFAULT_NUDGE_AT",
-    ).toBe(32768);
+    ).toBe(0);
   });
 
-  it("Run Setup seeds 32768 on a fresh mount", async () => {
+  it("Run Setup seeds 0 on a fresh mount", async () => {
     installFetch();
     render(<BenchPage />);
     const nudge = (await screen.findByTestId(
       "bench-field-nudge-at",
     )) as HTMLInputElement;
     expect(nudge.value, "nudge-at field must initialise from LOCALBENCH_DEFAULTS").toBe(
-      "32768",
+      "0",
     );
   });
 
-  it("Reset to defaults restores 32768 after a manual change", async () => {
+  it("Reset to defaults restores 0 after a manual change", async () => {
     installFetch();
     render(<BenchPage />);
     await screen.findByTestId("bench-field-nudge-at");
@@ -6442,31 +6539,8 @@ describe("T170 nudge-at default: LOCALBENCH_DEFAULTS.nudgeAt matches upstream 32
       expect(
         (screen.getByTestId("bench-field-nudge-at") as HTMLInputElement).value,
         "reset must restore the current LOCALBENCH_DEFAULTS value",
-      ).toBe("32768"),
+      ).toBe("0"),
     );
-  });
-
-  it("budget banner number is derived from LOCALBENCH_DEFAULTS, not a hardcoded literal (injection proof)", async () => {
-    // Mutate the constant to a sentinel. Both this test and BenchPage share the
-    // same module instance, so if the JSX reads the constant at render time the
-    // banner shows 99999. A hardcoded literal is unaffected by the mutation and
-    // the test fails — catching any future drift before it reaches a run.
-    const original = LOCALBENCH_DEFAULTS.nudgeAt;
-    (LOCALBENCH_DEFAULTS as Record<string, unknown>).nudgeAt = 99999;
-    try {
-      const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
-      (d as { records: Record<string, unknown>[] }).records[0].stopped_at_budget =
-        true;
-      installFetch({ detail: d });
-      render(<BenchPage />);
-      const banner = await screen.findByTestId("bench-budget-banner");
-      expect(
-        banner.textContent,
-        "banner must reflect the constant (99999), not a hardcoded literal",
-      ).toContain("99999");
-    } finally {
-      (LOCALBENCH_DEFAULTS as Record<string, unknown>).nudgeAt = original;
-    }
   });
 });
 
@@ -9179,5 +9253,767 @@ describe("T221 AttemptStrip in Attempts column; SampleStrip in Samples column", 
     );
     // sample 0: miss; sample 1: live
     expect(sampStates).toEqual(["miss", "live"]);
+  });
+});
+
+// ── T227 — Attempt cell stopPropagation fix ───────────────────────────────────
+//
+// AttemptCell previously rendered as <i>; clicks bubbled to the <tr onClick>
+// and toggled the task drilldown closed. The fix renders clickable cells as
+// <button> with e.stopPropagation(). "Both together" design: the click handler
+// also calls setOpenTask so the drilldown explicitly opens alongside the panel.
+
+describe("T227 AttemptCell stopPropagation and button rendering", () => {
+  it("without onClick: renders as <i>, not <button>", () => {
+    const { container } = render(<AttemptCell state="miss" title="miss" />);
+    expect(container.querySelector("i")).toBeTruthy();
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("with onClick: renders as <button>, not <i>", () => {
+    const { container } = render(
+      <AttemptCell state="miss" title="miss" onClick={() => {}} />,
+    );
+    expect(container.querySelector("button")).toBeTruthy();
+    expect(container.querySelector("i")).toBeNull();
+  });
+
+  it("button has type=button to prevent accidental form submission", () => {
+    const { container } = render(
+      <AttemptCell state="pass" title="pass" onClick={() => {}} />,
+    );
+    expect(container.querySelector("button")!.getAttribute("type")).toBe("button");
+  });
+
+  it("clicking the button fires onClick once and does not propagate to parent", () => {
+    const parentHandler = vi.fn();
+    const cellHandler = vi.fn();
+    const { container } = render(
+      <div onClick={parentHandler}>
+        <AttemptCell state="pass" title="pass" onClick={cellHandler} />
+      </div>,
+    );
+    fireEvent.click(container.querySelector("button")!);
+    expect(cellHandler).toHaveBeenCalledTimes(1);
+    expect(parentHandler).not.toHaveBeenCalled();
+  });
+
+  it("button is focusable by default (no tabIndex=-1, keyboard accessible)", () => {
+    const { container } = render(
+      <AttemptCell state="solved" title="solved" onClick={() => {}} />,
+    );
+    expect(container.querySelector("button")!.tabIndex).not.toBe(-1);
+  });
+
+  it("second click still fires onClick (stable after repeated clicks)", () => {
+    const handler = vi.fn();
+    const { container } = render(
+      <AttemptCell state="pass" title="pass" onClick={handler} />,
+    );
+    const btn = container.querySelector("button")!;
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it("page-level: clicking attempt cell opens bench-attempt-panel (both-together design)", async () => {
+    const recWithAttempts = {
+      ...benchRun.records[0],
+      attempts_used: 2,
+      status: "fail",
+      solved: false,
+      attempts: [
+        {
+          attempt: 1,
+          status: "fail",
+          gen_seconds: 2.1,
+          test_seconds: 0.5,
+          tests_passed: 0,
+          tests_failed: 3,
+          tokens: 500,
+          prompt_tokens: 400,
+        },
+        {
+          attempt: 2,
+          status: "fail",
+          gen_seconds: 1.8,
+          test_seconds: 0.4,
+          tests_passed: 1,
+          tests_failed: 2,
+          tokens: 480,
+          prompt_tokens: 380,
+        },
+      ],
+    };
+    installFetch({
+      detail: {
+        ...benchRun,
+        records: [recWithAttempts, ...benchRun.records.slice(1)],
+      },
+    });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    // Wait for the run detail to render attempt buttons — detail loads async
+    // after task rows appear, so retry until buttons exist.
+    const buttons = await waitFor(() => {
+      const btns = Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button[data-cell-state]"),
+      );
+      expect(btns.length).toBeGreaterThan(0);
+      return btns;
+    });
+    fireEvent.click(buttons[0]);
+    await screen.findByTestId("bench-attempt-panel");
+  });
+
+  it("page-level: clicking a second attempt cell replaces the attempt panel", async () => {
+    const recWithAttempts = {
+      ...benchRun.records[0],
+      attempts_used: 2,
+      status: "fail",
+      solved: false,
+      attempts: [
+        {
+          attempt: 1,
+          status: "fail",
+          gen_seconds: 2.1,
+          test_seconds: 0.5,
+          tests_passed: 0,
+          tests_failed: 3,
+          tokens: 500,
+          prompt_tokens: 400,
+        },
+        {
+          attempt: 2,
+          status: "fail",
+          gen_seconds: 1.8,
+          test_seconds: 0.4,
+          tests_passed: 1,
+          tests_failed: 2,
+          tokens: 480,
+          prompt_tokens: 380,
+        },
+      ],
+    };
+    installFetch({
+      detail: {
+        ...benchRun,
+        records: [recWithAttempts, ...benchRun.records.slice(1)],
+      },
+    });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const buttons = await waitFor(() => {
+      const btns = Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button[data-cell-state]"),
+      );
+      expect(btns.length).toBeGreaterThanOrEqual(2);
+      return btns;
+    });
+    // Open attempt 1
+    fireEvent.click(buttons[0]);
+    await screen.findByTestId("bench-attempt-panel");
+    // Switch to attempt 2 — panel swaps, not closes
+    fireEvent.click(buttons[1]);
+    await screen.findByTestId("bench-attempt-panel");
+  });
+});
+
+// ── T228 — AttemptStrip renders attempt statuses correctly ───────────────────
+//
+// Each bench.py STATUSES value must map to the correct CellState. A wrong or
+// missing mapping causes cells to render blank (no CSS class → invisible).
+
+describe("T228 AttemptStrip renders attempt statuses correctly", () => {
+  function makeRec228(
+    fields: Partial<{
+      status: BenchRecord["status"];
+      solved: boolean;
+      first_try: boolean;
+      attempts_used: number;
+      attempts: BenchAttempt[];
+    }>,
+  ): BenchRecord {
+    return {
+      task: "js/retry_backoff",
+      lang: "js",
+      number: 1,
+      sample: 0,
+      status: fields.status ?? "fail",
+      points: 0,
+      max_points: 3,
+      solved: fields.solved ?? false,
+      first_try: fields.first_try ?? false,
+      attempts_used: fields.attempts_used ?? 1,
+      tests_passed: 0,
+      tests_failed: 0,
+      tests_total: 0,
+      tests_expected: 0,
+      first_tests_passed: 0,
+      first_tests_total: 0,
+      first_failed: [],
+      failed_assertions: [],
+      seconds: 0,
+      gen_seconds: 0,
+      test_seconds: 0,
+      completion_tokens: 0,
+      prompt_tokens: 0,
+      total_tokens: 0,
+      tokens_estimated: false,
+      nudged: 0,
+      truncated: false,
+      cut_mid_block: false,
+      stopped_at_budget: false,
+      detail: "",
+      attempts: fields.attempts,
+    };
+  }
+
+  function getStates(container: HTMLElement) {
+    return Array.from(container.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+  }
+
+  it("retry_backoff: pass on attempt 1, 3 configured → solved+pending+pending", () => {
+    const r = makeRec228({
+      status: "pass", solved: true, first_try: true, attempts_used: 1,
+      attempts: [{ attempt: 1, status: "pass" } as BenchAttempt],
+    });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    expect(getStates(container)).toEqual(["solved", "pending", "pending"]);
+  });
+
+  it("formula_engine: 3 fail attempts, 3 configured → miss+miss+miss", () => {
+    const r = makeRec228({
+      status: "fail", solved: false, attempts_used: 3,
+      attempts: [
+        { attempt: 1, status: "fail" },
+        { attempt: 2, status: "fail" },
+        { attempt: 3, status: "fail" },
+      ] as BenchAttempt[],
+    });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    expect(getStates(container)).toEqual(["miss", "miss", "miss"]);
+  });
+
+  it("pass on attempt 2: miss+solved-late+pending", () => {
+    const r = makeRec228({
+      status: "pass", solved: true, first_try: false, attempts_used: 2,
+      attempts: [
+        { attempt: 1, status: "fail" },
+        { attempt: 2, status: "pass" },
+      ] as BenchAttempt[],
+    });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    expect(getStates(container)).toEqual(["miss", "solved-late", "pending"]);
+  });
+
+  it("invariant: no non-pending cell follows a solved-late (bench.py break guarantee)", () => {
+    const r = makeRec228({
+      status: "pass", solved: true, first_try: false, attempts_used: 2,
+      attempts: [
+        { attempt: 1, status: "fail" },
+        { attempt: 2, status: "pass" },
+      ] as BenchAttempt[],
+    });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    const states = getStates(container);
+    const solvedIdx = states.findIndex((s) => s === "solved" || s === "solved-late");
+    expect(solvedIdx).toBeGreaterThanOrEqual(0);
+    states.slice(solvedIdx + 1).forEach((s) => expect(s).toBe("pending"));
+  });
+
+  it("pre-277 fallback (no attempts array): solved on attempt 1 → solved+pending+pending", () => {
+    // No attempts field — uses fallback derivation from attempts_used + solved
+    const r = makeRec228({ status: "pass", solved: true, first_try: true, attempts_used: 1 });
+    const { container } = render(<AttemptStrip records={[r]} attempts={3} />);
+    expect(getStates(container)).toEqual(["solved", "pending", "pending"]);
+  });
+
+  it("SAMPLES unchanged — SampleStrip still renders the record's solved state", () => {
+    const r = makeRec228({ status: "pass", solved: true, first_try: true, attempts_used: 1 });
+    const { container } = render(<SampleStrip records={[r]} />);
+    expect(getStates(container)).toEqual(["solved"]);
+  });
+});
+
+// ── T229 — Score card tile styling consistency ────────────────────────────────
+//
+// All nine MetricTile components in the Score card pass `accent`. Four were
+// missing it: PASSES/TESTS/SPEED (top row) and bench-raw-assertions (second
+// row). BannerTile had borderRadius: 8 (hardcoded), while MetricTile uses
+// var(--radius-sm) — fix: align BannerTile to the token so they read as one set.
+
+describe("T229 Score card tile styling consistency", () => {
+  const SCORED_251 = {
+    ...benchRun.summary,
+    score: 67.0,
+    passes_weighted: 42.0,
+    tests_weighted: 7.7,
+    speed_weighted: 17.3,
+    suite_tasks: 27,
+  };
+
+  it("all nine Score card tiles have accent treatment (data-accent-el present)", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_251 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    // MetricTile with accent=true sets data-accent-el="" on the outer wrapper,
+    // which is the same element that carries data-testid.
+    const tileIds = [
+      "bench-passes-weighted",
+      "bench-tests-weighted",
+      "bench-speed-weighted",
+      "bench-task-avg",
+      "bench-solved",
+      "bench-first-try",
+      "bench-raw-assertions",
+      "bench-flaky",
+      "bench-server-excluded",
+    ];
+    for (const id of tileIds) {
+      const tile = screen.getAllByTestId(id)[0];
+      expect(tile.hasAttribute("data-accent-el")).toBe(true);
+    }
+  });
+
+  it("BannerTile and MetricTile share the same borderRadius token", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_251 } });
+    render(<BenchPage />);
+    await screen.findByTestId("bench-headline-score");
+    // BannerTile: testId is on inner div; styling is on parent
+    const bannerInner = screen.getByTestId("bench-headline-score");
+    const bannerOuter = bannerInner.parentElement as HTMLElement;
+    expect(bannerOuter.style.borderRadius).toBe("var(--radius-sm)");
+    // MetricTile: testId is on outer div which carries inline styles
+    const metricTile = screen.getAllByTestId("bench-task-avg")[0];
+    expect(metricTile.style.borderRadius).toBe("var(--radius-sm)");
+  });
+
+  it("MetricTile without accent (non-bench consumer): no data-accent-el, neutral styles", () => {
+    // Renders MetricTile directly to verify defaults are unchanged — the fix
+    // only passed props from BenchPage, not changed MetricTile's defaults.
+    render(<MetricTile testId="non-bench-tile" label="CPU" value="42" unit="%" />);
+    const tile = screen.getByTestId("non-bench-tile");
+    expect(tile.hasAttribute("data-accent-el")).toBe(false);
+    expect(tile.style.border).toContain("border-color");
+    expect(tile.style.background).toContain("bg-secondary");
+    expect(tile.style.borderRadius).toBe("var(--radius-sm)");
+  });
+});
+
+// ── T231 — partial-run score tile: short label with coverage, reasoning in title ─
+//
+// The old label "Over N of M suite tasks — partial run, not comparable with a full
+// run" wrapped to two lines. Replaced with "Score / 100 · N of M tasks"; the
+// incomparability reasoning moved to the tile's `title` attribute.
+describe("T231 partial-run score tile: short label, reasoning in title", () => {
+  const SCORED231 = {
+    ...benchRun.summary,
+    score: 71.9,
+    correctness_100: 65.8,
+    correctness_weighted: 52.6,
+    speed_weighted: 19.3,
+    suite_tasks: 27,
+    partial: false,
+  };
+
+  it("partial run: label contains coverage numbers", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: { ...SCORED231, partial: true },
+      },
+    });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).toMatch(/of\s+27\s+tasks/i);
+  });
+
+  it("partial run: label does not contain 'not comparable' (reasoning is in title)", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: { ...SCORED231, partial: true },
+      },
+    });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).not.toMatch(/not comparable/i);
+  });
+
+  it("partial run: tile title mentions incomparability", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: { ...SCORED231, partial: true },
+      },
+    });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    expect(tile.getAttribute("title")).toMatch(/not comparable/i);
+  });
+
+  it("full run: tile label has no coverage suffix", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED231 } });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).not.toMatch(/of\s+\d+\s+tasks/i);
+  });
+
+  it("full run: tile title does not mention incomparability", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED231 } });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    expect(tile.getAttribute("title")).not.toMatch(/not comparable/i);
+  });
+
+  it("partial with absent summary.tasks: label reads '? of N tasks' sensibly", async () => {
+    const s = { ...SCORED231, partial: true, tasks: undefined };
+    installFetch({ detail: { ...benchRun, summary: s } });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).toMatch(/\?\s+of\s+27\s+tasks/i);
+  });
+
+  it("score === null branches are unchanged", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: { ...benchRun.summary, score: null, partial: false },
+      },
+    });
+    render(<BenchPage />);
+    const tile = await screen.findByTestId("bench-headline-score");
+    const tileText = tile.parentElement?.textContent ?? "";
+    expect(tileText).toMatch(/no score|nothing graded|multiple models/i);
+  });
+});
+
+// ── T230 — nudge-at default → 0 (nudging off); banner and tooltip cleaned up ─
+//
+// bench.py -277 changed DEFAULT_NUDGE_AT from 32768 to 0 (0 = nudging off).
+// The dashboard budget banner previously embedded the default ("default 32768")
+// and suggested --max-nudges. Both were removed: 0 = off makes "default 0"
+// misleading, and the dashboard cannot send --max-nudges.
+describe("T230 nudge-at default 0: banner and tooltip cleaned up", () => {
+  it("budget banner does not mention --max-nudges", async () => {
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: Record<string, unknown>[] }).records[0].stopped_at_budget =
+      true;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-budget-banner");
+    expect(banner.textContent).not.toContain("--max-nudges");
+  });
+
+  it("budget banner does not embed a hardcoded nudge-at default number", async () => {
+    // The old banner showed "(default 32768)". After T230 that text was removed
+    // entirely — no numeric default should appear in the banner copy.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: Record<string, unknown>[] }).records[0].stopped_at_budget =
+      true;
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const banner = await screen.findByTestId("bench-budget-banner");
+    expect(banner.textContent).not.toMatch(/default\s+\d/);
+  });
+
+  it("nudge-at field title mentions 0 = nudging off", async () => {
+    installFetch();
+    render(<BenchPage />);
+    const el = await screen.findByTestId("bench-field-nudge-at");
+    expect(el.getAttribute("title")).toContain("0 =");
+  });
+});
+
+// ── T232 — attempt cells rendered as buttons must not suppress their colour ───
+//
+// AttemptCell renders a <button> when onClick is provided. The button's
+// inline style had `background: "none"` to reset the browser default, but
+// inline styles override class styles — so every outcome cell (solved, miss,
+// error…) lost its colour. Pending cells are rendered without onClick as <i>
+// elements and were unaffected, which is why the observed count was
+// 3 − attempts_used visible cells.
+describe("T232 attempt cells: onAttemptClick must not suppress cell colour", () => {
+  function makeRec232(
+    atts: BenchAttempt[],
+    attemptsUsed: number,
+  ): BenchRecord {
+    return {
+      task: "js/retry_backoff",
+      lang: "js",
+      number: 1,
+      sample: 0,
+      status: atts[atts.length - 1]?.status === "pass" ? "pass" : "fail",
+      points: 0,
+      max_points: 3,
+      solved: atts.some((a) => a.status === "pass"),
+      first_try: atts[0]?.status === "pass",
+      attempts_used: attemptsUsed,
+      tests_passed: 0,
+      tests_failed: 0,
+      tests_total: 0,
+      tests_expected: 0,
+      first_tests_passed: 0,
+      first_tests_total: 0,
+      first_failed: [],
+      failed_assertions: [],
+      seconds: 0,
+      gen_seconds: 0,
+      test_seconds: 0,
+      completion_tokens: 0,
+      prompt_tokens: 0,
+      total_tokens: 0,
+      tokens_estimated: false,
+      nudged: 0,
+      truncated: false,
+      cut_mid_block: false,
+      stopped_at_budget: false,
+      detail: "",
+      attempts: atts,
+    };
+  }
+
+  function getStates232(container: HTMLElement) {
+    return Array.from(container.querySelectorAll("[data-cell-state]")).map(
+      (el) => el.getAttribute("data-cell-state"),
+    );
+  }
+
+  it("retry_backoff: pass on attempt 1 with onAttemptClick → 3 DOM cells, first is solved", () => {
+    const r = makeRec232(
+      [{ attempt: 1, status: "pass" } as BenchAttempt],
+      1,
+    );
+    const { container } = render(
+      <AttemptStrip records={[r]} attempts={3} onAttemptClick={vi.fn()} />,
+    );
+    const states = getStates232(container);
+    expect(states).toEqual(["solved", "pending", "pending"]);
+  });
+
+  it("formula_engine: 3 fail attempts with onAttemptClick → 3 visible miss cells", () => {
+    const r = makeRec232(
+      [
+        { attempt: 1, status: "fail" },
+        { attempt: 2, status: "fail" },
+        { attempt: 3, status: "fail" },
+      ] as BenchAttempt[],
+      3,
+    );
+    const { container } = render(
+      <AttemptStrip records={[r]} attempts={3} onAttemptClick={vi.fn()} />,
+    );
+    const states = getStates232(container);
+    expect(states).toEqual(["miss", "miss", "miss"]);
+  });
+
+  it("outcome buttons must not carry background:none in their inline style", () => {
+    // background:"none" on the button element takes precedence over the CSS
+    // class, making the cell transparent in the browser.
+    const r = makeRec232(
+      [{ attempt: 1, status: "pass" } as BenchAttempt],
+      1,
+    );
+    const { container } = render(
+      <AttemptStrip records={[r]} attempts={3} onAttemptClick={vi.fn()} />,
+    );
+    const btn = container.querySelector<HTMLButtonElement>(
+      "button[data-cell-state]",
+    );
+    expect(btn).not.toBeNull();
+    expect(btn!.style.background).not.toBe("none");
+  });
+
+  it("nothing but pending follows a pass (bench.py break guarantee)", () => {
+    const r = makeRec232(
+      [{ attempt: 1, status: "pass" } as BenchAttempt],
+      1,
+    );
+    const { container } = render(
+      <AttemptStrip records={[r]} attempts={3} onAttemptClick={vi.fn()} />,
+    );
+    const states = getStates232(container);
+    const solvedIdx = states.findIndex((s) => s === "solved" || s === "solved-late");
+    expect(solvedIdx).toBeGreaterThanOrEqual(0);
+    states.slice(solvedIdx + 1).forEach((s) => expect(s).toBe("pending"));
+  });
+});
+
+// ── T233 — the in-flight task reads "In progress", not "queued" ───────────────
+//
+// pendingLabel() had no live state. A task matching live.current_task showed
+// "queued" despite being actively worked on. Fix: add a third parameter.
+describe("T233 in-flight task label: 'In progress' not 'queued'", () => {
+  it("task matching current_task shows 'In progress', not 'queued'", async () => {
+    // Remove all records for the target task so mean===null (pending label shown),
+    // then set it as current_task.
+    // waitFor: rows appear from the roster immediately; detail.live is populated
+    // asynchronously, so we must retry until the label updates.
+    const targetTask = "js/formula_engine";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== targetTask);
+    (d as { live: Record<string, unknown> }).live = {
+      ...(d as { live: Record<string, unknown> }).live,
+      current_task: targetTask,
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() => {
+      const pending = screen.getAllByTestId("bench-task-pending");
+      const liveLabel = pending.find((el) =>
+        el.closest("tr")?.textContent?.includes(targetTask.split("/")[1]),
+      );
+      expect(liveLabel?.textContent).toBe("In progress");
+    });
+  });
+
+  it("every other unrecorded task still reads 'queued'", async () => {
+    // Strip records for two tasks: formula_engine is current_task (→ "In progress"),
+    // retry_backoff has no current_task association (→ must stay "queued").
+    // waitFor: same async detail-load race as the first test.
+    const targetTask = "js/formula_engine";
+    const anotherTask = "js/retry_backoff";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== targetTask && r.task !== anotherTask);
+    (d as { live: Record<string, unknown> }).live = { current_task: targetTask };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await waitFor(() => {
+      const pending = screen.getAllByTestId("bench-task-pending");
+      const liveLabel = pending.find((el) =>
+        el.closest("tr")?.textContent?.includes("formula_engine"),
+      );
+      expect(liveLabel?.textContent).toBe("In progress");
+    });
+    const pending = screen.getAllByTestId("bench-task-pending");
+    const queuedLabel = pending.find((el) =>
+      el.closest("tr")?.textContent?.includes("retry_backoff"),
+    );
+    expect(queuedLabel?.textContent).toBe("queued");
+  });
+
+  it("skipped task reads 'skipped' even when it is current_task", async () => {
+    // A task whose toolchain is unavailable is skipped regardless of current_task.
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    // Find a skipped task from the roster — gdscript is typically unavailable.
+    const rosterEntry = (d as any).roster?.find(
+      ([, , lang]: [string, string, string]) => lang === "gdscript",
+    );
+    if (!rosterEntry) return; // fixture doesn't include gdscript — skip gracefully
+    const [skippedTask] = rosterEntry;
+    (d as { live: Record<string, unknown> }).live = {
+      ...(d as { live: Record<string, unknown> }).live,
+      current_task: skippedTask,
+    };
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const pending = screen.getAllByTestId("bench-task-pending");
+    const skippedEl = pending.find((el) =>
+      el.closest("tr")?.textContent?.includes(skippedTask.split("/")[1]),
+    );
+    expect(skippedEl?.textContent).toBe("skipped");
+  });
+
+  it("finished run (no current_task): no pending label reads 'In progress'", async () => {
+    // Strip one task's records to ensure a bench-task-pending element exists,
+    // but set no current_task — the label must stay "queued".
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== "js/formula_engine");
+    (d as { live: Record<string, unknown> }).live = {};
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const pending = screen.getAllByTestId("bench-task-pending");
+    expect(pending.length).toBeGreaterThan(0);
+    pending.forEach((el) => expect(el.textContent).not.toBe("In progress"));
+  });
+});
+
+// ── T234 — SOLVED placeholder must share the badge's box model ────────────────
+//
+// A queued row's SOLVED cell was a bare <span> with no padding, while a scored
+// row renders <KOfN> which carries bench-kofn's 5px padding + 1px border.
+// Fix: replace the bare span with <KOfN solved={0} of={0} /> (renders "—" with
+// the same box). jsdom has no layout, so alignment is asserted structurally —
+// both branches emit bench-kofn — rather than by computed offset.
+describe("T234 SOLVED placeholder alignment: queued rows use KOfN empty state", () => {
+  it("queued row SOLVED cell renders bench-kofn element (badge box, not bare span)", async () => {
+    const targetTask = "js/formula_engine";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== targetTask);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    const targetRow = rows.find((r) => r.textContent?.includes("formula_engine"));
+    expect(targetRow).toBeDefined();
+    // Before fix: bare <span> — no bench-kofn. After fix: KOfN renders bench-kofn.
+    const kofn = within(targetRow!).queryByTestId("bench-kofn");
+    expect(kofn).not.toBeNull();
+  });
+
+  it("queued row SOLVED placeholder renders '—' via KOfN empty state", async () => {
+    const targetTask = "js/formula_engine";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== targetTask);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    const targetRow = rows.find((r) => r.textContent?.includes("formula_engine"));
+    const kofn = within(targetRow!).queryByTestId("bench-kofn");
+    expect(kofn?.textContent).toBe("—");
+  });
+
+  it("server-excluded row SOLVED cell already uses bench-kofn (was already aligned)", async () => {
+    // rs.length > 0 but graded.length === 0: the KOfN branch at rs.length > 0
+    // already fires — this case was correct before T234.
+    const targetTask = "js/formula_engine";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.map((r) =>
+      r.task === targetTask ? { ...r, status: "server" as const } : r,
+    );
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    const rows = await screen.findAllByTestId("bench-task-row");
+    const targetRow = rows.find((r) => r.textContent?.includes("formula_engine"));
+    expect(targetRow).toBeDefined();
+    const kofn = within(targetRow!).queryByTestId("bench-kofn");
+    expect(kofn).not.toBeNull();
+    expect(kofn?.textContent).toBe("—");
+  });
+
+  it("bench-task-pending (AVERAGE POINTS) still resolves after SOLVED column change", async () => {
+    const targetTask = "js/formula_engine";
+    const d = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    (d as { records: BenchRecord[] }).records = (
+      d as { records: BenchRecord[] }
+    ).records.filter((r) => r.task !== targetTask);
+    installFetch({ detail: d });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    const pending = screen.getAllByTestId("bench-task-pending");
+    const formulaPending = pending.find((el) =>
+      el.closest("tr")?.textContent?.includes("formula_engine"),
+    );
+    expect(formulaPending).toBeDefined();
   });
 });

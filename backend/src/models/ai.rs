@@ -5,6 +5,14 @@ use std::collections::HashMap;
 
 // ─── Launch Profile Models ──────────────────────────────────────────
 
+/// A tunable option declared by a launch script via `# @option NAME: a|b|c`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScriptOption {
+    pub name: String,
+    pub values: Vec<String>,
+    pub default: String,
+}
+
 /// Parsed arguments from a .sh launch script
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct ParsedScriptArgs {
@@ -54,6 +62,8 @@ pub struct ParsedScriptArgs {
     pub model_draft: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmproj: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<ScriptOption>>,
 }
 
 /// Metadata parsed from the script filename

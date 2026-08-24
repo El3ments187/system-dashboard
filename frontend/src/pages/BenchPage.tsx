@@ -593,10 +593,8 @@ function HeroCard({
               <b>{truncation.budgetStops}</b>{" "}
               {truncation.budgetStops === 1 ? "sample was" : "samples were"}{" "}
               cut by bench.py at the <b>--nudge-at</b> budget — the server was
-              still generating. Raise <b>--nudge-at</b> (default{" "}
-              {LOCALBENCH_DEFAULTS.nudgeAt}) or{" "}
-              <b>--max-nudges</b>. Hover the BUDGET badge on any row for
-              details.
+              still generating. Raise <b>--nudge-at</b>. Hover the BUDGET badge
+              on any row for details.
             </span>
           </div>
         )}
@@ -706,7 +704,7 @@ function BannerTile({
       style={{
         border: "1px solid var(--accent-tint-40)",
         background: "var(--accent-tint-10)",
-        borderRadius: 8,
+        borderRadius: "var(--radius-sm)",
         padding: "6px 10px",
         // No marginBottom: the parent grid's `gap` already separates siblings,
         // and as the row's last element it was 8px of pure dead space.
@@ -893,9 +891,15 @@ function ScoreProgressCard({
       return `Multiple models in file (${modelsInFile.join(", ")}) — not scored`;
     if (score === null) return "No score — nothing graded";
     if (partial && suiteTasksCount != null)
-      return `Over ${summary?.tasks ?? "?"} of ${suiteTasksCount} suite tasks — partial run, not comparable with a full run`;
+      return `Score / 100 · ${summary?.tasks ?? "?"} of ${suiteTasksCount} tasks`;
     return "Score / 100";
   })();
+
+  const _SCORE_TILE_TITLE =
+    "localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other.";
+  const scoreTileTitle = partial
+    ? `${_SCORE_TILE_TITLE} A partial run's score is not comparable with a full run's.`
+    : _SCORE_TILE_TITLE;
 
   // ── Progress data ───────────────────────────────────────────────
   const onTask = onTaskDisplay(live, records, scoreDetail?.config?.n ?? 1);
@@ -980,7 +984,7 @@ function ScoreProgressCard({
                 {hasScore ? (
                   <BannerTile
                     label={scoreTileLabel}
-                    title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                    title={scoreTileTitle}
                     testId="bench-headline-score"
                     value={scoreDisplay}
                     suffix="/ 100"
@@ -999,7 +1003,9 @@ function ScoreProgressCard({
                   />
                 )}
                 <MetricTile
+                  accent
                   mono
+                  testId="bench-passes-weighted"
                   label="Passes (70%)"
                   value={passesWeighted.toFixed(1)}
                   valueSize={15}
@@ -1007,7 +1013,9 @@ function ScoreProgressCard({
                   title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
                 />
                 <MetricTile
+                  accent
                   mono
+                  testId="bench-tests-weighted"
                   label="Tests (10%)"
                   value={testsWeighted.toFixed(1)}
                   valueSize={15}
@@ -1015,7 +1023,9 @@ function ScoreProgressCard({
                   title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
                 />
                 <MetricTile
+                  accent
                   mono
+                  testId="bench-speed-weighted"
                   label="Speed (20%)"
                   value={speedWeighted.toFixed(1)}
                   valueSize={15}
@@ -1028,7 +1038,7 @@ function ScoreProgressCard({
                 {hasScore ? (
                   <BannerTile
                     label={scoreTileLabel}
-                    title="localbench's weighted score: correctness × 0.8 + speed × 0.2. Uses a 100/80/60 tier curve per task, which differs from task-avg's 3/2/1 — a run that solves everything on attempt 3 reads 60/100 and 1.00/3 simultaneously. Both are correct; neither replaces the other."
+                    title={scoreTileTitle}
                     testId="bench-headline-score"
                     value={scoreDisplay}
                     suffix="/ 100"
@@ -1046,6 +1056,47 @@ function ScoreProgressCard({
                     }
                   />
                 )}
+                {(passesWeighted !== undefined ||
+                  testsWeighted !== undefined ||
+                  speedWeighted !== undefined) && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {passesWeighted !== undefined && (
+                      <MetricTile
+                        accent
+                        mono
+                        label="Passes (70%)"
+                        value={passesWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
+                      />
+                    )}
+                    {testsWeighted !== undefined && (
+                      <MetricTile
+                        accent
+                        mono
+                        label="Tests (10%)"
+                        value={testsWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
+                      />
+                    )}
+                    {speedWeighted !== undefined && (
+                      <MetricTile
+                        accent
+                        mono
+                        label="Speed (20%)"
+                        value={speedWeighted.toFixed(1)}
+                        valueSize={15}
+                        style={{ ...TIGHT_TILE, flex: 1 }}
+                        title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
 
             <div
               style={{
@@ -1091,6 +1142,7 @@ function ScoreProgressCard({
                 title="Samples solved on the first attempt out of all answered samples. Same denominator as Solved — 8 of 27 answered is directly comparable to 16 of 27 solved."
               />
               <MetricTile
+                accent
                 mono
                 testId="bench-raw-assertions"
                 title="Individual test assertions across the run — a different unit from Pass rate, which counts SAMPLES. A run can pass most assertions and still solve few tasks. Weighting is uneven: individual tasks can dominate the percentage — the top three tasks may account for over a third of all assertions."
@@ -1124,45 +1176,6 @@ function ScoreProgressCard({
                 title="Samples dropped because the endpoint never answered. They are not a verdict on the model, so they are excluded from every rate; 0 means the server held up."
               />
             </div>
-
-                {(passesWeighted !== undefined ||
-                  testsWeighted !== undefined ||
-                  speedWeighted !== undefined) && (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {passesWeighted !== undefined && (
-                      <MetricTile
-                        mono
-                        label="Passes (70%)"
-                        value={passesWeighted.toFixed(1)}
-                        valueSize={15}
-                        style={{ ...TIGHT_TILE, flex: 1 }}
-                        title="passes_weighted: pass-rate score averaged across languages, weighted at 70% of the headline score."
-                      />
-                    )}
-                    {testsWeighted !== undefined && (
-                      <MetricTile
-                        mono
-                        label="Tests (10%)"
-                        value={testsWeighted.toFixed(1)}
-                        valueSize={15}
-                        style={{ ...TIGHT_TILE, flex: 1 }}
-                        title="tests_weighted: partial-credit test score, weighted at 10% of the headline score."
-                      />
-                    )}
-                    {speedWeighted !== undefined && (
-                      <MetricTile
-                        mono
-                        label="Speed (20%)"
-                        value={speedWeighted.toFixed(1)}
-                        valueSize={15}
-                        style={{ ...TIGHT_TILE, flex: 1 }}
-                        title="speed_weighted: median-minutes score averaged across languages that solved at least one task, weighted at 20% of the headline score."
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
           {/* Score ring — top-right */}
@@ -1831,7 +1844,7 @@ function RunSetupCard({
               type="number"
               min={0}
               style={FIELD_INPUT}
-              title="--nudge-at. Where bench.py stops reading a streaming reply of its own accord; a sample stopped here is recorded as stopped_at_budget, and raising --max-tokens does not affect it."
+              title="--nudge-at (0 = nudging off). Where bench.py stops reading a streaming reply of its own accord; a sample stopped here is recorded as stopped_at_budget, and raising --max-tokens does not affect it."
               value={form.nudgeAt}
               onChange={(e) => set("nudgeAt", Number(e.target.value))}
             />

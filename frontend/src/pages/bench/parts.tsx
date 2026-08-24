@@ -5,7 +5,7 @@
  */
 import type { CSSProperties } from "react";
 import type { BenchAttempt, BenchRecord, CellState } from "./types";
-import { cellState } from "./compute";
+import { attemptStatusToCell, cellState } from "./compute";
 
 export const MONO = '"JetBrains Mono", "Fira Code", monospace';
 
@@ -66,14 +66,28 @@ export function AttemptCell({
   decorative?: boolean;
   onClick?: () => void;
 }) {
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={CELL_CLASS[state]}
+        title={CELL_TITLE[state]}
+        data-cell-state={decorative ? undefined : state}
+        data-testid={decorative ? undefined : `bench-cell-${state}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        style={{ cursor: "pointer", border: "none", padding: 0 }}
+      />
+    );
+  }
   return (
     <i
       className={CELL_CLASS[state]}
       title={CELL_TITLE[state]}
       data-cell-state={decorative ? undefined : state}
       data-testid={decorative ? undefined : `bench-cell-${state}`}
-      onClick={onClick}
-      style={onClick ? { cursor: "pointer" } : undefined}
     />
   );
 }
@@ -182,14 +196,7 @@ export function AttemptStrip({
         for (let a = 1; a <= attemptsCount; a++) {
           const att = r.attempts.find((x: BenchAttempt) => x.attempt === a);
           if (att) {
-            let state: CellState;
-            if (att.status === "pass") {
-              state = a === 1 ? "solved" : "solved-late";
-            } else if (att.status === "fail") {
-              state = "miss";
-            } else {
-              state = att.status;
-            }
+            const state = attemptStatusToCell(att);
             cells.push(
               <AttemptCell
                 key={a}

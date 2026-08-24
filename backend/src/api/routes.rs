@@ -746,6 +746,10 @@ async fn terminal_history_handler(
 #[derive(Deserialize)]
 pub struct LaunchProfileRequest {
     pub profile_id: String,
+    /// Per-option overrides declared by the script via `@option`. Optional —
+    /// a bare `{ profile_id }` body (older client) still works.
+    #[serde(default)]
+    pub options: std::collections::HashMap<String, String>,
 }
 
 async fn list_profiles_handler() -> axum::response::Json<Value> {
@@ -769,20 +773,48 @@ async fn launch_profile_handler(
         req.profile_id
     );
     let profile_id = req.profile_id.clone();
+    let options = req.options.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let state = launcher_api::get_state();
-        let guard = state.read().unwrap();
-        let script_path: Option<String> = guard
-            .profiles
-            .iter()
-            .find(|p| p.id == profile_id)
-            .map(|p| p.script_path.clone());
-        drop(guard);
+        let (script_path, declared_options) = {
+            let state = launcher_api::get_state();
+            let guard = state.read().unwrap();
+            let profile = guard.profiles.iter().find(|p| p.id == profile_id);
+            match profile {
+                Some(p) => {
+                    let path = p.script_path.clone();
+                    let declared = p
+                        .parsed_args
+                        .as_ref()
+                        .and_then(|a| a.options.clone())
+                        .unwrap_or_default();
+                    (Some(path), declared)
+                }
+                None => (None, vec![]),
+            }
+        };
 
-        match script_path {
-            Some(path) => launcher_api::launch_profile(&path),
-            None => Err("Profile not found".to_string()),
+        let Some(path) = script_path else {
+            return Err("Profile not found".to_string());
+        };
+
+        // Validate: reject any value not in the declared set.
+        for (name, value) in &options {
+            let declared = declared_options.iter().find(|o| &o.name == name);
+            match declared {
+                None => {
+                    return Err(format!("Unknown option '{}'", name));
+                }
+                Some(opt) if !opt.values.contains(value) => {
+                    return Err(format!(
+                        "Invalid value '{}' for option '{}': must be one of {:?}",
+                        value, name, opt.values
+                    ));
+                }
+                _ => {}
+            }
         }
+
+        launcher_api::launch_profile(&path, options)
     })
     .await;
 

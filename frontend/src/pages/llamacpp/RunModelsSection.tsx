@@ -17,6 +17,7 @@ import type {
   LaunchProfile,
   ProfileState,
   ProfileMetadata,
+  ScriptOption,
 } from "../../types/metrics";
 import {
   sortProfiles,
@@ -86,6 +87,65 @@ function saveFavorites(favorites: Set<string>): void {
   }
 }
 
+const OPTIONS_KEY = "run-models-options";
+type OptionsStore = Record<string, Record<string, string>>;
+
+function loadOptions(): OptionsStore {
+  try {
+    const raw = localStorage.getItem(OPTIONS_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return {};
+    const result: OptionsStore = {};
+    for (const [path, vals] of Object.entries(parsed)) {
+      if (typeof vals === "object" && vals !== null && !Array.isArray(vals)) {
+        const clean: Record<string, string> = {};
+        for (const [k, v] of Object.entries(vals)) {
+          if (typeof v === "string") clean[k] = v;
+        }
+        result[path] = clean;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function saveOptions(store: OptionsStore): void {
+  try {
+    localStorage.setItem(OPTIONS_KEY, JSON.stringify(store));
+  } catch {
+    // Private browsing or quota exhaustion.
+  }
+}
+
+// Returns only the options that differ from their declared default,
+// and drops any name/value no longer in the declared set (stale storage).
+function effectiveOptions(
+  stored: Record<string, string> | undefined,
+  declared: ScriptOption[],
+): Record<string, string> {
+  if (!stored) return {};
+  const result: Record<string, string> = {};
+  for (const opt of declared) {
+    const val = stored[opt.name];
+    if (val !== undefined && opt.values.includes(val) && val !== opt.default) {
+      result[opt.name] = val;
+    }
+  }
+  return result;
+}
+
+// Count options that differ from default (for the badge).
+function countChangedOptions(
+  stored: Record<string, string> | undefined,
+  declared: ScriptOption[],
+): number {
+  return Object.keys(effectiveOptions(stored, declared)).length;
+}
+
 // Extracted to avoid a nested ternary in the render.
 // Precedence: no profiles → no favourites (filter on) → no search match.
 function renderEmptyState(
@@ -142,6 +202,10 @@ export function RunModelsSection() {
     loadFavorites(),
   );
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState<OptionsStore>(() =>
+    loadOptions(),
+  );
+  const [openOptionsPanel, setOpenOptionsPanel] = useState<string | null>(null);
 
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -196,6 +260,20 @@ export function RunModelsSection() {
     });
   }, []);
 
+  const setOption = useCallback(
+    (scriptPath: string, name: string, value: string) => {
+      setSelectedOptions((prev) => {
+        const next = {
+          ...prev,
+          [scriptPath]: { ...(prev[scriptPath] ?? {}), [name]: value },
+        };
+        saveOptions(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const getFilteredProfiles = useCallback((): LaunchProfile[] => {
     const q = searchQuery.trim().toLowerCase();
     let filtered =
@@ -222,13 +300,15 @@ export function RunModelsSection() {
   }, [loadProfiles]);
 
   const handleLaunchWithRetry = useCallback(
-    async (profileId: string, retries = 3) => {
+    async (profileId: string, opts: Record<string, string> = {}, retries = 3) => {
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
+          const body: Record<string, unknown> = { profile_id: profileId };
+          if (Object.keys(opts).length > 0) body.options = opts;
           const res = await fetch("/api/launch/launch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ profile_id: profileId }),
+            body: JSON.stringify(body),
           });
           if (!res.ok) throw new Error(`API error ${res.status}`);
           await loadProfiles();
@@ -675,10 +755,15 @@ export function RunModelsSection() {
                     "color-mix(in srgb, var(--accent-primary) 80%, var(--text-primary))",
                 };
             const isFavorite = favorites.has(profile.script_path);
+            const declaredOptions = profile.parsed_args?.options ?? [];
+            const storedOpts = selectedOptions[profile.script_path];
+            const changedCount = countChangedOptions(storedOpts, declaredOptions);
+            const launchOpts = effectiveOptions(storedOpts, declaredOptions);
+            const isPanelOpen = openOptionsPanel === profile.script_path;
 
             return (
+              <React.Fragment key={profile.id}>
               <div
-                key={profile.id}
                 className="run-models-row"
                 data-running={String(running)}
                 style={{
@@ -687,7 +772,7 @@ export function RunModelsSection() {
                   gridTemplateColumns: COL_GRID,
                   gap: 0,
                   padding: "4px 12px",
-                  borderBottom: "1px solid var(--accent-tint-40)",
+                  borderBottom: isPanelOpen ? "none" : "1px solid var(--accent-tint-40)",
                   borderLeft: running
                     ? "3px solid var(--accent-primary)"
                     : "2px solid var(--accent-primary)",
@@ -847,8 +932,44 @@ export function RunModelsSection() {
                     display: "flex",
                     justifyContent: "flex-end",
                     gap: 4,
+                    alignItems: "center",
                   }}
                 >
+                  {declaredOptions.length > 0 && (
+                    <button
+                      onClick={() =>
+                        setOpenOptionsPanel(isPanelOpen ? null : profile.script_path)
+                      }
+                      disabled={running}
+                      title={
+                        running
+                          ? "Stop the model first — options take effect on the next launch"
+                          : isPanelOpen
+                            ? "Close options"
+                            : "Configure per-launch options"
+                      }
+                      className="ghost-hover"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                        padding: "2px 6px",
+                        fontSize: 10,
+                        fontWeight: 500,
+                        background: isPanelOpen
+                          ? "color-mix(in srgb, var(--accent-primary) 15%, transparent)"
+                          : "transparent",
+                        border: `1px solid ${isPanelOpen ? "color-mix(in srgb, var(--accent-primary) 40%, transparent)" : "color-mix(in srgb, var(--text-muted) 30%, transparent)"}`,
+                        borderRadius: 4,
+                        cursor: running ? "not-allowed" : "pointer",
+                        color: running ? "var(--text-muted)" : changedCount > 0 ? "var(--accent-primary)" : "var(--text-secondary)",
+                        opacity: running ? 0.5 : 1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {changedCount > 0 ? `Options (${changedCount})` : "Options"}
+                    </button>
+                  )}
                   {active ? (
                     <button
                       onClick={() => handleStopWithRetry(profile.id)}
@@ -878,7 +999,7 @@ export function RunModelsSection() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleLaunchWithRetry(profile.id)}
+                      onClick={() => handleLaunchWithRetry(profile.id, launchOpts)}
                       title={
                         profileMeta
                           ? `Runs: ${profileMeta.run_count}\nLast run: ${formatLastRunDate(profileMeta.last_run_date)}`
@@ -906,6 +1027,82 @@ export function RunModelsSection() {
                   )}
                 </div>
               </div>
+              {isPanelOpen && (
+                <div
+                  data-testid="run-models-options-panel"
+                  style={{
+                    padding: "6px 12px 8px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "8px 16px",
+                    background: rowBg,
+                    borderBottom: "1px solid var(--accent-tint-40)",
+                    borderLeft: running
+                      ? "3px solid var(--accent-primary)"
+                      : "2px solid var(--accent-primary)",
+                    borderTop: "1px solid var(--border-color)",
+                  }}
+                >
+                  {declaredOptions.map((opt) => {
+                    const storedVal = storedOpts?.[opt.name];
+                    const current =
+                      storedVal !== undefined && opt.values.includes(storedVal)
+                        ? storedVal
+                        : opt.default;
+                    return (
+                      <label
+                        key={opt.name}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 10,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color:
+                              current !== opt.default
+                                ? "var(--accent-primary)"
+                                : "var(--text-muted)",
+                          }}
+                        >
+                          {opt.name}
+                        </span>
+                        <select
+                          data-testid={`run-models-option-select-${opt.name}`}
+                          value={current}
+                          onChange={(e) =>
+                            setOption(
+                              profile.script_path,
+                              opt.name,
+                              e.target.value,
+                            )
+                          }
+                          style={{
+                            fontSize: 10,
+                            padding: "1px 4px",
+                            background: "var(--bg-secondary)",
+                            color: "var(--text-primary)",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: 3,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {opt.values.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              </React.Fragment>
             );
           })}
         </div>

@@ -10,6 +10,7 @@
  * rendered as a zero.
  */
 import type {
+  BenchAttempt,
   BenchConfig,
   BenchLive,
   BenchRecord,
@@ -37,6 +38,36 @@ export function cellState(record: BenchRecord): CellState {
   // fixes; the first real run was 12 of the former and 10 of the latter.
   if (record.status === "error") return "error";
   return "miss";
+}
+
+/**
+ * Maps a single per-attempt log entry (bench.py STATUSES) to a CellState.
+ *
+ * Extracted from the inline T222 branch so the mapping can be unit-tested
+ * without rendering. The switch covers every member of BenchAttempt["status"];
+ * the default branch is a compile-time exhaustiveness check — adding a new
+ * status to BenchAttempt without handling it here is a type error, not a
+ * silent blank cell.
+ */
+export function attemptStatusToCell(att: {
+  attempt: number;
+  status: BenchAttempt["status"];
+}): CellState {
+  switch (att.status) {
+    case "pass":    return att.attempt === 1 ? "solved" : "solved-late";
+    case "fail":    return "miss";
+    case "error":   return "error";
+    case "timeout": return "timeout";
+    case "format":  return "format";
+    case "server":  return "server";
+    default: {
+      const _exhaustive: never = att.status;
+      void _exhaustive;
+      // Runtime fallback: render a visible cell rather than blank if bench.py
+      // gains a new status before the frontend is updated.
+      return "error";
+    }
+  }
 }
 
 /**
@@ -553,7 +584,7 @@ export function benchLocalDate(isoLocal: string): string {
  * `2026.08.13-157` and verified against the checkout:
  *
  *   --attempts 3 (:3271) · -n/--n 1 (:3246) · --max-tokens 0 (:3282)
- *   DEFAULT_NUDGE_AT = 32768 (:70), used at --nudge-at (:3256)
+ *   --nudge-at 0 (:3256; -277 changed default from 32768 to 0 — 0 = nudging off)
  *   --label "" (:3355)
  *
  * Named once so four literals cannot drift from upstream independently. The
@@ -572,7 +603,7 @@ export const LOCALBENCH_DEFAULTS = {
   attempts: 3,
   n: 1,
   maxTokens: 0,
-  nudgeAt: 32768,
+  nudgeAt: 0,
 } as const;
 
 /**

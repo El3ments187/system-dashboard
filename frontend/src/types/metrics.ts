@@ -322,6 +322,12 @@ export interface RepoInfo {
 
 // ─── Launcher / Run Models ──────────────────────────────────────────
 
+export interface ScriptOption {
+  name: string;
+  values: string[];
+  default: string;
+}
+
 export interface ParsedScriptArgs {
   model_path?: string;
   alias?: string;
@@ -346,6 +352,7 @@ export interface ParsedScriptArgs {
   spec_draft_n_max?: number;
   model_draft?: string;
   mmproj?: string;
+  options?: ScriptOption[];
 }
 
 export interface FilenameMetadata {

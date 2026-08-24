@@ -4,6 +4,7 @@ import benchTruncated from "./fixtures/benchTruncated.json";
 import benchAllServer from "./fixtures/benchAllServer.json";
 import {
   cellState,
+  attemptStatusToCell,
   LOCALBENCH_DEFAULTS,
   compareEligibility,
   failureExplanation,
@@ -1164,11 +1165,11 @@ describe("T100 failureExplanation", () => {
 // T99 — the defaults are localbench's, and this is what catches the next
 // upstream bump: bench.py's argparse table is the source, not this file.
 describe("T99 LOCALBENCH_DEFAULTS tracks bench.py", () => {
-  it("matches the -157 argparse table", () => {
+  it("matches the -157 argparse table (nudgeAt updated to 0 by -277)", () => {
     expect(LOCALBENCH_DEFAULTS.attempts, "bench.py:3271").toBe(3);
     expect(LOCALBENCH_DEFAULTS.n, "bench.py:3246").toBe(1);
     expect(LOCALBENCH_DEFAULTS.maxTokens, "bench.py:3282").toBe(0);
-    expect(LOCALBENCH_DEFAULTS.nudgeAt, "DEFAULT_NUDGE_AT bench.py:70 used at :3256").toBe(32768);
+    expect(LOCALBENCH_DEFAULTS.nudgeAt, "--nudge-at bench.py:3256; -277 changed default from 32768 to 0").toBe(0);
     expect(LOCALBENCH_DEFAULTS.label, "bench.py:3355").toBe("");
   });
 
@@ -1768,5 +1769,46 @@ describe("T181 startDisabledReason model mismatch", () => {
     expect(startDisabledReason({ ...base, anyLanguage: false })).toMatch(
       /no languages/i,
     );
+  });
+});
+
+// ── T228 — attemptStatusToCell maps every bench.py STATUSES value ─────────────
+//
+// The inline mapping in parts.tsx is extracted to a named, tested function so
+// that a future bench.py STATUSES addition breaks the build (exhaustiveness
+// check) rather than silently rendering blank cells.
+
+describe("T228 attemptStatusToCell", () => {
+  it("pass on attempt 1 → 'solved'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "pass" })).toBe("solved");
+  });
+
+  it("pass on attempt 2 → 'solved-late' (retry)", () => {
+    expect(attemptStatusToCell({ attempt: 2, status: "pass" })).toBe("solved-late");
+  });
+
+  it("fail → 'miss'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "fail" })).toBe("miss");
+  });
+
+  it("error → 'error'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "error" })).toBe("error");
+  });
+
+  it("timeout → 'timeout'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "timeout" })).toBe("timeout");
+  });
+
+  it("format → 'format'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "format" })).toBe("format");
+  });
+
+  it("server → 'server'", () => {
+    expect(attemptStatusToCell({ attempt: 1, status: "server" })).toBe("server");
+  });
+
+  it("unrecognised status renders visible 'error' fallback (not blank)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(attemptStatusToCell({ attempt: 1, status: "unknown_future" as any })).toBe("error");
   });
 });

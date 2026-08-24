@@ -1207,7 +1207,7 @@ pub async fn queue_advance_handler(
     }
     let script = req.script_path.clone();
     let launched =
-        tokio::task::spawn_blocking(move || crate::api::launcher::launch_profile(&script)).await;
+        tokio::task::spawn_blocking(move || crate::api::launcher::launch_profile(&script, Default::default())).await;
     if let Ok(Err(e)) = launched {
         return axum::response::Json(json!({ "error": e, "success": false }));
     }

@@ -845,3 +845,382 @@ describe("T201 favourites — star toggle and filter", () => {
     expect(screen.getByText("gemma-27b")).toBeInTheDocument();
   });
 });
+
+// ─── T235 script-declared launch options ─────────────────────────────
+
+const OPTIONS_STORAGE_KEY = "run-models-options";
+
+function profileWithOptions() {
+  return profilesResponse({
+    profiles: [
+      {
+        id: "p1",
+        name: "qwen-35b",
+        script_path: "/scripts/qwen.sh",
+        file_hash: "aaa",
+        parsed_args: {
+          options: [
+            {
+              name: "PRESET",
+              values: ["fast", "balanced", "quality"],
+              default: "balanced",
+            },
+            { name: "GPU_SPLIT", values: ["auto", "manual"], default: "auto" },
+          ],
+        },
+        filename_meta: null,
+        warning: null,
+      },
+    ],
+    states: {
+      "/scripts/qwen.sh": {
+        status: "stopped",
+        llama_server_pid: null,
+        start_time: null,
+        peak_vram_mb: null,
+        peak_ram_mb: null,
+        current_tps: null,
+      },
+    },
+    metadata: {},
+  });
+}
+
+function profileWithOptionsRunning() {
+  return profilesResponse({
+    profiles: [
+      {
+        id: "p1",
+        name: "qwen-35b",
+        script_path: "/scripts/qwen.sh",
+        file_hash: "aaa",
+        parsed_args: {
+          options: [
+            {
+              name: "PRESET",
+              values: ["fast", "balanced", "quality"],
+              default: "balanced",
+            },
+          ],
+        },
+        filename_meta: null,
+        warning: null,
+      },
+    ],
+    states: {
+      "/scripts/qwen.sh": {
+        status: "running",
+        llama_server_pid: 123,
+        start_time: null,
+        peak_vram_mb: null,
+        peak_ram_mb: null,
+        current_tps: null,
+      },
+    },
+    metadata: {},
+  });
+}
+
+describe("T235 script-declared launch options", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("Options button is absent for profiles with no declared options", async () => {
+    global.fetch = mockFetchOnce(
+      profilesResponse({
+        profiles: [
+          {
+            id: "p1",
+            name: "simple-model",
+            script_path: "/scripts/simple.sh",
+            file_hash: "aaa",
+            parsed_args: null,
+            filename_meta: null,
+            warning: null,
+          },
+        ],
+        states: {},
+        metadata: {},
+      }),
+    );
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("simple-model")).toBeInTheDocument(),
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.some((b) => b.textContent?.includes("Options"))).toBe(false);
+  });
+
+  it("Options button appears for profiles with declared options", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.some((b) => b.textContent === "Options")).toBe(true);
+  });
+
+  it("Options button is disabled while the model is running", async () => {
+    global.fetch = mockFetchOnce(profileWithOptionsRunning());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const optBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent?.includes("Options"));
+    expect(optBtn).toBeDefined();
+    expect(optBtn).toBeDisabled();
+    expect(optBtn).toHaveAttribute(
+      "title",
+      expect.stringContaining("Stop the model first"),
+    );
+  });
+
+  it("clicking Options button shows the options panel", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByTestId("run-models-options-panel"),
+    ).not.toBeInTheDocument();
+    const optBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Options")!;
+    fireEvent.click(optBtn);
+    expect(screen.getByTestId("run-models-options-panel")).toBeInTheDocument();
+  });
+
+  it("clicking Options button again hides the panel", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const optBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Options")!;
+    fireEvent.click(optBtn);
+    expect(screen.getByTestId("run-models-options-panel")).toBeInTheDocument();
+    fireEvent.click(optBtn);
+    expect(
+      screen.queryByTestId("run-models-options-panel"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("options panel contains a select for each declared option", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    expect(
+      screen.getByTestId("run-models-option-select-PRESET"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("run-models-option-select-GPU_SPLIT"),
+    ).toBeInTheDocument();
+  });
+
+  it("each select defaults to its declared default value", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    const preset = screen.getByTestId(
+      "run-models-option-select-PRESET",
+    ) as HTMLSelectElement;
+    expect(preset.value).toBe("balanced");
+    const gpuSplit = screen.getByTestId(
+      "run-models-option-select-GPU_SPLIT",
+    ) as HTMLSelectElement;
+    expect(gpuSplit.value).toBe("auto");
+  });
+
+  it("changing a select writes the chosen value to localStorage", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    fireEvent.change(screen.getByTestId("run-models-option-select-PRESET"), {
+      target: { value: "quality" },
+    });
+    const stored = JSON.parse(localStorage.getItem(OPTIONS_STORAGE_KEY) ?? "{}");
+    expect(stored["/scripts/qwen.sh"]?.PRESET).toBe("quality");
+  });
+
+  it("Options badge shows (N) for N options that differ from their defaults", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    const optBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Options")!;
+    fireEvent.click(optBtn);
+
+    fireEvent.change(screen.getByTestId("run-models-option-select-PRESET"), {
+      target: { value: "fast" },
+    });
+    expect(
+      screen.getAllByRole("button").some((b) => b.textContent === "Options (1)"),
+    ).toBe(true);
+
+    fireEvent.change(screen.getByTestId("run-models-option-select-GPU_SPLIT"), {
+      target: { value: "manual" },
+    });
+    expect(
+      screen.getAllByRole("button").some((b) => b.textContent === "Options (2)"),
+    ).toBe(true);
+
+    // Resetting one back to its default decrements the badge
+    fireEvent.change(screen.getByTestId("run-models-option-select-PRESET"), {
+      target: { value: "balanced" },
+    });
+    expect(
+      screen.getAllByRole("button").some((b) => b.textContent === "Options (1)"),
+    ).toBe(true);
+  });
+
+  it("non-default options are included in the launch request body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => profileWithOptions(),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => profileWithOptions(),
+      });
+    global.fetch = fetchMock;
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    fireEvent.change(screen.getByTestId("run-models-option-select-PRESET"), {
+      target: { value: "quality" },
+    });
+    fireEvent.click(screen.getByText("Run"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const launchCall = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(launchCall[0]).toContain("launch");
+    const body = JSON.parse(launchCall[1].body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(body.options).toEqual({ PRESET: "quality" });
+  });
+
+  it("all-default options are NOT included in the launch request body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => profileWithOptions(),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => profileWithOptions(),
+      });
+    global.fetch = fetchMock;
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // All options at their defaults — click Run without changing anything
+    fireEvent.click(screen.getByText("Run"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const launchCall = fetchMock.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(launchCall[1].body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(body.options).toBeUndefined();
+  });
+
+  it("stale stored value (not in declared values list) is ignored", async () => {
+    localStorage.setItem(
+      OPTIONS_STORAGE_KEY,
+      JSON.stringify({
+        "/scripts/qwen.sh": { PRESET: "ultra-stale-value" },
+      }),
+    );
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Stale value is not in declared values → badge must not appear
+    expect(
+      screen
+        .getAllByRole("button")
+        .some((b) => /Options \(\d\)/.test(b.textContent ?? "")),
+    ).toBe(false);
+    // Select must show declared default, not the stale value
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    const preset = screen.getByTestId(
+      "run-models-option-select-PRESET",
+    ) as HTMLSelectElement;
+    expect(preset.value).toBe("balanced");
+  });
+
+  it("selected options persist across remounts via localStorage", async () => {
+    global.fetch = mockFetchOnce(profileWithOptions());
+    const { unmount } = render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button").find((b) => b.textContent === "Options")!,
+    );
+    fireEvent.change(screen.getByTestId("run-models-option-select-PRESET"), {
+      target: { value: "fast" },
+    });
+    unmount();
+
+    global.fetch = mockFetchOnce(profileWithOptions());
+    render(<RunModelsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("qwen-35b")).toBeInTheDocument(),
+    );
+    // Badge (1) must be visible after remount — value was persisted
+    expect(
+      screen.getAllByRole("button").some((b) => b.textContent === "Options (1)"),
+    ).toBe(true);
+  });
+
+  it("malformed OPTIONS_KEY storage does not throw", () => {
+    localStorage.setItem(OPTIONS_STORAGE_KEY, "not-json{{{");
+    global.fetch = mockFetchOnce(profileWithOptions());
+    expect(() => render(<RunModelsSection />)).not.toThrow();
+  });
+});

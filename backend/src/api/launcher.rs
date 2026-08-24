@@ -252,6 +252,42 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
         args.mmproj = Some(resolve_shell_variables(&val, &vars));
     }
 
+    // Parse @option declarations and pair each with a ${NAME:-default} in the script.
+    let decls = parse_option_declarations(content);
+    if !decls.is_empty() {
+        let mut options: Vec<ScriptOption> = Vec::new();
+        let mut names: Vec<&String> = decls.keys().collect();
+        names.sort(); // deterministic order
+        for name in names {
+            let values = &decls[name];
+            match extract_option_default(content, name) {
+                Some(default) => {
+                    if values.contains(&default) {
+                        options.push(ScriptOption {
+                            name: name.clone(),
+                            values: values.clone(),
+                            default,
+                        });
+                    } else {
+                        eprintln!(
+                            "[Launcher] @option {}: default '{}' not in declared values {:?} — skipping",
+                            name, default, values
+                        );
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "[Launcher] @option {} declared but ${{{}:-default}} not found in script — ignoring",
+                        name, name
+                    );
+                }
+            }
+        }
+        if !options.is_empty() {
+            args.options = Some(options);
+        }
+    }
+
     Some(args)
 }
 
@@ -358,6 +394,58 @@ fn extract_shell_variables(content: &str) -> HashMap<String, String> {
         vars.insert(name.to_string(), value);
     }
     vars
+}
+
+/// Parse `# @option NAME: val1|val2|val3` comment lines from a script.
+/// Returns a map from option name to the ordered list of valid values.
+fn parse_option_declarations(content: &str) -> HashMap<String, Vec<String>> {
+    let mut decls: HashMap<String, Vec<String>> = HashMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        // Must start with `#` and contain `@option`
+        let Some(rest) = trimmed.strip_prefix('#') else {
+            continue;
+        };
+        let rest = rest.trim();
+        let Some(rest) = rest.strip_prefix("@option") else {
+            continue;
+        };
+        let rest = rest.trim();
+        // rest = "NAME: val1|val2|val3"
+        let Some(colon_pos) = rest.find(':') else {
+            continue;
+        };
+        let name = rest[..colon_pos].trim().to_string();
+        let values_str = rest[colon_pos + 1..].trim();
+        if name.is_empty() || values_str.is_empty() {
+            continue;
+        }
+        let values: Vec<String> = values_str
+            .split('|')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect();
+        if values.len() >= 2 {
+            decls.insert(name, values);
+        }
+    }
+    decls
+}
+
+/// Find the default value for option `name` by scanning the script for
+/// `${NAME:-default}` patterns. Returns `None` if the pattern is absent,
+/// which means the @option is unpaired and should be ignored.
+fn extract_option_default(content: &str, name: &str) -> Option<String> {
+    let pattern = format!("${{{}:-", name);
+    for line in content.lines() {
+        if let Some(start) = line.find(&pattern) {
+            let after = &line[start + pattern.len()..];
+            if let Some(end) = after.find('}') {
+                return Some(after[..end].to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Substitute `$NAME` / `${NAME}` references using previously-collected
@@ -571,7 +659,7 @@ fn is_params_token(s: &str) -> bool {
 
 // ─── Process Manager ────────────────────────────────────────────────
 
-pub fn launch_profile(script_path: &str) -> Result<Value, String> {
+pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Result<Value, String> {
     eprintln!(
         "[Launcher] launch_profile request received for {}",
         script_path
@@ -662,7 +750,7 @@ pub fn launch_profile(script_path: &str) -> Result<Value, String> {
             );
         }
         eprintln!("[Launcher] Spawning script: {}", script_str);
-        match execute_script(&script_str).await {
+        match execute_script(&script_str, &options).await {
             Ok(pid) => {
                 eprintln!("[Launcher] Script {} launched with PID {}", script_str, pid);
                 let state = get_state();
@@ -760,22 +848,29 @@ pub fn launch_profile(script_path: &str) -> Result<Value, String> {
     Ok(json!({ "success": true, "message": "Model launch initiated" }))
 }
 
-async fn execute_script(script_path: &str) -> Result<u32, String> {
+async fn execute_script(script_path: &str, options: &HashMap<String, String>) -> Result<u32, String> {
     let script_dir = Path::new(script_path)
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("/tmp"));
 
-    let mut child = tokio::process::Command::new("bash")
-        .current_dir(&script_dir)
+    let mut cmd = tokio::process::Command::new("bash");
+    cmd.current_dir(&script_dir)
         .arg(script_path)
         // Make the bash wrapper the leader of its own process group, so any
         // child it forks (e.g. llama-server, when the script doesn't `exec`
         // into it) inherits the same group and can be signaled together.
         .process_group(0)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+
+    // Only set env vars for options the user explicitly chose; unset options
+    // fall back to the script's own `${NAME:-default}` expansion.
+    for (name, value) in options {
+        cmd.env(name, value);
+    }
+
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn script: {}", e))?;
 
     let pid = child

@@ -111,7 +111,7 @@ const BUDGET_CONTAGION =
 
 const TAINT_TOOLTIP: Record<"budget" | "truncation", string> = {
   budget:
-    "Recorded at or after bench.py stopped a reply at its own --nudge-at budget, so this score measures the cutoff rather than the model. Raise --nudge-at or --max-nudges; --max-tokens does not affect this." +
+    "Recorded at or after bench.py stopped a reply at its own --nudge-at budget, so this score measures the cutoff rather than the model. Raise --nudge-at; --max-tokens does not affect this." +
     BUDGET_CONTAGION,
   truncation:
     "Recorded at or after three consecutive replies the server cut short (finish_reason: length), so this score measures the token cap rather than the model. Raise --max-tokens; --nudge-at does not affect this.",
@@ -133,8 +133,9 @@ const isPlaceholderRunKey = (key: string) =>
 
 /** A task with no record is queued or skipped — never 0.00, which reads as
  *  a scored result. */
-function pendingLabel(skipped: boolean, queued: boolean): string {
+function pendingLabel(skipped: boolean, queued: boolean, live?: boolean): string {
   if (skipped) return "skipped";
+  if (live) return "In progress";
   if (queued) return "queued";
   return "—";
 }
@@ -772,6 +773,7 @@ function ThisRunPane({
           </thead>
           <tbody>
             {visible.map(([task, rs, lang]) => {
+              const isCurrentTask = task === detail?.live?.current_task;
               const skipped = rs.length === 0 && unavailableLangs.has(lang);
               const queued = rs.length === 0 && !skipped;
               const graded = gradedRecords(rs);
@@ -836,7 +838,7 @@ function ThisRunPane({
                       <SampleStrip
                         records={rs}
                         expectedSamples={expectedSamples}
-                        live={task === detail?.live?.current_task}
+                        live={isCurrentTask}
                       />
                     </td>
                     <td
@@ -847,9 +849,9 @@ function ThisRunPane({
                         records={rs}
                         expectedSamples={expectedSamples}
                         attempts={detail?.config?.attempts}
-                        live={task === detail?.live?.current_task}
+                        live={isCurrentTask}
                         currentAttempt={
-                          task === detail?.live?.current_task
+                          isCurrentTask
                             ? detail?.live?.current_attempt
                             : undefined
                         }
@@ -858,6 +860,10 @@ function ThisRunPane({
                             (a) => a.attempt === attemptNum,
                           );
                           if (!att) return;
+                          // "both together" — the per-attempt panel sits under
+                          // the sample-level drilldown, so ensure the drilldown
+                          // is open whenever an attempt cell is clicked.
+                          setOpenTask(task);
                           setOpenAttempt(
                             openAttempt?.task === task &&
                             openAttempt.record === record &&
@@ -888,7 +894,7 @@ function ThisRunPane({
                             fontWeight: 400,
                           }}
                         >
-                          {pendingLabel(skipped, queued)}
+                          {pendingLabel(skipped, queued, isCurrentTask)}
                         </span>
                       ) : (
                         mean.toFixed(2)
@@ -896,7 +902,7 @@ function ThisRunPane({
                     </td>
                     <td style={{ ...TD, textAlign: "right" }}>
                       {rs.length === 0 ? (
-                        <span style={{ color: "var(--text-muted)" }}>—</span>
+                        <KOfN solved={0} of={0} />
                       ) : (
                         <KOfN solved={solved} of={graded.length} />
                       )}
