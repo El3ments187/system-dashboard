@@ -940,6 +940,7 @@ function ThisRunPane({
                           attempt={openAttempt.att}
                           task={task}
                           sample={openAttempt.sample}
+                          record={openAttempt.record}
                         />
                       </td>
                     </tr>
@@ -973,9 +974,9 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
     ? "Estimated by the harness, not reported by the server"
     : undefined;
   const drilldownSuffix = (() => {
-    if (failingRecord) return " — why it failed";
-    if (serverOnly) return " — endpoint did not answer";
-    return " — attempt detail";
+    if (failingRecord) return " — sample · why it failed";
+    if (serverOnly) return " — sample · endpoint did not answer";
+    return " — sample detail";
   })();
 
   return (
@@ -1119,7 +1120,7 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
                   style={{ color: "var(--text-muted)" }}
                 >
                   {" "}
-                  (start of the log · full text in raw/)
+                  (sample · start of the log · full text in raw/)
                 </span>
               </blockquote>
             ))}

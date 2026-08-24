@@ -8,6 +8,7 @@ import {
   LOCALBENCH_DEFAULTS,
   compareEligibility,
   failureExplanation,
+  attemptFailureExplanation,
   compareNotation,
   compareRows,
   compareSlotOptions,
@@ -44,6 +45,7 @@ import {
   runTaskRoster,
 } from "../pages/bench/compute";
 import type {
+  BenchAttempt,
   BenchRecord,
   BenchRunDetail,
   BenchRunRow,
@@ -1810,5 +1812,71 @@ describe("T228 attemptStatusToCell", () => {
   it("unrecognised status renders visible 'error' fallback (not blank)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(attemptStatusToCell({ attempt: 1, status: "unknown_future" as any })).toBe("error");
+  });
+});
+
+// ─── T236 attemptFailureExplanation ──────────────────────────────────────────
+
+describe("T236 attemptFailureExplanation", () => {
+  function att(
+    fields: { attempt: number; status: BenchAttempt["status"] } & Partial<BenchAttempt>,
+  ): BenchAttempt {
+    return fields as BenchAttempt;
+  }
+
+  it("pass → empty lines (no failure section)", () => {
+    expect(attemptFailureExplanation(att({ attempt: 1, status: "pass" }), 54)).toEqual([]);
+  });
+
+  it("error → compile / runnable message", () => {
+    const lines = attemptFailureExplanation(att({ attempt: 1, status: "error" }), 54);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join(" ")).toMatch(/compile|runnable/i);
+  });
+
+  it("format → code block message", () => {
+    const lines = attemptFailureExplanation(att({ attempt: 1, status: "format" }), 54);
+    expect(lines.join(" ")).toMatch(/code block/i);
+  });
+
+  it("fail with counts → '15 of 54 assertions failed' with denominator from testsExpected", () => {
+    const lines = attemptFailureExplanation(
+      att({ attempt: 2, status: "fail", tests_passed: 39, tests_failed: 15 }),
+      54,
+    );
+    expect(lines.join(" ")).toMatch(/15.+54/);
+  });
+
+  it("fail + context_limit shows both facts", () => {
+    const lines = attemptFailureExplanation(
+      att({ attempt: 1, status: "fail", tests_passed: 0, tests_failed: 5, ended: "context_limit" }),
+      10,
+    );
+    expect(lines.length).toBeGreaterThan(1);
+    const text = lines.join(" ");
+    expect(text).toMatch(/fail|assertion/i);
+    expect(text).toMatch(/context/i);
+  });
+
+  it("ended: cut → nudge-at / cut message", () => {
+    const lines = attemptFailureExplanation(
+      att({ attempt: 1, status: "fail", tests_passed: 0, tests_failed: 2, ended: "cut" }),
+      10,
+    );
+    expect(lines.join(" ")).toMatch(/nudge-at|cut|budget/i);
+  });
+
+  it("ended: context_limit with still_thinking → mentions never reached an answer", () => {
+    const lines = attemptFailureExplanation(
+      att({ attempt: 1, status: "fail", ended: "context_limit", still_thinking: true }),
+      10,
+    );
+    expect(lines.join(" ")).toMatch(/answer|reasoning/i);
+  });
+
+  it("failureExplanation is untouched — still accepts BenchRecord", () => {
+    const r = rec({ status: "error", tests_expected: 10 });
+    const e = failureExplanation(r);
+    expect(e.reason).toMatch(/compile|crash/i);
   });
 });

@@ -5,6 +5,29 @@ use std::collections::HashMap;
 
 // ─── Launch Profile Models ──────────────────────────────────────────
 
+/// Capabilities reported by /props chat_template_caps, cached in models.json.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+pub struct ModelCapabilities {
+    #[serde(default)]
+    pub supports_reasoning_effort: bool,
+    #[serde(default)]
+    pub supports_preserve_reasoning: bool,
+    #[serde(default)]
+    pub supports_tools: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_ctx_train: Option<u32>,
+}
+
+/// A capability-detected option (no script change needed).
+/// `env_var` is what gets set in the process environment (LLAMA_ARG_*).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DetectedOption {
+    pub name: String,
+    pub env_var: String,
+    pub values: Vec<String>,
+    pub default: String,
+}
+
 /// A tunable option declared by a launch script via `# @option NAME: a|b|c`.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ScriptOption {
@@ -92,6 +115,10 @@ pub struct LaunchProfile {
     pub filename_meta: Option<FilenameMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
+    /// Capability-detected options (from models.json cache). Absent when the
+    /// model has never been run (no cached caps yet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_options: Option<Vec<DetectedOption>>,
 }
 
 /// Current runtime state of a profile
@@ -287,6 +314,16 @@ pub struct LlamaProps {
     pub samplers: Option<Vec<String>>,
     pub speculative: Option<bool>,
     pub context_tokens: Option<u32>,
+    pub chat_template_caps: Option<ChatTemplateCapsRaw>,
+    pub n_ctx_train: Option<u32>,
+}
+
+/// Raw chat_template_caps from /props (kept internal; persisted via ModelCapabilities).
+#[derive(Debug, Clone, Default)]
+pub struct ChatTemplateCapsRaw {
+    pub supports_reasoning_effort: bool,
+    pub supports_preserve_reasoning: bool,
+    pub supports_tools: bool,
 }
 
 /// Per-slot state from /slots endpoint
@@ -489,6 +526,14 @@ pub struct AiMetrics {
     /// GGUF model file size in GiB (from filesystem stat on model path)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gguf_size_gib: Option<f64>,
+
+    /// Script path of the currently running model (for option mismatch display).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_script_path: Option<String>,
+
+    /// Maximum context the model was trained on (from /v1/models meta.n_ctx_train).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_ctx_train: Option<u32>,
 }
 
 /// Directory entry from filesystem browse

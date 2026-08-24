@@ -387,6 +387,55 @@ export function failureExplanation(
   return { reason, unreached, remedy, history };
 }
 
+/**
+ * Why a single attempt failed, driving from `ended` and `status` independently.
+ * Sibling to `failureExplanation` — do not merge them; they answer different
+ * questions and accept different shapes.
+ *
+ * `testsExpected` must come from the record (attempt entries omit it).
+ * Returns an empty array for passing attempts (no failure section to show).
+ */
+export function attemptFailureExplanation(
+  att: BenchAttempt,
+  testsExpected: number,
+): string[] {
+  if (att.status === "pass") return [];
+
+  const lines: string[] = [];
+
+  if (att.status === "error") {
+    lines.push("Did not compile or produce runnable code.");
+  } else if (att.status === "format") {
+    lines.push("No fenced code block in the reply.");
+  } else if (att.status === "timeout") {
+    lines.push("Did not finish in time, usually an endless loop.");
+  } else if (att.status === "server") {
+    lines.push("The endpoint never answered.");
+  } else if (att.status === "fail") {
+    const passed = att.tests_passed ?? 0;
+    const failed = att.tests_failed ?? 0;
+    const ran = passed + failed;
+    if (ran > 0) {
+      const denom = testsExpected > 0 ? testsExpected : ran;
+      lines.push(`${failed} of ${denom} assertions failed.`);
+    }
+  }
+
+  if (att.ended === "cut") {
+    lines.push("Stopped at --nudge-at before finishing.");
+  } else if (att.ended === "context_limit") {
+    lines.push(
+      att.still_thinking
+        ? "Ran out of context while still in a reasoning block — never reached an answer."
+        : "Ran out of context.",
+    );
+  } else if (att.ended === "no_reply" && att.status !== "server") {
+    lines.push("The endpoint never answered.");
+  }
+
+  return lines;
+}
+
 export interface RegressionChips {
   up: string[];
   down: string[];

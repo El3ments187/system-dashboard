@@ -261,6 +261,26 @@ export default function LlamaCppPage() {
 
   const slot0 = m?.slots && m.slots.length > 0 ? m.slots[0] : null;
   const slotCtx: number | null = slot0?.n_ctx ?? null;
+  const nCtxTrain: number | null = m?.n_ctx_train ?? null;
+  const storedCtxForRunning: number | null = (() => {
+    const path = m?.running_script_path;
+    if (!path) return null;
+    try {
+      const raw = localStorage.getItem("run-models-options");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Record<string, Record<string, string>>;
+      const val = parsed[path]?.["LLAMA_ARG_CTX_SIZE"];
+      if (!val || val === "default") return null;
+      const n = parseInt(val, 10);
+      return isNaN(n) ? null : n;
+    } catch {
+      return null;
+    }
+  })();
+  const ctxMismatch =
+    storedCtxForRunning !== null &&
+    m?.max_context != null &&
+    storedCtxForRunning !== m.max_context;
   const slotCurrentTokens: number | null = slot0?.n_prompt_tokens ?? null;
   const contextPct =
     slotCurrentTokens != null && slotCtx != null && slotCtx > 0
@@ -574,6 +594,40 @@ export default function LlamaCppPage() {
                       style={{
                         fontFamily: MONO,
                         fontSize: 10,
+                        color: ctxMismatch
+                          ? "var(--warning)"
+                          : "var(--text-muted)",
+                        background: "var(--bg-secondary)",
+                        border: ctxMismatch
+                          ? "1px solid color-mix(in srgb, var(--warning) 50%, transparent)"
+                          : "1px solid var(--border-light, var(--border-color))",
+                        borderRadius: 7,
+                        padding: "3px 8px",
+                      }}
+                      title={
+                        ctxMismatch
+                          ? `Selected ${formatCtx(storedCtxForRunning!)} but running at ${formatCtx(slotCtx)} — may have been capped by the model`
+                          : undefined
+                      }
+                    >
+                      <b
+                        style={{
+                          color: ctxMismatch
+                            ? "var(--warning)"
+                            : "var(--text-primary)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {formatCtx(slotCtx)}
+                      </b>{" "}
+                      ctx
+                    </span>
+                  )}
+                  {nCtxTrain != null && (
+                    <span
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 10,
                         color: "var(--text-muted)",
                         background: "var(--bg-secondary)",
                         border:
@@ -581,6 +635,7 @@ export default function LlamaCppPage() {
                         borderRadius: 7,
                         padding: "3px 8px",
                       }}
+                      title={`Training context limit: ${nCtxTrain.toLocaleString()} tokens`}
                     >
                       <b
                         style={{
@@ -588,9 +643,9 @@ export default function LlamaCppPage() {
                           fontWeight: 600,
                         }}
                       >
-                        {formatCtx(slotCtx)}
+                        {formatCtx(nCtxTrain)}
                       </b>{" "}
-                      ctx
+                      train limit
                     </span>
                   )}
                   {modelQuant && (

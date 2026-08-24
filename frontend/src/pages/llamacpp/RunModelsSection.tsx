@@ -18,6 +18,7 @@ import type {
   ProfileState,
   ProfileMetadata,
   ScriptOption,
+  DetectedOption,
 } from "../../types/metrics";
 import {
   sortProfiles,
@@ -121,29 +122,63 @@ function saveOptions(store: OptionsStore): void {
   }
 }
 
-// Returns only the options that differ from their declared default,
-// and drops any name/value no longer in the declared set (stale storage).
-function effectiveOptions(
-  stored: Record<string, string> | undefined,
+
+
+type MergedOption = {
+  name: string;
+  key: string; // storage + launch key: opt.name for declared, opt.env_var for detected
+  values: string[];
+  default: string;
+  kind: "declared" | "detected";
+};
+
+function buildMergedOptions(
   declared: ScriptOption[],
-): Record<string, string> {
-  if (!stored) return {};
-  const result: Record<string, string> = {};
-  for (const opt of declared) {
-    const val = stored[opt.name];
-    if (val !== undefined && opt.values.includes(val) && val !== opt.default) {
-      result[opt.name] = val;
+  detected: DetectedOption[] | null | undefined,
+): MergedOption[] {
+  const result: MergedOption[] = declared.map((opt) => ({
+    kind: "declared" as const,
+    name: opt.name,
+    key: opt.name,
+    values: opt.values,
+    default: opt.default,
+  }));
+  if (!detected) return result;
+  const declaredNames = new Set(declared.map((d) => d.name));
+  for (const opt of detected) {
+    if (!declaredNames.has(opt.name)) {
+      result.push({
+        kind: "detected" as const,
+        name: opt.name,
+        key: opt.env_var,
+        values: opt.values,
+        default: opt.default,
+      });
     }
   }
   return result;
 }
 
-// Count options that differ from default (for the badge).
-function countChangedOptions(
+function effectiveMergedOptions(
   stored: Record<string, string> | undefined,
-  declared: ScriptOption[],
+  merged: MergedOption[],
+): Record<string, string> {
+  if (!stored) return {};
+  const result: Record<string, string> = {};
+  for (const opt of merged) {
+    const val = stored[opt.key];
+    if (val !== undefined && opt.values.includes(val) && val !== opt.default) {
+      result[opt.key] = val;
+    }
+  }
+  return result;
+}
+
+function countChangedMergedOptions(
+  stored: Record<string, string> | undefined,
+  merged: MergedOption[],
 ): number {
-  return Object.keys(effectiveOptions(stored, declared)).length;
+  return Object.keys(effectiveMergedOptions(stored, merged)).length;
 }
 
 // Extracted to avoid a nested ternary in the render.
@@ -756,9 +791,13 @@ export function RunModelsSection() {
                 };
             const isFavorite = favorites.has(profile.script_path);
             const declaredOptions = profile.parsed_args?.options ?? [];
+            const detectedOptions = profile.detected_options; // null = not yet detected
+            const mergedOptions = buildMergedOptions(declaredOptions, detectedOptions);
             const storedOpts = selectedOptions[profile.script_path];
-            const changedCount = countChangedOptions(storedOpts, declaredOptions);
-            const launchOpts = effectiveOptions(storedOpts, declaredOptions);
+            const changedCount = countChangedMergedOptions(storedOpts, mergedOptions);
+            const launchOpts = effectiveMergedOptions(storedOpts, mergedOptions);
+            const hasAnyOptions = mergedOptions.length > 0;
+            const showFirstRunHint = !hasAnyOptions && detectedOptions == null;
             const isPanelOpen = openOptionsPanel === profile.script_path;
 
             return (
@@ -935,7 +974,19 @@ export function RunModelsSection() {
                     alignItems: "center",
                   }}
                 >
-                  {declaredOptions.length > 0 && (
+                  {showFirstRunHint && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: "var(--text-muted)",
+                        fontStyle: "italic",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      run once to detect options
+                    </span>
+                  )}
+                  {hasAnyOptions && (
                     <button
                       onClick={() =>
                         setOpenOptionsPanel(isPanelOpen ? null : profile.script_path)
@@ -1043,15 +1094,15 @@ export function RunModelsSection() {
                     borderTop: "1px solid var(--border-color)",
                   }}
                 >
-                  {declaredOptions.map((opt) => {
-                    const storedVal = storedOpts?.[opt.name];
+                  {mergedOptions.map((opt) => {
+                    const storedVal = storedOpts?.[opt.key];
                     const current =
                       storedVal !== undefined && opt.values.includes(storedVal)
                         ? storedVal
                         : opt.default;
                     return (
                       <label
-                        key={opt.name}
+                        key={opt.key}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -1070,6 +1121,17 @@ export function RunModelsSection() {
                           }}
                         >
                           {opt.name}
+                          {opt.kind === "detected" && (
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                color: "var(--text-muted)",
+                                marginLeft: 3,
+                              }}
+                            >
+                              (auto)
+                            </span>
+                          )}
                         </span>
                         <select
                           data-testid={`run-models-option-select-${opt.name}`}
@@ -1077,7 +1139,7 @@ export function RunModelsSection() {
                           onChange={(e) =>
                             setOption(
                               profile.script_path,
-                              opt.name,
+                              opt.key,
                               e.target.value,
                             )
                           }

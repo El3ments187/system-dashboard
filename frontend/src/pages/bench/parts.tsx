@@ -5,7 +5,7 @@
  */
 import type { CSSProperties } from "react";
 import type { BenchAttempt, BenchRecord, CellState } from "./types";
-import { attemptStatusToCell, cellState } from "./compute";
+import { attemptFailureExplanation, attemptStatusToCell, cellState } from "./compute";
 
 export const MONO = '"JetBrains Mono", "Fira Code", monospace';
 
@@ -371,10 +371,12 @@ export function AttemptPanel({
   attempt,
   task,
   sample,
+  record,
 }: {
   attempt: BenchAttempt;
   task: string;
   sample: number;
+  record: BenchRecord;
 }) {
   const est = attempt.tokens_estimated ? "~" : "";
   const rows: Array<[string, string]> = [
@@ -407,6 +409,13 @@ export function AttemptPanel({
       ? ([["Cut mid-block", "yes"]] as Array<[string, string]>)
       : []),
   ];
+
+  const explanationLines = attemptFailureExplanation(attempt, record.tests_expected);
+  // first_failed describes attempt 1's named failures only; bench.py does not
+  // record it for later attempts (they are not the cold-start run).
+  const showFirstFailed =
+    attempt.attempt === 1 && (record.first_failed ?? []).length > 0;
+
   return (
     <div
       data-testid="bench-attempt-panel"
@@ -431,6 +440,28 @@ export function AttemptPanel({
           </span>
         ))}
       </div>
+      {showFirstFailed && (
+        <div style={{ marginTop: 6 }}>
+          {(record.first_failed ?? []).slice(0, 6).map((a, i) => (
+            <div
+              key={i}
+              data-testid="bench-attempt-first-failed"
+              style={{ color: "var(--danger)", padding: "1px 0" }}
+            >
+              ✗ {a}
+            </div>
+          ))}
+        </div>
+      )}
+      {explanationLines.length > 0 && (
+        <div data-testid="bench-attempt-explanation" style={{ marginTop: 6 }}>
+          {explanationLines.map((line, i) => (
+            <div key={i} style={{ color: "var(--warning)", padding: "1px 0" }}>
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

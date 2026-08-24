@@ -226,6 +226,11 @@ export interface AiMetrics {
   model_load_time_ms?: number | null;
   kv_cache_reserved_mib?: number | null;
   gguf_size_gib?: number | null;
+
+  // Running model identity (for option mismatch display)
+  running_script_path?: string | null;
+  /** Training context limit from /v1/models meta.n_ctx_train */
+  n_ctx_train?: number | null;
 }
 
 export interface GpuOffloadInfo {
@@ -328,6 +333,13 @@ export interface ScriptOption {
   default: string;
 }
 
+export interface DetectedOption {
+  name: string;
+  env_var: string;
+  values: string[];
+  default: string;
+}
+
 export interface ParsedScriptArgs {
   model_path?: string;
   alias?: string;
@@ -370,6 +382,7 @@ export interface LaunchProfile {
   parsed_args: ParsedScriptArgs | null;
   filename_meta: FilenameMetadata | null;
   warning?: string | null;
+  detected_options?: DetectedOption[] | null;
 }
 
 export interface ProfileState {

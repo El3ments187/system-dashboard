@@ -34,7 +34,12 @@ import { ToolchainStatus } from "../components/settings/ToolchainStatus";
 function SettingsFileLocationCard({
   location,
 }: {
-  location: { path: string; exists: boolean } | null;
+  location: {
+    path: string;
+    exists: boolean;
+    models_path?: string;
+    models_exists?: boolean;
+  } | null;
 }) {
   return (
     <SettingsCard>
@@ -58,6 +63,7 @@ function SettingsFileLocationCard({
             Loading location…
           </div>
         ) : (
+          <>
           <div className="settings-field">
             <div
               style={{
@@ -117,6 +123,69 @@ function SettingsFileLocationCard({
               </div>
             )}
           </div>
+          {location.models_path && (
+            <div className="settings-field" style={{ marginTop: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: "2px 7px",
+                    borderRadius: 4,
+                    background: location.models_exists
+                      ? "color-mix(in srgb, var(--success) 15%, transparent)"
+                      : "color-mix(in srgb, var(--warning) 15%, transparent)",
+                    color: location.models_exists
+                      ? "var(--success)"
+                      : "var(--warning)",
+                    border: `1px solid ${location.models_exists ? "color-mix(in srgb, var(--success) 30%, transparent)" : "color-mix(in srgb, var(--warning) 30%, transparent)"}`,
+                  }}
+                >
+                  {location.models_exists ? "EXISTS" : "NOT YET CREATED"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  models.json — capability cache
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  id="models-file-location"
+                  name="models-file-location"
+                  className="settings-input"
+                  value={location.models_path}
+                  readOnly
+                  title={location.models_path}
+                  style={{
+                    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                    fontSize: 11,
+                  }}
+                />
+                <button
+                  className="settings-btn"
+                  title="Copy path"
+                  onClick={() =>
+                    navigator.clipboard.writeText(location.models_path!)
+                  }
+                >
+                  <Copy size={13} />
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </SettingsCard>
@@ -174,6 +243,8 @@ export default function SettingsPage({}: SettingsPageProps) {
   const [settingsLocation, setSettingsLocation] = useState<{
     path: string;
     exists: boolean;
+    models_path?: string;
+    models_exists?: boolean;
   } | null>(null);
 
   const [browserOpen, setBrowserOpen] = useState(false);

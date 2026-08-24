@@ -12,8 +12,8 @@ use crate::api::launcher as launcher_api;
 use crate::api::llama_management as ai_mgmt;
 use crate::api::log_manager;
 use crate::api::settings::{
-    AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings, settings_location,
-    test_connection,
+    AiSettings, TestConnectionResponse, get_ai_settings, models_location, set_ai_settings,
+    settings_location, test_connection,
 };
 use crate::collectors::ai::{collect_ai_history, collect_ai_metrics};
 use crate::collectors::alerts::{AlertResponse, check_all_alerts, clear_alert_tracking};
@@ -376,9 +376,12 @@ async fn get_settings_handler() -> axum::response::Json<AiSettings> {
 
 async fn settings_location_handler() -> axum::response::Json<Value> {
     let (path, exists) = settings_location();
+    let (models_path, models_exists) = models_location();
     Json(json!({
         "path": path.to_string_lossy(),
         "exists": exists,
+        "models_path": models_path.to_string_lossy(),
+        "models_exists": models_exists,
     }))
 }
 
@@ -775,7 +778,7 @@ async fn launch_profile_handler(
     let profile_id = req.profile_id.clone();
     let options = req.options.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let (script_path, declared_options) = {
+        let (script_path, declared_options, detected_options) = {
             let state = launcher_api::get_state();
             let guard = state.read().unwrap();
             let profile = guard.profiles.iter().find(|p| p.id == profile_id);
@@ -787,9 +790,10 @@ async fn launch_profile_handler(
                         .as_ref()
                         .and_then(|a| a.options.clone())
                         .unwrap_or_default();
-                    (Some(path), declared)
+                    let detected = p.detected_options.clone().unwrap_or_default();
+                    (Some(path), declared, detected)
                 }
-                None => (None, vec![]),
+                None => (None, vec![], vec![]),
             }
         };
 
@@ -797,21 +801,28 @@ async fn launch_profile_handler(
             return Err("Profile not found".to_string());
         };
 
-        // Validate: reject any value not in the declared set.
-        for (name, value) in &options {
-            let declared = declared_options.iter().find(|o| &o.name == name);
-            match declared {
-                None => {
-                    return Err(format!("Unknown option '{}'", name));
-                }
-                Some(opt) if !opt.values.contains(value) => {
+        for (key, value) in &options {
+            // Check declared options (key = option name)
+            if let Some(opt) = declared_options.iter().find(|o| &o.name == key) {
+                if !opt.values.contains(value) {
                     return Err(format!(
                         "Invalid value '{}' for option '{}': must be one of {:?}",
-                        value, name, opt.values
+                        value, key, opt.values
                     ));
                 }
-                _ => {}
+                continue;
             }
+            // Check detected options (key = env_var)
+            if let Some(opt) = detected_options.iter().find(|o| &o.env_var == key) {
+                if !opt.values.contains(value) {
+                    return Err(format!(
+                        "Invalid value '{}' for detected option '{}': must be one of {:?}",
+                        value, key, opt.values
+                    ));
+                }
+                continue;
+            }
+            return Err(format!("Unknown option '{}'", key));
         }
 
         launcher_api::launch_profile(&path, options)

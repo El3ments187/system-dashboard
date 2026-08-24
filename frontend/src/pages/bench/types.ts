@@ -8,6 +8,10 @@
 export interface BenchAttempt {
   attempt: number;
   status: "pass" | "fail" | "error" | "timeout" | "format" | "server";
+  /** How the attempt terminated: "cut" | "context_limit" | "no_reply" | absent for normal stop. */
+  ended?: string;
+  /** True when the attempt ran out of context while still inside a reasoning block. */
+  still_thinking?: boolean;
   gen_seconds?: number;
   test_seconds?: number;
   tests_passed?: number;

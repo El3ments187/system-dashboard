@@ -104,10 +104,17 @@ export async function updateAiSettings(
 export async function getSettingsLocation(): Promise<{
   path: string;
   exists: boolean;
+  models_path?: string;
+  models_exists?: boolean;
 }> {
   const res = await fetchWithTimeout(`${BASE_URL}/settings/location`, 8000);
   if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
-  return (await res.json()) as { path: string; exists: boolean };
+  return (await res.json()) as {
+    path: string;
+    exists: boolean;
+    models_path?: string;
+    models_exists?: boolean;
+  };
 }
 
 export async function testConnection(

@@ -481,6 +481,24 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
             }),
         speculative: None,
         context_tokens: None,
+        chat_template_caps: {
+            let caps = val.get("chat_template_caps");
+            caps.map(|c| crate::models::ai::ChatTemplateCapsRaw {
+                supports_reasoning_effort: c
+                    .get("supports_reasoning_effort")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                supports_preserve_reasoning: c
+                    .get("supports_preserve_reasoning")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                supports_tools: c
+                    .get("supports_tools")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            })
+        },
+        n_ctx_train: None,
     })
 }
 
@@ -589,6 +607,25 @@ async fn poll_llama_server(
                             }
                         }
                     }
+                }
+            }
+
+            // Fetch /v1/models for n_ctx_train (not available on /props).
+            if let Some(ref mut p) = props {
+                let models_url = format!("{}/v1/models", base_url);
+                if let Ok(mresp) = client.get(&models_url).send().await
+                    && mresp.status().is_success()
+                    && let Ok(body) = mresp.text().await
+                    && let Ok(val) = serde_json::from_str::<serde_json::Value>(&body)
+                {
+                    p.n_ctx_train = val
+                        .get("data")
+                        .and_then(|d| d.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|m| m.get("meta"))
+                        .and_then(|meta| meta.get("n_ctx_train"))
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32);
                 }
             }
 
@@ -973,7 +1010,9 @@ pub async fn collect_ai_metrics(
     let opencode_status = poll_opencode(opencode_url).await;
     let (comfyui_status, comfyui_info) = poll_comfyui(comfyui_url).await;
 
-    let gpu_offload = crate::api::launcher::get_running_script()
+    let running_script = crate::api::launcher::get_running_script();
+
+    let gpu_offload = running_script
         .as_deref()
         .and_then(crate::api::gpu_offload_parser::get_info);
 
@@ -983,11 +1022,12 @@ pub async fn collect_ai_metrics(
         .and_then(|path| std::fs::metadata(path).ok())
         .map(|m| m.len() as f64 / (1024.0 * 1024.0 * 1024.0));
 
-    let (model_load_time_ms, kv_cache_reserved_mib) = crate::api::launcher::get_running_script()
+    let (model_load_time_ms, kv_cache_reserved_mib) = running_script
+        .as_ref()
         .map(|script| {
             (
-                crate::api::startup_info::get_load_time_ms(&script),
-                crate::api::startup_info::get_kv_reserved_mib(&script),
+                crate::api::startup_info::get_load_time_ms(script),
+                crate::api::startup_info::get_kv_reserved_mib(script),
             )
         })
         .unwrap_or((None, None));
@@ -1000,8 +1040,9 @@ pub async fn collect_ai_metrics(
     // generic scan only if no running profile/port is currently known
     // (e.g. between polls right at startup) — preserves existing behavior
     // for that edge case rather than silently going blank.
-    let llama_process = crate::api::launcher::get_running_script()
-        .and_then(|script| crate::api::launcher::get_profile_parsed_args(&script))
+    let llama_process = running_script
+        .as_deref()
+        .and_then(crate::api::launcher::get_profile_parsed_args)
         .and_then(|args| args.port)
         .and_then(find_llama_pid_by_port)
         .and_then(read_process_metrics)
@@ -1180,7 +1221,35 @@ pub async fn collect_ai_metrics(
         model_load_time_ms,
         kv_cache_reserved_mib,
         gguf_size_gib,
+        running_script_path: running_script.clone(),
+        n_ctx_train: props.as_ref().and_then(|p| p.n_ctx_train),
     };
+
+    // Write detected capabilities to models.json when the model is running and
+    // /props has answered. Compare first — write only on change.
+    if let (Some(script), Some(p)) = (running_script.as_ref(), props.as_ref())
+        && (p.chat_template_caps.is_some() || p.n_ctx_train.is_some())
+    {
+        let new_caps = crate::models::ai::ModelCapabilities {
+            supports_reasoning_effort: p
+                .chat_template_caps
+                .as_ref()
+                .map(|c| c.supports_reasoning_effort)
+                .unwrap_or(false),
+            supports_preserve_reasoning: p
+                .chat_template_caps
+                .as_ref()
+                .map(|c| c.supports_preserve_reasoning)
+                .unwrap_or(false),
+            supports_tools: p
+                .chat_template_caps
+                .as_ref()
+                .map(|c| c.supports_tools)
+                .unwrap_or(false),
+            n_ctx_train: p.n_ctx_train,
+        };
+        crate::api::settings::update_model_capabilities(script, new_caps);
+    }
 
     (metrics, status)
 }

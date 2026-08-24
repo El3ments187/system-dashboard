@@ -121,11 +121,102 @@ pub fn scan_scripts(dir: &str) -> Vec<LaunchProfile> {
             parsed_args,
             filename_meta,
             warning: None,
+            detected_options: None, // filled in below
         });
+    }
+
+    // Prune orphaned models.json entries (only when the scan found scripts).
+    if !profiles.is_empty() {
+        let current_paths: std::collections::HashSet<String> =
+            profiles.iter().map(|p| p.script_path.clone()).collect();
+        crate::api::settings::prune_model_capabilities(&current_paths);
+    }
+
+    // Attach detected options from models.json cache to each profile.
+    for profile in &mut profiles {
+        let caps = crate::api::settings::get_model_capabilities(&profile.script_path);
+        let detected = build_detected_options(caps.as_ref(), &profile.parsed_args);
+        if !detected.is_empty() {
+            profile.detected_options = Some(detected);
+        }
     }
 
     profiles.sort_by(|a, b| a.name.cmp(&b.name));
     profiles
+}
+
+/// Build the list of capability-detected options for a profile.
+///
+/// Declared options win: if the script already declares `@option NAME`, the
+/// corresponding detected option is suppressed (the author narrowed it).
+fn build_detected_options(
+    caps: Option<&crate::models::ai::ModelCapabilities>,
+    parsed_args: &Option<crate::models::ai::ParsedScriptArgs>,
+) -> Vec<crate::models::ai::DetectedOption> {
+    use crate::models::ai::DetectedOption;
+
+    let declared_names: std::collections::HashSet<String> = parsed_args
+        .as_ref()
+        .and_then(|a| a.options.as_ref())
+        .map(|opts| opts.iter().map(|o| o.name.clone()).collect())
+        .unwrap_or_default();
+
+    let mut detected = Vec::new();
+
+    // Option 1 — reasoning effort (capability-gated).
+    if caps.map(|c| c.supports_reasoning_effort).unwrap_or(false)
+        && !declared_names.contains("REASONING_EFFORT")
+    {
+        detected.push(DetectedOption {
+            name: "REASONING_EFFORT".to_string(),
+            env_var: "LLAMA_ARG_REASONING_EFFORT".to_string(),
+            values: vec![
+                "default".to_string(),
+                "minimal".to_string(),
+                "low".to_string(),
+                "medium".to_string(),
+                "high".to_string(),
+                "xhigh".to_string(),
+                "max".to_string(),
+            ],
+            default: "default".to_string(),
+        });
+    } else if caps.map(|c| c.supports_reasoning_effort).unwrap_or(false)
+        && declared_names.contains("REASONING_EFFORT")
+    {
+        eprintln!(
+            "[Launcher] detected REASONING_EFFORT suppressed: script declares @option REASONING_EFFORT"
+        );
+    }
+
+    // Option 2 — context size (not capability-gated, offered to all profiles).
+    // Collision: if script declares @option CTX_SIZE or @option CTX, skip.
+    let ctx_declared = declared_names.contains("CTX_SIZE") || declared_names.contains("CTX");
+    if !ctx_declared {
+        let n_ctx_train = caps.and_then(|c| c.n_ctx_train);
+        let candidates: &[u32] = &[32768, 65536, 131072];
+        let mut values = vec!["default".to_string()];
+        for &size in candidates {
+            match n_ctx_train {
+                Some(limit) if size <= limit => values.push(size.to_string()),
+                Some(_) => {} // above training limit — skip
+                None => {
+                    // n_ctx_train unknown: offer conservative list (32768 only).
+                    if size <= 32768 {
+                        values.push(size.to_string());
+                    }
+                }
+            }
+        }
+        detected.push(DetectedOption {
+            name: "CTX_SIZE".to_string(),
+            env_var: "LLAMA_ARG_CTX_SIZE".to_string(),
+            values,
+            default: "default".to_string(),
+        });
+    }
+
+    detected
 }
 
 fn compute_file_hash(path: &Path) -> String {

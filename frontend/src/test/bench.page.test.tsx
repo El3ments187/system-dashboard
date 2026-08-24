@@ -26,7 +26,7 @@ vi.mock("../context/AlertsContext", () => ({
 import BenchPage from "../pages/BenchPage";
 import { LOCALBENCH_DEFAULTS, compareSlotOptions } from "../pages/bench/compute";
 import Header from "../components/Header";
-import { AttemptCell, AttemptStrip, SampleStrip } from "../pages/bench/parts";
+import { AttemptCell, AttemptPanel, AttemptStrip, SampleStrip } from "../pages/bench/parts";
 import MetricTile from "../components/shared/MetricTile";
 import type { BenchAttempt, BenchRecord } from "../pages/bench/types";
 
@@ -4682,13 +4682,16 @@ describe("T112 drilldown header branch", () => {
     expect(header).toBeTruthy();
   });
 
-  it("says 'attempt detail' when all records pass", async () => {
+  it("says 'sample detail' when all records pass", async () => {
+    // T236 renamed the suffix from 'attempt detail' → 'sample detail' to make
+    // the Drilldown block visually distinct from the per-attempt panel. The
+    // rule is unchanged: when all pass, the header avoids 'why it failed'.
     installFetch({
       detail: drilldownDetail({ status: "pass", solved: true }),
     });
     render(<BenchPage />);
     await openDrilldown();
-    const header = await screen.findByText(/attempt detail/i);
+    const header = await screen.findByText(/sample detail/i);
     expect(header).toBeTruthy();
   });
 });
@@ -10011,9 +10014,118 @@ describe("T234 SOLVED placeholder alignment: queued rows use KOfN empty state", 
     render(<BenchPage />);
     await screen.findAllByTestId("bench-task-row");
     const pending = screen.getAllByTestId("bench-task-pending");
-    const formulaPending = pending.find((el) =>
+      const formulaPending = pending.find((el) =>
       el.closest("tr")?.textContent?.includes("formula_engine"),
     );
     expect(formulaPending).toBeDefined();
+  });
+});
+
+// ─── T236 per-attempt failure explanation ────────────────────────────────────
+
+describe("T236 per-attempt failure explanation", () => {
+  function makeRec(over: Partial<BenchRecord> = {}): BenchRecord {
+    return {
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      tests_expected: 54,
+      first_failed: ["assertion_alpha"],
+      ...over,
+    };
+  }
+
+  it("two attempts with different status produce different panel text", () => {
+    const att1: BenchAttempt = { attempt: 1, status: "error" };
+    const att2: BenchAttempt = { attempt: 2, status: "fail", tests_passed: 39, tests_failed: 15 };
+    const r = makeRec();
+
+    const { rerender } = render(
+      <AttemptPanel attempt={att1} task="java/indent_lexer" sample={1} record={r} />,
+    );
+    const text1 = document.body.textContent ?? "";
+
+    rerender(
+      <AttemptPanel attempt={att2} task="java/indent_lexer" sample={1} record={r} />,
+    );
+    const text2 = document.body.textContent ?? "";
+
+    expect(text1).not.toBe(text2);
+  });
+
+  it("39 of 54 reads its own counts with denominator from record.tests_expected", () => {
+    const att: BenchAttempt = { attempt: 2, status: "fail", tests_passed: 39, tests_failed: 15 };
+    const r = makeRec({ tests_expected: 54 });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.getByTestId("bench-attempt-explanation").textContent).toMatch(/15.+54/);
+  });
+
+  it("passing attempt renders no failure section", () => {
+    const att: BenchAttempt = { attempt: 1, status: "pass" };
+    const r = makeRec();
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.queryByTestId("bench-attempt-explanation")).toBeNull();
+  });
+
+  it("first_failed appears on attempt 1 panel", () => {
+    const att: BenchAttempt = { attempt: 1, status: "fail", tests_passed: 0, tests_failed: 1 };
+    const r = makeRec({ first_failed: ["test_alpha"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.getAllByTestId("bench-attempt-first-failed").length).toBeGreaterThan(0);
+  });
+
+  it("first_failed is absent from attempt 2 panel", () => {
+    const att: BenchAttempt = { attempt: 2, status: "fail", tests_passed: 0, tests_failed: 1 };
+    const r = makeRec({ first_failed: ["test_alpha"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.queryByTestId("bench-attempt-first-failed")).toBeNull();
+  });
+
+  it("fail + context_limit shows both facts in the panel", () => {
+    const att: BenchAttempt = {
+      attempt: 1,
+      status: "fail",
+      tests_passed: 0,
+      tests_failed: 5,
+      ended: "context_limit",
+    };
+    const r = makeRec({ tests_expected: 10 });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    const text = screen.getByTestId("bench-attempt-explanation").textContent ?? "";
+    expect(text).toMatch(/fail|assertion/i);
+    expect(text).toMatch(/context/i);
+  });
+
+  it("sample-level Drilldown header contains 'sample' to distinguish from attempt panel", async () => {
+    const recWithAttempts = {
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      attempts_used: 2,
+      status: "fail" as const,
+      solved: false,
+      tests_expected: 54,
+      attempts: [
+        { attempt: 1, status: "error" as const },
+        { attempt: 2, status: "fail" as const, tests_passed: 39, tests_failed: 15 },
+      ],
+    };
+    installFetch({
+      detail: { ...benchRun, records: [recWithAttempts, ...benchRun.records.slice(1)] },
+    });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    // Click the first task row to open the Drilldown
+    fireEvent.click(screen.getAllByTestId("bench-task-row")[0]);
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/sample/i);
+    });
+  });
+
+  it("pre-277 record with no attempts array renders unchanged (no panel, no crash)", async () => {
+    const recNoAttempts = {
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      attempts: undefined,
+    };
+    installFetch({ detail: { ...benchRun, records: [recNoAttempts, ...benchRun.records.slice(1)] } });
+    render(<BenchPage />);
+    await screen.findAllByTestId("bench-task-row");
+    expect(screen.queryByTestId("bench-attempt-panel")).toBeNull();
   });
 });
