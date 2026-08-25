@@ -669,6 +669,30 @@ export function LogConsole({
     }
   }, [filteredLogs, paused]);
 
+  /**
+   * T238's splitter changes this element's `clientHeight`, and "pinned" is
+   * measured as `scrollHeight - scrollTop - clientHeight < 40`. Shrinking the
+   * console therefore pushes a pinned view past that threshold, so it silently
+   * stops following new lines — exactly when the user expanded Run Models to
+   * browse while watching a model load.
+   *
+   * Re-pin on resize, but ONLY when it was already pinned: a view the user
+   * deliberately scrolled up to read an earlier line keeps its position.
+   * Observing the element covers the drag, a window resize, and any future
+   * cause, without the splitter needing to know this component exists.
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (isAtBottomRef.current) {
+        logEndRef.current?.scrollIntoView({ block: "end" });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const handleCopy = useCallback(async () => {
     const text = filteredLogs
       .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.text}`)

@@ -29,6 +29,10 @@ import { useMetricsContext } from "../context/MetricsContext";
 import { LogConsole } from "../components/LogConsole";
 import UpdateOutputModal from "../components/UpdateOutputModal";
 import { useLlamaCppManagement } from "../hooks/useLlamaCppManagement";
+import {
+  useRunModelsSplit,
+  DEFAULT_RUN_MODELS_HEIGHT,
+} from "../hooks/useRunModelsSplit";
 import type { ProfileResponse, ParsedScriptArgs } from "../types/metrics";
 import { calcBuildsBehind, formatCtx, fmtUptime, fmtKb } from "./llamaCppUtils";
 import {
@@ -203,6 +207,11 @@ export default function LlamaCppPage() {
   } = useMetricsContext();
 
   const mgmt = useLlamaCppManagement();
+
+  // T238: the splitter owns exactly one number — Run Models' height. The
+  // console stays `flex: 1` and follows.
+  const workAreaRef = useRef<HTMLDivElement>(null);
+  const split = useRunModelsSplit(workAreaRef);
 
   const [runningArgs, setRunningArgs] = useState<ParsedScriptArgs | null>(null);
   const [runningMeta, setRunningMeta] = useState<{
@@ -1808,10 +1817,11 @@ export default function LlamaCppPage() {
 
           {/* ── Work area: Run Models + Console ── */}
           <div
+            ref={workAreaRef}
+            data-testid="llama-work-area"
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 9,
               minHeight: 0,
             }}
           >
@@ -1821,7 +1831,7 @@ export default function LlamaCppPage() {
               style={{
                 position: "relative",
                 flex: "none",
-                height: 204,
+                height: split.height,
                 border: "1px solid var(--border-light, var(--border-color))",
                 borderRadius: "var(--radius-md)",
                 overflow: "hidden",
@@ -1832,6 +1842,91 @@ export default function LlamaCppPage() {
             >
               <AccentSpine />
               <RunModelsSection />
+            </div>
+
+            {/* ── Splitter (T238) ──
+                Occupies the container's former `gap: 9`, so spacing at rest is
+                unchanged. Visual band is 9px; the hit area is widened to ~17px
+                by an overlay with negative inset, which does NOT push the cards
+                apart the way a thicker strip would. */}
+            <div
+              data-testid="llama-split-strip"
+              onDoubleClick={split.reset}
+              style={{
+                position: "relative",
+                height: 9,
+                flex: "none",
+                cursor: "row-resize",
+              }}
+            >
+              <div
+                data-testid="llama-split-handle"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize Run Models"
+                onPointerDown={split.onPointerDown}
+                onPointerMove={split.onPointerMove}
+                onPointerUp={split.onPointerUp}
+                onPointerCancel={split.onPointerCancel}
+                className="llama-split-hit"
+                style={{
+                  position: "absolute",
+                  insetInline: 0,
+                  top: -4,
+                  bottom: -4,
+                  cursor: "row-resize",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  touchAction: "none",
+                }}
+              >
+                {/* Always-visible grip: a handle nobody can see is not a feature. */}
+                <span
+                  style={{
+                    height: 3,
+                    width: 44,
+                    borderRadius: 2,
+                    background: split.dragging
+                      ? "var(--accent-primary)"
+                      : "var(--border-light, var(--border-color))",
+                    transition: "background 120ms",
+                  }}
+                />
+              </div>
+
+              {/* Reset is the second half of the gesture, used on every
+                  browse-then-restore cycle — so it is a visible control, not
+                  only the double-click. Sits on the strip because that is where
+                  the eye already is at the end of a drag. Hidden at the default
+                  height so it is not permanent clutter. */}
+              {split.isModified && (
+                <button
+                  type="button"
+                  data-testid="llama-split-reset"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={split.reset}
+                  title={`Reset Run Models to ${DEFAULT_RUN_MODELS_HEIGHT}px`}
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    zIndex: 2,
+                    font: "600 9px Inter, system-ui, sans-serif",
+                    letterSpacing: "0.4px",
+                    textTransform: "uppercase",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    cursor: "pointer",
+                    color: "var(--accent-primary)",
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--accent-tint-40)",
+                  }}
+                >
+                  Reset
+                </button>
+              )}
             </div>
 
             {/* Console */}
