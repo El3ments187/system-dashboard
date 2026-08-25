@@ -67,6 +67,20 @@ pub(crate) struct RunSummary {
     pub config: Value,
     /// `live == {}` means FINISHED. Never inferred from file existence.
     pub finished: bool,
+    /// bench.py `-277+` writes this directly: `running` | `finished` |
+    /// `interrupted` | `aborted`. Absent on older runs — which is why the
+    /// `live`-blob inference below is kept as a fallback rather than replaced.
+    ///
+    /// This is what bench.py LAST WROTE, so a hard-killed process leaves
+    /// `running` behind. It is not a substitute for the pid check in
+    /// `is_live_state`, which is authoritative about the process; the pair
+    /// together is what makes the stalled case detectable rather than guessed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Why an `aborted` run stopped early — e.g. "3 requests in a row failed
+    /// before reaching a model". Only meaningful alongside `status: aborted`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_note: Option<String>,
 }
 
 /// Parse one results.json into a history row.
@@ -75,6 +89,10 @@ pub(crate) struct RunSummary {
 /// the file being present on disk.
 pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| format!("bad results.json: {e}"))?;
+    let status = v
+        .get("status")
+        .and_then(|x| x.as_str())
+        .map(str::to_string);
     let live_empty = match v.get("live") {
         Some(Value::Object(m)) => m.is_empty(),
         // A missing `live` key is not a running run.
@@ -126,7 +144,23 @@ pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, 
             .unwrap_or_default(),
         summary: v.get("summary").cloned().unwrap_or(Value::Null),
         config: v.get("config").cloned().unwrap_or(Value::Null),
-        finished: live_empty && tasks_covered,
+        finished: match status.as_deref() {
+            // -277+ states it outright. This is the T185 case: a dead run that
+            // left a stale non-empty `live` behind used to read as still going,
+            // so Stop refused and Start stayed disabled.
+            Some("finished") => true,
+            // Stopped before covering the suite — these must still be offered
+            // Resume, so they are not "finished" even though nothing is running.
+            Some("interrupted") | Some("aborted") | Some("running") => false,
+            // Pre--277 runs carry no status, and they are the majority on disk:
+            // the original inference is kept verbatim for them.
+            _ => live_empty && tasks_covered,
+        },
+        status,
+        status_note: v
+            .get("status_note")
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
     })
 }
 
@@ -1246,6 +1280,92 @@ pub async fn queue_advance_handler(
 
 #[cfg(test)]
 mod tests {
+
+    // ── T241 item 2: run status comes from the file, not the live blob ──────
+
+    /// The T185 deadlock exactly: bench.py recorded the run as finished, but a
+    /// stale non-empty `live` was left on disk. The old inference read that as
+    /// still-running, so Stop refused and Start stayed disabled.
+    #[test]
+    fn t241_status_finished_beats_a_stale_live_blob() {
+        let json = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "status":"finished",
+            "live":{"task":"js/foo","attempt":2},
+            "summary":{"tasks":27,"suite_tasks":27}}"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(
+            s.finished,
+            "status:finished is authoritative — a stale live blob must not              resurrect a dead run (this is the T185 deadlock)"
+        );
+        assert_eq!(s.status.as_deref(), Some("finished"));
+    }
+
+    /// `status` is what bench.py LAST WROTE, so a hard-killed process leaves
+    /// `running` behind. That is not "finished" — it is the stalled case, and
+    /// the pid check in `is_live_state` is what resolves it.
+    #[test]
+    fn t241_status_running_is_not_finished() {
+        let json = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "status":"running","live":{},
+            "summary":{"tasks":27,"suite_tasks":27}}"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(!s.finished, "a run bench.py last recorded as running is not finished");
+        assert_eq!(s.status.as_deref(), Some("running"));
+    }
+
+    /// An aborted run stopped early and must still be offered Resume, so it is
+    /// not `finished` — and its reason is carried through verbatim.
+    #[test]
+    fn t241_aborted_carries_its_note_verbatim() {
+        let json = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "status":"aborted",
+            "status_note":"3 requests in a row failed before reaching a model",
+            "live":{},"summary":{"tasks":9,"suite_tasks":27}}"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        assert!(!s.finished, "aborted stopped early — Resume must stay available");
+        assert_eq!(
+            s.status_note.as_deref(),
+            Some("3 requests in a row failed before reaching a model"),
+            "the note is the sentence shown to the user; it must not be reworded"
+        );
+    }
+
+    #[test]
+    fn t241_interrupted_is_not_finished() {
+        let json = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "status":"interrupted","live":{},
+            "summary":{"tasks":25,"suite_tasks":27}}"#;
+        assert!(!parse_run_summary(json, "f").unwrap().finished);
+    }
+
+    /// Pre--277 runs have no `status` and are the majority on disk, so the
+    /// original live-blob inference must still decide them.
+    #[test]
+    fn t241_absent_status_falls_back_to_the_live_inference() {
+        let done = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "live":{},"summary":{"tasks":27,"suite_tasks":27}}"#;
+        let going = r#"{"run_id":"b","suite_hash":"h","created":"2026-01-01",
+            "live":{"task":"js/foo"},"summary":{"tasks":3,"suite_tasks":27}}"#;
+        let d = parse_run_summary(done, "f").unwrap();
+        let g = parse_run_summary(going, "g").unwrap();
+        assert!(d.finished, "an empty live blob with full coverage is still finished");
+        assert!(!g.finished, "a non-empty live blob is still running");
+        assert!(d.status.is_none(), "no status key must stay None, not a default");
+        assert!(g.status_note.is_none());
+    }
+
+    /// A run without the new keys must serialise none of them, so old records
+    /// gain no phantom fields.
+    #[test]
+    fn t241_absent_status_serialises_no_new_keys() {
+        let json = r#"{"run_id":"a","suite_hash":"h","created":"2026-01-01",
+            "live":{},"summary":{"tasks":27,"suite_tasks":27}}"#;
+        let s = parse_run_summary(json, "f").unwrap();
+        let out = serde_json::to_string(&s).unwrap();
+        assert!(!out.contains("status_note"), "got: {out}");
+        assert!(!out.contains("\"status\""), "got: {out}");
+    }
+
     use super::*;
 
     /// Real mockserver output, not a hand-written fixture: a fixture encodes
