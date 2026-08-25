@@ -194,25 +194,47 @@ fn build_detected_options(
     let ctx_declared = declared_names.contains("CTX_SIZE") || declared_names.contains("CTX");
     if !ctx_declared {
         let n_ctx_train = caps.and_then(|c| c.n_ctx_train);
-        let candidates: &[u32] = &[32768, 65536, 131072];
-        let mut values = vec!["default".to_string()];
-        for &size in candidates {
-            match n_ctx_train {
-                Some(limit) if size <= limit => values.push(size.to_string()),
-                Some(_) => {} // above training limit — skip
-                None => {
-                    // n_ctx_train unknown: offer conservative list (32768 only).
-                    if size <= 32768 {
-                        values.push(size.to_string());
+        let script_ctx = parsed_args.as_ref().and_then(|a| a.context_size);
+
+        // Label 'default' with the script's own -c value when set, so the user
+        // knows what they are reverting to. Bare "default" when no -c is present.
+        let default_label = match script_ctx {
+            Some(n) => format!("default ({})", n),
+            None => "default".to_string(),
+        };
+
+        let mut values = vec![default_label.clone()];
+
+        match n_ctx_train {
+            Some(limit) => {
+                // Single loop over [8,4,2,1]; /1 is the full limit, not a special case.
+                // BTreeSet keeps entries sorted and deduplicates collisions from truncating division.
+                let mut series = std::collections::BTreeSet::new();
+                for d in [8u32, 4, 2, 1] {
+                    let v = limit / d;
+                    if v >= 4096 {
+                        series.insert(v);
+                    }
+                }
+                // If a series entry equals the script's own context_size, drop it —
+                // it is already represented by the default label.
+                for v in series {
+                    if Some(v) != script_ctx {
+                        values.push(v.to_string());
                     }
                 }
             }
+            None => {
+                // n_ctx_train unknown: conservative list unchanged.
+                values.push("32768".to_string());
+            }
         }
+
         detected.push(DetectedOption {
             name: "CTX_SIZE".to_string(),
             env_var: "LLAMA_ARG_CTX_SIZE".to_string(),
             values,
-            default: "default".to_string(),
+            default: default_label,
         });
     }
 
@@ -2034,5 +2056,128 @@ mod tests {
             status.is_some(),
             "process must have exited after graceful_shutdown"
         );
+    }
+
+    // ── T237: ctx_size option series derived from n_ctx_train ──────────────
+
+    use crate::models::ai::{ModelCapabilities, ParsedScriptArgs};
+
+    fn caps_with_ctx(n_ctx_train: u32) -> ModelCapabilities {
+        ModelCapabilities {
+            supports_reasoning_effort: false,
+            supports_preserve_reasoning: false,
+            supports_tools: false,
+            n_ctx_train: Some(n_ctx_train),
+        }
+    }
+
+    fn args_with_ctx(context_size: Option<u32>) -> Option<ParsedScriptArgs> {
+        Some(ParsedScriptArgs {
+            context_size,
+            ..Default::default()
+        })
+    }
+
+    fn ctx_values(caps: Option<&ModelCapabilities>, args: &Option<ParsedScriptArgs>) -> Vec<String> {
+        super::build_detected_options(caps, args)
+            .into_iter()
+            .find(|o| o.name == "CTX_SIZE")
+            .map(|o| o.values)
+            .unwrap_or_default()
+    }
+
+    fn ctx_default(caps: Option<&ModelCapabilities>, args: &Option<ParsedScriptArgs>) -> String {
+        super::build_detected_options(caps, args)
+            .into_iter()
+            .find(|o| o.name == "CTX_SIZE")
+            .map(|o| o.default)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn t237_series_262144() {
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(None);
+        let vals = ctx_values(Some(&caps), &args);
+        assert_eq!(vals, vec!["default", "32768", "65536", "131072", "262144"]);
+        // top entry equals n_ctx_train exactly
+        assert_eq!(vals.last().unwrap(), "262144");
+    }
+
+    #[test]
+    fn t237_series_32768() {
+        let caps = caps_with_ctx(32768);
+        let args = args_with_ctx(None);
+        let vals = ctx_values(Some(&caps), &args);
+        assert_eq!(vals, vec!["default", "4096", "8192", "16384", "32768"]);
+    }
+
+    #[test]
+    fn t237_series_8192_floor_drops_small() {
+        // /8 = 1024 and /4 = 2048 are below 4096 → dropped; no padding
+        let caps = caps_with_ctx(8192);
+        let args = args_with_ctx(None);
+        let vals = ctx_values(Some(&caps), &args);
+        assert_eq!(vals, vec!["default", "4096", "8192"]);
+    }
+
+    #[test]
+    fn t237_default_label_with_script_ctx() {
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(Some(80000));
+        let vals = ctx_values(Some(&caps), &args);
+        let def = ctx_default(Some(&caps), &args);
+        assert_eq!(vals[0], "default (80000)");
+        assert_eq!(def, "default (80000)");
+        // default label matches the first values entry (frontend uses this to detect no change)
+        assert_eq!(def, vals[0]);
+    }
+
+    #[test]
+    fn t237_default_label_no_script_ctx() {
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(None);
+        let def = ctx_default(Some(&caps), &args);
+        assert_eq!(def, "default");
+    }
+
+    #[test]
+    fn t237_script_ctx_deduped_with_series() {
+        // Script -c 65536 on a 262144 model: 65536 appears exactly once, as "default (65536)"
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(Some(65536));
+        let vals = ctx_values(Some(&caps), &args);
+        let count_65536 = vals.iter().filter(|v| v.contains("65536")).count();
+        assert_eq!(count_65536, 1, "65536 must appear exactly once");
+        assert_eq!(vals[0], "default (65536)");
+        // The series still includes 32768, 131072, 262144; total = 4 entries
+        assert_eq!(vals.len(), 4);
+    }
+
+    #[test]
+    fn t237_non_power_of_two_no_rounding() {
+        // 40960 / [8,4,2,1] = 5120, 10240, 20480, 40960 — exact, no rounding
+        let caps = caps_with_ctx(40960);
+        let args = args_with_ctx(None);
+        let vals = ctx_values(Some(&caps), &args);
+        assert_eq!(vals, vec!["default", "5120", "10240", "20480", "40960"]);
+    }
+
+    #[test]
+    fn t237_unknown_limit_conservative() {
+        // No models.json entry: conservative ["default", "32768"]
+        let args = args_with_ctx(None);
+        let vals = ctx_values(None, &args);
+        assert_eq!(vals, vec!["default", "32768"]);
+    }
+
+    #[test]
+    fn t237_default_is_first_value() {
+        // default label is always values[0]; choosing it won't appear in effectiveOptions
+        let caps = caps_with_ctx(131072);
+        let args = args_with_ctx(Some(80000));
+        let vals = ctx_values(Some(&caps), &args);
+        let def = ctx_default(Some(&caps), &args);
+        assert_eq!(vals[0], def);
     }
 }
