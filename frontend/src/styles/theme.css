@@ -1891,13 +1891,21 @@ button.status-chip:hover:not(:disabled) {
   background: var(--border-color);
 }
 .bench-att.live {
-  background: var(--accent-tint-15);
-  border: 1.5px solid var(--accent-primary);
+  /* Fixed semantic token, like every other cell state. This was the only one
+     tied to --accent-primary, so under Spectrum Per-Element it resolved to an
+     arbitrary hue and drifted with the Spread/Depth sliders. Hollow (no fill)
+     against solved's solid fill: same hue, different shape, reading as "this
+     will become solved" rather than a different kind of outcome. */
+  background: none;
+  border: 1.5px solid var(--success);
   animation: bench-livecell 1.2s ease-in-out infinite;
 }
 @keyframes bench-livecell {
+  /* Retargeted to opacity: the old rule animated `background`, which no longer
+     exists, and did it with an accent tint — so the pulse drifted with the
+     theme too. Opacity needs no colour token and cannot drift. */
   50% {
-    background: var(--accent-tint-10);
+    opacity: 0.45;
   }
 }
 
@@ -2098,4 +2106,11 @@ button.status-chip:hover:not(:disabled) {
 .terminal-nav-btn.terminal-close-btn:hover {
   color: #f44747;
   background: rgba(244, 71, 71, 0.1);
+}
+
+/* ── T238: Run Models / console splitter ──
+   The visible band is 9px (the container's former gap); this hit area is
+   ~17px so the control is grabbable without pushing the cards apart. */
+.llama-split-hit:hover span {
+  background: var(--accent-primary) !important;
 }
