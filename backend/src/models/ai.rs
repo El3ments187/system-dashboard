@@ -26,6 +26,12 @@ pub struct DetectedOption {
     pub env_var: String,
     pub values: Vec<String>,
     pub default: String,
+    /// Why this option's list looks the way it does, when that needs saying.
+    /// Set only where the choice list is degraded — a short list with no
+    /// explanation reads as broken. Absent (and unserialised) otherwise, so a
+    /// normal option gains no key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// A tunable option declared by a launch script via `# @option NAME: a|b|c`.

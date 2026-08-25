@@ -130,6 +130,8 @@ type MergedOption = {
   values: string[];
   default: string;
   kind: "declared" | "detected";
+  /** Set only where the backend flagged a degraded list needing explanation. */
+  hint?: string;
 };
 
 function buildMergedOptions(
@@ -153,6 +155,7 @@ function buildMergedOptions(
         key: opt.env_var,
         values: opt.values,
         default: opt.default,
+        hint: opt.hint,
       });
     }
   }
@@ -1082,9 +1085,17 @@ export function RunModelsSection() {
                 <div
                   data-testid="run-models-options-panel"
                   style={{
-                    padding: "6px 12px 8px",
+                    // Right padding matches the ACTIONS cell's, so the panel's
+                    // right edge lines up with the Options button that opened
+                    // it rather than with the table's outer edge.
+                    padding: "6px 10px 8px",
                     display: "flex",
                     flexWrap: "wrap",
+                    // The trigger is at the far right of the row; left-packing
+                    // the panel sent the eye somewhere the content was not.
+                    // With flexWrap already on, this also keeps wrapped rows
+                    // aligned as a block instead of raggedly.
+                    justifyContent: "flex-end",
                     gap: "8px 16px",
                     background: rowBg,
                     borderBottom: "1px solid var(--accent-tint-40)",
@@ -1121,6 +1132,22 @@ export function RunModelsSection() {
                           }}
                         >
                           {opt.name}
+                          {/* A one-option list with no reason reads as broken,
+                              so the explanation rides the label it explains. */}
+                          {opt.hint && (
+                            <span
+                              data-testid={`run-models-option-hint-${opt.name}`}
+                              title={opt.hint}
+                              style={{
+                                fontWeight: 700,
+                                color: "var(--accent-primary)",
+                                marginLeft: 4,
+                                cursor: "help",
+                              }}
+                            >
+                              ?
+                            </span>
+                          )}
                           {opt.kind === "detected" && (
                             <span
                               style={{

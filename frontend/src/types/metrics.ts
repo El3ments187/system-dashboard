@@ -338,6 +338,9 @@ export interface DetectedOption {
   env_var: string;
   values: string[];
   default: string;
+  /** Optional, matching the backend's skip_serializing_if — absent on normal
+   *  options. Set where the choice list is degraded and needs explaining. */
+  hint?: string;
 }
 
 export interface ParsedScriptArgs {

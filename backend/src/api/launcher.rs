@@ -168,6 +168,7 @@ fn build_detected_options(
         && !declared_names.contains("REASONING_EFFORT")
     {
         detected.push(DetectedOption {
+            hint: None,
             name: "REASONING_EFFORT".to_string(),
             env_var: "LLAMA_ARG_REASONING_EFFORT".to_string(),
             values: vec![
@@ -235,6 +236,19 @@ fn build_detected_options(
             env_var: "LLAMA_ARG_CTX_SIZE".to_string(),
             values,
             default: default_label,
+            // Only when n_ctx_train is unknown. That is every model not yet
+            // run, since capabilities cache only after /props answers — so the
+            // short list is the DEFAULT state, not an edge case, and without a
+            // reason it reads as broken.
+            hint: if n_ctx_train.is_none() {
+                Some(
+                    "Run this model once to detect its training limit — \
+                     the list expands to the sizes it actually supports."
+                        .to_string(),
+                )
+            } else {
+                None
+            },
         });
     }
 
@@ -2161,6 +2175,68 @@ mod tests {
         let args = args_with_ctx(None);
         let vals = ctx_values(Some(&caps), &args);
         assert_eq!(vals, vec!["default", "5120", "10240", "20480", "40960"]);
+    }
+
+    // ── T243 task 2: a short list must say why it is short ─────────────────
+
+    fn ctx_option(
+        caps: Option<&ModelCapabilities>,
+        args: &Option<ParsedScriptArgs>,
+    ) -> crate::models::ai::DetectedOption {
+        super::build_detected_options(caps, args)
+            .into_iter()
+            .find(|o| o.name == "CTX_SIZE")
+            .expect("CTX_SIZE option must exist")
+    }
+
+    /// The state of EVERY model not yet run: capabilities cache only after
+    /// /props answers, so the two-entry list is the default, not an edge case.
+    #[test]
+    fn t243_unknown_limit_carries_a_hint() {
+        let args = args_with_ctx(Some(131072));
+        let opt = ctx_option(None, &args);
+        assert_eq!(opt.values, vec!["default (131072)", "32768"]);
+        let hint = opt.hint.expect("a one-option list with no reason reads as broken");
+        assert!(
+            hint.contains("Run this model once"),
+            "the hint must say what makes the list expand; got: {hint}"
+        );
+    }
+
+    /// The values themselves are correct when the limit is unknown — only the
+    /// explanation was missing, so this pins that they were not changed.
+    #[test]
+    fn t243_hint_does_not_change_the_conservative_values() {
+        let args = args_with_ctx(None);
+        let opt = ctx_option(None, &args);
+        assert_eq!(opt.values, vec!["default", "32768"]);
+        assert!(opt.hint.is_some());
+    }
+
+    #[test]
+    fn t243_known_limit_has_no_hint() {
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(None);
+        assert!(
+            ctx_option(Some(&caps), &args).hint.is_none(),
+            "a full series explains itself"
+        );
+    }
+
+    /// Asserts the SERIALISED payload, not just the Rust value: a `null` in the
+    /// JSON would mean skip_serializing_if was omitted, and the frontend's
+    /// optional field would drift from the backend's.
+    #[test]
+    fn t243_known_limit_serialises_no_hint_key() {
+        let caps = caps_with_ctx(262144);
+        let args = args_with_ctx(None);
+        let json = serde_json::to_string(&ctx_option(Some(&caps), &args)).unwrap();
+        assert!(!json.contains("hint"), "expected no hint key, got: {json}");
+
+        // ...and the unknown branch DOES emit it, so the absence above is
+        // meaningful rather than the field never serialising at all.
+        let with = serde_json::to_string(&ctx_option(None, &args_with_ctx(None))).unwrap();
+        assert!(with.contains("hint"), "expected a hint key, got: {with}");
     }
 
     #[test]
