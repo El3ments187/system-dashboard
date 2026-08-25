@@ -1121,11 +1121,12 @@ function ScoreProgressCard({
                 accent
                 mono
                 testId="bench-solved"
-                label={
-                  serverExcluded > 0
-                    ? `Solved — answered (${serverExcluded} srv excl.)`
-                    : "Solved — answered"
-                }
+                // The excluded count is NOT repeated here: it has its own tile
+                // in this same row, and at this column width the parenthetical
+                // wrapped the label to two lines, which pushed every tile in
+                // the row from 37px to 47px. The title still explains why the
+                // denominator excludes them.
+                label="Solved — answered"
                 value={`${solvedSamples} / ${graded.length}`}
                 valueSize={15}
                 style={TIGHT_TILE}
