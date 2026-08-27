@@ -1,4 +1,14 @@
 //! Comprehensive backend tests covering collectors, models, history, and calculations.
+#![allow(
+    clippy::needless_raw_string_hashes,
+    clippy::unreadable_literal,
+    clippy::cast_precision_loss,
+    clippy::cast_lossless,
+    clippy::cast_possible_wrap,
+    clippy::float_cmp,
+    clippy::manual_assert_eq,
+    clippy::uninlined_format_args,
+)]
 
 use model_deck::api::launcher::{
     capture_metrics_into_metadata, extract_filename_metadata, parse_script_args,
@@ -388,14 +398,14 @@ mod alerts {
     #[test]
     fn test_cpu_collector_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts = check_cpu_collector_status(CollectorStatus::Ok);
+        let alerts = check_cpu_collector_status(&CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
     #[test]
     fn test_cpu_collector_error_generates_alert() {
         clear_alert_tracking();
-        let alerts = check_cpu_collector_status(CollectorStatus::Error("read failed".to_string()));
+        let alerts = check_cpu_collector_status(&CollectorStatus::Error("read failed".to_string()));
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].severity, AlertSeverity::Error);
         assert_eq!(alerts[0].subsystem, "cpu");
@@ -405,7 +415,7 @@ mod alerts {
     fn test_cpu_collector_partial_generates_warning() {
         clear_alert_tracking();
         let alerts =
-            check_cpu_collector_status(CollectorStatus::Partial("partial data".to_string()));
+            check_cpu_collector_status(&CollectorStatus::Partial("partial data".to_string()));
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].severity, AlertSeverity::Warning);
     }
@@ -413,14 +423,14 @@ mod alerts {
     #[test]
     fn test_memory_collector_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts = check_memory_collector_status(CollectorStatus::Ok);
+        let alerts = check_memory_collector_status(&CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
     #[test]
     fn test_memory_collector_error_generates_alert() {
         clear_alert_tracking();
-        let alerts = check_memory_collector_status(CollectorStatus::Error("oom".to_string()));
+        let alerts = check_memory_collector_status(&CollectorStatus::Error("oom".to_string()));
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].subsystem, "memory");
     }
@@ -428,21 +438,21 @@ mod alerts {
     #[test]
     fn test_gpu_collector_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts = check_gpu_collector_status(CollectorStatus::Ok);
+        let alerts = check_gpu_collector_status(&CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
     #[test]
     fn test_storage_collector_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts = check_storage_collector_status(CollectorStatus::Ok);
+        let alerts = check_storage_collector_status(&CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
     #[test]
     fn test_storage_collector_error_generates_alert() {
         clear_alert_tracking();
-        let alerts = check_storage_collector_status(CollectorStatus::Error("io error".to_string()));
+        let alerts = check_storage_collector_status(&CollectorStatus::Error("io error".to_string()));
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].subsystem, "storage");
     }
@@ -498,18 +508,18 @@ mod alerts {
     #[test]
     fn test_alert_deduplication() {
         clear_alert_tracking();
-        let alerts1 = check_cpu_collector_status(CollectorStatus::Error("same error".to_string()));
+        let alerts1 = check_cpu_collector_status(&CollectorStatus::Error("same error".to_string()));
         assert_eq!(alerts1.len(), 1);
 
         clear_alert_tracking();
-        let alerts2 = check_cpu_collector_status(CollectorStatus::Error("same error".to_string()));
+        let alerts2 = check_cpu_collector_status(&CollectorStatus::Error("same error".to_string()));
         assert_eq!(alerts2.len(), 1);
     }
 
     #[test]
     fn test_clear_alert_tracking() {
         clear_alert_tracking();
-        let _ = check_cpu_collector_status(CollectorStatus::Error("dedup test".to_string()));
+        let _ = check_cpu_collector_status(&CollectorStatus::Error("dedup test".to_string()));
         clear_alert_tracking();
     }
 
@@ -540,14 +550,14 @@ mod alerts {
     #[test]
     fn test_alert_severity_is_correct_for_errors() {
         clear_alert_tracking();
-        let alerts = check_cpu_collector_status(CollectorStatus::Error("error".to_string()));
+        let alerts = check_cpu_collector_status(&CollectorStatus::Error("error".to_string()));
         assert_eq!(alerts[0].severity, AlertSeverity::Error);
     }
 
     #[test]
     fn test_alert_severity_is_correct_for_partial() {
         clear_alert_tracking();
-        let alerts = check_cpu_collector_status(CollectorStatus::Partial("partial".to_string()));
+        let alerts = check_cpu_collector_status(&CollectorStatus::Partial("partial".to_string()));
         assert_eq!(alerts[0].severity, AlertSeverity::Warning);
     }
 }
@@ -1786,7 +1796,7 @@ mod ai_alerts {
     #[test]
     fn test_ai_collector_status_ok_no_alerts() {
         clear_alert_tracking();
-        let alerts = model_deck::collectors::alerts::check_ai_collector_status(CollectorStatus::Ok);
+        let alerts = model_deck::collectors::alerts::check_ai_collector_status(&CollectorStatus::Ok);
         assert!(alerts.is_empty());
     }
 
@@ -1794,7 +1804,7 @@ mod ai_alerts {
     fn test_ai_collector_status_error_generates_alert() {
         clear_alert_tracking();
         let alerts = model_deck::collectors::alerts::check_ai_collector_status(
-            CollectorStatus::Error("llama-server down".to_string()),
+            &CollectorStatus::Error("llama-server down".to_string()),
         );
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].severity, AlertSeverity::Error);
@@ -1805,7 +1815,7 @@ mod ai_alerts {
     fn test_ai_collector_status_partial_generates_warning() {
         clear_alert_tracking();
         let alerts = model_deck::collectors::alerts::check_ai_collector_status(
-            CollectorStatus::Partial("All AI services unavailable".to_string()),
+            &CollectorStatus::Partial("All AI services unavailable".to_string()),
         );
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].severity, AlertSeverity::Warning);
@@ -1841,13 +1851,13 @@ mod ai_alerts {
     fn test_ai_alert_deduplication() {
         clear_alert_tracking();
         let alerts1 = model_deck::collectors::alerts::check_ai_collector_status(
-            CollectorStatus::Error("same error".to_string()),
+            &CollectorStatus::Error("same error".to_string()),
         );
         assert_eq!(alerts1.len(), 1);
 
         clear_alert_tracking();
         let alerts2 = model_deck::collectors::alerts::check_ai_collector_status(
-            CollectorStatus::Error("same error".to_string()),
+            &CollectorStatus::Error("same error".to_string()),
         );
         assert_eq!(alerts2.len(), 1);
     }

@@ -26,6 +26,7 @@ const LOG_CAPACITY: usize = 5000;
 
 /// Resolve the localbench checkout. Settings win, then env, then a
 /// conventional default — the launcher's scan-dir precedence, mirrored.
+#[must_use]
 pub fn bench_dir() -> PathBuf {
     let from_settings = crate::api::settings::get_ai_settings()
         .bench_dir
@@ -106,16 +107,15 @@ pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, 
     let tasks_covered = v
         .get("summary")
         .and_then(|s| s.get("suite_tasks"))
-        .and_then(|st| st.as_u64())
-        .map(|suite_tasks| {
+        .and_then(serde_json::Value::as_u64)
+        .is_none_or(|suite_tasks| {
             let tasks = v
                 .get("summary")
                 .and_then(|s| s.get("tasks"))
-                .and_then(|t| t.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0);
             tasks >= suite_tasks
-        })
-        .unwrap_or(true);
+        });
     Ok(RunSummary {
         run_id: v
             .get("run_id")
@@ -151,7 +151,7 @@ pub(crate) fn parse_run_summary(text: &str, folder: &str) -> Result<RunSummary, 
             Some("finished") => true,
             // Stopped before covering the suite — these must still be offered
             // Resume, so they are not "finished" even though nothing is running.
-            Some("interrupted") | Some("aborted") | Some("running") => false,
+            Some("interrupted" | "aborted" | "running") => false,
             // Pre--277 runs carry no status, and they are the majority on disk:
             // the original inference is kept verbatim for them.
             _ => live_empty && tasks_covered,
@@ -187,12 +187,11 @@ pub(crate) fn queue_advance_ready(models_body: &str, expected_id: &str) -> bool 
     };
     v.get("data")
         .and_then(|d| d.as_array())
-        .map(|a| {
+        .is_some_and(|a| {
             a.iter()
                 .filter_map(|m| m.get("id").and_then(|i| i.as_str()))
                 .any(|id| id == expected_id)
         })
-        .unwrap_or(false)
 }
 
 /// A live run refuses a second start; a finished one does not.
@@ -243,7 +242,7 @@ pub(crate) fn reported_models(models_body: &str) -> Vec<String> {
 pub(crate) fn server_answering(models_body: &str) -> bool {
     serde_json::from_str::<Value>(models_body)
         .ok()
-        .and_then(|v| v.get("data").map(|d| d.is_array()))
+        .and_then(|v| v.get("data").map(serde_json::Value::is_array))
         .unwrap_or(false)
 }
 
@@ -341,10 +340,10 @@ fn state() -> &'static RwLock<BenchState> {
 /// A pid that is still alive. `kill(pid, 0)` is the launcher's own liveness
 /// probe.
 fn pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    unsafe { libc::kill(pid.cast_signed(), 0) == 0 }
 }
 
-/// Pure liveness predicate extracted for testing without the pid_alive
+/// Pure liveness predicate extracted for testing without the `pid_alive`
 /// side-effect. `spawning` is true while a spawn is in flight.
 fn is_live_state(pid: Option<u32>, exited: bool, spawning: bool) -> bool {
     if spawning {
@@ -357,7 +356,7 @@ fn is_live_state(pid: Option<u32>, exited: bool, spawning: bool) -> bool {
 }
 
 fn a_run_is_live() -> bool {
-    let g = state().read().unwrap_or_else(|e| e.into_inner());
+    let g = state().read().unwrap_or_else(std::sync::PoisonError::into_inner);
     is_live_state(g.pid, g.exited, g.spawning)
 }
 
@@ -366,10 +365,10 @@ fn a_run_is_live() -> bool {
 /// This deliberately does NOT reuse `launcher::graceful_shutdown`: that one
 /// escalates SIGINT → SIGTERM → SIGKILL, and a SIGKILL would destroy exactly
 /// the graceful `results.json` save that makes a bench run resumable.
-/// bench.py installs a SIGTERM handler that raises KeyboardInterrupt and
+/// bench.py installs a SIGTERM handler that raises `KeyboardInterrupt` and
 /// unwinds like Ctrl-C, so one SIGTERM is all that is correct here.
 fn sigterm_only(pid: u32) {
-    let ipid = pid as i32;
+    let ipid = pid.cast_signed();
     let pgid = unsafe { libc::getpgid(ipid) };
     // Send to the whole process group when we know it (bench.py uses
     // process_group(0), so the group includes every subprocess). Fall back to
@@ -412,19 +411,19 @@ async fn bench_json(args: &[&str]) -> Result<Value, String> {
 }
 
 fn push_log(line: String) {
-    let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+    let mut g = state().write().unwrap_or_else(std::sync::PoisonError::into_inner);
     g.log.append(line);
 }
 
 /// Spawn a long-running bench.py, detach it, and pump both pipes into the
 /// ring buffer. Mirrors `launcher::execute_script`'s shape, including
 /// `process_group(0)` so the stop signal can reach the whole group.
-async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
+fn spawn_bench(args: &[String]) -> Result<u32, String> {
     let dir = bench_dir();
     let mut child = tokio::process::Command::new("python3")
         .current_dir(&dir)
         .arg("bench.py")
-        .args(&args)
+        .args(args)
         .process_group(0)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -448,10 +447,10 @@ async fn spawn_bench(args: Vec<String>) -> Result<u32, String> {
             while let Ok(Some(line)) = lines.next_line().await {
                 push_log(line);
             }
-            state().write().unwrap_or_else(|e| e.into_inner()).exited = true;
+            state().write().unwrap_or_else(std::sync::PoisonError::into_inner).exited = true;
         });
     } else {
-        state().write().unwrap_or_else(|e| e.into_inner()).exited = true;
+        state().write().unwrap_or_else(std::sync::PoisonError::into_inner).exited = true;
     }
     if let Some(h) = stderr {
         tokio::spawn(async move {
@@ -479,7 +478,7 @@ fn snapshot_run_folders(base: &std::path::Path) -> std::collections::HashSet<Str
         .ok()
         .into_iter()
         .flatten()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_dir())
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect()
@@ -493,7 +492,7 @@ fn new_folder_since(
 ) -> Option<String> {
     std::fs::read_dir(base)
         .ok()?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_dir())
         .map(|e| e.file_name().to_string_lossy().to_string())
         .find(|name| !known.contains(name))
@@ -522,8 +521,8 @@ async fn folder_after_spawn(known: &std::collections::HashSet<String>) -> Option
 /// `stop_handler` to recover the pid after a dashboard restart (T135).
 fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
     let rd = std::fs::read_dir(base).ok()?;
-    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| e.file_name());
+    let mut entries: Vec<_> = rd.filter_map(std::result::Result::ok).collect();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         if !entry.path().is_dir() {
             continue;
@@ -537,7 +536,7 @@ fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
         let Some(live) = json.get("live") else {
             continue;
         };
-        if live.as_object().is_none_or(|m| m.is_empty()) {
+        if live.as_object().is_none_or(serde_json::Map::is_empty) {
             continue;
         }
         let Ok(pid_str) = std::fs::read_to_string(entry.path().join("pid")) else {
@@ -557,7 +556,7 @@ fn recover_pid_for_live_run(base: &std::path::Path) -> Option<u32> {
 /// the blob and return the folder name. Records are left untouched.
 fn clear_stale_live_blob(base: &std::path::Path) -> Option<String> {
     let rd = std::fs::read_dir(base).ok()?;
-    for entry in rd.filter_map(|e| e.ok()) {
+    for entry in rd.filter_map(std::result::Result::ok) {
         if !entry.path().is_dir() {
             continue;
         }
@@ -572,21 +571,20 @@ fn clear_stale_live_blob(base: &std::path::Path) -> Option<String> {
         let Some(live) = json.get("live") else {
             continue;
         };
-        if live.as_object().is_none_or(|m| m.is_empty()) {
+        if live.as_object().is_none_or(serde_json::Map::is_empty) {
             continue;
         }
         let pid_str = std::fs::read_to_string(path.join("pid")).ok();
         let is_alive = pid_str
             .and_then(|s| s.trim().parse::<u32>().ok())
-            .map(pid_alive)
-            .unwrap_or(false);
+            .is_some_and(pid_alive);
         if is_alive {
             continue;
         }
         if let Some(obj) = json.as_object_mut() {
             obj.insert(
                 "live".to_string(),
-                serde_json::Value::Object(Default::default()),
+                serde_json::Value::Object(serde_json::Map::default()),
             );
         }
         let Ok(out) = serde_json::to_string_pretty(&json) else {
@@ -602,7 +600,7 @@ fn clear_stale_live_blob(base: &std::path::Path) -> Option<String> {
 fn newest_run_folder() -> Option<String> {
     let mut entries: Vec<(std::time::SystemTime, String)> = std::fs::read_dir(runs_dir())
         .ok()?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_dir())
         .filter_map(|e| {
             let m = e.metadata().ok()?.modified().ok()?;
@@ -617,7 +615,7 @@ fn read_run_files() -> Vec<(String, String)> {
     let Ok(rd) = std::fs::read_dir(runs_dir()) else {
         return Vec::new();
     };
-    rd.filter_map(|e| e.ok())
+    rd.filter_map(std::result::Result::ok)
         .filter_map(|e| {
             let folder = e.file_name().to_string_lossy().to_string();
             let text = std::fs::read_to_string(e.path().join("results.json")).ok()?;
@@ -760,7 +758,7 @@ impl ResumeRequest {
     /// Reject url values that are not http or https. `None` is allowed — the
     /// field is optional and a missing url omits `--url` from the bench.py
     /// invocation. Scheme check only: an allow-list of the configured server
-    /// plus MOCK_URL would be tighter but blocks legitimate ad-hoc targets.
+    /// plus `MOCK_URL` would be tighter but blocks legitimate ad-hoc targets.
     pub(crate) fn validate_url(&self) -> Result<(), &'static str> {
         let Some(url) = &self.url else {
             return Ok(());
@@ -858,7 +856,7 @@ pub async fn start_handler(
     // now sees spawning=true when it acquires its own write lock and is
     // refused, closing the check-then-act gap.
     {
-        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+        let mut g = state().write().unwrap_or_else(std::sync::PoisonError::into_inner);
         if should_refuse_start(is_live_state(g.pid, g.exited, g.spawning)) {
             return axum::response::Json(json!({
                 "error": "a bench run is already active", "success": false
@@ -874,7 +872,7 @@ pub async fn start_handler(
     // T133: snapshot before spawn so the diff finds bench.py's folder even
     // if an older run has a more recent mtime when the poll fires.
     let known_folders = snapshot_run_folders(&runs_dir());
-    match spawn_bench(req.to_args()).await {
+    match spawn_bench(&req.to_args()) {
         Ok(pid) => {
             let folder = folder_after_spawn(&known_folders).await;
             let current = CurrentRun {
@@ -890,9 +888,9 @@ pub async fn start_handler(
                 started: chrono::Utc::now().to_rfc3339(),
             };
             {
-                let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+                let mut g = state().write().unwrap_or_else(std::sync::PoisonError::into_inner);
                 g.pid = Some(pid);
-                g.run_folder = folder.clone();
+                g.run_folder.clone_from(&folder);
                 g.current = Some(current.clone());
                 g.spawning = false;
             }
@@ -912,7 +910,7 @@ pub async fn start_handler(
         Err(e) => {
             state()
                 .write()
-                .unwrap_or_else(|e2| e2.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .spawning = false;
             axum::response::Json(json!({ "error": e, "success": false }))
         }
@@ -983,23 +981,23 @@ pub async fn ready_handler(
 pub async fn current_handler() -> axum::response::Json<Value> {
     let run = state()
         .read()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .current
         .clone();
     // T185: check in-memory state first; if not live, scan disk for a process
     // that survived a dashboard restart and is still running. The result is
     // cached in BenchState so the filesystem scan only happens once.
     let live = a_run_is_live() || {
-        let cached = state().read().unwrap_or_else(|e| e.into_inner()).recovered_pid;
+        let cached = state().read().unwrap_or_else(std::sync::PoisonError::into_inner).recovered_pid;
         match cached {
             Some(pid) if pid_alive(pid) => true,
             Some(_) => {
-                state().write().unwrap_or_else(|e| e.into_inner()).recovered_pid = None;
+                state().write().unwrap_or_else(std::sync::PoisonError::into_inner).recovered_pid = None;
                 false
             }
             None => {
                 if let Some(pid) = recover_pid_for_live_run(&runs_dir()) {
-                    state().write().unwrap_or_else(|e| e.into_inner()).recovered_pid = Some(pid);
+                    state().write().unwrap_or_else(std::sync::PoisonError::into_inner).recovered_pid = Some(pid);
                     true
                 } else {
                     false
@@ -1014,7 +1012,7 @@ pub async fn current_handler() -> axum::response::Json<Value> {
 }
 
 pub async fn stop_handler() -> axum::response::Json<Value> {
-    let pid = state().read().unwrap_or_else(|e| e.into_inner()).pid;
+    let pid = state().read().unwrap_or_else(std::sync::PoisonError::into_inner).pid;
     // T135: if pid was lost after a restart, recover it from the pid file
     // written at spawn time — the process may still be running.
     let effective_pid = pid.or_else(|| recover_pid_for_live_run(&runs_dir()));
@@ -1044,7 +1042,7 @@ pub async fn stop_handler() -> axum::response::Json<Value> {
 pub async fn skip_handler() -> axum::response::Json<Value> {
     let folder = state()
         .read()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .run_folder
         .clone();
     match folder {
@@ -1080,7 +1078,7 @@ pub async fn run_by_id_handler(
         let Ok(rd) = std::fs::read_dir(runs_dir()) else {
             return None;
         };
-        rd.filter_map(|e| e.ok()).find_map(|e| {
+        rd.filter_map(std::result::Result::ok).find_map(|e| {
             let text = std::fs::read_to_string(e.path().join("results.json")).ok()?;
             let v = serde_json::from_str::<Value>(&text).ok()?;
             let run_id = v.get("run_id").and_then(|r| r.as_str())?;
@@ -1105,7 +1103,7 @@ pub async fn log_handler(
     axum::extract::Query(q): axum::extract::Query<LogQuery>,
 ) -> axum::response::Json<Value> {
     let (lines, next) = {
-        let g = state().read().unwrap_or_else(|e| e.into_inner());
+        let g = state().read().unwrap_or_else(std::sync::PoisonError::into_inner);
         g.log.read_from(q.offset.unwrap_or(0))
     };
     let live = a_run_is_live();
@@ -1125,7 +1123,7 @@ pub async fn resume_handler(
     }
     // T127: same atomic check-and-set as start_handler.
     {
-        let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+        let mut g = state().write().unwrap_or_else(std::sync::PoisonError::into_inner);
         if should_refuse_start(is_live_state(g.pid, g.exited, g.spawning)) {
             return axum::response::Json(json!({
                 "error": "a bench run is already active", "success": false
@@ -1144,7 +1142,7 @@ pub async fn resume_handler(
     // ABSOLUTE: the --resume argument is cwd-resolved by bench.py.
     let path = resume_run_path(&dir, &req.folder);
     let args = req.to_args(&path.to_string_lossy());
-    match spawn_bench(args).await {
+    match spawn_bench(&args) {
         Ok(pid) => {
             let current = CurrentRun {
                 pid,
@@ -1159,7 +1157,7 @@ pub async fn resume_handler(
                 started: chrono::Utc::now().to_rfc3339(),
             };
             {
-                let mut g = state().write().unwrap_or_else(|e| e.into_inner());
+                let mut g = state().write().unwrap_or_else(std::sync::PoisonError::into_inner);
                 g.pid = Some(pid);
                 g.run_folder = Some(req.folder.clone());
                 g.current = Some(current);
@@ -1175,7 +1173,7 @@ pub async fn resume_handler(
                 return axum::response::Json(json!({ "pid": pid, "success": true }));
             }
             let reason = {
-                let g = state().read().unwrap_or_else(|e| e.into_inner());
+                let g = state().read().unwrap_or_else(std::sync::PoisonError::into_inner);
                 let (lines, _) = g.log.read_from(0);
                 let start = lines.len().saturating_sub(8);
                 lines[start..].join("\n")
@@ -1192,7 +1190,7 @@ pub async fn resume_handler(
         Err(e) => {
             state()
                 .write()
-                .unwrap_or_else(|e2| e2.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .spawning = false;
             axum::response::Json(json!({ "error": e, "success": false }))
         }
@@ -1209,7 +1207,7 @@ const RESUME_SETTLE_MS: u64 = 900;
 /// fully exited.
 const RESUME_CONFIRM_MS: u64 = 300;
 
-/// T138: check liveness at t=settle_ms and again at t=settle_ms+CONFIRM, so a
+/// T138: check liveness at `t=settle_ms` and again at `t=settle_ms+CONFIRM`, so a
 /// process mid-exit (reading results.json) at the first probe does not produce
 /// a false success.  The closure is called twice; both must return true.
 async fn settle_liveness_check<F: Fn() -> bool>(is_live: F, settle_ms: u64) -> bool {
@@ -1241,7 +1239,7 @@ pub async fn queue_advance_handler(
     }
     let script = req.script_path.clone();
     let launched =
-        tokio::task::spawn_blocking(move || crate::api::launcher::launch_profile(&script, Default::default())).await;
+        tokio::task::spawn_blocking(move || crate::api::launcher::launch_profile(&script, std::collections::HashMap::new())).await;
     if let Ok(Err(e)) = launched {
         return axum::response::Json(json!({ "error": e, "success": false }));
     }
@@ -1381,7 +1379,7 @@ mod tests {
         assert!(!s.run_id.is_empty(), "run_id must be present");
         assert_eq!(s.suite_hash, "e293ad7");
         assert_eq!(s.models, vec!["seedA".to_string()]);
-        assert_eq!(s.summary.get("samples").and_then(|v| v.as_u64()), Some(12));
+        assert_eq!(s.summary.get("samples").and_then(serde_json::Value::as_u64), Some(12));
     }
 
     // T01 — the live=={} rule, both directions.
@@ -1840,7 +1838,7 @@ mod tests {
     #[test]
     fn t118_validate_folder_rejects_empty() {
         let req = ResumeRequest {
-            folder: "".into(),
+            folder: String::new(),
             ..Default::default()
         };
         assert!(req.validate_folder().is_err());
@@ -2232,7 +2230,7 @@ mod tests {
             panic!("deliberate poison for T140");
         });
         // After poisoning, unwrap_or_else must recover the inner value.
-        let val = *lock.read().unwrap_or_else(|e| e.into_inner());
+        let val = *lock.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(val, 42, "poisoned lock must be recovered, not panic");
     }
 
@@ -2251,6 +2249,7 @@ mod tests {
         dir
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn t185_add_run(
         runs: &std::path::Path,
         name: &str,

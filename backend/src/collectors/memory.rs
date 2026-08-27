@@ -4,6 +4,7 @@ use crate::collectors::alerts::CollectorStatus;
 use crate::collectors::cpu::SYSTEM;
 use crate::models::metrics::MemoryMetrics;
 
+#[allow(clippy::cast_precision_loss)]
 pub fn collect_memory_metrics() -> (MemoryMetrics, CollectorStatus) {
     let mut system = SYSTEM.lock().unwrap();
     system.refresh_memory();
@@ -30,6 +31,7 @@ pub fn collect_memory_metrics() -> (MemoryMetrics, CollectorStatus) {
     (metrics, CollectorStatus::Ok)
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn bytes_to_gb(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0 * 1024.0)
 }

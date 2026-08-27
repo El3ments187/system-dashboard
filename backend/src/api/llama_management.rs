@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::ai::*;
+use crate::models::ai::{DirectoryEntry, GitInfo, BuildDirStatus, ExecutableInfo, SavedCommand};
 
 // ─── Directory Browse ──────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ pub fn browse_directory(path: &str) -> Vec<DirectoryEntry> {
         return Vec::new();
     };
     entries
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| DirectoryEntry {
             name: e.file_name().to_string_lossy().to_string(),
             is_dir: e.path().is_dir(),
@@ -50,7 +50,7 @@ pub fn read_git_info(dir: &str) -> Option<GitInfo> {
         let branch = if let Some(b) = ref_path.strip_prefix("refs/heads/") {
             Some(b.to_string())
         } else {
-            ref_path.strip_prefix("refs/tags/").map(|b| b.to_string())
+            ref_path.strip_prefix("refs/tags/").map(std::string::ToString::to_string)
         };
 
         Some(GitInfo {
@@ -74,6 +74,7 @@ pub fn read_git_info(dir: &str) -> Option<GitInfo> {
 
 // ─── Build Directory Status ────────────────────────────────────────
 
+#[must_use]
 pub fn check_build_dir(build_path: &str) -> BuildDirStatus {
     let p = Path::new(build_path);
     if !p.exists() {
@@ -104,12 +105,12 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
         return vec![
             ExecutableInfo {
                 name: "llama-server".to_string(),
-                path: format!("{}/llama-server", dir),
+                path: format!("{dir}/llama-server"),
                 exists: false,
             },
             ExecutableInfo {
                 name: "main".to_string(),
-                path: format!("{}/main", dir),
+                path: format!("{dir}/main"),
                 exists: false,
             },
         ];
@@ -117,7 +118,7 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
 
     let mut found = Vec::new();
     if let Ok(entries) = fs::read_dir(p) {
-        for entry in entries.filter_map(|e| e.ok()) {
+        for entry in entries.filter_map(std::result::Result::ok) {
             let name = entry.file_name().to_string_lossy().to_string();
             let path = entry.path();
             if path.is_file() {
@@ -137,12 +138,12 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
         found = vec![
             ExecutableInfo {
                 name: "llama-server".to_string(),
-                path: format!("{}/llama-server", dir),
+                path: format!("{dir}/llama-server"),
                 exists: false,
             },
             ExecutableInfo {
                 name: "main".to_string(),
-                path: format!("{}/main", dir),
+                path: format!("{dir}/main"),
                 exists: false,
             },
         ];
@@ -153,6 +154,7 @@ pub fn detect_executables(dir: &str) -> Vec<ExecutableInfo> {
 
 // ─── Directory Validation ─────────────────────────────────────────
 
+#[must_use]
 pub fn validate_directory(path: &str) -> Vec<String> {
     let p = Path::new(path);
     if !p.exists() || !p.is_dir() {
@@ -186,6 +188,7 @@ pub fn validate_directory(path: &str) -> Vec<String> {
 
 // ─── Repository Info (git remote, version) ─────────────────────────
 
+#[must_use]
 pub fn get_repo_readme_url(dir: &str) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(["remote", "get-url", "origin"])
@@ -206,11 +209,11 @@ fn remote_url_to_readme_url(remote: &str) -> Option<String> {
         .or_else(|| remote.strip_prefix("https://github.com/"))
         .or_else(|| remote.strip_prefix("http://github.com/"))?;
     Some(format!(
-        "https://github.com/{}/blob/master/README.md",
-        repo_path
+        "https://github.com/{repo_path}/blob/master/README.md"
     ))
 }
 
+#[must_use]
 pub fn run_version_cmd(dir: &str, cmd: &str) -> Option<String> {
     if cmd.trim().is_empty() {
         return None;
@@ -231,6 +234,7 @@ pub fn run_version_cmd(dir: &str, cmd: &str) -> Option<String> {
     }
 }
 
+#[must_use]
 pub fn get_repo_version(dir: &str) -> Option<String> {
     let describe = std::process::Command::new("git")
         .args(["describe", "--always", "--dirty"])
@@ -274,6 +278,7 @@ struct CommandsFile {
     pub commands: Vec<SavedCommand>,
 }
 
+#[must_use]
 pub fn load_commands() -> Vec<SavedCommand> {
     let path = commands_file_path();
     if let Ok(content) = fs::read_to_string(&path)
@@ -288,24 +293,25 @@ pub fn save_commands(commands: &[SavedCommand]) -> Result<(), String> {
     let path = commands_file_path();
     // Ensure parent directory exists
     if let Some(parent) = Path::new(&path).parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
 
     let data = CommandsFile {
         commands: commands.to_vec(),
     };
     let json =
-        serde_json::to_string_pretty(&data).map_err(|e| format!("Serialization error: {}", e))?;
-    fs::write(&path, json).map_err(|e| format!("Write error: {}", e))
+        serde_json::to_string_pretty(&data).map_err(|e| format!("Serialization error: {e}"))?;
+    fs::write(&path, json).map_err(|e| format!("Write error: {e}"))
 }
 
+#[must_use]
 pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    format!("cmd_{}", now)
+    format!("cmd_{now}")
 }
 
 // ─── PTY Terminal Proxy ────────────────────────────────────────────
@@ -332,6 +338,7 @@ impl Default for Scrollback {
 }
 
 impl Scrollback {
+    #[must_use]
     pub fn new() -> Self {
         Scrollback {
             chunks: std::collections::VecDeque::new(),
@@ -360,6 +367,7 @@ impl Scrollback {
         }
     }
 
+    #[must_use]
     pub fn read_from(&self, offset: usize) -> (String, usize) {
         let next = self.next;
         if offset >= next {
@@ -384,10 +392,12 @@ impl Scrollback {
         (result, next)
     }
 
+    #[must_use]
     pub fn start_offset(&self) -> usize {
         self.start
     }
 
+    #[must_use]
     pub fn history(&self) -> Vec<String> {
         self.chunks.iter().map(|(_, s)| s.clone()).collect()
     }
@@ -417,8 +427,8 @@ static REAPER_STARTED: std::sync::Once = std::sync::Once::new();
 /// considered abandoned and reaped. Generous on purpose: a terminal running an
 /// unattended long job (e.g. an update script with no viewer tab open) must
 /// not be killed prematurely.
-const REAP_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
-const REAP_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const REAP_GRACE: std::time::Duration = std::time::Duration::from_hours(1);
+const REAP_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
 
 fn ensure_reaper_started() {
     REAPER_STARTED.call_once(|| {
@@ -444,8 +454,7 @@ async fn reaper_loop() {
                 state
                     .broadcast_tx
                     .as_ref()
-                    .map(|tx| tx.receiver_count())
-                    .unwrap_or(0)
+                    .map_or(0, tokio::sync::broadcast::Sender::receiver_count)
             };
 
             if viewers > 0 {
@@ -469,8 +478,7 @@ async fn reaper_loop() {
 
         for pts in to_reap {
             eprintln!(
-                "[Terminal] reaping {} — no viewers for {:?}",
-                pts, REAP_GRACE
+                "[Terminal] reaping {pts} — no viewers for {REAP_GRACE:?}"
             );
             let _ = kill_terminal(&pts);
         }
@@ -510,6 +518,7 @@ pub fn get_terminal_history(pts: &str) -> Result<Vec<String>, String> {
         .unwrap_or_default())
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn spawn_reader_thread(
     pts_name: String,
     master_fd: std::os::unix::io::RawFd,
@@ -521,7 +530,7 @@ fn spawn_reader_thread(
         let mut buf = [0u8; 4096];
         loop {
             unsafe {
-                match libc::read(master_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) {
+                match libc::read(master_fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) {
                     n if n > 0 => {
                         let text = String::from_utf8_lossy(&buf[..n as usize]).to_string();
                         let _ = tx.send(text.clone());
@@ -530,7 +539,7 @@ fn spawn_reader_thread(
                     }
                     0 => {
                         // EOF — shell process exited cleanly
-                        eprintln!("[Terminal] {} EOF detected, cleaning up", pts_name);
+                        eprintln!("[Terminal] {pts_name} EOF detected, cleaning up");
                         drop(tx);
                         libc::close(master_fd);
                         let _ = libc::waitpid(pid, std::ptr::null_mut(), 0);
@@ -541,7 +550,7 @@ fn spawn_reader_thread(
                         let err = *libc::__errno_location();
                         if err == libc::EIO {
                             // EIO — slave side closed (shell crashed/killed)
-                            eprintln!("[Terminal] {} EIO detected, cleaning up", pts_name);
+                            eprintln!("[Terminal] {pts_name} EIO detected, cleaning up");
                             drop(tx);
                             libc::close(master_fd);
                             let _ = libc::waitpid(pid, std::ptr::null_mut(), 0);
@@ -593,11 +602,11 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
 
             // Generate a unique pts identifier for this terminal session
             let pts_id = NEXT_TERMINAL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let pts_name = format!("pts_{}", pts_id);
+            let pts_name = format!("pts_{pts_id}");
 
-            let _pid = unsafe { fork().map_err(|e| format!("Fork failed: {}", e))? };
+            let fork_result = unsafe { fork().map_err(|e| format!("Fork failed: {e}"))? };
 
-            match &_pid {
+            match &fork_result {
                 ForkResult::Child => {
                     // Close master fd in child
                     let _ = nix::unistd::close(master_fd);
@@ -630,7 +639,7 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                         .filter_map(|(k, v)| {
                             let key = k.to_string_lossy().to_string();
                             let val = v.to_string_lossy().to_string();
-                            std::ffi::CString::new(format!("{}={}", key, val)).ok()
+                            std::ffi::CString::new(format!("{key}={val}")).ok()
                         })
                         .collect();
                     let _ = execve(&shell, &args, &env);
@@ -682,10 +691,11 @@ pub fn spawn_terminal(dir: &str) -> Result<TerminalSpawnResponse, String> {
                 }
             }
         }
-        Err(e) => Err(format!("PTY open failed: {}", e)),
+        Err(e) => Err(format!("PTY open failed: {e}")),
     }
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn read_terminal_output(pts: &str, offset: i64) -> Result<(String, usize), String> {
     let guard = find_terminal(pts).ok_or("Terminal not found")?;
     let state = guard.read().unwrap();
@@ -700,7 +710,7 @@ pub fn write_terminal_input(pts: &str, input: &str) -> Result<(), String> {
     let fd = state.master_fd;
 
     unsafe {
-        let ret = libc::write(fd, input.as_ptr() as *const libc::c_void, input.len());
+        let ret = libc::write(fd, input.as_ptr().cast::<libc::c_void>(), input.len());
         if ret >= 0 {
             Ok(())
         } else {
@@ -734,7 +744,7 @@ pub fn kill_terminal(pts: &str) -> Result<(), String> {
     let guard = find_terminal(pts).ok_or("Terminal not found")?;
     let state = guard.write().unwrap();
     let pid = state.pid;
-    eprintln!("[Terminal] killing {} pid={}", pts, pid);
+    eprintln!("[Terminal] killing {pts} pid={pid}");
     unsafe {
         libc::kill(pid, libc::SIGTERM);
     }
@@ -743,7 +753,7 @@ pub fn kill_terminal(pts: &str) -> Result<(), String> {
     std::thread::sleep(std::time::Duration::from_millis(500));
     unsafe {
         if libc::kill(pid, 0) == 0 {
-            eprintln!("[Terminal] {} still alive, sending SIGKILL", pts);
+            eprintln!("[Terminal] {pts} still alive, sending SIGKILL");
             libc::kill(pid, libc::SIGKILL);
         }
     }

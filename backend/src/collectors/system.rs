@@ -2,6 +2,7 @@
 
 use crate::models::metrics::SystemMetrics;
 
+#[must_use]
 pub fn get_collector_health_state() -> std::collections::HashMap<String, String> {
     let mut collectors = std::collections::HashMap::new();
 
@@ -50,6 +51,7 @@ pub fn get_collector_health_state() -> std::collections::HashMap<String, String>
     collectors
 }
 
+#[must_use]
 pub fn collect_system_metrics() -> SystemMetrics {
     let hostname = get_hostname();
     let uptime = get_uptime();
@@ -62,7 +64,7 @@ pub fn collect_system_metrics() -> SystemMetrics {
         hostname,
         uptime_seconds: uptime,
         uptime_human,
-        last_update: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        last_update: now.to_rfc3339(),
         kernel,
         os_name,
     }
@@ -90,6 +92,7 @@ fn get_uptime() -> f64 {
     0.0
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn format_uptime(seconds: f64) -> String {
     let total = seconds as u64;
     let days = total / 86400;
@@ -107,8 +110,7 @@ fn format_uptime(seconds: f64) -> String {
 
 fn get_kernel() -> String {
     std::fs::read_to_string("/proc/version")
-        .ok()
-        .map(|v| {
+        .ok().map_or_else(|| "unknown".to_string(), |v| {
             let parts: Vec<&str> = v.split_whitespace().collect();
             if parts.len() > 2 {
                 parts[2].to_string()
@@ -116,7 +118,6 @@ fn get_kernel() -> String {
                 "unknown".to_string()
             }
         })
-        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn get_os_name() -> String {

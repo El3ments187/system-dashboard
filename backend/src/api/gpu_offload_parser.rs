@@ -1,12 +1,12 @@
 //! Parses GPU layer offload information from llama.cpp startup logs.
 //!
 //! Detects lines like:
-//!   load_tensors: offloaded 31/31 layers to GPU
+//!   `load_tensors`: offloaded 31/31 layers to GPU
 //!
 //! Distinguishes the primary model from the draft/MTP model by detecting
-//! markers that precede the draft model's load_tensors output:
-//!   srv load_model: loading draft model
-//!   common_speculative_impl_draft_mtp
+//! markers that precede the draft model's `load_tensors` output:
+//!   srv `load_model`: loading draft model
+//!   `common_speculative_impl_draft_mtp`
 
 use crate::models::ai::GpuOffloadInfo;
 use std::collections::HashMap;
@@ -71,7 +71,7 @@ pub fn process_line(script_path: &str, line: &str) {
 /// Return GPU offload info for the given script, if any offload data has been parsed.
 pub fn get_info(script_path: &str) -> Option<GpuOffloadInfo> {
     let map = GPU_OFFLOAD.lock().unwrap();
-    map.get(script_path).and_then(|s| s.to_info())
+    map.get(script_path).and_then(GpuOffloadState::to_info)
 }
 
 /// Returns true if the line signals that the draft/MTP model is about to load.
@@ -84,6 +84,7 @@ fn line_is_draft_marker(line: &str) -> bool {
 
 /// Parse "offloaded X/Y layers to GPU" from a log line.
 /// Returns (loaded, total) on success, None otherwise.
+#[must_use]
 pub fn parse_offload_line(line: &str) -> Option<(u32, u32)> {
     let lower = line.to_lowercase();
 
@@ -236,14 +237,16 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn percentage_full_offload() {
         let loaded = 36u32;
         let total = 36u32;
-        let pct = (loaded as f64 / total as f64 * 100.0).round() as u32;
+        let pct = (f64::from(loaded) / f64::from(total) * 100.0).round() as u32;
         assert_eq!(pct, 100);
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn percentage_partial_offload() {
         let info = GpuOffloadInfo {
             main_loaded: 23,
@@ -253,13 +256,14 @@ mod tests {
         };
         let total_loaded = info.main_loaded + info.draft_loaded.unwrap_or(0);
         let total_layers = info.main_total + info.draft_total.unwrap_or(0);
-        let pct = (total_loaded as f64 / total_layers as f64 * 100.0).round() as u32;
+        let pct = (f64::from(total_loaded) / f64::from(total_layers) * 100.0).round() as u32;
         assert_eq!(total_loaded, 28);
         assert_eq!(total_layers, 36);
         assert_eq!(pct, 78);
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn percentage_no_draft_partial() {
         let info = GpuOffloadInfo {
             main_loaded: 23,
@@ -269,7 +273,7 @@ mod tests {
         };
         let total_loaded = info.main_loaded + info.draft_loaded.unwrap_or(0);
         let total_layers = info.main_total + info.draft_total.unwrap_or(0);
-        let pct = (total_loaded as f64 / total_layers as f64 * 100.0).round() as u32;
+        let pct = (f64::from(total_loaded) / f64::from(total_layers) * 100.0).round() as u32;
         assert_eq!(pct, 74);
     }
 
@@ -350,5 +354,23 @@ mod tests {
     #[test]
     fn get_info_unknown_script_returns_none() {
         assert!(get_info("/nonexistent/path.sh").is_none());
+    }
+
+    // T248: MTP/EAGLE are in-model prediction heads — llama.cpp never logs
+    // "loading draft model" for them, so draft_loaded must stay None. The
+    // frontend uses spec_type (not this field) to display n/a — MTP/EAGLE.
+    #[test]
+    fn no_draft_marker_leaves_draft_loaded_none() {
+        let script = "/test/mtp_no_draft_marker.sh";
+        clear(script);
+        // Typical MTP run: only the main model offload line appears.
+        process_line(script, "load_tensors: offloaded 46/46 layers to GPU");
+        let info = get_info(script).unwrap();
+        assert_eq!(info.main_loaded, 46);
+        assert!(
+            info.draft_loaded.is_none(),
+            "draft_loaded must be None when no loading-draft marker was seen"
+        );
+        clear(script);
     }
 }

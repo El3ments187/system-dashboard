@@ -2,6 +2,7 @@
 //!
 // Starts an Axum HTTP server on port 3001 that serves REST API endpoints
 // for real-time system metrics polling.
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 use axum::serve;
 use model_deck::api::routes::create_router;
@@ -22,7 +23,7 @@ async fn main() {
     let port = 3001;
     let url = format!("http://{addr}:{port}");
 
-    let bind_addr = format!("0.0.0.0:{}", port);
+    let bind_addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&bind_addr).await.unwrap();
 
     println!("Model Deck API");

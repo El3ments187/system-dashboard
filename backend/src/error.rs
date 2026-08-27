@@ -14,16 +14,18 @@ pub enum AppError {
 
 #[allow(dead_code)]
 impl AppError {
+    #[must_use]
     pub fn status_code(&self) -> StatusCode {
         match self {
-            AppError::GpuUnavailable(_) => StatusCode::OK,
-            AppError::MetricCollectionFailed(_) => StatusCode::OK,
-            AppError::DiskReadError(_) => StatusCode::OK,
-            AppError::SystemInfoError(_) => StatusCode::OK,
+            AppError::GpuUnavailable(_)
+            | AppError::MetricCollectionFailed(_)
+            | AppError::DiskReadError(_)
+            | AppError::SystemInfoError(_) => StatusCode::OK,
             AppError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
+    #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
             AppError::MetricCollectionFailed(_) => "metric_collection_failed",

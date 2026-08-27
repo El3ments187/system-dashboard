@@ -13,22 +13,22 @@ static NVME_CLI_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
     std::process::Command::new("nvme")
         .arg("--version")
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|out| out.status.success())
 });
 
 static SMARTCTL_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
     std::process::Command::new("smartctl")
         .arg("--version")
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|out| out.status.success())
 });
 
+#[must_use]
 pub fn is_nvme_device(name: &str) -> bool {
     name.starts_with("nvme")
 }
 
+#[must_use]
 pub fn nvme_controller_name(device: &str) -> Option<String> {
     let name = device.trim_start_matches("/dev/");
     if !name.starts_with("nvme") {
@@ -43,12 +43,13 @@ pub fn nvme_controller_name(device: &str) -> Option<String> {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn collect_temperature_nvme_cli(controller: &str) -> Option<f64> {
     if !*NVME_CLI_AVAILABLE {
         return None;
     }
     let output = std::process::Command::new("nvme")
-        .args(["smart-log", "-o", "json", &format!("/dev/{}", controller)])
+        .args(["smart-log", "-o", "json", &format!("/dev/{controller}")])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -60,7 +61,7 @@ fn collect_temperature_nvme_cli(controller: &str) -> Option<f64> {
         .get(controller)
         .and_then(|c| c.get("temperature"))
         .and_then(|t| t.get("value"))
-        .and_then(|v| v.as_u64())?;
+        .and_then(serde_json::Value::as_u64)?;
     Some(temperature_millicelsius as f64 / 1000.0)
 }
 
@@ -84,8 +85,9 @@ fn collect_temperature_smartctl(device_path: &str) -> Option<f64> {
     parsed["smart_health"][temp_key]["value"].as_f64()
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn collect_temperature_sysfs(controller: &str) -> Option<f64> {
-    let nvme_dir = format!("/sys/class/nvme/{}", controller);
+    let nvme_dir = format!("/sys/class/nvme/{controller}");
     let entries = std::fs::read_dir(&nvme_dir).ok()?;
     for entry in entries {
         let entry = entry.ok()?;
@@ -132,6 +134,7 @@ fn collect_device_temperature_cached(device_name: &str) -> Option<f64> {
     value
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn collect_device_temperature(device_name: &str) -> Option<f64> {
     let clean_name = device_name.trim_start_matches("/dev/");
 
@@ -140,7 +143,7 @@ fn collect_device_temperature(device_name: &str) -> Option<f64> {
             if let Some(temp) = collect_temperature_nvme_cli(&controller) {
                 return Some(temp);
             }
-            if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{}", clean_name)) {
+            if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{clean_name}")) {
                 return Some(temp);
             }
             if let Some(temp) = collect_temperature_sysfs(&controller) {
@@ -148,10 +151,10 @@ fn collect_device_temperature(device_name: &str) -> Option<f64> {
             }
         }
     } else {
-        if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{}", clean_name)) {
+        if let Some(temp) = collect_temperature_smartctl(&format!("/dev/{clean_name}")) {
             return Some(temp);
         }
-        let block_dir = format!("/sys/block/{}", clean_name);
+        let block_dir = format!("/sys/block/{clean_name}");
         if let Ok(entries) = std::fs::read_dir(&block_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -241,10 +244,12 @@ fn is_system_boot_mount(mount_point: &str) -> bool {
     matches!(mount_point, "/boot" | "/boot/efi" | "/efi")
 }
 
+#[must_use]
 pub fn is_loop_device(name: &str) -> bool {
     name.starts_with("loop")
 }
 
+#[must_use]
 pub fn is_partition_device(name: &str) -> bool {
     // NVMe partitions: nvme0n1p1, nvme1n1p2 (base device + 'p' + partition number)
     let chars: Vec<char> = name.chars().collect();
@@ -287,6 +292,7 @@ pub fn is_partition_device(name: &str) -> bool {
     false
 }
 
+#[must_use]
 pub fn base_device(device: &str) -> String {
     // Strip partition suffix: /dev/nvme0n1p5 -> /dev/nvme0n1
     // /dev/sda1 -> /dev/sda
@@ -422,6 +428,7 @@ fn init_storage_history() -> StorageHistoryState {
         prev_ms_written: BTreeMap::new(),
     }
 }
+#[allow(clippy::cast_precision_loss)]
 fn compute_io_stats(current: &DiskStat) -> Option<DiskIOStats> {
     let mut guard = LAST_SNAPSHOT.lock().unwrap();
     let disk_name = &current.name;
@@ -546,6 +553,7 @@ fn current_stats() -> std::collections::HashMap<String, DiskStat> {
     read_disk_stats()
 }
 
+#[must_use]
 pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
     let mounts = read_proc_mounts();
     let mut result = Vec::new();
@@ -558,7 +566,7 @@ pub fn collect_storage_metrics() -> (Vec<StorageMetrics>, CollectorStatus) {
         let mount_path = mount.mount_point.clone();
         let path = std::ffi::CString::new(mount_path.as_str()).unwrap();
         let mut sv = unsafe { std::mem::zeroed() };
-        if unsafe { c_statvfs(path.as_ptr(), &mut sv) } < 0 {
+        if unsafe { c_statvfs(path.as_ptr(), &raw mut sv) } < 0 {
             continue;
         }
 
@@ -594,7 +602,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
     let mut snap_guard = LAST_SNAPSHOT.lock().unwrap();
     if snap_guard.is_empty() {
         let cs = current_stats();
-        let ts = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        let ts = std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)).unwrap();
         for (name, stat) in cs {
             if is_partition_device(&name) {
                 continue;
@@ -648,7 +656,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
         let mount_path = mount.mount_point.clone();
         let path = std::ffi::CString::new(mount_path.as_str()).unwrap();
         let mut sv = unsafe { std::mem::zeroed() };
-        if unsafe { c_statvfs(path.as_ptr(), &mut sv) } < 0 {
+        if unsafe { c_statvfs(path.as_ptr(), &raw mut sv) } < 0 {
             continue;
         }
 
@@ -695,6 +703,7 @@ pub fn collect_storage_by_device() -> Vec<DeviceStorageInfo> {
 }
 
 /// Collect storage history data points for all devices
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)]
 pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     let now = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
@@ -773,8 +782,8 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
         // Compute I/O latency from per-direction ms_read and ms_written deltas
         let prev_read = state.prev_ms_read.get(device).copied().unwrap_or(0);
         let prev_written = state.prev_ms_written.get(device).copied().unwrap_or(0);
-        let cur_read = disk_stats.get(device).map(|d| d.ms_read).unwrap_or(0);
-        let cur_written = disk_stats.get(device).map(|d| d.ms_written).unwrap_or(0);
+        let cur_read = disk_stats.get(device).map_or(0, |d| d.ms_read);
+        let cur_written = disk_stats.get(device).map_or(0, |d| d.ms_written);
         let read_ms_delta = (cur_read.wrapping_sub(prev_read)) as f64;
         let write_ms_delta = (cur_written.wrapping_sub(prev_written)) as f64;
 
@@ -792,7 +801,7 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
         // I/O utilization from ms_io (total time spent doing I/O)
         let utilization: f64 = {
             let prev_w = state.prev_ms_io.get(device).copied().unwrap_or(0);
-            let cur_w = disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0);
+            let cur_w = disk_stats.get(device).map_or(0, |d| d.ms_io);
             let io_delta = (cur_w.wrapping_sub(prev_w)) as f64;
             if elapsed > 0.01 {
                 (io_delta / elapsed / 10.0).min(100.0)
@@ -802,7 +811,7 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
         };
         state.prev_ms_io.insert(
             device.clone(),
-            disk_stats.get(device).map(|d| d.ms_io).unwrap_or(0),
+            disk_stats.get(device).map_or(0, |d| d.ms_io),
         );
         state.prev_ms_read.insert(device.clone(), cur_read);
         state.prev_ms_written.insert(device.clone(), cur_written);
@@ -811,14 +820,15 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
         let buffer =
             state
                 .buffers
-                .entry(device.to_string())
+                .entry(device.clone())
                 .or_insert_with(|| DeviceHistoryBuffer {
                     slots: vec![None; STORAGE_HISTORY_SIZE],
                 });
 
         // Circular buffer: shift all existing data one slot forward
         for i in (1..STORAGE_HISTORY_SIZE).rev() {
-            buffer.slots[i] = buffer.slots[i - 1].clone();
+            #[allow(clippy::assigning_clones)]
+            { buffer.slots[i] = buffer.slots[i - 1].clone(); }
         }
         buffer.slots[0] = Some(StorageHistoryPoint {
             device: device.clone(),
@@ -835,7 +845,7 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
 
         state
             .last_io_stats
-            .insert(device.to_string(), (*reads, *writes));
+            .insert(device.clone(), (*reads, *writes));
     }
 
     // Collect all non-None slots from each device's buffer
@@ -858,20 +868,21 @@ pub fn collect_storage_history() -> Vec<StorageHistoryPoint> {
     result
 }
 
-/// Compute (total, used, avail, util_pct) from raw statvfs fields, matching `df`.
+/// Compute (total, used, avail, `util_pct`) from raw statvfs fields, matching `df`.
 ///
 /// df defines:
-///   used  = f_blocks − f_bfree  (reserve counts as used, not free)
-///   avail = f_bavail            (user-visible free, excluding reserve)
+///   used  = `f_blocks` − `f_bfree`  (reserve counts as used, not free)
+///   avail = `f_bavail`            (user-visible free, excluding reserve)
 ///   Use%  = used / (used + avail)  — denominator excludes reserve so columns
 ///                                    don't sum to 100; this matches `df -B1`.
 ///
 /// Returns None when total == 0 (caller should skip the mount).
 ///
 /// Cross-check on the real machine: `df -B1 /` "Avail" must equal the
-/// reported free_bytes within rounding, and "Use%" must match util_pct
-/// within 1 point. A mismatch here (>1 point) means f_bfree was used
-/// somewhere instead of f_bavail.
+/// reported `free_bytes` within rounding, and "Use%" must match `util_pct`
+/// within 1 point. A mismatch here (>1 point) means `f_bfree` was used
+/// somewhere instead of `f_bavail`.
+#[allow(clippy::cast_precision_loss)]
 fn usage_from_statvfs(
     f_blocks: u64,
     f_bfree: u64,

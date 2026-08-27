@@ -252,7 +252,14 @@ export default function Header({
                 className="chip-value"
                 style={{ color: "var(--accent-primary)" }}
               >
-                {system.last_update}
+                {(() => {
+                  const d = new Date(system.last_update);
+                  if (isNaN(d.getTime())) return system.last_update;
+                  return d.toLocaleString(undefined, {
+                    dateStyle: "short",
+                    timeStyle: "medium",
+                  });
+                })()}
               </span>
             </span>
           )}

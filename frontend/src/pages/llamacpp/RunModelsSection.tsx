@@ -17,8 +17,6 @@ import type {
   LaunchProfile,
   ProfileState,
   ProfileMetadata,
-  ScriptOption,
-  DetectedOption,
 } from "../../types/metrics";
 import {
   sortProfiles,
@@ -134,33 +132,7 @@ type MergedOption = {
   hint?: string;
 };
 
-function buildMergedOptions(
-  declared: ScriptOption[],
-  detected: DetectedOption[] | null | undefined,
-): MergedOption[] {
-  const result: MergedOption[] = declared.map((opt) => ({
-    kind: "declared" as const,
-    name: opt.name,
-    key: opt.name,
-    values: opt.values,
-    default: opt.default,
-  }));
-  if (!detected) return result;
-  const declaredNames = new Set(declared.map((d) => d.name));
-  for (const opt of detected) {
-    if (!declaredNames.has(opt.name)) {
-      result.push({
-        kind: "detected" as const,
-        name: opt.name,
-        key: opt.env_var,
-        values: opt.values,
-        default: opt.default,
-        hint: opt.hint,
-      });
-    }
-  }
-  return result;
-}
+
 
 function effectiveMergedOptions(
   stored: Record<string, string> | undefined,
@@ -794,13 +766,17 @@ export function RunModelsSection() {
                 };
             const isFavorite = favorites.has(profile.script_path);
             const declaredOptions = profile.parsed_args?.options ?? [];
-            const detectedOptions = profile.detected_options; // null = not yet detected
-            const mergedOptions = buildMergedOptions(declaredOptions, detectedOptions);
+            const mergedOptions: MergedOption[] = declaredOptions.map((opt) => ({
+              kind: "declared" as const,
+              name: opt.name,
+              key: opt.name,
+              values: opt.values,
+              default: opt.default,
+            }));
             const storedOpts = selectedOptions[profile.script_path];
             const changedCount = countChangedMergedOptions(storedOpts, mergedOptions);
             const launchOpts = effectiveMergedOptions(storedOpts, mergedOptions);
             const hasAnyOptions = mergedOptions.length > 0;
-            const showFirstRunHint = !hasAnyOptions && detectedOptions == null;
             const isPanelOpen = openOptionsPanel === profile.script_path;
 
             return (
@@ -977,18 +953,7 @@ export function RunModelsSection() {
                     alignItems: "center",
                   }}
                 >
-                  {showFirstRunHint && (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        color: "var(--text-muted)",
-                        fontStyle: "italic",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      run once to detect options
-                    </span>
-                  )}
+
                   {hasAnyOptions && (
                     <button
                       onClick={() =>
@@ -1148,17 +1113,7 @@ export function RunModelsSection() {
                               ?
                             </span>
                           )}
-                          {opt.kind === "detected" && (
-                            <span
-                              style={{
-                                fontWeight: 400,
-                                color: "var(--text-muted)",
-                                marginLeft: 3,
-                              }}
-                            >
-                              (auto)
-                            </span>
-                          )}
+
                         </span>
                         <select
                           data-testid={`run-models-option-select-${opt.name}`}

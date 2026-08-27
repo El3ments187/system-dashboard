@@ -9155,6 +9155,32 @@ describe("T220 AttemptStrip: per-attempt cells", () => {
       expect(attCell.querySelectorAll('[data-testid="bench-cell-miss"]').length).toBeGreaterThan(0);
     });
   });
+
+  // T247-1: no detail, no records → fallback must be bench.py's default (3),
+  // not 1. Before the fix this rendered 1 pending cell.
+  it("no attempts prop, no records → 3 pending cells (T247-1 bug)", () => {
+    const { container } = render(
+      <AttemptStrip records={[]} expectedSamples={1} />,
+    );
+    const cells = container.querySelectorAll("[data-cell-state]");
+    expect(cells).toHaveLength(3);
+    expect(
+      Array.from(cells).every(
+        (c) => c.getAttribute("data-cell-state") === "pending",
+      ),
+    ).toBe(true);
+  });
+
+  it("count corrects from default when attempts prop arrives (T247-1)", () => {
+    const { container, rerender } = render(
+      <AttemptStrip records={[]} expectedSamples={1} />,
+    );
+    // Before detail arrives: 3 cells (new default).
+    expect(container.querySelectorAll("[data-cell-state]")).toHaveLength(3);
+    // After detail arrives with attempts=2: corrects to 2 cells.
+    rerender(<AttemptStrip records={[]} expectedSamples={1} attempts={2} />);
+    expect(container.querySelectorAll("[data-cell-state]")).toHaveLength(2);
+  });
 });
 
 // ── T221 — AttemptStrip moves to Attempts column; SampleStrip in Samples ─────
@@ -10127,5 +10153,70 @@ describe("T236 per-attempt failure explanation", () => {
     render(<BenchPage />);
     await screen.findAllByTestId("bench-task-row");
     expect(screen.queryByTestId("bench-attempt-panel")).toBeNull();
+  });
+});
+
+// ─── T249: attempt panel leads with failure count ─────────────────────────────
+
+describe("T249 attempt panel: failure count leads", () => {
+  function makeRec(over: Partial<BenchRecord> = {}): BenchRecord {
+    return {
+      ...(benchRun.records[0] as unknown as BenchRecord),
+      tests_expected: 54,
+      first_failed: [],
+      ...over,
+    };
+  }
+
+  it("15 failed renders '15 failed' and not the pass count '39 / 54'", () => {
+    const att: BenchAttempt = { attempt: 1, status: "fail", tests_passed: 39, tests_failed: 15 };
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec()} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toMatch(/15 failed/);
+    expect(text).not.toMatch(/39 \/ 54/);
+  });
+
+  it("tests_failed: 0 renders all-passed form", () => {
+    const att: BenchAttempt = { attempt: 1, status: "pass", tests_passed: 54, tests_failed: 0 };
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec()} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toMatch(/all 54 passed/);
+  });
+
+  it("both null renders Tests row with a dash", () => {
+    const att: BenchAttempt = { attempt: 1, status: "fail" };
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec()} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toMatch(/Tests/);
+    expect(text).not.toMatch(/\d+ failed/);
+    expect(text).not.toMatch(/all \d+ passed/);
+  });
+
+  it("status: error renders no Tests row", () => {
+    const att: BenchAttempt = { attempt: 1, status: "error" };
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec()} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).not.toMatch(/Tests/);
+  });
+
+  it("ended: context_limit + still_thinking says answer was never reached", () => {
+    const att: BenchAttempt = {
+      attempt: 1,
+      status: "fail",
+      tests_passed: 0,
+      tests_failed: 5,
+      ended: "context_limit",
+      still_thinking: true,
+    };
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec({ tests_expected: 10 })} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toMatch(/never reached an answer/i);
+  });
+
+  it("attempt 2 does not show first_failed labels — guards against misattribution", () => {
+    const att: BenchAttempt = { attempt: 2, status: "fail", tests_passed: 39, tests_failed: 15 };
+    const r = makeRec({ first_failed: ["assertion_alpha", "assertion_beta"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.queryByTestId("bench-attempt-first-failed")).toBeNull();
   });
 });

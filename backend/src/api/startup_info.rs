@@ -1,6 +1,6 @@
 //! Tracks model load time and KV buffer memory from llama.cpp startup logs.
 //!
-//! Load time: measured from on_load_start() to on_load_ready() (first health success).
+//! Load time: measured from `on_load_start()` to `on_load_ready()` (first health success).
 //! KV buffer: accumulated from lines like "CUDA0 KV buffer size = 720.00 MiB".
 
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub fn on_load_start(script_path: &str) {
     state.kv_reserved_mib = 0.0;
 }
 
-/// Record that the model is ready. Computes elapsed ms since on_load_start().
+/// Record that the model is ready. Computes elapsed ms since `on_load_start()`.
 pub fn on_load_ready(script_path: &str) {
     let mut map = STARTUP_INFO.lock().unwrap();
     if let Some(state) = map.get_mut(script_path)
@@ -47,9 +47,8 @@ pub fn on_load_ready(script_path: &str) {
 
 /// Process a single log line, accumulating KV buffer size if the line matches.
 pub fn process_line(script_path: &str, line: &str) {
-    let mib = match parse_kv_buffer_line(line) {
-        Some(v) => v,
-        None => return,
+    let Some(mib) = parse_kv_buffer_line(line) else {
+        return;
     };
     let mut map = STARTUP_INFO.lock().unwrap();
     let state = map.entry(script_path.to_string()).or_default();
@@ -87,6 +86,7 @@ pub fn get_kv_reserved_mib(script_path: &str) -> Option<f64> {
 ///   "CPU KV buffer size = 32.00 MiB"
 ///
 /// Returns the MiB value or None if the line does not match.
+#[must_use]
 pub fn parse_kv_buffer_line(line: &str) -> Option<f64> {
     let lower = line.to_lowercase();
     if !lower.contains("kv buffer size") {

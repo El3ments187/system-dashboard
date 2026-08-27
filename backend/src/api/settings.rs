@@ -49,83 +49,6 @@ fn settings_file() -> PathBuf {
     settings_dir().join("settings.json")
 }
 
-fn models_file() -> PathBuf {
-    settings_dir().join("models.json")
-}
-
-pub fn models_location() -> (PathBuf, bool) {
-    let path = models_file();
-    let exists = path.exists();
-    (path, exists)
-}
-
-type ModelsCache = std::collections::HashMap<String, crate::models::ai::ModelCapabilities>;
-
-fn load_models_cache() -> ModelsCache {
-    let path = models_file();
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(_) => return ModelsCache::new(),
-    };
-    serde_json::from_str(&text).unwrap_or_default()
-}
-
-fn save_models_cache(cache: &ModelsCache) {
-    let path = models_file();
-    if let Some(parent) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        eprintln!("[Settings] Failed to create models.json dir: {e}");
-        return;
-    }
-    let tmp = path.with_extension("json.tmp");
-    match serde_json::to_string_pretty(cache) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&tmp, json) {
-                eprintln!("[Settings] Failed to write models.json.tmp: {e}");
-                return;
-            }
-            if let Err(e) = std::fs::rename(&tmp, &path) {
-                eprintln!("[Settings] Failed to rename models.json.tmp: {e}");
-            }
-        }
-        Err(e) => eprintln!("[Settings] Failed to serialise models cache: {e}"),
-    }
-}
-
-/// Read current capabilities for `script_path` from models.json.
-pub fn get_model_capabilities(script_path: &str) -> Option<crate::models::ai::ModelCapabilities> {
-    load_models_cache().remove(script_path)
-}
-
-/// Write-on-change: only saves if the entry for `script_path` changed.
-pub fn update_model_capabilities(
-    script_path: &str,
-    caps: crate::models::ai::ModelCapabilities,
-) {
-    let mut cache = load_models_cache();
-    if cache.get(script_path) == Some(&caps) {
-        return;
-    }
-    cache.insert(script_path.to_string(), caps);
-    save_models_cache(&cache);
-}
-
-/// Remove entries whose script_path is not in `current_paths`. Only saves if
-/// something was actually removed. Does nothing if `current_paths` is empty
-/// (protects against a bad scan erasing all caps).
-pub fn prune_model_capabilities(current_paths: &std::collections::HashSet<String>) {
-    if current_paths.is_empty() {
-        return;
-    }
-    let mut cache = load_models_cache();
-    let before = cache.len();
-    cache.retain(|k, _| current_paths.contains(k));
-    if cache.len() < before {
-        save_models_cache(&cache);
-    }
-}
-
 pub(crate) fn load_settings_from_path(
     path: &Path,
 ) -> Result<AiSettings, Box<dyn Error + Send + Sync>> {
@@ -158,6 +81,7 @@ fn save_settings_to_disk(settings: &AiSettings) {
     }
 }
 
+#[must_use]
 pub fn settings_location() -> (PathBuf, bool) {
     let path = settings_file();
     let exists = path.exists();
@@ -174,6 +98,7 @@ fn get_settings_lock() -> &'static Mutex<AiSettings> {
     AI_SETTINGS.get_or_init(|| Mutex::new(load_settings_from_disk()))
 }
 
+#[must_use]
 pub fn get_ai_settings() -> AiSettings {
     get_settings_lock().lock().unwrap().clone()
 }
@@ -206,17 +131,14 @@ pub async fn test_connection(url: &str) -> TestConnectionResponse {
 
     for path in &health_paths {
         let full_url = format!("{}{}", url.trim_end_matches('/'), path);
-        match client.get(&full_url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    return TestConnectionResponse {
-                        url: full_url,
-                        available: true,
-                        error_message: None,
-                    };
-                }
-            }
-            Err(_) => continue,
+        if let Ok(resp) = client.get(&full_url).send().await
+            && resp.status().is_success()
+        {
+            return TestConnectionResponse {
+                url: full_url,
+                available: true,
+                error_message: None,
+            };
         }
     }
 
@@ -225,17 +147,14 @@ pub async fn test_connection(url: &str) -> TestConnectionResponse {
 
     for path in &llama_paths {
         let full_url = format!("{}{}", url.trim_end_matches('/'), path);
-        match client.get(&full_url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    return TestConnectionResponse {
-                        url: full_url,
-                        available: true,
-                        error_message: None,
-                    };
-                }
-            }
-            Err(_) => continue,
+        if let Ok(resp) = client.get(&full_url).send().await
+            && resp.status().is_success()
+        {
+            return TestConnectionResponse {
+                url: full_url,
+                available: true,
+                error_message: None,
+            };
         }
     }
 
@@ -254,7 +173,7 @@ pub async fn test_connection(url: &str) -> TestConnectionResponse {
             return TestConnectionResponse {
                 url: url.to_string(),
                 available: false,
-                error_message: Some(format!("Connection failed: {}", e)),
+                error_message: Some(format!("Connection failed: {e}")),
             };
         }
     }

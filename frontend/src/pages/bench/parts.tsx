@@ -165,10 +165,11 @@ export function AttemptStrip({
   onAttemptClick?: (record: BenchRecord, attemptNum: number) => void;
 }) {
   // Fall back to the highest attempts_used across all records when the config
-  // field is absent (runs predating the field).
+  // field is absent (runs predating the field). When there are no records yet
+  // (warmup before results.json exists), default to 3 — bench.py's own default.
   const attemptsCount =
     attempts ??
-    (records.length > 0 ? Math.max(...records.map((r) => r.attempts_used)) : 1);
+    (records.length > 0 ? Math.max(...records.map((r) => r.attempts_used)) : 3);
 
   const bySample = [...records].sort((a, b) => a.sample - b.sample);
   const groups = new Map<number, BenchRecord[]>();
@@ -382,12 +383,18 @@ export function AttemptPanel({
   const rows: Array<[string, string]> = [
     ["Gen", fmt1(attempt.gen_seconds, "s")],
     ["Test", fmt1(attempt.test_seconds, "s")],
-    [
-      "Tests",
-      attempt.tests_passed == null
-        ? "—"
-        : `${attempt.tests_passed} / ${(attempt.tests_passed ?? 0) + (attempt.tests_failed ?? 0)}`,
-    ],
+    ...((): Array<[string, string]> => {
+      if (attempt.status === "error" || attempt.status === "format") return [];
+      const f = attempt.tests_failed ?? null;
+      const p = attempt.tests_passed ?? null;
+      if (f === null && p === null) return [["Tests", "—"]];
+      const failed = f ?? 0;
+      const passed = p ?? 0;
+      const total = failed + passed;
+      if (failed > 0) return [["Tests", `${failed} failed of ${total}`]];
+      if (passed > 0) return [["Tests", `all ${passed} passed`]];
+      return [["Tests", "—"]];
+    })(),
     ["Tokens", attempt.tokens == null ? "—" : `${est}${attempt.tokens.toLocaleString()}`],
     [
       "Prompt",

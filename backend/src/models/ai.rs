@@ -1,38 +1,7 @@
-//! AI metrics data models for llama-server, OpenWebUI, and OpenCode monitoring.
+//! AI metrics data models for llama-server, `OpenWebUI`, and `OpenCode` monitoring.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-// ─── Launch Profile Models ──────────────────────────────────────────
-
-/// Capabilities reported by /props chat_template_caps, cached in models.json.
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
-pub struct ModelCapabilities {
-    #[serde(default)]
-    pub supports_reasoning_effort: bool,
-    #[serde(default)]
-    pub supports_preserve_reasoning: bool,
-    #[serde(default)]
-    pub supports_tools: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub n_ctx_train: Option<u32>,
-}
-
-/// A capability-detected option (no script change needed).
-/// `env_var` is what gets set in the process environment (LLAMA_ARG_*).
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DetectedOption {
-    pub name: String,
-    pub env_var: String,
-    pub values: Vec<String>,
-    pub default: String,
-    /// Why this option's list looks the way it does, when that needs saying.
-    /// Set only where the choice list is degraded — a short list with no
-    /// explanation reads as broken. Absent (and unserialised) otherwise, so a
-    /// normal option gains no key.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-}
 
 /// A tunable option declared by a launch script via `# @option NAME: a|b|c`.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -121,10 +90,6 @@ pub struct LaunchProfile {
     pub filename_meta: Option<FilenameMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
-    /// Capability-detected options (from models.json cache). Absent when the
-    /// model has never been run (no cached caps yet).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detected_options: Option<Vec<DetectedOption>>,
 }
 
 /// Current runtime state of a profile
@@ -215,7 +180,7 @@ pub struct AiKvCacheStats {
     pub used_gpu_memory_mb: f64,
 }
 
-/// KV cache stats per GPU for OpenWebUI /api/v1/chat/history
+/// KV cache stats per GPU for `OpenWebUI` /api/v1/chat/history
 #[derive(Debug, Serialize, Clone)]
 pub struct AiGpuCacheStats {
     pub gpu_id: i32,
@@ -224,7 +189,7 @@ pub struct AiGpuCacheStats {
     pub free_memory_mb: f64,
 }
 
-/// OpenWebUI chat history entry
+/// `OpenWebUI` chat history entry
 #[derive(Debug, Serialize, Clone)]
 pub struct AiChatHistoryEntry {
     pub id: String,
@@ -233,7 +198,7 @@ pub struct AiChatHistoryEntry {
     pub created_at: Option<String>,
 }
 
-/// OpenWebUI /api/v1/models response model item
+/// `OpenWebUI` /api/v1/models response model item
 #[derive(Debug, Serialize, Clone)]
 pub struct AiModelItem {
     pub id: String,
@@ -242,13 +207,13 @@ pub struct AiModelItem {
     pub description: Option<String>,
 }
 
-/// OpenWebUI /api/v1/models response
+/// `OpenWebUI` /api/v1/models response
 #[derive(Debug, Serialize, Clone)]
 pub struct AiModelList {
     pub models: Vec<AiModelItem>,
 }
 
-/// OpenWebUI /api/v1/health response
+/// `OpenWebUI` /api/v1/health response
 #[derive(Debug, Serialize, Clone)]
 pub struct AiOpenWebuiHealth {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,7 +222,7 @@ pub struct AiOpenWebuiHealth {
     pub status: Option<String>,
 }
 
-/// OpenCode /api/health response
+/// `OpenCode` /api/health response
 #[derive(Debug, Serialize, Clone)]
 pub struct AiOpencodeHealth {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -324,7 +289,7 @@ pub struct LlamaProps {
     pub n_ctx_train: Option<u32>,
 }
 
-/// Raw chat_template_caps from /props (kept internal; persisted via ModelCapabilities).
+/// Raw `chat_template_caps` from /props (kept internal; persisted via `ModelCapabilities`).
 #[derive(Debug, Clone, Default)]
 pub struct ChatTemplateCapsRaw {
     pub supports_reasoning_effort: bool,
@@ -363,7 +328,7 @@ pub struct GpuOffloadInfo {
     pub draft_total: Option<u32>,
 }
 
-/// ComfyUI workflow and queue info
+/// `ComfyUI` workflow and queue info
 #[derive(Debug, Serialize, Clone)]
 pub struct AiComfyUiInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -417,7 +382,7 @@ pub struct AiMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kv_cache_stats: Option<Vec<AiKvCacheStats>>,
 
-    /// OpenWebUI data
+    /// `OpenWebUI` data
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_history_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -501,19 +466,19 @@ pub struct AiMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llama_server_process: Option<ProcessMetrics>,
 
-    /// Per-process metrics for OpenWebUI
+    /// Per-process metrics for `OpenWebUI`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub openwebui_process: Option<ProcessMetrics>,
 
-    /// Per-process metrics for OpenCode
+    /// Per-process metrics for `OpenCode`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opencode_process: Option<ProcessMetrics>,
 
-    /// Per-process metrics for ComfyUI
+    /// Per-process metrics for `ComfyUI`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comfyui_process: Option<ProcessMetrics>,
 
-    /// ComfyUI workflow/queue info
+    /// `ComfyUI` workflow/queue info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comfyui_info: Option<AiComfyUiInfo>,
 
@@ -537,7 +502,7 @@ pub struct AiMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub running_script_path: Option<String>,
 
-    /// Maximum context the model was trained on (from /v1/models meta.n_ctx_train).
+    /// Maximum context the model was trained on (from /v1/models `meta.n_ctx_train`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub n_ctx_train: Option<u32>,
 }

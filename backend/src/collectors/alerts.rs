@@ -45,7 +45,7 @@ fn next_alert_id() -> u64 {
 }
 
 fn alert_signature(subsystem: &str, message: &str) -> String {
-    format!("{}:{}", subsystem, message)
+    format!("{subsystem}:{message}")
 }
 
 fn is_already_sent(subsystem: &str, message: &str) -> bool {
@@ -74,6 +74,7 @@ pub enum CollectorStatus {
 
 /// Check GPU backend status and generate alerts for failures only.
 /// NVML working is normal operation — no alert.
+#[must_use]
 pub fn check_gpu_backend_status() -> Vec<Alert> {
     let mut alerts = Vec::new();
     let (backend_type, _nvml_available) = crate::collectors::gpu::get_gpu_backend_info();
@@ -98,6 +99,7 @@ pub fn check_gpu_backend_status() -> Vec<Alert> {
 }
 
 /// Check GPU metrics for missing data (when metrics cannot be obtained).
+#[must_use]
 pub fn check_gpu_missing_metrics(gpu: &crate::models::metrics::GpuMetrics) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
@@ -130,16 +132,17 @@ pub fn check_gpu_missing_metrics(gpu: &crate::models::metrics::GpuMetrics) -> Ve
 }
 
 /// Check CPU metrics for data collection failures.
-pub fn check_cpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
+#[must_use]
+pub fn check_cpu_collector_status(status: &CollectorStatus) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    match &status {
+    match status {
         CollectorStatus::Error(msg) => {
             alerts.push(Alert {
                 id: next_alert_id(),
                 severity: AlertSeverity::Error,
                 subsystem: "cpu".to_string(),
-                message: format!("CPU collector failed: {}", msg),
+                message: format!("CPU collector failed: {msg}"),
             });
         }
         CollectorStatus::Partial(msg) => {
@@ -147,7 +150,7 @@ pub fn check_cpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
                 id: next_alert_id(),
                 severity: AlertSeverity::Warning,
                 subsystem: "cpu".to_string(),
-                message: format!("CPU collector returned partial data: {}", msg),
+                message: format!("CPU collector returned partial data: {msg}"),
             });
         }
         CollectorStatus::Ok => {}
@@ -157,16 +160,17 @@ pub fn check_cpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
 }
 
 /// Check memory metrics for data collection failures.
-pub fn check_memory_collector_status(status: CollectorStatus) -> Vec<Alert> {
+#[must_use]
+pub fn check_memory_collector_status(status: &CollectorStatus) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    match &status {
+    match status {
         CollectorStatus::Error(msg) => {
             alerts.push(Alert {
                 id: next_alert_id(),
                 severity: AlertSeverity::Error,
                 subsystem: "memory".to_string(),
-                message: format!("Memory collector failed: {}", msg),
+                message: format!("Memory collector failed: {msg}"),
             });
         }
         CollectorStatus::Partial(msg) => {
@@ -174,7 +178,7 @@ pub fn check_memory_collector_status(status: CollectorStatus) -> Vec<Alert> {
                 id: next_alert_id(),
                 severity: AlertSeverity::Warning,
                 subsystem: "memory".to_string(),
-                message: format!("Memory collector returned partial data: {}", msg),
+                message: format!("Memory collector returned partial data: {msg}"),
             });
         }
         CollectorStatus::Ok => {}
@@ -184,16 +188,17 @@ pub fn check_memory_collector_status(status: CollectorStatus) -> Vec<Alert> {
 }
 
 /// Check GPU collector status for data collection failures.
-pub fn check_gpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
+#[must_use]
+pub fn check_gpu_collector_status(status: &CollectorStatus) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    match &status {
+    match status {
         CollectorStatus::Error(msg) => {
             alerts.push(Alert {
                 id: next_alert_id(),
                 severity: AlertSeverity::Error,
                 subsystem: "gpu".to_string(),
-                message: format!("GPU collector failed: {}", msg),
+                message: format!("GPU collector failed: {msg}"),
             });
         }
         CollectorStatus::Partial(msg) => {
@@ -201,7 +206,7 @@ pub fn check_gpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
                 id: next_alert_id(),
                 severity: AlertSeverity::Warning,
                 subsystem: "gpu".to_string(),
-                message: format!("GPU collector returned partial data: {}", msg),
+                message: format!("GPU collector returned partial data: {msg}"),
             });
         }
         CollectorStatus::Ok => {}
@@ -211,16 +216,17 @@ pub fn check_gpu_collector_status(status: CollectorStatus) -> Vec<Alert> {
 }
 
 /// Check storage metrics for data collection failures.
-pub fn check_storage_collector_status(status: CollectorStatus) -> Vec<Alert> {
+#[must_use]
+pub fn check_storage_collector_status(status: &CollectorStatus) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    match &status {
+    match status {
         CollectorStatus::Error(msg) => {
             alerts.push(Alert {
                 id: next_alert_id(),
                 severity: AlertSeverity::Error,
                 subsystem: "storage".to_string(),
-                message: format!("Storage collector failed: {}", msg),
+                message: format!("Storage collector failed: {msg}"),
             });
         }
         CollectorStatus::Partial(msg) => {
@@ -228,7 +234,7 @@ pub fn check_storage_collector_status(status: CollectorStatus) -> Vec<Alert> {
                 id: next_alert_id(),
                 severity: AlertSeverity::Warning,
                 subsystem: "storage".to_string(),
-                message: format!("Storage collector returned partial data: {}", msg),
+                message: format!("Storage collector returned partial data: {msg}"),
             });
         }
         CollectorStatus::Ok => {}
@@ -238,16 +244,17 @@ pub fn check_storage_collector_status(status: CollectorStatus) -> Vec<Alert> {
 }
 
 /// Check AI metrics for service availability failures.
-pub fn check_ai_collector_status(status: CollectorStatus) -> Vec<Alert> {
+#[must_use]
+pub fn check_ai_collector_status(status: &CollectorStatus) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    match &status {
+    match status {
         CollectorStatus::Error(msg) => {
             alerts.push(Alert {
                 id: next_alert_id(),
                 severity: AlertSeverity::Error,
                 subsystem: "ai".to_string(),
-                message: format!("AI collector failed: {}", msg),
+                message: format!("AI collector failed: {msg}"),
             });
         }
         CollectorStatus::Partial(msg) => {
@@ -255,7 +262,7 @@ pub fn check_ai_collector_status(status: CollectorStatus) -> Vec<Alert> {
                 id: next_alert_id(),
                 severity: AlertSeverity::Warning,
                 subsystem: "ai".to_string(),
-                message: format!("AI collector returned partial data: {}", msg),
+                message: format!("AI collector returned partial data: {msg}"),
             });
         }
         CollectorStatus::Ok => {}
@@ -265,6 +272,7 @@ pub fn check_ai_collector_status(status: CollectorStatus) -> Vec<Alert> {
 }
 
 /// Check AI service availability and generate alerts for unavailable services.
+#[must_use]
 pub fn check_ai_service_availability(
     llama_available: bool,
     openwebui_available: bool,
@@ -313,7 +321,8 @@ pub fn check_ai_service_availability(
 }
 
 /// Check all metrics and return combined alerts for failures only.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+#[must_use]
 pub fn check_all_alerts(
     cpu_status: CollectorStatus,
     mem_status: CollectorStatus,
@@ -347,7 +356,7 @@ pub fn check_all_alerts(
     }
 
     // GPU collector status alerts (deduplicated)
-    for alert in check_gpu_collector_status(gpu_status) {
+    for alert in check_gpu_collector_status(&gpu_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -355,7 +364,7 @@ pub fn check_all_alerts(
     }
 
     // CPU collector status alerts (deduplicated)
-    for alert in check_cpu_collector_status(cpu_status) {
+    for alert in check_cpu_collector_status(&cpu_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -363,7 +372,7 @@ pub fn check_all_alerts(
     }
 
     // Memory collector status alerts (deduplicated)
-    for alert in check_memory_collector_status(mem_status) {
+    for alert in check_memory_collector_status(&mem_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -371,7 +380,7 @@ pub fn check_all_alerts(
     }
 
     // Storage collector status alerts (deduplicated)
-    for alert in check_storage_collector_status(storages_status) {
+    for alert in check_storage_collector_status(&storages_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);
@@ -379,7 +388,7 @@ pub fn check_all_alerts(
     }
 
     // AI collector status alerts (deduplicated)
-    for alert in check_ai_collector_status(ai_collector_status) {
+    for alert in check_ai_collector_status(&ai_collector_status) {
         if !is_already_sent(&alert.subsystem, &alert.message) {
             mark_as_sent(&alert.subsystem, &alert.message);
             alerts.push(alert);

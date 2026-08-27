@@ -1,13 +1,13 @@
-//! AI metrics collector for llama-server, OpenWebUI, and OpenCode monitoring.
+//! AI metrics collector for llama-server, `OpenWebUI`, and `OpenCode` monitoring.
 
 use crate::collectors::alerts::CollectorStatus;
-use crate::models::ai::*;
+use crate::models::ai::{ProcessMetrics, AiHistoryPoint, LlamaMetrics, LlamaProps, AiServiceStatus, AiModelItem, AiComfyUiInfo, AiMetrics, AiTokenUsage, AiKvCacheStats};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
 const HISTORY_RETENTION_SECONDS: u64 = 120;
 
-/// Previous (proc_ticks, sys_ticks, process_starttime_ticks) sample per pid,
+/// Previous (`proc_ticks`, `sys_ticks`, `process_starttime_ticks`) sample per pid,
 /// used to compute CPU% from a DELTA between two polls — the only correct
 /// way to derive "current" usage from /proc's cumulative counters (every
 /// real tool — top, ps — requires two samples for exactly this reason).
@@ -18,11 +18,11 @@ const HISTORY_RETENTION_SECONDS: u64 = 120;
 /// meaning: 82.2%, 3.4%, and 1238.0% were all observed for the SAME process
 /// across one session, direction and magnitude both arbitrary — the
 /// signature of two mismatched clocks, not a real percentage.
-/// process_starttime_ticks guards against pid reuse: if a NEW process
+/// `process_starttime_ticks` guards against pid reuse: if a NEW process
 /// inherits an old pid, its /proc starttime differs from whatever was
 /// cached, so the stale sample is discarded instead of computing a
 /// delta across two unrelated processes.
-/// pid -> (process_ticks, system_ticks, process_starttime_ticks).
+/// pid -> (`process_ticks`, `system_ticks`, `process_starttime_ticks`).
 type PrevCpuSamples = HashMap<u32, (u64, u64, u64)>;
 
 static PREV_CPU_SAMPLE: LazyLock<Mutex<PrevCpuSamples>> =
@@ -33,6 +33,7 @@ static PREV_CPU_SAMPLE: LazyLock<Mutex<PrevCpuSamples>> =
 /// numbers. Returns 0.0 if the deltas can't produce a meaningful ratio
 /// (e.g. the very first sample for a pid, or a zero/negative system delta,
 /// which would otherwise divide by zero or go negative).
+#[allow(clippy::cast_precision_loss)]
 fn cpu_percent_from_deltas(
     prev_proc_ticks: u64,
     curr_proc_ticks: u64,
@@ -126,7 +127,7 @@ fn find_process_pids(name_pattern: &str) -> Vec<u32> {
 /// would add a full process-table refresh cost to every single poll.
 ///
 /// Deliberately NOT applied to `find_process_pids`/`collect_process_metrics`
-/// generically: OpenWebUI is a python/uvicorn process whose `exe` symlink
+/// generically: `OpenWebUI` is a python/uvicorn process whose `exe` symlink
 /// doesn't reflect the meaningful name at all (see this file's own doc
 /// comment on `find_process_pids`), so a port-based llama-server-specific
 /// matcher is not a safe drop-in replacement for the generic scan used by
@@ -169,17 +170,17 @@ fn find_llama_pid_by_port(port: u16) -> Option<u32> {
 
 /// Process memory in kB from a /proc/[pid]/status document, using the same
 /// semantics GNOME System Monitor's "Memory" column uses: PRIVATE resident
-/// memory (RssAnon), not raw VmRSS.
+/// memory (`RssAnon`), not raw `VmRSS`.
 ///
 /// User-reported: the footer showed 13.11 GB while System Monitor showed
 /// 7.1 GB for the same llama-server at the same moment. Both numbers are
-/// "real" — VmRSS = RssAnon + RssFile + RssShmem, and for a CUDA process
+/// "real" — `VmRSS` = `RssAnon` + `RssFile` + `RssShmem`, and for a CUDA process
 /// the file/shared components include ~6 GB of driver and device mappings
 /// that aren't memory the process meaningfully owns (System Monitor
-/// subtracts them: resident − shared). Reporting RssAnon makes the
+/// subtracts them: resident − shared). Reporting `RssAnon` makes the
 /// dashboard agree with the tool the user checks against, and better
 /// answers the question the tile is actually asking ("how much RAM is
-/// this model using"). Falls back to VmRSS only if RssAnon is absent
+/// this model using"). Falls back to `VmRSS` only if `RssAnon` is absent
 /// (pre-4.5 kernels — not this project's machines, but free robustness).
 pub(crate) fn process_mem_kb_from_status(status_content: &str) -> f64 {
     let field = |name: &str| -> Option<f64> {
@@ -193,9 +194,10 @@ pub(crate) fn process_mem_kb_from_status(status_content: &str) -> f64 {
 }
 
 /// Read CPU and memory usage for a given PID from /proc/[pid]/stat and /proc/[pid]/status
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     // Read /proc/[pid]/stat
-    let stat_path = format!("/proc/{}/stat", pid);
+    let stat_path = format!("/proc/{pid}/stat");
     let stat_content = std::fs::read_to_string(&stat_path).ok()?;
     let fields: Vec<&str> = stat_content.split_whitespace().collect();
     if fields.len() < 36 {
@@ -211,7 +213,7 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     // process_mem_kb_from_status's doc comment for why (matches System
     // Monitor; raw VmRSS overstated a CUDA process by ~6 GB of driver
     // mappings).
-    let status_path = format!("/proc/{}/status", pid);
+    let status_path = format!("/proc/{pid}/status");
     let status_content = std::fs::read_to_string(&status_path).ok()?;
     let vmem_rss_kb: f64 = process_mem_kb_from_status(&status_content);
 
@@ -234,7 +236,7 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         .filter(|l| {
             l.len() > 3
                 && l.starts_with("cpu")
-                && l.as_bytes().get(3).is_some_and(|b| b.is_ascii_digit())
+                && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit)
         })
         .count()
         .max(1) as f64;
@@ -251,7 +253,6 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
     // see PREV_CPU_SAMPLE's doc comment for why: a single point-in-time
     // read of cumulative /proc counters cannot yield "current" usage.
     let cpu_percent = {
-        let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
         // Safety valve against unbounded growth: this map is only ever
         // populated by the 4 named services this file tracks (llama,
         // OpenWebUI, OpenCode, ComfyUI), so it should never realistically
@@ -269,6 +270,7 @@ fn read_process_metrics(pid: u32) -> Option<ProcessMetrics> {
         // extra 0.0 reading while it refills — the same harmless
         // first-poll state every entry already goes through normally.
         const MAX_TRACKED_PIDS: usize = 64;
+        let mut cache = PREV_CPU_SAMPLE.lock().unwrap();
         if cache.len() > MAX_TRACKED_PIDS {
             cache.clear();
         }
@@ -392,10 +394,11 @@ fn parse_prometheus_metrics(body: &str) -> LlamaMetrics {
 
 /// Parse JSON /props endpoint from llama-server.
 ///
-/// Generation defaults (temperature/top_k/top_p/repeat_penalty) and n_ctx are nested
+/// Generation defaults (`temperature/top_k/top_p/repeat_penalty`) and `n_ctx` are nested
 /// under `default_generation_settings.params` / `default_generation_settings.n_ctx`,
 /// and modality flags are nested under `modalities`. Fields are read independently so a
 /// missing/renamed field doesn't blank out the whole response.
+#[allow(clippy::cast_possible_truncation)]
 fn parse_props(body: &str) -> Option<LlamaProps> {
     let val: serde_json::Value = serde_json::from_str(body).ok()?;
 
@@ -415,58 +418,58 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
         n_ctx: val
             .get("n_ctx")
             .or_else(|| gen_settings.and_then(|g| g.get("n_ctx")))
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32),
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok()),
         total_slots: val
             .get("total_slots")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32),
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok()),
         build_info: val
             .get("build_info")
             .and_then(|v| v.as_str())
             .map(String::from),
-        endpoint_metrics: val.get("endpoint_metrics").and_then(|v| v.as_bool()),
+        endpoint_metrics: val.get("endpoint_metrics").and_then(serde_json::Value::as_bool),
         webui: val
             .get("webui")
             .or_else(|| val.get("ui"))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         vision: val
             .get("vision")
             .or_else(|| modalities.and_then(|m| m.get("vision")))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         video: val
             .get("video")
             .or_else(|| modalities.and_then(|m| m.get("video")))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         audio: val
             .get("audio")
             .or_else(|| modalities.and_then(|m| m.get("audio")))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         temperature: val
             .get("temperature")
             .or_else(|| params.and_then(|p| p.get("temperature")))
-            .and_then(|v| v.as_f64()),
+            .and_then(serde_json::Value::as_f64),
         top_k: val
             .get("top_k")
             .or_else(|| params.and_then(|p| p.get("top_k")))
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .map(|v| v as i32),
         top_p: val
             .get("top_p")
             .or_else(|| params.and_then(|p| p.get("top_p")))
-            .and_then(|v| v.as_f64()),
+            .and_then(serde_json::Value::as_f64),
         repeat_penalty: val
             .get("repeat_penalty")
             .or_else(|| params.and_then(|p| p.get("repeat_penalty")))
-            .and_then(|v| v.as_f64()),
+            .and_then(serde_json::Value::as_f64),
         frequency_penalty: params
             .and_then(|p| p.get("frequency_penalty"))
-            .and_then(|v| v.as_f64()),
+            .and_then(serde_json::Value::as_f64),
         repeat_last_n: params
             .and_then(|p| p.get("repeat_last_n"))
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .map(|v| v as i32),
-        seed: params.and_then(|p| p.get("seed")).and_then(|v| v.as_u64()),
+        seed: params.and_then(|p| p.get("seed")).and_then(serde_json::Value::as_u64),
         reasoning_format: params
             .and_then(|p| p.get("reasoning_format"))
             .and_then(|v| v.as_str())
@@ -486,15 +489,15 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
             caps.map(|c| crate::models::ai::ChatTemplateCapsRaw {
                 supports_reasoning_effort: c
                     .get("supports_reasoning_effort")
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
                 supports_preserve_reasoning: c
                     .get("supports_preserve_reasoning")
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
                 supports_tools: c
                     .get("supports_tools")
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
             })
         },
@@ -503,6 +506,7 @@ fn parse_props(body: &str) -> Option<LlamaProps> {
 }
 
 /// Poll llama-server for health, /metrics, and /props data.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 async fn poll_llama_server(
     base_url: &str,
 ) -> (
@@ -515,14 +519,14 @@ async fn poll_llama_server(
     let client = &*AI_HTTP_CLIENT;
 
     // Check health endpoint with latency measurement
-    let health_url = format!("{}/health", base_url);
+    let health_url = format!("{base_url}/health");
     let start = std::time::Instant::now();
     match client.get(&health_url).send().await {
         Ok(resp) if resp.status().is_success() => {
             let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
 
             // Fetch /metrics endpoint for Prometheus data
-            let metrics_url = format!("{}/metrics", base_url);
+            let metrics_url = format!("{base_url}/metrics");
             let metrics = match client.get(&metrics_url).send().await {
                 Ok(mresp) if mresp.status().is_success() => match mresp.text().await {
                     Ok(body) => Some(parse_prometheus_metrics(&body)),
@@ -532,7 +536,7 @@ async fn poll_llama_server(
             };
 
             // Fetch /props endpoint for model and server info
-            let props_url = format!("{}/props", base_url);
+            let props_url = format!("{base_url}/props");
             let mut props = match client.get(&props_url).send().await {
                 Ok(presp) if presp.status().is_success() => match presp.text().await {
                     Ok(body) => parse_props(&body),
@@ -544,7 +548,7 @@ async fn poll_llama_server(
             // Fetch /slots for speculative decoding status and per-slot state
             let mut slot_list: Vec<crate::models::ai::LlamaSlot> = Vec::new();
             if let Some(ref mut p) = props {
-                let slots_url = format!("{}/slots", base_url);
+                let slots_url = format!("{base_url}/slots");
                 if let Ok(sresp) = client.get(&slots_url).send().await
                     && sresp.status().is_success()
                     && let Ok(body) = sresp.text().await
@@ -554,10 +558,10 @@ async fn poll_llama_server(
                         .as_array()
                         .and_then(|arr| arr.first())
                         .and_then(|slot| slot.get("speculative"))
-                        .and_then(|v| v.as_bool());
+                        .and_then(serde_json::Value::as_bool);
                     p.context_tokens = slots_val.as_array().map(|arr| {
                         arr.iter()
-                            .filter_map(|slot| slot.get("n_prompt_tokens").and_then(|v| v.as_u64()))
+                            .filter_map(|slot| slot.get("n_prompt_tokens").and_then(serde_json::Value::as_u64))
                             .sum::<u64>() as u32
                     });
 
@@ -566,12 +570,12 @@ async fn poll_llama_server(
                         for (idx, slot) in arr.iter().enumerate() {
                             let id = idx as u32;
                             let n_ctx =
-                                slot.get("n_ctx").and_then(|v| v.as_u64()).map(|v| v as u32);
+                                slot.get("n_ctx").and_then(serde_json::Value::as_u64).map(|v| v as u32);
                             let n_prompt_tokens = slot
                                 .get("n_prompt_tokens")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .map(|v| v as u32);
-                            let is_processing = slot.get("is_processing").and_then(|v| v.as_bool());
+                            let is_processing = slot.get("is_processing").and_then(serde_json::Value::as_bool);
                             // n_decoded/n_remain live in next_token[0]; n_predict in params
                             let next_tok = slot
                                 .get("next_token")
@@ -579,18 +583,18 @@ async fn poll_llama_server(
                                 .and_then(|a| a.first());
                             let n_decoded = next_tok
                                 .and_then(|t| t.get("n_decoded"))
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .map(|v| v as u32);
                             let n_remain = next_tok
                                 .and_then(|t| t.get("n_remain"))
-                                .and_then(|v| v.as_i64())
+                                .and_then(serde_json::Value::as_i64)
                                 .map(|v| v as i32);
                             let n_prompt_tokens_cache =
-                                slot.get("n_prompt_tokens_cache").and_then(|v| v.as_u64());
+                                slot.get("n_prompt_tokens_cache").and_then(serde_json::Value::as_u64);
                             let n_predict = slot
                                 .get("params")
                                 .and_then(|p| p.get("n_predict"))
-                                .and_then(|v| v.as_i64())
+                                .and_then(serde_json::Value::as_i64)
                                 .map(|v| if v > 0 { v as u32 } else { 0 });
 
                             if n_prompt_tokens.is_some() || is_processing.is_some() {
@@ -612,7 +616,7 @@ async fn poll_llama_server(
 
             // Fetch /v1/models for n_ctx_train (not available on /props).
             if let Some(ref mut p) = props {
-                let models_url = format!("{}/v1/models", base_url);
+                let models_url = format!("{base_url}/v1/models");
                 if let Ok(mresp) = client.get(&models_url).send().await
                     && mresp.status().is_success()
                     && let Ok(body) = mresp.text().await
@@ -624,7 +628,7 @@ async fn poll_llama_server(
                         .and_then(|arr| arr.first())
                         .and_then(|m| m.get("meta"))
                         .and_then(|meta| meta.get("n_ctx_train"))
-                        .and_then(|v| v.as_u64())
+                        .and_then(serde_json::Value::as_u64)
                         .map(|v| v as u32);
                 }
             }
@@ -652,7 +656,7 @@ async fn poll_llama_server(
                 name: "llama-server".to_string(),
                 endpoint: base_url.to_string(),
                 available: false,
-                error_message: Some(format!("Connection failed: {}", e)),
+                error_message: Some(format!("Connection failed: {e}")),
             };
             (status, None, None, None, None)
         }
@@ -660,6 +664,7 @@ async fn poll_llama_server(
 }
 
 /// Compute derived metrics from raw Prometheus data and /props info.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn compute_derived_metrics(prom: &LlamaMetrics, props: Option<&LlamaProps>) -> AiDerivedMetrics {
     let prompt_tokens = prom.prompt_tokens_total as i64;
     let completion_tokens = prom.tokens_predicted_total as i64;
@@ -816,21 +821,21 @@ struct AiDerivedMetrics {
     n_decode_total: Option<i64>,
 }
 
-/// Poll OpenWebUI for chat history count and models list.
+/// Poll `OpenWebUI` for chat history count and models list.
 async fn poll_openwebui(
     base_url: &str,
 ) -> (AiServiceStatus, Option<usize>, Option<Vec<AiModelItem>>) {
     let client = &*AI_HTTP_CLIENT;
 
     // Check health endpoint first
-    let health_url = format!("{}/api/health", base_url);
+    let health_url = format!("{base_url}/api/health");
     match client.get(&health_url).send().await {
         Ok(resp) if resp.status().is_success() => {
             let chat_history_count = None;
             let mut models_list = None;
 
             // Try to get models list
-            let models_url = format!("{}/api/v1/models", base_url);
+            let models_url = format!("{base_url}/api/v1/models");
             if let Ok(resp) = client.get(&models_url).send().await
                 && resp.status().is_success()
                 && let Ok(body) = resp.text().await
@@ -883,14 +888,14 @@ async fn poll_openwebui(
                 name: "OpenWebUI".to_string(),
                 endpoint: base_url.to_string(),
                 available: false,
-                error_message: Some(format!("Connection failed: {}", e)),
+                error_message: Some(format!("Connection failed: {e}")),
             };
             (status, None, None)
         }
     }
 }
 
-/// Poll ComfyUI for health check and workflow info.
+/// Poll `ComfyUI` for health check and workflow info.
 async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>) {
     let client = &*AI_HTTP_CLIENT;
 
@@ -901,7 +906,7 @@ async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>
             let mut history_size = None;
 
             // Try to get queue info from /history/list
-            let history_url = format!("{}/history/list", base_url);
+            let history_url = format!("{base_url}/history/list");
             if let Ok(hresp) = client.get(&history_url).send().await
                 && hresp.status().is_success()
                 && let Ok(body) = hresp.text().await
@@ -939,21 +944,21 @@ async fn poll_comfyui(base_url: &str) -> (AiServiceStatus, Option<AiComfyUiInfo>
                 name: "ComfyUI".to_string(),
                 endpoint: base_url.to_string(),
                 available: false,
-                error_message: Some(format!("Connection failed: {}", e)),
+                error_message: Some(format!("Connection failed: {e}")),
             };
             (status, None)
         }
     }
 }
 
-/// Poll OpenCode for health check.
+/// Poll `OpenCode` for health check.
 async fn poll_opencode(base_url: &str) -> AiServiceStatus {
     let client = &*AI_HTTP_CLIENT;
 
     // Try common health endpoints
     let urls = [
-        format!("{}/api/health", base_url),
-        format!("{}/health", base_url),
+        format!("{base_url}/api/health"),
+        format!("{base_url}/health"),
     ];
 
     for url in &urls {
@@ -966,12 +971,12 @@ async fn poll_opencode(base_url: &str) -> AiServiceStatus {
                     error_message: None,
                 };
             }
-            _ => continue,
+            _ => {}
         }
     }
 
     // If no health endpoint works but we got a response, check if it's just not found
-    let fallback_url = format!("{}/", base_url);
+    let fallback_url = format!("{base_url}/");
     match client.get(&fallback_url).send().await {
         Ok(resp) => AiServiceStatus {
             name: "OpenCode".to_string(),
@@ -983,7 +988,7 @@ async fn poll_opencode(base_url: &str) -> AiServiceStatus {
             name: "OpenCode".to_string(),
             endpoint: base_url.to_string(),
             available: false,
-            error_message: Some(format!("Connection failed: {}", e)),
+            error_message: Some(format!("Connection failed: {e}")),
         },
     }
 }
@@ -997,7 +1002,8 @@ fn service_status_str(available: bool) -> String {
     }
 }
 
-/// Collect all AI metrics from llama-server, OpenWebUI, OpenCode, and ComfyUI.
+/// Collect all AI metrics from llama-server, `OpenWebUI`, `OpenCode`, and `ComfyUI`.
+#[allow(clippy::cast_precision_loss)]
 pub async fn collect_ai_metrics(
     llama_server_url: &str,
     openwebui_url: &str,
@@ -1024,13 +1030,12 @@ pub async fn collect_ai_metrics(
 
     let (model_load_time_ms, kv_cache_reserved_mib) = running_script
         .as_ref()
-        .map(|script| {
+        .map_or((None, None), |script| {
             (
                 crate::api::startup_info::get_load_time_ms(script),
                 crate::api::startup_info::get_kv_reserved_mib(script),
             )
-        })
-        .unwrap_or((None, None));
+        });
 
     // Collect per-process metrics for llama-server, OpenCode, and ComfyUI
     // llama-server: resolve by the port it was actually launched with, not
@@ -1225,32 +1230,6 @@ pub async fn collect_ai_metrics(
         n_ctx_train: props.as_ref().and_then(|p| p.n_ctx_train),
     };
 
-    // Write detected capabilities to models.json when the model is running and
-    // /props has answered. Compare first — write only on change.
-    if let (Some(script), Some(p)) = (running_script.as_ref(), props.as_ref())
-        && (p.chat_template_caps.is_some() || p.n_ctx_train.is_some())
-    {
-        let new_caps = crate::models::ai::ModelCapabilities {
-            supports_reasoning_effort: p
-                .chat_template_caps
-                .as_ref()
-                .map(|c| c.supports_reasoning_effort)
-                .unwrap_or(false),
-            supports_preserve_reasoning: p
-                .chat_template_caps
-                .as_ref()
-                .map(|c| c.supports_preserve_reasoning)
-                .unwrap_or(false),
-            supports_tools: p
-                .chat_template_caps
-                .as_ref()
-                .map(|c| c.supports_tools)
-                .unwrap_or(false),
-            n_ctx_train: p.n_ctx_train,
-        };
-        crate::api::settings::update_model_capabilities(script, new_caps);
-    }
-
     (metrics, status)
 }
 
@@ -1261,6 +1240,7 @@ pub fn collect_ai_history() -> Vec<AiHistoryPoint> {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -1338,37 +1318,40 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
 
     // ── Slot JSON parsing (mirrors poll_llama_server logic) ───────────────────
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_slot_value(slot: &serde_json::Value, id: u32) -> Option<crate::models::ai::LlamaSlot> {
         let n_prompt_tokens = slot
             .get("n_prompt_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|v| v as u32);
-        let is_processing = slot.get("is_processing").and_then(|v| v.as_bool());
+        let is_processing = slot.get("is_processing").and_then(serde_json::Value::as_bool);
         if n_prompt_tokens.is_some() || is_processing.is_some() {
             Some(crate::models::ai::LlamaSlot {
                 id,
-                n_ctx: slot.get("n_ctx").and_then(|v| v.as_u64()).map(|v| v as u32),
+                n_ctx: slot.get("n_ctx").and_then(serde_json::Value::as_u64).map(|v| v as u32),
                 n_prompt_tokens,
                 is_processing,
                 n_decoded: slot
                     .get("next_token")
-                    .and_then(|v| v.as_array())
+                    .and_then(serde_json::Value::as_array)
                     .and_then(|a| a.first())
                     .and_then(|t| t.get("n_decoded"))
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .map(|v| v as u32),
                 n_remain: slot
                     .get("next_token")
-                    .and_then(|v| v.as_array())
+                    .and_then(serde_json::Value::as_array)
                     .and_then(|a| a.first())
                     .and_then(|t| t.get("n_remain"))
-                    .and_then(|v| v.as_i64())
+                    .and_then(serde_json::Value::as_i64)
                     .map(|v| v as i32),
-                n_prompt_tokens_cache: slot.get("n_prompt_tokens_cache").and_then(|v| v.as_u64()),
+                n_prompt_tokens_cache: slot
+                    .get("n_prompt_tokens_cache")
+                    .and_then(serde_json::Value::as_u64),
                 n_predict: slot
                     .get("params")
                     .and_then(|p| p.get("n_predict"))
-                    .and_then(|v| v.as_i64())
+                    .and_then(serde_json::Value::as_i64)
                     .map(|v| if v > 0 { v as u32 } else { 0 }),
             })
         } else {
@@ -1413,6 +1396,7 @@ llamacpp:n_busy_slots_per_decode 0.5\n";
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_slot_empty_array_yields_no_slots() {
         let val: serde_json::Value = serde_json::from_str("[]").unwrap();
         let arr = val.as_array().unwrap();

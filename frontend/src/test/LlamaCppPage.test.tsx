@@ -1854,6 +1854,88 @@ describe("LlamaCppPage Runtime GPU/CPU/Draft layer rows", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent("—");
   });
+
+  // T248: draft-mtp/eagle/eagle3 are in-model prediction heads — no separate draft
+  // model is loaded, so draft_loaded stays null. The row must show n/a — <label>
+  // rather than "—" (which reads as "could not determine").
+
+  function makeMtpFetch(specType: string) {
+    return vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () =>
+        profilesResp({
+          profiles: [
+            {
+              id: "p1",
+              name: "model",
+              script_path: "/test.sh",
+              file_hash: "abc",
+              parsed_args: { spec_type: specType },
+              filename_meta: null,
+              warning: null,
+            },
+          ],
+          states: {
+            "/test.sh": { status: "running", llama_server_pid: 1 },
+          },
+          metadata: {},
+        }),
+    });
+  }
+
+  it("runtime-draft-layers shows n/a — MTP for spec_type draft-mtp (T248 bug)", async () => {
+    global.fetch = makeMtpFetch("draft-mtp");
+    render(<LlamaCppPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent(
+        "MTP",
+      ),
+    );
+    expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent(
+      "n/a — MTP",
+    );
+  });
+
+  it("runtime-draft-layers shows n/a — EAGLE for spec_type eagle (T248 1b)", async () => {
+    global.fetch = makeMtpFetch("eagle");
+    render(<LlamaCppPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent(
+        "EAGLE",
+      ),
+    );
+    expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent(
+      "n/a — EAGLE",
+    );
+  });
+
+  it("runtime-draft-layers shows — for spec_type draft with no numbers (T248 1c)", async () => {
+    // "draft" is the one type where a dash is correct — a real draft model
+    // is expected and simply has not finished loading yet.
+    global.fetch = makeMtpFetch("draft");
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent("—");
+  });
+
+  it("runtime-draft-layers shows N/M green when draft model is loaded (T248 test 2)", async () => {
+    mockedCtx.mockReturnValue(
+      baseCtx({
+        gpu_offload: {
+          main_loaded: 32,
+          main_total: 32,
+          draft_loaded: 12,
+          draft_total: 12,
+        },
+      }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("runtime-draft-layers")).toHaveTextContent(
+      "12 / 12",
+    );
+  });
 });
 
 // ─── Builds-behind banner by data-testid ─────────────────────────────

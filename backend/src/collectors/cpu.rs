@@ -16,6 +16,7 @@ pub static SYSTEM: LazyLock<Mutex<sysinfo::System>> = LazyLock::new(|| {
 static PHYSICAL_CORES: LazyLock<usize> = LazyLock::new(read_physical_cores);
 static CPU_MAX_FREQ_MHZ: LazyLock<f64> = LazyLock::new(read_cpu_max_freq);
 /// Strip redundant suffix words like "Processor" that add no information.
+#[must_use]
 pub fn normalize_cpu_model(raw: &str) -> String {
     let s = raw.trim();
     // Remove trailing " Processor" (case-insensitive) if present.
@@ -53,6 +54,7 @@ static CPU_MODEL: LazyLock<String> = LazyLock::new(|| {
     "Unknown CPU".to_string()
 });
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
     let status = read_cpu_utilization().await;
 
@@ -64,7 +66,7 @@ pub async fn collect_cpu_metrics() -> (CpuMetrics, CollectorStatus) {
     system.refresh_cpu_frequency();
     let cpus2 = system.cpus();
     let freq = if len > 0 {
-        cpus2.first().map(|c| c.frequency() as f64).unwrap_or(0.0)
+        cpus2.first().map_or(0.0, |c| c.frequency() as f64)
     } else {
         0.0
     };
@@ -95,6 +97,8 @@ struct UtilStatus {
     status: CollectorStatus,
 }
 
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn compute_cpu_utilization(
     s1: &ProcStat,
     s2: &ProcStat,
@@ -144,6 +148,7 @@ pub fn compute_cpu_utilization(
 static PREV_PROC_STAT: LazyLock<Mutex<Option<(ProcStat, std::time::Instant)>>> =
     LazyLock::new(|| Mutex::new(None));
 
+#[allow(clippy::cast_precision_loss)]
 async fn read_cpu_utilization() -> UtilStatus {
     let now = std::time::Instant::now();
     let prev = PREV_PROC_STAT
@@ -151,15 +156,12 @@ async fn read_cpu_utilization() -> UtilStatus {
         .unwrap()
         .take_if(|(_, at)| now.duration_since(*at).as_millis() >= 50);
 
-    let stat1 = match prev {
-        Some((s, _)) => Some(s),
-        None => {
-            let s = read_all_proc_stats();
-            if s.is_some() {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            }
-            s
+    let stat1 = if let Some((s, _)) = prev { Some(s) } else {
+        let s = read_all_proc_stats();
+        if s.is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
+        s
     };
 
     if stat1.is_some() {
@@ -184,10 +186,10 @@ async fn read_cpu_utilization() -> UtilStatus {
         .enumerate()
         .map(|(id, c)| {
             let usage = c.cpu_usage();
-            total += usage as f64;
+            total += f64::from(usage);
             crate::models::metrics::CpuCoreInfo {
                 core_id: id,
-                utilization_percent: usage as f64,
+                utilization_percent: f64::from(usage),
             }
         })
         .collect();
@@ -215,6 +217,7 @@ pub enum StatSource {
 /// - `prev` is `None`   → Bootstrap (first call, no history)
 /// - elapsed < 50 ms    → Bootstrap (burst poll; delta would be noise)
 /// - elapsed >= 50 ms   → Delta(stat) (normal steady-state poll)
+#[must_use]
 pub fn choose_stat_source(
     prev: Option<(ProcStat, std::time::Instant)>,
     now: std::time::Instant,
@@ -227,6 +230,7 @@ pub fn choose_stat_source(
 
 #[derive(Clone)]
 pub struct CoreStat {
+    #[allow(clippy::pub_underscore_fields)]
     pub _core_id: u64,
     pub user: u64,
     pub nice: u64,
@@ -250,7 +254,7 @@ pub fn parse_proc_stat(content: &str) -> Option<ProcStat> {
     for line in content.lines() {
         if line.starts_with("cpu") && line.len() > 3 {
             let third_char = line.chars().nth(3);
-            if third_char.map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if third_char.is_some_and(|c| c.is_ascii_digit()) {
                 let fields = line.split_whitespace().skip(1).collect::<Vec<_>>();
                 if fields.len() >= 5
                     && let (Ok(u), Ok(n), Ok(s), Ok(i), Ok(w)) = (
@@ -264,7 +268,7 @@ pub fn parse_proc_stat(content: &str) -> Option<ProcStat> {
                     let core_id = line
                         .chars()
                         .skip(3)
-                        .take_while(|c| c.is_ascii_digit())
+                        .take_while(char::is_ascii_digit)
                         .collect::<String>()
                         .parse::<u64>()
                         .unwrap_or(0);
@@ -305,6 +309,7 @@ fn read_all_proc_stats() -> Option<ProcStat> {
     parse_proc_stat(&content)
 }
 
+#[must_use]
 pub fn parse_physical_cores(content: &str) -> usize {
     let mut core_ids = std::collections::BTreeSet::new();
     let mut in_block = false;
@@ -338,6 +343,7 @@ pub fn parse_physical_cores(content: &str) -> usize {
     core_ids.len()
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn read_cpu_max_freq() -> f64 {
     if let Ok(content) =
         std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
@@ -361,7 +367,7 @@ fn read_cpu_temperature() -> f64 {
         let mut best_temp: Option<f64> = None;
         for entry in entries {
             let entry = entry.ok();
-            let path = entry.as_ref().map(|e| e.path());
+            let path = entry.as_ref().map(std::fs::DirEntry::path);
             let name_file = path.as_ref().map(|p| p.join("name"));
             if let Some(name) = name_file.and_then(|f| std::fs::read_to_string(&f).ok()) {
                 let name = name.trim();

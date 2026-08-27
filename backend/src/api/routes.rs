@@ -12,7 +12,7 @@ use crate::api::launcher as launcher_api;
 use crate::api::llama_management as ai_mgmt;
 use crate::api::log_manager;
 use crate::api::settings::{
-    AiSettings, TestConnectionResponse, get_ai_settings, models_location, set_ai_settings,
+    AiSettings, TestConnectionResponse, get_ai_settings, set_ai_settings,
     settings_location, test_connection,
 };
 use crate::collectors::ai::{collect_ai_history, collect_ai_metrics};
@@ -40,8 +40,7 @@ fn get_process_cpu_percent(sys: &mut sysinfo::System, pid_val: usize) -> (f32, u
     let pid = sysinfo::Pid::from(pid_val);
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     sys.process(pid)
-        .map(|p| (p.cpu_usage(), p.memory()))
-        .unwrap_or((0.0, 0))
+        .map_or((0.0, 0), |p| (p.cpu_usage(), p.memory()))
 }
 
 pub fn create_router() -> axum::Router {
@@ -149,7 +148,7 @@ async fn gpu_handler() -> axum::response::Json<Value> {
     let (metrics, _status) = match tokio::task::spawn_blocking(collect_gpu_metrics).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[API] gpu collect task panicked: {}", e);
+            eprintln!("[API] gpu collect task panicked: {e}");
             return Json(json!({ "error": "GPU collection failed" }));
         }
     };
@@ -164,7 +163,7 @@ async fn storage_handler() -> axum::response::Json<Value> {
     let (metrics, _status) = match tokio::task::spawn_blocking(collect_storage_metrics).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[API] storage collect task panicked: {}", e);
+            eprintln!("[API] storage collect task panicked: {e}");
             return Json(json!({ "error": "Storage collection failed" }));
         }
     };
@@ -179,7 +178,7 @@ async fn storage_devices_handler() -> axum::response::Json<Value> {
     let devices = match tokio::task::spawn_blocking(collect_storage_by_device).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[API] storage devices collect task panicked: {}", e);
+            eprintln!("[API] storage devices collect task panicked: {e}");
             return Json(json!({ "error": "Storage devices collection failed" }));
         }
     };
@@ -194,7 +193,7 @@ async fn storage_history_handler() -> axum::response::Json<Value> {
     let history = match tokio::task::spawn_blocking(collect_storage_history).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[API] storage history collect task panicked: {}", e);
+            eprintln!("[API] storage history collect task panicked: {e}");
             return Json(json!({ "error": "Storage history collection failed" }));
         }
     };
@@ -222,21 +221,21 @@ async fn all_metrics_handler() -> axum::response::Json<Value> {
     let gpu = match gpu_res {
         Ok((g, _)) => safe_serialize(&g),
         Err(e) => {
-            eprintln!("[API] all_metrics gpu task panicked: {}", e);
+            eprintln!("[API] all_metrics gpu task panicked: {e}");
             json!(null)
         }
     };
     let storage_devices = match devices_res {
         Ok(d) => safe_serialize(&d),
         Err(e) => {
-            eprintln!("[API] all_metrics storage devices task panicked: {}", e);
+            eprintln!("[API] all_metrics storage devices task panicked: {e}");
             json!(null)
         }
     };
     let storage_history = match history_res {
         Ok(h) => safe_serialize(&h),
         Err(e) => {
-            eprintln!("[API] all_metrics storage history task panicked: {}", e);
+            eprintln!("[API] all_metrics storage history task panicked: {e}");
             json!(null)
         }
     };
@@ -264,9 +263,7 @@ async fn system_handler() -> axum::response::Json<Value> {
 async fn status_handler() -> axum::response::Json<Value> {
     let (gpu_backend, nvml_available) = crate::collectors::gpu::get_gpu_backend_info();
     let collectors = crate::collectors::system::get_collector_health_state();
-    let last_update = chrono::Utc::now()
-        .format("%Y-%m-%d %H:%M:%S UTC")
-        .to_string();
+    let last_update = chrono::Utc::now().to_rfc3339();
 
     Json(json!({
         "gpu_backend": gpu_backend,
@@ -285,7 +282,7 @@ async fn alerts_handler() -> axum::response::Json<AlertResponse> {
         {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[API] alerts collect task panicked: {}", e);
+                eprintln!("[API] alerts collect task panicked: {e}");
                 return Json(AlertResponse { alerts: vec![] });
             }
         };
@@ -341,7 +338,7 @@ async fn ai_metrics_handler() -> axum::response::Json<Value> {
     let (gpus, _) = match tokio::task::spawn_blocking(collect_gpu_metrics).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[API] gpu collect task panicked: {}", e);
+            eprintln!("[API] gpu collect task panicked: {e}");
             return Json(json!({ "error": "GPU collection failed" }));
         }
     };
@@ -376,12 +373,9 @@ async fn get_settings_handler() -> axum::response::Json<AiSettings> {
 
 async fn settings_location_handler() -> axum::response::Json<Value> {
     let (path, exists) = settings_location();
-    let (models_path, models_exists) = models_location();
     Json(json!({
         "path": path.to_string_lossy(),
         "exists": exists,
-        "models_path": models_path.to_string_lossy(),
-        "models_exists": models_exists,
     }))
 }
 
@@ -451,8 +445,8 @@ async fn directory_info_handler(
     let (git_info, build_status, executables, validation) =
         match tokio::task::spawn_blocking(move || {
             let git_info = ai_mgmt::read_git_info(&path);
-            let build_status = ai_mgmt::check_build_dir(&format!("{}/build", path));
-            let executables = ai_mgmt::detect_executables(&format!("{}/build/bin", path));
+            let build_status = ai_mgmt::check_build_dir(&format!("{path}/build"));
+            let executables = ai_mgmt::detect_executables(&format!("{path}/build/bin"));
             let validation = ai_mgmt::validate_directory(&path);
             (git_info, build_status, executables, validation)
         })
@@ -460,7 +454,7 @@ async fn directory_info_handler(
         {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[API] directory info task panicked: {}", e);
+                eprintln!("[API] directory info task panicked: {e}");
                 return Json(json!({ "error": "Directory info collection failed" }));
             }
         };
@@ -549,7 +543,7 @@ async fn create_command_handler(
     if let Err(e) = ai_mgmt::save_commands(&commands) {
         return Json(json!({ "error": e }));
     }
-    Json(json!({ "data": safe_serialize(&commands.last().unwrap()) }))
+    Json(json!({ "data": safe_serialize(&commands.last().expect("just pushed")) }))
 }
 
 #[derive(Deserialize)]
@@ -565,17 +559,16 @@ async fn update_command_handler(
     Json(req): Json<UpdateCommandRequest>,
 ) -> axum::response::Json<Value> {
     let mut commands = ai_mgmt::load_commands();
-    if let Some(cmd) = commands.iter_mut().find(|c| c.id == req.id) {
-        cmd.name = req.name;
-        cmd.command = req.command;
-        cmd.description = req.description;
-    } else {
+    let Some(idx) = commands.iter().position(|c| c.id == req.id) else {
         return Json(json!({ "error": "Command not found" }));
-    }
+    };
+    commands[idx].name = req.name;
+    commands[idx].command = req.command;
+    commands[idx].description = req.description;
     if let Err(e) = ai_mgmt::save_commands(&commands) {
         return Json(json!({ "error": e }));
     }
-    Json(json!({ "data": safe_serialize(&commands.iter().find(|c| c.id == req.id).unwrap()) }))
+    Json(json!({ "data": safe_serialize(&commands[idx]) }))
 }
 
 async fn delete_command_handler(Json(req): Json<serde_json::Value>) -> axum::response::Json<Value> {
@@ -597,7 +590,7 @@ async fn terminal_input_handler(Json(req): Json<serde_json::Value>) -> axum::res
         .unwrap_or("/dev/ptmx0");
     let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
     match ai_mgmt::write_terminal_input(pts, input) {
-        Ok(_) => Json(json!({ "success": true })),
+        Ok(()) => Json(json!({ "success": true })),
         Err(e) => Json(json!({ "error": e })),
     }
 }
@@ -624,16 +617,16 @@ async fn terminal_resize_handler(
         .unwrap_or("/dev/ptmx0");
     let rows = req
         .get("rows")
-        .and_then(|v| v.as_u64())
-        .map(|r| r as u16)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|r| u16::try_from(r).ok())
         .unwrap_or(24);
     let cols = req
         .get("cols")
-        .and_then(|v| v.as_u64())
-        .map(|c| c as u16)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|c| u16::try_from(c).ok())
         .unwrap_or(80);
     match ai_mgmt::resize_terminal(pts, rows, cols) {
-        Ok(_) => Json(json!({ "success": true })),
+        Ok(()) => Json(json!({ "success": true })),
         Err(e) => Json(json!({ "error": e })),
     }
 }
@@ -644,7 +637,7 @@ async fn terminal_kill_handler(Json(req): Json<serde_json::Value>) -> axum::resp
         .and_then(|v| v.as_str())
         .unwrap_or("/dev/ptmx0");
     match ai_mgmt::kill_terminal(pts) {
-        Ok(_) => Json(json!({ "success": true })),
+        Ok(()) => Json(json!({ "success": true })),
         Err(e) => Json(json!({ "error": e })),
     }
 }
@@ -660,14 +653,13 @@ async fn handle_terminal_ws(socket: WebSocket, pts_name: String) {
     let (mut sender, mut receiver) = socket.split();
 
     // Attach this viewer to the terminal's broadcast channel and get scrollback buffer
-    let (rx, scrollback) = match ai_mgmt::attach_terminal_viewer(&pts_name) {
-        Ok((rx, sb)) => (rx, sb),
-        Err(_) => return,
+    let Ok((rx, scrollback)) = ai_mgmt::attach_terminal_viewer(&pts_name) else {
+        return;
     };
 
     // Replay scrollback history before streaming live output
     let history: Vec<String> = scrollback.lock().map(|sb| sb.history()).unwrap_or_default();
-    for chunk in history.iter() {
+    for chunk in &history {
         if sender
             .send(Message::Text(axum::extract::ws::Utf8Bytes::from(
                 chunk.clone(),
@@ -687,8 +679,8 @@ async fn handle_terminal_ws(socket: WebSocket, pts_name: String) {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
                     && let (Some("resize"), Some(rows), Some(cols)) = (
                         json.get("type").and_then(|v| v.as_str()),
-                        json.get("rows").and_then(|v| v.as_u64()).map(|r| r as u16),
-                        json.get("cols").and_then(|v| v.as_u64()).map(|c| c as u16),
+                        json.get("rows").and_then(serde_json::Value::as_u64).and_then(|r| u16::try_from(r).ok()),
+                        json.get("cols").and_then(serde_json::Value::as_u64).and_then(|c| u16::try_from(c).ok()),
                     )
                 {
                     let _ = ai_mgmt::resize_terminal(&pts_name, rows, cols);
@@ -760,7 +752,7 @@ async fn list_profiles_handler() -> axum::response::Json<Value> {
     let response = match tokio::task::spawn_blocking(launcher_api::scan_profiles).await {
         Ok(response) => response,
         Err(e) => {
-            eprintln!("[API] profile scan task panicked: {}", e);
+            eprintln!("[API] profile scan task panicked: {e}");
             return Json(json!({ "error": "Profile scan failed" }));
         }
     };
@@ -778,9 +770,9 @@ async fn launch_profile_handler(
     let profile_id = req.profile_id.clone();
     let options = req.options.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let (script_path, declared_options, detected_options) = {
+        let (script_path, declared_options) = {
             let state = launcher_api::get_state();
-            let guard = state.read().unwrap();
+            let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             let profile = guard.profiles.iter().find(|p| p.id == profile_id);
             match profile {
                 Some(p) => {
@@ -790,10 +782,9 @@ async fn launch_profile_handler(
                         .as_ref()
                         .and_then(|a| a.options.clone())
                         .unwrap_or_default();
-                    let detected = p.detected_options.clone().unwrap_or_default();
-                    (Some(path), declared, detected)
+                    (Some(path), declared)
                 }
-                None => (None, vec![], vec![]),
+                None => (None, vec![]),
             }
         };
 
@@ -812,17 +803,7 @@ async fn launch_profile_handler(
                 }
                 continue;
             }
-            // Check detected options (key = env_var)
-            if let Some(opt) = detected_options.iter().find(|o| &o.env_var == key) {
-                if !opt.values.contains(value) {
-                    return Err(format!(
-                        "Invalid value '{}' for detected option '{}': must be one of {:?}",
-                        value, key, opt.values
-                    ));
-                }
-                continue;
-            }
-            return Err(format!("Unknown option '{}'", key));
+            return Err(format!("Unknown option '{key}'"));
         }
 
         launcher_api::launch_profile(&path, options)
@@ -833,7 +814,7 @@ async fn launch_profile_handler(
         Ok(Ok(_)) => Json(json!({ "success": true, "message": "Model launch initiated" })),
         Ok(Err(e)) => Json(json!({ "error": e, "success": false })),
         Err(e) => {
-            eprintln!("[API] launch task panicked: {}", e);
+            eprintln!("[API] launch task panicked: {e}");
             Json(json!({ "error": "Launch failed unexpectedly", "success": false }))
         }
     };
@@ -854,7 +835,7 @@ async fn stop_profile_handler(Json(req): Json<StopProfileRequest>) -> axum::resp
     let profile_id = req.profile_id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let state = launcher_api::get_state();
-        let guard = state.read().unwrap();
+        let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let script_path: Option<String> = guard
             .profiles
             .iter()
@@ -873,7 +854,7 @@ async fn stop_profile_handler(Json(req): Json<StopProfileRequest>) -> axum::resp
         Ok(Ok(_)) => Json(json!({ "success": true })),
         Ok(Err(e)) => Json(json!({ "error": e, "success": false })),
         Err(e) => {
-            eprintln!("[API] stop task panicked: {}", e);
+            eprintln!("[API] stop task panicked: {e}");
             Json(json!({ "error": "Stop failed unexpectedly", "success": false }))
         }
     };
@@ -912,7 +893,7 @@ async fn get_logs_handler(
 ) -> axum::response::Json<Value> {
     let script_path = {
         let state = launcher_api::get_state();
-        let guard = state.read().unwrap();
+        let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard
             .profiles
             .iter()
@@ -933,7 +914,7 @@ async fn clear_logs_handler(
 ) -> axum::response::Json<Value> {
     let script_path = {
         let state = launcher_api::get_state();
-        let guard = state.read().unwrap();
+        let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard
             .profiles
             .iter()
@@ -957,16 +938,15 @@ async fn logs_ws_handler(
 async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
     let script_path = {
         let state = launcher_api::get_state();
-        let guard = state.read().unwrap();
+        let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard
             .profiles
             .iter()
             .find(|p| p.id == profile_id)
             .map(|p| p.script_path.clone())
     };
-    let script_path = match script_path {
-        Some(p) => p,
-        None => return,
+    let Some(script_path) = script_path else {
+        return;
     };
 
     let log_mgr = log_manager::get_log_manager();
@@ -1012,7 +992,8 @@ async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
                         break;
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+
                 Err(_) => break,
             }
         }
@@ -1031,7 +1012,7 @@ async fn handle_logs_ws(socket: WebSocket, profile_id: String) {
 
 fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value> {
     let state = launcher_api::get_state();
-    let guard = state.read().unwrap();
+    let guard = state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
 
     if let Some(profile_state) = guard.states.get(script_path) {
         let status = profile_state.status.clone();
@@ -1042,7 +1023,7 @@ fn profile_metrics_handler_sync(script_path: &str) -> axum::response::Json<Value
             && let Some(pid_val) = pid
         {
             let (found, cpu_percent, memory_kb) = {
-                let mut sys = PROCESS_SYSTEM.lock().unwrap();
+                let mut sys = PROCESS_SYSTEM.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 let (cpu, mem) = get_process_cpu_percent(&mut sys, pid_val as usize);
                 (
                     cpu > 0.0 || sys.process(sysinfo::Pid::from(pid_val as usize)).is_some(),
@@ -1112,7 +1093,7 @@ mod tests {
             "gpu_backend": gpu_backend,
             "nvml_available": nvml_available,
             "collectors": {},
-            "last_update": "2024-01-01 00:00:00 UTC",
+            "last_update": "2024-01-01T00:00:00+00:00",
         });
         assert!(body.get("gpu_backend").is_some(), "must have gpu_backend");
         assert!(
@@ -1221,6 +1202,7 @@ mod tests {
     // ── Item 5: process CPU% sampler ───────────────────────────────────
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn process_cpu_fresh_system_always_zero() {
         // Documents the old broken behavior: a brand-new System with a single
         // refresh has no prior sample to diff against, so cpu_usage() is always 0.

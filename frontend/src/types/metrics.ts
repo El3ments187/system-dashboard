@@ -333,15 +333,7 @@ export interface ScriptOption {
   default: string;
 }
 
-export interface DetectedOption {
-  name: string;
-  env_var: string;
-  values: string[];
-  default: string;
-  /** Optional, matching the backend's skip_serializing_if — absent on normal
-   *  options. Set where the choice list is degraded and needs explaining. */
-  hint?: string;
-}
+
 
 export interface ParsedScriptArgs {
   model_path?: string;
@@ -385,7 +377,7 @@ export interface LaunchProfile {
   parsed_args: ParsedScriptArgs | null;
   filename_meta: FilenameMetadata | null;
   warning?: string | null;
-  detected_options?: DetectedOption[] | null;
+
 }
 
 export interface ProfileState {

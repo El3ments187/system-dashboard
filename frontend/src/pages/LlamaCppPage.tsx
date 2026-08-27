@@ -34,7 +34,7 @@ import {
   DEFAULT_RUN_MODELS_HEIGHT,
 } from "../hooks/useRunModelsSplit";
 import type { ProfileResponse, ParsedScriptArgs } from "../types/metrics";
-import { calcBuildsBehind, formatCtx, fmtUptime, fmtKb } from "./llamaCppUtils";
+import { calcBuildsBehind, formatCtx, fmtUptime, fmtKb, specLabel } from "./llamaCppUtils";
 import {
   Card,
   CardHeader,
@@ -1466,6 +1466,8 @@ export default function LlamaCppPage() {
                   value={
                     hasDraft && gpuOffload != null
                       ? `${gpuOffload.draft_loaded} / ${gpuOffload.draft_total}`
+                      : runningArgs?.spec_type && runningArgs.spec_type !== "draft"
+                      ? `n/a — ${specLabel(runningArgs.spec_type)}`
                       : "—"
                   }
                   valueColor={hasDraft ? "var(--success)" : undefined}

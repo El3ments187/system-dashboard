@@ -7,7 +7,7 @@ use std::sync::{LazyLock, Mutex};
 static NVML: LazyLock<Mutex<Option<nvml_wrapper::Nvml>>> = LazyLock::new(|| Mutex::new(None));
 
 /// When NVML init fails (e.g. a broken driver), don't retry a full library
-/// init on every 500ms poll — Nvml::init() loads the library and touches the
+/// init on every 500ms poll — `Nvml::init()` loads the library and touches the
 /// driver, which is exactly what's unhealthy in that state. Retry with a
 /// backoff instead.
 const NVML_INIT_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
@@ -45,8 +45,7 @@ static NVIDIA_SMI_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
         .arg("--query-gpu=name")
         .arg("--format=csv,noheader")
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|out| out.status.success())
 });
 
 pub fn get_gpu_backend_info() -> (String, bool) {
@@ -80,7 +79,7 @@ fn ensure_nvml_initialized(guard: &mut Option<nvml_wrapper::Nvml>) {
     }
 }
 
-/// Eager one-time initialization, called from main() at startup so (a) the
+/// Eager one-time initialization, called from `main()` at startup so (a) the
 /// first /gpu poll doesn't pay the init cost and (b) the selected backend is
 /// visible in the boot log instead of only in /api/status. The per-poll
 /// ensure_* call remains as a safety net and as the 30s recovery path when
@@ -101,30 +100,27 @@ pub fn init_gpu_backend() -> (String, bool) {
 pub fn collect_gpu_metrics() -> (Vec<GpuMetrics>, CollectorStatus) {
     let mut guard = NVML.lock().unwrap();
     ensure_nvml_initialized(&mut guard);
-    match guard.as_ref() {
-        Some(nvml) => {
-            LOGGED_NVML_UNAVAILABLE.store(false, std::sync::atomic::Ordering::Relaxed);
-            let metrics = gpu_from_nvml(nvml);
-            (metrics, CollectorStatus::Ok)
+    if let Some(nvml) = guard.as_ref() {
+        LOGGED_NVML_UNAVAILABLE.store(false, std::sync::atomic::Ordering::Relaxed);
+        let metrics = gpu_from_nvml(nvml);
+        (metrics, CollectorStatus::Ok)
+    } else {
+        drop(guard);
+        if !LOGGED_NVML_UNAVAILABLE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[GPU] NVML unavailable. Falling back to nvidia-smi (logged once; retrying init every {}s).",
+                NVML_INIT_RETRY.as_secs()
+            );
         }
-        None => {
-            drop(guard);
-            if !LOGGED_NVML_UNAVAILABLE.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[GPU] NVML unavailable. Falling back to nvidia-smi (logged once; retrying init every {}s).",
-                    NVML_INIT_RETRY.as_secs()
-                );
-            }
-            let metrics = smi_from_all_cached();
-            (
-                metrics,
-                CollectorStatus::Partial("NVML unavailable, using fallback".to_string()),
-            )
-        }
+        let metrics = smi_from_all_cached();
+        (
+            metrics,
+            CollectorStatus::Partial("NVML unavailable, using fallback".to_string()),
+        )
     }
 }
 
-/// TTL wrapper: at most one nvidia-smi subprocess per SMI_TTL window.
+/// TTL wrapper: at most one nvidia-smi subprocess per `SMI_TTL` window.
 fn smi_from_all_cached() -> Vec<GpuMetrics> {
     smi_from_all_cached_inner(std::time::Instant::now(), smi_from_all)
 }
@@ -184,71 +180,64 @@ fn gpu_from_nvml(nvml: &nvml_wrapper::Nvml) -> Vec<GpuMetrics> {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn one_gpu(index: u32, device: &nvml_wrapper::Device, driver_version: Option<&str>) -> GpuMetrics {
     // name and enforced power limit are constant per device; read them from the
     // driver once instead of twice a second.
     let (name, cached_limit) = {
         let mut cache = GPU_STATIC_INFO.lock().unwrap();
-        match cache.get(&index) {
-            Some(v) => v.clone(),
-            None => {
-                let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
-                let limit = device
-                    .enforced_power_limit()
-                    .ok()
-                    .map(|pl| pl as f64 / 1000.0);
-                cache.insert(index, (name.clone(), limit));
-                (name, limit)
-            }
+        if let Some(v) = cache.get(&index) { v.clone() } else {
+            let name = device.name().ok().unwrap_or_else(|| "Unknown".to_string());
+            let limit = device
+                .enforced_power_limit()
+                .ok()
+                .map(|pl| f64::from(pl) / 1000.0);
+            cache.insert(index, (name.clone(), limit));
+            (name, limit)
         }
     };
 
     let temp = device
         .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
-        .map(|t| t as f64)
-        .unwrap_or(0.0);
+        .map_or(0.0, f64::from);
 
     let util = device
         .utilization_rates()
-        .map(|u| u.gpu as f64)
-        .unwrap_or(0.0);
+        .map_or(0.0, |u| f64::from(u.gpu));
 
     let mem = device
         .memory_info()
-        .map(|m| {
+        .map_or((0.0, 0.0), |m| {
             let used = m.used as f64 / (1024.0 * 1024.0 * 1024.0);
             let total = m.total as f64 / (1024.0 * 1024.0 * 1024.0);
             (used, total)
-        })
-        .unwrap_or((0.0, 0.0));
+        });
 
     let power = device
         .power_usage()
         .ok()
-        .map(|p| (p as f64 / 1000.0, cached_limit.unwrap_or(0.0)))
-        .unwrap_or((0.0, 0.0));
+        .map_or((0.0, 0.0), |p| (f64::from(p) / 1000.0, cached_limit.unwrap_or(0.0)));
 
     let fan = device
         .fan_speed_rpm(0)
         .ok()
-        .map(|f| f as f64)
-        .unwrap_or(0.0);
+        .map_or(0.0, f64::from);
 
     let clock = device
         .clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
         .ok()
         .filter(|c| *c > 0)
-        .map(|c| c as f64);
+        .map(f64::from);
 
     let mem_clock = device
         .clock_info(nvml_wrapper::enum_wrappers::device::Clock::Memory)
         .ok()
         .filter(|c| *c > 0)
-        .map(|c| c as f64);
+        .map(f64::from);
 
     GpuMetrics {
         name,
-        driver_version: driver_version.map(|s| s.to_string()),
+        driver_version: driver_version.map(std::string::ToString::to_string),
         utilization_percent: util,
         temperature_celsius: temp,
         vram_used_gb: mem.0,
@@ -295,6 +284,7 @@ fn smi_from_all() -> Vec<GpuMetrics> {
     }
 }
 
+#[must_use]
 pub fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
     let gpu_blocks: Vec<&str> = xml
         .split("<gpu>")
@@ -320,18 +310,15 @@ pub fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
             let temp = extract_tag_float(gpu, "temp_entry[0]").unwrap_or(0.0);
             let util = extract_tag_float(gpu, "utilization[0].gpu_util").unwrap_or(0.0);
             let vram_used = extract_tag_float(gpu, "used")
-                .map(|v| v / 1024.0)
-                .unwrap_or(0.0);
+                .map_or(0.0, |v| v / 1024.0);
             let vram_total = extract_tag_float(gpu, "total")
-                .map(|v| v / 1024.0)
-                .unwrap_or(0.0);
+                .map_or(0.0, |v| v / 1024.0);
             let power = extract_tag_float(gpu, "power_draw[0].current").unwrap_or(0.0);
             let power_limit = extract_tag_float(gpu, "power_limit[0].current").unwrap_or(0.0);
             let clock = extract_tag_float(gpu, "gpu_clock_freq");
             let mem_clock = extract_tag_float(gpu, "mem_clock_freq");
             let fan = extract_tag_float(gpu, "fan_speed[0].current")
-                .map(|f| f * 10.0)
-                .unwrap_or(0.0);
+                .map_or(0.0, |f| f * 10.0);
 
             GpuMetrics {
                 name,
@@ -350,6 +337,7 @@ pub fn parse_smi_xml(xml: &str) -> Vec<GpuMetrics> {
         .collect()
 }
 
+#[must_use]
 pub fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
@@ -366,6 +354,7 @@ pub fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     None
 }
 
+#[must_use]
 pub fn extract_tag_float(xml: &str, tag: &str) -> Option<f64> {
     extract_tag(xml, tag).and_then(|s| {
         let parts: Vec<&str> = s.split_whitespace().collect();
@@ -374,7 +363,7 @@ pub fn extract_tag_float(xml: &str, tag: &str) -> Option<f64> {
 }
 
 /// Plain data entry for a single process's VRAM allocation, sourced from
-/// NVML running_compute_processes. Kept separate from NVML types so the
+/// NVML `running_compute_processes`. Kept separate from NVML types so the
 /// resolver below is testable without a GPU.
 pub(crate) struct GpuProcessEntry {
     pub pid: u32,
@@ -382,7 +371,7 @@ pub(crate) struct GpuProcessEntry {
 }
 
 /// Plain data entry for a single process's GPU SM utilization, sourced from
-/// NVML process_utilization_stats. Kept separate from NVML types so the
+/// NVML `process_utilization_stats`. Kept separate from NVML types so the
 /// resolver below is testable without a GPU.
 pub(crate) struct GpuUtilEntry {
     pub pid: u32,
@@ -391,10 +380,11 @@ pub(crate) struct GpuUtilEntry {
 
 /// Pure, testable seam (C9 pattern): resolve per-process VRAM (MiB) and GPU
 /// utilization (%) from pre-fetched NVML data without touching the driver.
-/// Returns (vram_mb, gpu_util_percent). Either may be None independently:
-/// vram_bytes=None means the driver reported Unavailable; an empty util list
-/// means process_utilization_stats is unsupported on this driver — that is
+/// Returns (`vram_mb`, `gpu_util_percent`). Either may be None independently:
+/// `vram_bytes=None` means the driver reported Unavailable; an empty util list
+/// means `process_utilization_stats` is unsupported on this driver — that is
 /// None, not a failure.
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn process_gpu_stats_from(
     procs: &[GpuProcessEntry],
     util_samples: &[GpuUtilEntry],
@@ -410,7 +400,7 @@ pub(crate) fn process_gpu_stats_from(
         .filter(|e| e.pid == pid)
         .map(|e| e.sm_util)
         .max()
-        .map(|u| u as f64);
+        .map(f64::from);
     (vram, util)
 }
 
@@ -419,13 +409,11 @@ pub(crate) fn process_gpu_stats_from(
 /// (None, None) when NVML is unavailable or the device cannot be queried.
 pub fn query_process_gpu_stats(pid: u32) -> (Option<f64>, Option<f64>) {
     let guard = NVML.lock().unwrap();
-    let nvml = match guard.as_ref() {
-        Some(n) => n,
-        None => return (None, None),
+    let Some(nvml) = guard.as_ref() else {
+        return (None, None);
     };
-    let device = match nvml.device_by_index(0) {
-        Ok(d) => d,
-        Err(_) => return (None, None),
+    let Ok(device) = nvml.device_by_index(0) else {
+        return (None, None);
     };
     let procs: Vec<GpuProcessEntry> = device
         .running_compute_processes()

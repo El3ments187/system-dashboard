@@ -3,10 +3,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 pub const MAX_LOG_LINES: usize = 5000;
 const BROADCAST_CAPACITY: usize = 512;
+/// `get_live_tg` returns `None` if no `print_timing` line arrived within this window.
+const LIVE_TG_STALE_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -45,6 +48,9 @@ struct ProfileLogBuffer {
     history: VecDeque<LogLine>,
     sender: broadcast::Sender<LogEvent>,
     process_exited: bool,
+    /// Running-average t/s parsed from the most recent `print_timing` log line.
+    live_tg: Option<f64>,
+    live_tg_at: Option<Instant>,
 }
 
 impl ProfileLogBuffer {
@@ -54,6 +60,8 @@ impl ProfileLogBuffer {
             history: VecDeque::new(),
             sender,
             process_exited: false,
+            live_tg: None,
+            live_tg_at: None,
         }
     }
 }
@@ -77,6 +85,12 @@ impl LogManager {
         if buf.history.len() >= MAX_LOG_LINES {
             buf.history.pop_front();
         }
+        // Parse tg while we hold only the log-buffer lock — no other lock is
+        // taken here, so there is no ordering hazard with LAUNCHER_STATE.
+        if let Some(tg) = parse_tg_from_timing_line(&line.text) {
+            buf.live_tg = Some(tg);
+            buf.live_tg_at = Some(Instant::now());
+        }
         buf.history.push_back(line.clone());
         let _ = buf.sender.send(LogEvent::Log { line });
     }
@@ -94,7 +108,24 @@ impl LogManager {
         if let Some(buf) = inner.get_mut(script_path) {
             buf.history.clear();
             buf.process_exited = false;
+            buf.live_tg = None;
+            buf.live_tg_at = None;
         }
+    }
+
+    /// Returns the `tg` t/s value from the most recent `print_timing` log line,
+    /// or `None` if no such line arrived within `LIVE_TG_STALE_SECS` seconds.
+    ///
+    /// Only the log-buffer read lock is held — `LAUNCHER_STATE` is never touched,
+    /// so there is no cross-lock ordering hazard.
+    pub fn get_live_tg(&self, script_path: &str) -> Option<f64> {
+        let inner = self.inner.read().unwrap();
+        let buf = inner.get(script_path)?;
+        let at = buf.live_tg_at?;
+        if at.elapsed() > Duration::from_secs(LIVE_TG_STALE_SECS) {
+            return None;
+        }
+        buf.live_tg
     }
 
     pub fn subscribe(
@@ -131,7 +162,37 @@ pub fn get_log_manager() -> Arc<LogManager> {
         .clone()
 }
 
+/// Parse the running-average generation speed (`tg`) from a llama-server
+/// `print_timing` log line.
+///
+/// Example line (verbatim from llama-server with `-lv 4`):
+/// ```text
+/// 383.58.946.679 I slot print_timing: id  0 | task 172319 | n_gen = 19485, tg = 12.35 t/s, tg_3s = 11.32 t/s
+/// ```
+///
+/// Returns `None` if the line does not contain `"print_timing"` (fast-path —
+/// no further parsing) or if `tg` is zero/negative.
+pub(crate) fn parse_tg_from_timing_line(text: &str) -> Option<f64> {
+    if !text.contains("print_timing") {
+        return None;
+    }
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let n = tokens.len();
+    for i in 0..n.saturating_sub(2) {
+        // Match "tg" exactly — "tg_3s" is a different token and is skipped.
+        if tokens[i] == "tg" && tokens[i + 1] == "=" {
+            let val: f64 = tokens[i + 2].parse().ok()?;
+            if val > 0.0 {
+                return Some(val);
+            }
+            return None;
+        }
+    }
+    None
+}
+
 /// Classify the severity of a raw log line from llama.cpp stdout/stderr.
+#[must_use]
 pub fn classify_log_level(text: &str) -> LogLevel {
     // Newer llama.cpp versions emit JSON-structured logs; extract the "level" field.
     let trimmed = text.trim_start();
@@ -318,7 +379,7 @@ mod tests {
     fn respects_max_line_limit() {
         let mgr = LogManager::new();
         for i in 0..MAX_LOG_LINES + 10 {
-            mgr.add_line("/test.sh", make_line(&format!("line {}", i)));
+            mgr.add_line("/test.sh", make_line(&format!("line {i}")));
         }
         let (history, _) = mgr.get_history("/test.sh");
         assert_eq!(history.len(), MAX_LOG_LINES);
@@ -370,7 +431,7 @@ mod tests {
         let event = rx.try_recv().expect("event not delivered");
         match event {
             LogEvent::Log { line } => assert_eq!(line.text, "streamed line"),
-            _ => panic!("expected Log event"),
+            LogEvent::Exited => panic!("expected Log event"),
         }
     }
 
@@ -413,7 +474,86 @@ mod tests {
                 assert_eq!(line.stream, LogStream::Stderr);
                 assert_eq!(line.text, "stderr error line");
             }
-            _ => panic!("expected Log event"),
+            LogEvent::Exited => panic!("expected Log event"),
         }
+    }
+
+    // ─── parse_tg_from_timing_line (T254) ───────────────────────────────
+
+    #[test]
+    fn parse_tg_verbatim_line_from_prompt() {
+        // Exact line quoted in the T254 prompt — must parse 12.35.
+        let line = "383.58.946.679 I slot print_timing: id  0 | task 172319 | n_gen = 19485, tg = 12.35 t/s, tg_3s = 11.32 t/s";
+        assert_eq!(parse_tg_from_timing_line(line), Some(12.35));
+    }
+
+    #[test]
+    fn parse_tg_non_timing_line_returns_none_without_parsing() {
+        // Fast-path: a line without "print_timing" must return None immediately.
+        assert_eq!(
+            parse_tg_from_timing_line("some other log line with tg = 99.0 in it"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_tg_zero_yields_none() {
+        let line = "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 0.00 t/s, tg_3s = 0.00 t/s";
+        assert_eq!(parse_tg_from_timing_line(line), None);
+    }
+
+    #[test]
+    fn parse_tg_malformed_line_does_not_panic() {
+        // No "=" after "tg", or no numeric token — must return None, not panic.
+        assert_eq!(
+            parse_tg_from_timing_line("slot print_timing: id 0 tg"),
+            None
+        );
+        assert_eq!(
+            parse_tg_from_timing_line("slot print_timing: id 0 tg ="),
+            None
+        );
+        assert_eq!(
+            parse_tg_from_timing_line("slot print_timing: id 0 tg = notanumber t/s"),
+            None
+        );
+    }
+
+    // ─── live_tg integration (T254) ─────────────────────────────────────
+
+    #[test]
+    fn live_tg_is_none_before_any_print_timing_line() {
+        let mgr = LogManager::new();
+        assert_eq!(mgr.get_live_tg("/test.sh"), None);
+        // A non-timing line must not set live_tg.
+        mgr.add_line("/test.sh", make_line("startup complete"));
+        assert_eq!(mgr.get_live_tg("/test.sh"), None);
+    }
+
+    #[test]
+    fn live_tg_is_set_after_print_timing_line() {
+        let mgr = LogManager::new();
+        let timing = "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 12.35 t/s, tg_3s = 11.00 t/s";
+        mgr.add_line("/test.sh", make_line(timing));
+        assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
+    }
+
+    #[test]
+    fn non_timing_line_does_not_overwrite_stored_live_tg() {
+        let mgr = LogManager::new();
+        let timing = "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 12.35 t/s, tg_3s = 11.00 t/s";
+        mgr.add_line("/test.sh", make_line(timing));
+        mgr.add_line("/test.sh", make_line("some unrelated log line"));
+        assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
+    }
+
+    #[test]
+    fn clear_resets_live_tg() {
+        let mgr = LogManager::new();
+        let timing = "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 12.35 t/s, tg_3s = 11.00 t/s";
+        mgr.add_line("/test.sh", make_line(timing));
+        assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
+        mgr.clear("/test.sh");
+        assert_eq!(mgr.get_live_tg("/test.sh"), None);
     }
 }

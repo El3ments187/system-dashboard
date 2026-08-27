@@ -1,7 +1,7 @@
 //! Launch profile management: script scanning, parsing, process control, resource monitoring, metadata persistence.
 
 use crate::api::log_manager::{self, LogLevel, LogLine, LogStream, classify_log_level};
-use crate::models::ai::*;
+use crate::models::ai::{LaunchProfile, ProfileState, ProfileMetadata, ParsedScriptArgs, ScriptOption, FilenameMetadata, ProfileResponse};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
@@ -70,6 +70,7 @@ pub fn update_scan_dir(dir: &str) {
     guard.scan_dir = dir.to_string();
 }
 
+#[must_use]
 pub fn get_running_script() -> Option<String> {
     let state = get_state();
     let guard = state.read().unwrap();
@@ -90,7 +91,7 @@ pub fn scan_scripts(dir: &str) -> Vec<LaunchProfile> {
         .follow_links(true)
         .max_depth(2)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
         if !path.is_file() || path.extension().is_none_or(|ext| ext != "sh") {
@@ -121,138 +122,11 @@ pub fn scan_scripts(dir: &str) -> Vec<LaunchProfile> {
             parsed_args,
             filename_meta,
             warning: None,
-            detected_options: None, // filled in below
         });
-    }
-
-    // Prune orphaned models.json entries (only when the scan found scripts).
-    if !profiles.is_empty() {
-        let current_paths: std::collections::HashSet<String> =
-            profiles.iter().map(|p| p.script_path.clone()).collect();
-        crate::api::settings::prune_model_capabilities(&current_paths);
-    }
-
-    // Attach detected options from models.json cache to each profile.
-    for profile in &mut profiles {
-        let caps = crate::api::settings::get_model_capabilities(&profile.script_path);
-        let detected = build_detected_options(caps.as_ref(), &profile.parsed_args);
-        if !detected.is_empty() {
-            profile.detected_options = Some(detected);
-        }
     }
 
     profiles.sort_by(|a, b| a.name.cmp(&b.name));
     profiles
-}
-
-/// Build the list of capability-detected options for a profile.
-///
-/// Declared options win: if the script already declares `@option NAME`, the
-/// corresponding detected option is suppressed (the author narrowed it).
-fn build_detected_options(
-    caps: Option<&crate::models::ai::ModelCapabilities>,
-    parsed_args: &Option<crate::models::ai::ParsedScriptArgs>,
-) -> Vec<crate::models::ai::DetectedOption> {
-    use crate::models::ai::DetectedOption;
-
-    let declared_names: std::collections::HashSet<String> = parsed_args
-        .as_ref()
-        .and_then(|a| a.options.as_ref())
-        .map(|opts| opts.iter().map(|o| o.name.clone()).collect())
-        .unwrap_or_default();
-
-    let mut detected = Vec::new();
-
-    // Option 1 — reasoning effort (capability-gated).
-    if caps.map(|c| c.supports_reasoning_effort).unwrap_or(false)
-        && !declared_names.contains("REASONING_EFFORT")
-    {
-        detected.push(DetectedOption {
-            hint: None,
-            name: "REASONING_EFFORT".to_string(),
-            env_var: "LLAMA_ARG_REASONING_EFFORT".to_string(),
-            values: vec![
-                "default".to_string(),
-                "minimal".to_string(),
-                "low".to_string(),
-                "medium".to_string(),
-                "high".to_string(),
-                "xhigh".to_string(),
-                "max".to_string(),
-            ],
-            default: "default".to_string(),
-        });
-    } else if caps.map(|c| c.supports_reasoning_effort).unwrap_or(false)
-        && declared_names.contains("REASONING_EFFORT")
-    {
-        eprintln!(
-            "[Launcher] detected REASONING_EFFORT suppressed: script declares @option REASONING_EFFORT"
-        );
-    }
-
-    // Option 2 — context size (not capability-gated, offered to all profiles).
-    // Collision: if script declares @option CTX_SIZE or @option CTX, skip.
-    let ctx_declared = declared_names.contains("CTX_SIZE") || declared_names.contains("CTX");
-    if !ctx_declared {
-        let n_ctx_train = caps.and_then(|c| c.n_ctx_train);
-        let script_ctx = parsed_args.as_ref().and_then(|a| a.context_size);
-
-        // Label 'default' with the script's own -c value when set, so the user
-        // knows what they are reverting to. Bare "default" when no -c is present.
-        let default_label = match script_ctx {
-            Some(n) => format!("default ({})", n),
-            None => "default".to_string(),
-        };
-
-        let mut values = vec![default_label.clone()];
-
-        match n_ctx_train {
-            Some(limit) => {
-                // Single loop over [8,4,2,1]; /1 is the full limit, not a special case.
-                // BTreeSet keeps entries sorted and deduplicates collisions from truncating division.
-                let mut series = std::collections::BTreeSet::new();
-                for d in [8u32, 4, 2, 1] {
-                    let v = limit / d;
-                    if v >= 4096 {
-                        series.insert(v);
-                    }
-                }
-                // If a series entry equals the script's own context_size, drop it —
-                // it is already represented by the default label.
-                for v in series {
-                    if Some(v) != script_ctx {
-                        values.push(v.to_string());
-                    }
-                }
-            }
-            None => {
-                // n_ctx_train unknown: conservative list unchanged.
-                values.push("32768".to_string());
-            }
-        }
-
-        detected.push(DetectedOption {
-            name: "CTX_SIZE".to_string(),
-            env_var: "LLAMA_ARG_CTX_SIZE".to_string(),
-            values,
-            default: default_label,
-            // Only when n_ctx_train is unknown. That is every model not yet
-            // run, since capabilities cache only after /props answers — so the
-            // short list is the DEFAULT state, not an edge case, and without a
-            // reason it reads as broken.
-            hint: if n_ctx_train.is_none() {
-                Some(
-                    "Run this model once to detect its training limit — \
-                     the list expands to the sizes it actually supports."
-                        .to_string(),
-                )
-            } else {
-                None
-            },
-        });
-    }
-
-    detected
 }
 
 fn compute_file_hash(path: &Path) -> String {
@@ -262,20 +136,27 @@ fn compute_file_hash(path: &Path) -> String {
 
 fn hash_string(s: &str) -> String {
     use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
     let result = hasher.finalize();
-    // Convert first 8 bytes to hex string manually
-    result[..8].iter().map(|b| format!("{:02x}", b)).collect()
+    result[..8]
+        .iter()
+        .fold(String::with_capacity(16), |mut acc, b| {
+            write!(acc, "{b:02x}").expect("write to String is infallible");
+            acc
+        })
 }
 
 // ─── Script Parser ──────────────────────────────────────────────────
 
+#[must_use]
 pub fn parse_script_content(script_path: &str) -> Option<ParsedScriptArgs> {
     let content = fs::read_to_string(script_path).ok()?;
     parse_script_args(&content)
 }
 
+#[must_use]
 pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
     // Find the llama-server command line within the script
     // Look for lines containing "llama-server" and extract arguments
@@ -296,11 +177,11 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
 
     // Context size: -c / --ctx-size (also accepts --ctx-size=N via token_value)
     if let Some(val) = token_numeric(&tokens, &["-c", "--ctx-size"]) {
-        args.context_size = Some(val as u32);
+        args.context_size = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_numeric(&tokens, &["--port"]) {
-        args.port = Some(val as u16);
+        args.port = u16::try_from(val).ok();
     }
 
     if let Some(val) = token_value(&tokens, &["--host"]) {
@@ -308,19 +189,19 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
     }
 
     if let Some(val) = token_numeric(&tokens, &["-b", "--batch-size"]) {
-        args.batch_size = Some(val as u32);
+        args.batch_size = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_numeric(&tokens, &["-ub", "--ubatch-size"]) {
-        args.ubatch_size = Some(val as u32);
+        args.ubatch_size = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_numeric(&tokens, &["--parallel", "-np"]) {
-        args.parallel = Some(val as u32);
+        args.parallel = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_numeric(&tokens, &["--cache-reuse"]) {
-        args.cache_reuse = Some(val as u32);
+        args.cache_reuse = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_value(&tokens, &["--flash-attn", "-fa"]) {
@@ -328,7 +209,7 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
     }
 
     if let Some(val) = token_numeric(&tokens, &["-t", "--threads"]) {
-        args.threads = Some(val as u32);
+        args.threads = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_float(&tokens, &["--temp"]) {
@@ -340,7 +221,7 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
     }
 
     if let Some(val) = token_numeric(&tokens, &["--top-k"]) {
-        args.top_k = Some(val as i32);
+        args.top_k = i32::try_from(val).ok();
     }
 
     if let Some(val) = token_float(&tokens, &["--repeat-penalty"]) {
@@ -368,7 +249,7 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
     }
 
     if let Some(val) = token_numeric(&tokens, &["--spec-draft-n-max"]) {
-        args.spec_draft_n_max = Some(val as u32);
+        args.spec_draft_n_max = u32::try_from(val).ok();
     }
 
     if let Some(val) = token_value(&tokens, &["--model-draft", "-md"]) {
@@ -397,15 +278,13 @@ pub fn parse_script_args(content: &str) -> Option<ParsedScriptArgs> {
                         });
                     } else {
                         eprintln!(
-                            "[Launcher] @option {}: default '{}' not in declared values {:?} — skipping",
-                            name, default, values
+                            "[Launcher] @option {name}: default '{default}' not in declared values {values:?} — skipping"
                         );
                     }
                 }
                 None => {
                     eprintln!(
-                        "[Launcher] @option {} declared but ${{{}:-default}} not found in script — ignoring",
-                        name, name
+                        "[Launcher] @option {name} declared but ${{{name}:-default}} not found in script — ignoring"
                     );
                 }
             }
@@ -468,7 +347,7 @@ fn token_value(tokens: &[String], flags: &[&str]) -> Option<String> {
             if tok == flag {
                 return tokens.get(i + 1).cloned();
             }
-            if let Some(val) = tok.strip_prefix(&format!("{}=", flag)) {
+            if let Some(val) = tok.strip_prefix(&format!("{flag}=")) {
                 return Some(val.to_string());
             }
         }
@@ -563,7 +442,7 @@ fn parse_option_declarations(content: &str) -> HashMap<String, Vec<String>> {
 /// `${NAME:-default}` patterns. Returns `None` if the pattern is absent,
 /// which means the @option is unpaired and should be ignored.
 fn extract_option_default(content: &str, name: &str) -> Option<String> {
-    let pattern = format!("${{{}:-", name);
+    let pattern = format!("${{{name}:-");
     for line in content.lines() {
         if let Some(start) = line.find(&pattern) {
             let after = &line[start + pattern.len()..];
@@ -583,8 +462,8 @@ fn resolve_shell_variables(value: &str, vars: &HashMap<String, String>) -> Strin
     entries.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
     let mut result = value.to_string();
     for (name, val) in entries {
-        result = result.replace(&format!("${{{}}}", name), val);
-        result = result.replace(&format!("${}", name), val);
+        result = result.replace(&format!("${{{name}}}"), val);
+        result = result.replace(&format!("${name}"), val);
     }
     result
 }
@@ -648,6 +527,7 @@ fn find_llama_server_command(content: &str) -> Option<String> {
 
 // ─── Filename Metadata Extraction ───────────────────────────────────
 
+#[must_use]
 pub fn extract_filename_metadata(filename: &str) -> Option<FilenameMetadata> {
     // Remove .sh extension
     let name = filename.strip_suffix(".sh").unwrap_or(filename);
@@ -754,7 +634,7 @@ fn is_quant_token(token: &str) -> bool {
         return false;
     };
 
-    let digit_count = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    let digit_count = rest.chars().take_while(char::is_ascii_digit).count();
     if digit_count == 0 {
         return false;
     }
@@ -767,7 +647,7 @@ fn is_quant_token(token: &str) -> bool {
                 .all(|c| c.is_ascii_alphanumeric() || c == '_'))
 }
 
-/// A params token is a SIZE SHAPE — optional MoE 'A' prefix, digits,
+/// A params token is a SIZE SHAPE — optional `MoE` 'A' prefix, digits,
 /// optional decimal, then B or M: 27B, 1.5B, 700M, 9b, A3B. Never a mere
 /// B-containing word (the "Bonsai" bug).
 fn is_params_token(s: &str) -> bool {
@@ -788,15 +668,14 @@ fn is_params_token(s: &str) -> bool {
 
 pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Result<Value, String> {
     eprintln!(
-        "[Launcher] launch_profile request received for {}",
-        script_path
+        "[Launcher] launch_profile request received for {script_path}"
     );
 
     // Check if the script exists and is executable before doing anything else.
     let script_p = PathBuf::from(script_path);
     if !script_p.exists() {
-        eprintln!("[Launcher] Script not found: {}", script_path);
-        return Err(format!("Script not found: {}", script_path));
+        eprintln!("[Launcher] Script not found: {script_path}");
+        return Err(format!("Script not found: {script_path}"));
     }
 
     // The script is run as `bash <path>`, so only read permission is required.
@@ -804,8 +683,8 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
         .and_then(|_| fs::File::open(&script_p))
         .map(|_| ())
     {
-        eprintln!("[Launcher] Cannot read script {}: {}", script_path, e);
-        return Err(format!("Permission denied: {}", e));
+        eprintln!("[Launcher] Cannot read script {script_path}: {e}");
+        return Err(format!("Permission denied: {e}"));
     }
 
     // Snapshot the currently running script (read lock, released immediately) so
@@ -842,7 +721,7 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
         if let Some(running) = currently_running
             && running != script_str
         {
-            eprintln!("[Launcher] Stopping existing profile: {}", running);
+            eprintln!("[Launcher] Stopping existing profile: {running}");
             let running_clone = running.clone();
             let stop_result =
                 tokio::task::spawn_blocking(move || stop_profile_internal(&running_clone)).await;
@@ -850,11 +729,10 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
                     eprintln!(
-                        "[Launcher] Failed to stop existing profile {}: {}",
-                        running, e
-                    )
+                        "[Launcher] Failed to stop existing profile {running}: {e}"
+                    );
                 }
-                Err(e) => eprintln!("[Launcher] Stop task panicked for {}: {}", running, e),
+                Err(e) => eprintln!("[Launcher] Stop task panicked for {running}: {e}"),
             }
         }
 
@@ -872,14 +750,14 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     stream: LogStream::Stdout,
                     level: LogLevel::Info,
-                    text: format!("[Dashboard] Launching: {}", script_str),
+                    text: format!("[Dashboard] Launching: {script_str}"),
                 },
             );
         }
-        eprintln!("[Launcher] Spawning script: {}", script_str);
-        match execute_script(&script_str, &options).await {
+        eprintln!("[Launcher] Spawning script: {script_str}");
+        match execute_script(&script_str, &options) {
             Ok(pid) => {
-                eprintln!("[Launcher] Script {} launched with PID {}", script_str, pid);
+                eprintln!("[Launcher] Script {script_str} launched with PID {pid}");
                 let state = get_state();
                 let mut guard = state.write().unwrap();
                 guard.states.insert(
@@ -909,7 +787,8 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
-                            .as_millis() as f64,
+                            .as_secs_f64()
+                            * 1000.0,
                     );
                 } else {
                     guard.metadata.insert(
@@ -928,7 +807,8 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                                 std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
-                                    .as_millis() as f64,
+                                    .as_secs_f64()
+                                    * 1000.0,
                             ),
                         },
                     );
@@ -937,7 +817,7 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                 save_metadata(&guard.metadata);
             }
             Err(e) => {
-                eprintln!("[Launcher] Failed to launch {}: {}", script_str, e);
+                eprintln!("[Launcher] Failed to launch {script_str}: {e}");
                 {
                     let log_mgr = log_manager::get_log_manager();
                     log_mgr.add_line(
@@ -946,13 +826,13 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
                             timestamp: chrono::Utc::now().to_rfc3339(),
                             stream: LogStream::Stderr,
                             level: LogLevel::Error,
-                            text: format!("[Dashboard] Failed to launch script: {}", e),
+                            text: format!("[Dashboard] Failed to launch script: {e}"),
                         },
                     );
                     log_mgr.set_process_exited(&script_str);
                 }
-                let _state = get_state();
-                let mut guard = _state.write().unwrap();
+                let err_state = get_state();
+                let mut guard = err_state.write().unwrap();
                 guard.states.insert(
                     script_str.clone(),
                     ProfileState {
@@ -969,17 +849,14 @@ pub fn launch_profile(script_path: &str, options: HashMap<String, String>) -> Re
     });
 
     eprintln!(
-        "[Launcher] launch_profile returning immediately for {}",
-        script_path
+        "[Launcher] launch_profile returning immediately for {script_path}"
     );
     Ok(json!({ "success": true, "message": "Model launch initiated" }))
 }
 
-async fn execute_script(script_path: &str, options: &HashMap<String, String>) -> Result<u32, String> {
+fn execute_script(script_path: &str, options: &HashMap<String, String>) -> Result<u32, String> {
     let script_dir = Path::new(script_path)
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
+        .parent().map_or_else(|| PathBuf::from("/tmp"), std::path::Path::to_path_buf);
 
     let mut cmd = tokio::process::Command::new("bash");
     cmd.current_dir(&script_dir)
@@ -998,7 +875,7 @@ async fn execute_script(script_path: &str, options: &HashMap<String, String>) ->
     }
 
     let mut child = cmd.spawn()
-        .map_err(|e| format!("Failed to spawn script: {}", e))?;
+        .map_err(|e| format!("Failed to spawn script: {e}"))?;
 
     let pid = child
         .id()
@@ -1098,8 +975,7 @@ async fn wait_for_model_ready(script_path: &str) {
         match profile_status.as_deref() {
             Some(s) if s != "loading" => {
                 eprintln!(
-                    "[HealthCheck] {} status is no longer 'loading', exiting health check",
-                    script_path
+                    "[HealthCheck] {script_path} status is no longer 'loading', exiting health check"
                 );
                 return;
             }
@@ -1109,7 +985,7 @@ async fn wait_for_model_ready(script_path: &str) {
 
         // Check process liveness
         if let Some(pid) = profile_pid
-            && unsafe { libc::kill(pid as i32, 0) != 0 }
+            && unsafe { libc::kill(pid.cast_signed(), 0) != 0 }
         {
             // PID is dead — the bash wrapper may have exited after exec'ing the server.
             // Check if a live server is still bound to the expected port before failing.
@@ -1120,8 +996,7 @@ async fn wait_for_model_ready(script_path: &str) {
             });
             if !still_on_port {
                 eprintln!(
-                    "[HealthCheck] PID {} for {} is no longer alive and no server on port, marking as failed",
-                    pid, script_path
+                    "[HealthCheck] PID {pid} for {script_path} is no longer alive and no server on port, marking as failed"
                 );
                 let state = get_state();
                 let mut guard = state.write().unwrap();
@@ -1137,13 +1012,12 @@ async fn wait_for_model_ready(script_path: &str) {
 
         // Check health endpoint if port is available
         if let Some(p) = port {
-            let health_url = format!("http://{}:{}/health", host, p);
+            let health_url = format!("http://{host}:{p}/health");
             if let Ok(resp) = metrics_http_client().get(&health_url).send().await
                 && resp.status().is_success()
             {
                 eprintln!(
-                    "[HealthCheck] {} health check succeeded, marking as running",
-                    script_path
+                    "[HealthCheck] {script_path} health check succeeded, marking as running"
                 );
                 crate::api::startup_info::on_load_ready(script_path);
                 let state = get_state();
@@ -1158,8 +1032,7 @@ async fn wait_for_model_ready(script_path: &str) {
 
     // Timeout reached - mark as failed
     eprintln!(
-        "[HealthCheck] {} health check timed out after {} seconds, marking as failed",
-        script_path, timeout_secs
+        "[HealthCheck] {script_path} health check timed out after {timeout_secs} seconds, marking as failed"
     );
     let state = get_state();
     let mut guard = state.write().unwrap();
@@ -1186,12 +1059,12 @@ fn stop_profile_internal(script_path: &str) -> Result<Value, String> {
     drop(guard);
 
     if let Some(pid) = pid {
-        eprintln!("[Launcher] Stopping PID {} for {}", pid, script_path);
+        eprintln!("[Launcher] Stopping PID {pid} for {script_path}");
         graceful_shutdown(pid)?;
     }
 
-    let _state = get_state();
-    let mut guard = _state.write().unwrap();
+    let st = get_state();
+    let mut guard = st.write().unwrap();
 
     // Persist the last-known peak VRAM/RAM/TPS into metadata before they're
     // lost, so the Run Models table can still show historical figures once
@@ -1232,10 +1105,11 @@ fn stop_profile_internal(script_path: &str) -> Result<Value, String> {
     Ok(json!({ "success": true }))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn graceful_shutdown(pid: u32) -> Result<(), String> {
     use std::time::Duration;
 
-    let ipid = pid as i32;
+    let ipid = pid.cast_signed();
     // Use the actual PGID so the signal reaches processes that are not their
     // own group leader (e.g. llama-server launched by a bash wrapper).
     // Also send directly to the PID as a fallback.
@@ -1251,8 +1125,7 @@ fn graceful_shutdown(pid: u32) -> Result<(), String> {
     // Wait 10 seconds for graceful exit
     if !wait_for_exit(pid, Duration::from_secs(10)) {
         eprintln!(
-            "[Launcher] PID {} didn't exit gracefully, sending SIGTERM",
-            pid
+            "[Launcher] PID {pid} didn't exit gracefully, sending SIGTERM"
         );
         unsafe {
             libc::kill(group_target, libc::SIGTERM);
@@ -1262,8 +1135,7 @@ fn graceful_shutdown(pid: u32) -> Result<(), String> {
         // Wait 5 seconds for SIGTERM
         if !wait_for_exit(pid, Duration::from_secs(5)) {
             eprintln!(
-                "[Launcher] PID {} didn't exit after SIGTERM, sending SIGKILL",
-                pid
+                "[Launcher] PID {pid} didn't exit after SIGTERM, sending SIGKILL"
             );
             unsafe {
                 libc::kill(group_target, libc::SIGKILL);
@@ -1281,7 +1153,7 @@ fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
     let start = std::time::Instant::now();
     while start.elapsed() < timeout {
         unsafe {
-            if libc::kill(pid as i32, 0) != 0 {
+            if libc::kill(pid.cast_signed(), 0) != 0 {
                 // Process no longer exists (errno is ESRCH or EPERM depending on OS)
                 return true;
             }
@@ -1293,6 +1165,7 @@ fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
 
 // ─── Resource Monitoring ────────────────────────────────────────────
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn update_profile_metrics(script_path: &str, metrics: ProfileState) {
     let state = get_state();
     let mut guard = state.write().unwrap();
@@ -1306,6 +1179,7 @@ pub fn update_profile_metrics(script_path: &str, metrics: ProfileState) {
     }
 }
 
+#[must_use]
 pub fn find_llama_server_pid(script_path: &str) -> Option<u32> {
     let mut system = sysinfo::System::new();
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
@@ -1371,11 +1245,21 @@ fn find_llama_server_pid_by_port(system: &sysinfo::System, port: u16) -> Option<
 
 // ─── Metadata Persistence ───────────────────────────────────────────
 
+fn sanitize_metadata(data: &mut HashMap<String, ProfileMetadata>) {
+    for meta in data.values_mut() {
+        if meta.avg_gen_tps.is_some_and(|v| v <= 0.0) {
+            meta.avg_gen_tps = None;
+        }
+    }
+}
+
+#[must_use]
 pub fn load_metadata() -> HashMap<String, ProfileMetadata> {
     let path = metadata_file_path();
     if let Ok(content) = fs::read_to_string(&path)
-        && let Ok(data) = serde_json::from_str::<HashMap<String, ProfileMetadata>>(&content)
+        && let Ok(mut data) = serde_json::from_str::<HashMap<String, ProfileMetadata>>(&content)
     {
+        sanitize_metadata(&mut data);
         return data;
     }
     HashMap::new()
@@ -1433,6 +1317,7 @@ pub fn capture_metrics_into_metadata(
 
 // ─── Public API Functions ───────────────────────────────────────────
 
+#[must_use]
 pub fn scan_profiles() -> ProfileResponse {
     let state = get_state();
     let mut guard = state.write().unwrap();
@@ -1486,7 +1371,7 @@ pub fn scan_profiles() -> ProfileResponse {
                 }
                 let tracked_pid_alive = state_entry
                     .llama_server_pid
-                    .is_some_and(|pid| unsafe { libc::kill(pid as i32, 0) == 0 });
+                    .is_some_and(|pid| unsafe { libc::kill(pid.cast_signed(), 0) == 0 });
 
                 let died = if tracked_pid_alive {
                     false
@@ -1504,29 +1389,25 @@ pub fn scan_profiles() -> ProfileResponse {
                         .and_then(|a| a.port);
                     let rediscovered =
                         port.and_then(|p| find_llama_server_pid_by_port(&liveness_system, p));
-                    match rediscovered {
-                        Some(real_pid) => {
-                            eprintln!(
-                                "[Launcher] {} wrapper process exited but llama-server (PID {}) is still running on its port",
-                                script_path, real_pid
-                            );
-                            state_entry.llama_server_pid = Some(real_pid);
-                            // Update the PID to the real server process; keep status as-is.
-                            // For "loading"/"starting" profiles, wait_for_model_ready will
-                            // transition to "running" once the health check succeeds.
-                            false
-                        }
-                        None => {
-                            eprintln!(
-                                "[Launcher] {} for {} is no longer alive, marking stopped",
-                                state_entry.llama_server_pid.map_or_else(
-                                    || "PID <none>".to_string(),
-                                    |p| format!("PID {}", p)
-                                ),
-                                script_path
-                            );
-                            true
-                        }
+                    if let Some(real_pid) = rediscovered {
+                        eprintln!(
+                            "[Launcher] {script_path} wrapper process exited but llama-server (PID {real_pid}) is still running on its port"
+                        );
+                        state_entry.llama_server_pid = Some(real_pid);
+                        // Update the PID to the real server process; keep status as-is.
+                        // For "loading"/"starting" profiles, wait_for_model_ready will
+                        // transition to "running" once the health check succeeds.
+                        false
+                    } else {
+                        eprintln!(
+                            "[Launcher] {} for {} is no longer alive, marking stopped",
+                            state_entry.llama_server_pid.map_or_else(
+                                || "PID <none>".to_string(),
+                                |p| format!("PID {p}")
+                            ),
+                            script_path
+                        );
+                        true
                     }
                 };
                 if died {
@@ -1565,11 +1446,7 @@ pub fn scan_profiles() -> ProfileResponse {
     let running_script_clone = guard.running_script.clone();
     let mut recovery_candidates: Vec<&LaunchProfile> = profiles.iter().collect();
     recovery_candidates.sort_by_key(|p| {
-        if running_script_clone.as_deref() == Some(p.script_path.as_str()) {
-            0u8
-        } else {
-            1u8
-        }
+        u8::from(running_script_clone.as_deref() != Some(p.script_path.as_str()))
     });
     // Pre-claim ports that are already held by active profiles so subsequent polls
     // don't recover a second profile onto the same port.
@@ -1609,8 +1486,7 @@ pub fn scan_profiles() -> ProfileResponse {
             let (prior_peak_vram_mb, prior_peak_ram_mb) = guard
                 .states
                 .get(&profile.script_path)
-                .map(|s| (s.peak_vram_mb, s.peak_ram_mb))
-                .unwrap_or((None, None));
+                .map_or((None, None), |s| (s.peak_vram_mb, s.peak_ram_mb));
             guard.states.insert(
                 profile.script_path.clone(),
                 ProfileState {
@@ -1636,8 +1512,7 @@ pub fn scan_profiles() -> ProfileResponse {
                 .get(&p.script_path)
                 .map_or(2, |s| match s.status.as_str() {
                     "running" => 0,
-                    "loading" => 1,
-                    "starting" => 1,
+                    "loading" | "starting" => 1,
                     _ => 2,
                 })
         };
@@ -1659,12 +1534,14 @@ pub fn scan_profiles() -> ProfileResponse {
     }
 }
 
+#[must_use]
 pub fn get_profile_status(script_path: &str) -> Option<ProfileState> {
     let state = get_state();
     let guard = state.read().unwrap();
     guard.states.get(script_path).cloned()
 }
 
+#[must_use]
 pub fn get_profile_parsed_args(script_path: &str) -> Option<ParsedScriptArgs> {
     let state = get_state();
     let guard = state.read().unwrap();
@@ -1751,7 +1628,7 @@ fn query_vram_mb_for_pid(pid: u32) -> Option<f64> {
 /// naturally per run). Plain overwrite — the previous behavior — is
 /// "last sample", not a peak: an early-load reading (0.3 GB before
 /// layers finish) could be what a stop persists, and a missing sample
-/// tick could regress a real peak. max() makes any single bad/early/
+/// tick could regress a real peak. `max()` makes any single bad/early/
 /// missing sample harmless.
 pub(crate) fn next_peak_mb(current: Option<f64>, prev: Option<f64>) -> Option<f64> {
     match (current, prev) {
@@ -1759,6 +1636,19 @@ pub(crate) fn next_peak_mb(current: Option<f64>, prev: Option<f64>) -> Option<f6
         (Some(c), None) => Some(c),
         (None, p) => p,
     }
+}
+
+fn parse_tps_from_metrics(text: &str) -> Option<f64> {
+    for line in text.lines() {
+        if line.starts_with("llamacpp:predicted_tokens_seconds")
+            && !line.contains('#')
+            && let Ok(val) = line.split_whitespace().last().unwrap_or("0").parse::<f64>()
+            && val > 0.0
+        {
+            return Some(val);
+        }
+    }
+    None
 }
 
 async fn update_profile_metrics_for_script(script_path: &str) {
@@ -1787,13 +1677,12 @@ async fn update_profile_metrics_for_script(script_path: &str) {
         // terminal window) and exit themselves shortly after — check for a
         // live llama-server on the expected port before concluding stopped.
         if let Some(pid) = profile_state.llama_server_pid
-            && unsafe { libc::kill(pid as i32, 0) != 0 }
+            && unsafe { libc::kill(pid.cast_signed(), 0) != 0 }
         {
             drop(guard);
             if let Some(real_pid) = port.and_then(|p| find_llama_server_pid_by_port(&system, p)) {
                 eprintln!(
-                    "[Metrics] {} wrapper process exited but llama-server (PID {}) is still running on its port",
-                    script_path, real_pid
+                    "[Metrics] {script_path} wrapper process exited but llama-server (PID {real_pid}) is still running on its port"
                 );
                 let state = get_state();
                 let mut guard = state.write().unwrap();
@@ -1802,8 +1691,7 @@ async fn update_profile_metrics_for_script(script_path: &str) {
                 }
             } else {
                 eprintln!(
-                    "[Metrics] PID {} for {} is no longer alive",
-                    pid, script_path
+                    "[Metrics] PID {pid} for {script_path} is no longer alive"
                 );
                 let state = get_state();
                 let mut guard = state.write().unwrap();
@@ -1855,7 +1743,7 @@ async fn update_profile_metrics_for_script(script_path: &str) {
         // caught raw RSS overstating a CUDA process by ~6 GB of driver
         // mappings. Same page, same word "RAM", same number.
         let peak_ram_mb = (crate::collectors::ai::process_mem_kb_from_status(
-            &std::fs::read_to_string(format!("/proc/{}/status", llama_pid)).unwrap_or_default(),
+            &std::fs::read_to_string(format!("/proc/{llama_pid}/status")).unwrap_or_default(),
         ) / 1024.0)
             .ceil();
 
@@ -1865,20 +1753,22 @@ async fn update_profile_metrics_for_script(script_path: &str) {
             && let Some(port) = parsed_args.port
         {
             let host = parsed_args.host.as_deref().unwrap_or("127.0.0.1");
-            let metrics_url = format!("http://{}:{}/metrics", host, port);
+            let metrics_url = format!("http://{host}:{port}/metrics");
             if let Ok(resp) = metrics_http_client().get(&metrics_url).send().await
                 && let Ok(text) = resp.text().await
             {
-                for line in text.lines() {
-                    if line.starts_with("llamacpp:predicted_tokens_seconds")
-                        && !line.contains("#")
-                        && let Ok(val) =
-                            line.split_whitespace().last().unwrap_or("0").parse::<f64>()
-                    {
-                        current_tps = Some(val);
-                    }
-                }
+                current_tps = parse_tps_from_metrics(&text);
             }
+        }
+
+        // Prefer the log-derived rate: `tg` from print_timing lines is live
+        // even during long generations, while the /metrics gauge reports 0
+        // until the request completes. Fall back to the gauge when no recent
+        // print_timing line has been seen (e.g. server started before the
+        // dashboard was running).
+        let log_tg = log_manager::get_log_manager().get_live_tg(script_path);
+        if log_tg.is_some() {
+            current_tps = log_tg;
         }
 
         update_profile_metrics(
@@ -1898,9 +1788,11 @@ async fn update_profile_metrics_for_script(script_path: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_scan_dir, extract_filename_metadata, graceful_shutdown, next_peak_mb,
-        parse_compute_apps_vram_mb, wait_for_exit,
+        capture_metrics_into_metadata, default_scan_dir, extract_filename_metadata,
+        graceful_shutdown, next_peak_mb, parse_compute_apps_vram_mb, parse_tps_from_metrics,
+        sanitize_metadata, wait_for_exit,
     };
+    use crate::models::ai::{ProfileMetadata, ProfileState};
 
     #[test]
     fn parse_compute_apps_finds_the_pid_line() {
@@ -1950,7 +1842,7 @@ mod tests {
     /// failure in the other.
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     #[test]
@@ -1985,13 +1877,13 @@ mod tests {
             std::env::set_var("HOME", "/tmp/probe");
         }
         let dir = default_scan_dir();
-        if !orig_home.is_empty() {
+        if orig_home.is_empty() {
             unsafe {
-                std::env::set_var("HOME", orig_home);
+                std::env::remove_var("HOME");
             }
         } else {
             unsafe {
-                std::env::remove_var("HOME");
+                std::env::set_var("HOME", orig_home);
             }
         }
         assert_eq!(
@@ -2052,7 +1944,7 @@ mod tests {
         let mut child = spawn_isolated("100");
         let pid = child.id();
         unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
+            libc::kill(pid.cast_signed(), libc::SIGKILL);
         }
         let _ = child.wait();
         let exited = wait_for_exit(pid, Duration::from_secs(3));
@@ -2072,188 +1964,85 @@ mod tests {
         );
     }
 
-    // ── T237: ctx_size option series derived from n_ctx_train ──────────────
-
-    use crate::models::ai::{ModelCapabilities, ParsedScriptArgs};
-
-    fn caps_with_ctx(n_ctx_train: u32) -> ModelCapabilities {
-        ModelCapabilities {
-            supports_reasoning_effort: false,
-            supports_preserve_reasoning: false,
-            supports_tools: false,
-            n_ctx_train: Some(n_ctx_train),
-        }
-    }
-
-    fn args_with_ctx(context_size: Option<u32>) -> Option<ParsedScriptArgs> {
-        Some(ParsedScriptArgs {
-            context_size,
-            ..Default::default()
-        })
-    }
-
-    fn ctx_values(caps: Option<&ModelCapabilities>, args: &Option<ParsedScriptArgs>) -> Vec<String> {
-        super::build_detected_options(caps, args)
-            .into_iter()
-            .find(|o| o.name == "CTX_SIZE")
-            .map(|o| o.values)
-            .unwrap_or_default()
-    }
-
-    fn ctx_default(caps: Option<&ModelCapabilities>, args: &Option<ParsedScriptArgs>) -> String {
-        super::build_detected_options(caps, args)
-            .into_iter()
-            .find(|o| o.name == "CTX_SIZE")
-            .map(|o| o.default)
-            .unwrap_or_default()
-    }
+    // ── T250: TPS zero guard ─────────────────────────────────────────
 
     #[test]
-    fn t237_series_262144() {
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(None);
-        let vals = ctx_values(Some(&caps), &args);
-        assert_eq!(vals, vec!["default", "32768", "65536", "131072", "262144"]);
-        // top entry equals n_ctx_train exactly
-        assert_eq!(vals.last().unwrap(), "262144");
-    }
-
-    #[test]
-    fn t237_series_32768() {
-        let caps = caps_with_ctx(32768);
-        let args = args_with_ctx(None);
-        let vals = ctx_values(Some(&caps), &args);
-        assert_eq!(vals, vec!["default", "4096", "8192", "16384", "32768"]);
-    }
-
-    #[test]
-    fn t237_series_8192_floor_drops_small() {
-        // /8 = 1024 and /4 = 2048 are below 4096 → dropped; no padding
-        let caps = caps_with_ctx(8192);
-        let args = args_with_ctx(None);
-        let vals = ctx_values(Some(&caps), &args);
-        assert_eq!(vals, vec!["default", "4096", "8192"]);
-    }
-
-    #[test]
-    fn t237_default_label_with_script_ctx() {
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(Some(80000));
-        let vals = ctx_values(Some(&caps), &args);
-        let def = ctx_default(Some(&caps), &args);
-        assert_eq!(vals[0], "default (80000)");
-        assert_eq!(def, "default (80000)");
-        // default label matches the first values entry (frontend uses this to detect no change)
-        assert_eq!(def, vals[0]);
-    }
-
-    #[test]
-    fn t237_default_label_no_script_ctx() {
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(None);
-        let def = ctx_default(Some(&caps), &args);
-        assert_eq!(def, "default");
-    }
-
-    #[test]
-    fn t237_script_ctx_deduped_with_series() {
-        // Script -c 65536 on a 262144 model: 65536 appears exactly once, as "default (65536)"
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(Some(65536));
-        let vals = ctx_values(Some(&caps), &args);
-        let count_65536 = vals.iter().filter(|v| v.contains("65536")).count();
-        assert_eq!(count_65536, 1, "65536 must appear exactly once");
-        assert_eq!(vals[0], "default (65536)");
-        // The series still includes 32768, 131072, 262144; total = 4 entries
-        assert_eq!(vals.len(), 4);
-    }
-
-    #[test]
-    fn t237_non_power_of_two_no_rounding() {
-        // 40960 / [8,4,2,1] = 5120, 10240, 20480, 40960 — exact, no rounding
-        let caps = caps_with_ctx(40960);
-        let args = args_with_ctx(None);
-        let vals = ctx_values(Some(&caps), &args);
-        assert_eq!(vals, vec!["default", "5120", "10240", "20480", "40960"]);
-    }
-
-    // ── T243 task 2: a short list must say why it is short ─────────────────
-
-    fn ctx_option(
-        caps: Option<&ModelCapabilities>,
-        args: &Option<ParsedScriptArgs>,
-    ) -> crate::models::ai::DetectedOption {
-        super::build_detected_options(caps, args)
-            .into_iter()
-            .find(|o| o.name == "CTX_SIZE")
-            .expect("CTX_SIZE option must exist")
-    }
-
-    /// The state of EVERY model not yet run: capabilities cache only after
-    /// /props answers, so the two-entry list is the default, not an edge case.
-    #[test]
-    fn t243_unknown_limit_carries_a_hint() {
-        let args = args_with_ctx(Some(131072));
-        let opt = ctx_option(None, &args);
-        assert_eq!(opt.values, vec!["default (131072)", "32768"]);
-        let hint = opt.hint.expect("a one-option list with no reason reads as broken");
-        assert!(
-            hint.contains("Run this model once"),
-            "the hint must say what makes the list expand; got: {hint}"
+    fn parse_tps_zero_yields_none() {
+        let body = "# HELP llamacpp:predicted_tokens_seconds tokens/s\n\
+                    llamacpp:predicted_tokens_seconds 0\n";
+        assert_eq!(
+            parse_tps_from_metrics(body),
+            None,
+            "a zero reading must be treated as absent"
         );
     }
 
-    /// The values themselves are correct when the limit is unknown — only the
-    /// explanation was missing, so this pins that they were not changed.
     #[test]
-    fn t243_hint_does_not_change_the_conservative_values() {
-        let args = args_with_ctx(None);
-        let opt = ctx_option(None, &args);
-        assert_eq!(opt.values, vec!["default", "32768"]);
-        assert!(opt.hint.is_some());
+    fn parse_tps_positive_is_stored() {
+        let body = "# HELP llamacpp:predicted_tokens_seconds tokens/s\n\
+                    llamacpp:predicted_tokens_seconds 47.3\n";
+        assert_eq!(parse_tps_from_metrics(body), Some(47.3));
     }
 
     #[test]
-    fn t243_known_limit_has_no_hint() {
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(None);
-        assert!(
-            ctx_option(Some(&caps), &args).hint.is_none(),
-            "a full series explains itself"
+    fn zero_current_tps_does_not_overwrite_avg_gen_tps() {
+        let mut meta = std::collections::HashMap::new();
+        meta.insert(
+            "/m.sh".to_string(),
+            ProfileMetadata {
+                script_path: "/m.sh".to_string(),
+                model_path: None,
+                peak_vram_mb: None,
+                peak_ram_mb: None,
+                avg_gen_tps: Some(42.5),
+                peak_gen_tps: Some(42.5),
+                last_context_size: None,
+                last_run_date: None,
+                run_count: 1,
+                last_startup_time_ms: None,
+            },
+        );
+        // current_tps is None because the guard filtered out the zero
+        let state = ProfileState {
+            status: "stopped".to_string(),
+            llama_server_pid: None,
+            start_time: None,
+            peak_vram_mb: None,
+            peak_ram_mb: None,
+            current_tps: None,
+        };
+        capture_metrics_into_metadata(&mut meta, "/m.sh", &state, None);
+        assert_eq!(
+            meta["/m.sh"].avg_gen_tps,
+            Some(42.5),
+            "a zero poll must not overwrite a stored avg_gen_tps"
         );
     }
 
-    /// Asserts the SERIALISED payload, not just the Rust value: a `null` in the
-    /// JSON would mean skip_serializing_if was omitted, and the frontend's
-    /// optional field would drift from the backend's.
     #[test]
-    fn t243_known_limit_serialises_no_hint_key() {
-        let caps = caps_with_ctx(262144);
-        let args = args_with_ctx(None);
-        let json = serde_json::to_string(&ctx_option(Some(&caps), &args)).unwrap();
-        assert!(!json.contains("hint"), "expected no hint key, got: {json}");
-
-        // ...and the unknown branch DOES emit it, so the absence above is
-        // meaningful rather than the field never serialising at all.
-        let with = serde_json::to_string(&ctx_option(None, &args_with_ctx(None))).unwrap();
-        assert!(with.contains("hint"), "expected a hint key, got: {with}");
+    fn sanitize_metadata_clears_persisted_zero_avg_gen_tps() {
+        let mut data = std::collections::HashMap::new();
+        data.insert(
+            "/m.sh".to_string(),
+            ProfileMetadata {
+                script_path: "/m.sh".to_string(),
+                model_path: None,
+                peak_vram_mb: None,
+                peak_ram_mb: None,
+                avg_gen_tps: Some(0.0),
+                peak_gen_tps: None,
+                last_context_size: None,
+                last_run_date: None,
+                run_count: 0,
+                last_startup_time_ms: None,
+            },
+        );
+        sanitize_metadata(&mut data);
+        assert_eq!(
+            data["/m.sh"].avg_gen_tps,
+            None,
+            "a persisted avg_gen_tps of 0.0 must be erased on load"
+        );
     }
 
-    #[test]
-    fn t237_unknown_limit_conservative() {
-        // No models.json entry: conservative ["default", "32768"]
-        let args = args_with_ctx(None);
-        let vals = ctx_values(None, &args);
-        assert_eq!(vals, vec!["default", "32768"]);
-    }
-
-    #[test]
-    fn t237_default_is_first_value() {
-        // default label is always values[0]; choosing it won't appear in effectiveOptions
-        let caps = caps_with_ctx(131072);
-        let args = args_with_ctx(Some(80000));
-        let vals = ctx_values(Some(&caps), &args);
-        let def = ctx_default(Some(&caps), &args);
-        assert_eq!(vals[0], def);
-    }
 }
