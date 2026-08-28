@@ -88,16 +88,36 @@ describe("T252 — header UPDATED chip timestamp", () => {
     expect(chipValue?.textContent).not.toBe("Invalid Date");
   });
 
-  it("chip-value on the UPDATED chip carries data-accent-el", () => {
+  // REVERSED BY T257. The T256 version asserted only that SOME descendant of
+  // the chip carried data-accent-el, which the old markup satisfied with the
+  // attribute on `.chip-value` — and that placement was the bug: the accent
+  // system boxes the element it is on, so it boxed the value and left the
+  // label outside. The nav button carries it on the button itself; the chip
+  // must match. Asserting the POSITION is what the loose descendant query
+  // could not catch.
+  it("T257: data-accent-el is on .status-chip itself, not on .chip-value", () => {
     renderHeader();
     const labels = document.querySelectorAll(".chip-label");
     const updatedLabel = Array.from(labels).find(
       (el) => el.textContent === "Updated",
     );
-    const accentEl = updatedLabel
-      ?.closest(".status-chip")
-      ?.querySelector("[data-accent-el]");
-    expect(accentEl).toBeTruthy();
+    const chip = updatedLabel?.closest(".status-chip");
+    expect(chip).toBeTruthy();
+    expect(chip?.hasAttribute("data-accent-el")).toBe(true);
+    expect(
+      chip?.querySelector(".chip-value")?.hasAttribute("data-accent-el"),
+    ).toBe(false);
+  });
+
+  it("T257: every .status-chip carries the attribute, matching the nav button", () => {
+    renderHeader();
+    const chips = Array.from(document.querySelectorAll(".status-chip"));
+    expect(chips.length).toBeGreaterThan(0);
+    for (const c of chips) {
+      expect(c.hasAttribute("data-accent-el")).toBe(true);
+    }
+    // Online / Live already had it here and must be untouched.
+    expect(document.querySelectorAll(".chip-dot").length).toBeGreaterThan(0);
   });
 });
 
@@ -128,8 +148,16 @@ describe("T253 — status chips match nav tabs", () => {
     expect(extractProp(".dash-nav-btn", "padding")).toBe("5px 11px");
   });
 
-  it("background is transparent on both .status-chip and .dash-nav-btn", () => {
-    expect(extractProp(".status-chip", "background")).toBe("transparent");
+  // REVERSED BY T257. T256 made .status-chip transparent because
+  // .dash-nav-btn is — but a nav tab can afford that: it gains a visible
+  // border on hover and when active, so it still reads as a box. A chip has
+  // no such state, so transparent removed the only thing making it a box.
+  // .dash-nav-btn's half of the original assertion was correct and is kept.
+  it("T257: .status-chip has a visible border and background; nav-btn stays transparent", () => {
+    expect(extractProp(".status-chip", "background")).toBe("var(--bg-card)");
+    expect(extractProp(".status-chip", "border")).toBe(
+      "1px solid var(--border-color)",
+    );
     expect(extractProp(".dash-nav-btn", "background")).toBe("transparent");
   });
 

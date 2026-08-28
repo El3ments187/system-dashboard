@@ -219,10 +219,9 @@ export default function Header({
         <div className="dash-chips">
           {/* Host chip */}
           {system && (
-            <span className="status-chip">
+            <span data-accent-el="" className="status-chip">
               <span className="chip-label">Host</span>
               <span
-                data-accent-el=""
                 className="chip-value"
                 style={{ color: "var(--accent-primary)" }}
               >
@@ -232,10 +231,9 @@ export default function Header({
           )}
 
           {/* Uptime chip */}
-          <span className="status-chip">
+          <span data-accent-el="" className="status-chip">
             <span className="chip-label">Uptime</span>
             <span
-              data-accent-el=""
               className="chip-value"
               style={{ color: "var(--accent-primary)" }}
             >
@@ -245,10 +243,9 @@ export default function Header({
 
           {/* Updated chip */}
           {system && (
-            <span className="status-chip">
+            <span data-accent-el="" className="status-chip">
               <span className="chip-label">Updated</span>
               <span
-                data-accent-el=""
                 className="chip-value"
                 style={{ color: "var(--accent-primary)" }}
               >

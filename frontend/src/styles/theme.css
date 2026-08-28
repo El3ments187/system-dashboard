@@ -1516,11 +1516,14 @@ main {
   gap: 5px;
   padding: 5px 11px;
   border-radius: 7px;
-  background: transparent;
+  /* T257 reverses T256. A nav tab can afford a transparent border because it
+     gains one on hover/active; a chip has no such state, so transparent left
+     it with nothing making it read as a box. */
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   font-size: 12.5px;
   font-weight: 500;
-  line-height: inherit;
+  height: 26px;
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -1532,14 +1535,12 @@ button.status-chip:hover:not(:disabled) {
 
 .chip-label {
   color: var(--text-muted);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 12.5px;
 }
 
 .chip-value {
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
