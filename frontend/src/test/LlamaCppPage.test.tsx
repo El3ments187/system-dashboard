@@ -931,6 +931,61 @@ describe("LlamaCppPage generation progress slot fields", () => {
     expect(screen.getByText(/Gen\. remaining\s+384/)).toBeInTheDocument();
   });
 
+  // ── T262: an uncapped reply has no denominator for a percentage ──────────
+
+  const slotCtx = (slot: Record<string, unknown>) =>
+    baseCtx({ slots: [{ id: 0, n_ctx: 8192, n_prompt_tokens: 512, ...slot }] });
+
+  it("T262: n_predict 0 renders the explanation, NOT an empty bar", async () => {
+    // The observed case: MAX TOKENS 0, so llama-server has no predicted total
+    // and the bar could only ever render at width 0% — which reads as broken.
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 58069, n_predict: 0 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("gen-progress-uncapped")).toBeInTheDocument();
+    expect(screen.queryByTestId("gen-progress-bar")).not.toBeInTheDocument();
+  });
+
+  it("T262: n_predict absent behaves as zero", async () => {
+    mockedCtx.mockReturnValue(slotCtx({ is_processing: true, n_decoded: 1200 }));
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("gen-progress-uncapped")).toBeInTheDocument();
+    expect(screen.queryByTestId("gen-progress-bar")).not.toBeInTheDocument();
+  });
+
+  it("T262: a capped request still renders a real percentage", async () => {
+    // The fallback must not swallow the case the bar was built for.
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 2048, n_predict: 4096 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const bar = screen.getByTestId("gen-progress-bar");
+    expect(bar).toBeInTheDocument();
+    expect(bar).toHaveStyle({ width: "50%" });
+    expect(screen.queryByTestId("gen-progress-uncapped")).not.toBeInTheDocument();
+  });
+
+  it("T262: the token count still renders in both cases", async () => {
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 58069, n_predict: 0 }),
+    );
+    const { unmount } = render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByText(/58,069/)).toBeInTheDocument();
+    unmount();
+
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 2048, n_predict: 4096 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByText(/2,048/)).toBeInTheDocument();
+  });
+
   it("shows unbounded format (no Remaining) when slot has no n_predict", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({

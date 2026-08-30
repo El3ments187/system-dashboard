@@ -301,6 +301,21 @@ export default function LlamaCppPage() {
       ? slot0.n_prompt_tokens_cache
       : (m?.tokens_cached ?? null);
 
+  /**
+   * No `--max-tokens` means llama-server has no predicted total: generation
+   * runs until EOS or the context limit, so `n_predict` is 0 or absent and a
+   * percentage has no denominator.
+   *
+   * Chosen over plotting progress toward the context limit because the Context
+   * card two tiles away already shows exactly that, with a working ring —
+   * drawing the same fact twice in two shapes is worse than saying the bar has
+   * nothing to measure. The token count stays either way.
+   */
+  const genUncapped = (() => {
+    const np = slot0?.n_predict ?? 0;
+    return !Number.isFinite(np) || np <= 0;
+  })();
+
   const genProgressPct: number | null = (() => {
     const nd = slot0?.n_decoded;
     const np = slot0?.n_predict;
@@ -1252,19 +1267,36 @@ export default function LlamaCppPage() {
                       {slot0.is_processing ? "Generating" : "Idle"}
                     </span>
                   </div>
-                  <div className="card-progress" style={{ height: 8 }}>
+                  {genUncapped ? (
+                    // An empty bar reads as broken. Say why it cannot fill.
                     <div
-                      data-testid="gen-progress-bar"
-                      className={`card-progress-bar ${thresholdClass(
-                        (genProgressPct ?? lastGenProgress) > 0
-                          ? (genProgressPct ?? lastGenProgress)
-                          : null,
-                      )}`}
+                      data-testid="gen-progress-uncapped"
                       style={{
-                        width: `${genProgressPct ?? lastGenProgress}%`,
+                        height: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        fontSize: 8,
+                        fontFamily: MONO,
+                        color: "var(--text-muted)",
                       }}
-                    />
-                  </div>
+                    >
+                      no token cap set — runs to EOS or the context limit
+                    </div>
+                  ) : (
+                    <div className="card-progress" style={{ height: 8 }}>
+                      <div
+                        data-testid="gen-progress-bar"
+                        className={`card-progress-bar ${thresholdClass(
+                          (genProgressPct ?? lastGenProgress) > 0
+                            ? (genProgressPct ?? lastGenProgress)
+                            : null,
+                        )}`}
+                        style={{
+                          width: `${genProgressPct ?? lastGenProgress}%`,
+                        }}
+                      />
+                    </div>
+                  )}
                   <div
                     style={{
                       display: "flex",
