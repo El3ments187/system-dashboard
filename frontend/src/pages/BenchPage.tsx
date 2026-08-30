@@ -974,9 +974,15 @@ function ScoreProgressCard({
             testsWeighted !== undefined &&
             speedWeighted !== undefined ? (
               <div
+                data-testid="bench-score-tile-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                  // Four equal tracks. The 2fr shipped with T219 (which asked
+                  // only that the components sit beside the banner, never for a
+                  // ratio) and gave the score 40% of the row. Checked against
+                  // the longest scoreTileLabel — the partial-run
+                  // "Score / 100 · N of M tasks" — which fits on one line at 1fr.
+                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
                   gap: 6,
                   alignItems: "stretch",
                 }}
