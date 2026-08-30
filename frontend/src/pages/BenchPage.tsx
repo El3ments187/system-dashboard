@@ -393,8 +393,8 @@ function HeroCard({
 }) {
   const { displayName, alias, aliasIsAllWeHave, startedAt, warming } = identity;
   const figs = useMemo(
-    () => heroStatFigures(records, elapsedSeconds, running),
-    [records, elapsedSeconds, running],
+    () => heroStatFigures(records, elapsedSeconds, running, detail?.summary),
+    [records, elapsedSeconds, running, detail?.summary],
   );
   // A live run's own flags win; otherwise the selected run's stored config.
   // Warming is included: current.run?.langs comes from process state and is
