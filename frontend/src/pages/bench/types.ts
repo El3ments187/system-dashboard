@@ -26,6 +26,23 @@ export interface BenchAttempt {
   code_blocks?: number;
   nudges?: number;
   cut_mid_block?: boolean;
+  /**
+   * Assertion names this attempt failed. schema_version 4+.
+   *
+   * T249 forbade showing labels on attempts 2 and 3 because only the record's
+   * `first_failed` existed and it describes attempt 1 alone. This is the
+   * per-attempt list that makes it correct — prefer it, and never substitute
+   * `first_failed` for an attempt after the first.
+   */
+  failed?: string[];
+  /**
+   * The drowned-draft rescue, schema_version 4+. A draft that ran out of room
+   * was either finished in place (`draft_continued`) or used to seed the next
+   * attempt (`draft_seeded`). An attempt seeded from a draft did not start
+   * cold, so it is not comparable with one that did.
+   */
+  draft_continued?: boolean;
+  draft_seeded?: boolean;
 }
 
 /** One sample. localbench writes 41 fields; these are the ones the page uses. */
@@ -77,6 +94,33 @@ export interface BenchRecord {
   detail: string;
   /** Per-attempt log. Present from localbench -277+. Absent on older files. */
   attempts?: BenchAttempt[];
+  /**
+   * Why the sample was not solved, as ONE WORD, from localbench itself.
+   * schema_version 4+.
+   *
+   * `no_reply` · `cut` · `context_limit` · `no_code` · `did_not_compile` ·
+   * `ran_and_failed`, and `""` when solved.
+   *
+   * This replaces the dashboard reconstructing a precedence over `status` and
+   * each attempt's `ended` — bench.py's own docstring records that at least one
+   * consumer got that precedence wrong, and this was that consumer. It does NOT
+   * replace `status`, which still decides the cell colour via `cellState`.
+   */
+  failure_kind?: string;
+  /**
+   * localbench's own sentence for the reader. schema_version 4+.
+   *
+   * Rendered VERBATIM — the cascade that produces it deliberately stays
+   * upstream. Empty when nothing was graded (an all-server run leaves it ""
+   * while still setting `failure_kind`), so it can never be the only source.
+   */
+  unsolved_reason?: string;
+  /**
+   * How many drowned drafts this sample carried forward. schema_version 4+.
+   * The rescue is limited to two per task, so this reads against that limit:
+   * a sample at 2 had no rescue left.
+   */
+  carries_used?: number;
 }
 
 /** Present only while a run is in flight. `{}` means FINISHED. */
@@ -111,7 +155,19 @@ export interface BenchSummary {
   tests_passed: number;
   tests_expected: number;
   seconds: number;
+  /**
+   * Sorted and DEDUPLICATED task names. At `--n > 1` a task unsolved in two of
+   * three samples appears once, so this is a task count, never a sample count.
+   */
   unsolved: string[];
+  /**
+   * Run totals from localbench, schema_version 4+. They include EVERY record,
+   * server samples too — bench.py: "Their gen_seconds is near zero, so
+   * including them changes the rate less than excluding them changes the rule."
+   * A client-side sum that filters server records will not match.
+   */
+  total_gen_seconds?: number;
+  total_completion_tokens?: number;
   // localbench -157+ scoring fields (absent on pre-157 runs — use ??, never ||)
   /** null means "no score": multi-model file or nothing graded. NOT zero. */
   score?: number | null;
@@ -194,6 +250,14 @@ export interface BenchRunDetail {
   status?: "running" | "finished" | "aborted";
   /** Human-readable note set by localbench when status is "aborted". */
   status_note?: string;
+  /**
+   * localbench's schema generation (4 at the time of writing). Absent on older
+   * files, which is why nothing in this page GATES on it: every schema-4 field
+   * is read by its own presence instead, the same convention the -157/-165/-185
+   * fields above already use. Kept typed because it is genuinely on the run and
+   * is the fastest way to identify a file by hand.
+   */
+  schema_version?: number;
 }
 
 /**

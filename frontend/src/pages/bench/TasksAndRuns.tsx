@@ -40,6 +40,7 @@ import {
   runTaskRoster,
   groupByEdition,
   groupByTask,
+  DRAFT_CARRY_LIMIT,
   failureExplanation,
   rowTaint,
   leadsCoverage,
@@ -1159,6 +1160,15 @@ function Drilldown({ records }: { records: BenchRecord[] }) {
               <FlagChip
                 label="STOPPED AT BUDGET"
                 title="A complete block was in hand, so the stream was cut at the nudge budget."
+              />
+            )}
+            {/* `> 0` for the same reason as NUDGED above: this is a count.
+                Shown AGAINST the limit, in bench.py's own words — a sample at
+                2/2 had no rescue left, which a bare "2" does not say. */}
+            {(worst.carries_used ?? 0) > 0 && (
+              <FlagChip
+                label={`DRAFT CARRIED ${worst.carries_used}/${DRAFT_CARRY_LIMIT}`}
+                title={`${worst.carries_used} drowned draft(s) were carried forward — the built-in rescue that replaces an otherwise blank restart, limited to ${DRAFT_CARRY_LIMIT} per task. At ${DRAFT_CARRY_LIMIT}/${DRAFT_CARRY_LIMIT} no rescue remained. An attempt seeded from a carried draft did not start cold, so it is not directly comparable with one that did.`}
               />
             )}
           </div>

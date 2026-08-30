@@ -43,6 +43,10 @@ import {
   benchLocalDate,
   runTaskScope,
   runTaskRoster,
+  summaryGenRate,
+  unsolvedTasks,
+  upstreamFailureText,
+  DRAFT_CARRY_LIMIT,
 } from "../pages/bench/compute";
 import type {
   BenchAttempt,
@@ -1878,5 +1882,214 @@ describe("T236 attemptFailureExplanation", () => {
     const r = rec({ status: "error", tests_expected: 10 });
     const e = failureExplanation(r);
     expect(e.reason).toMatch(/compile|crash/i);
+  });
+});
+
+// ── T260 — localbench schema-4 fields ────────────────────────────────────────
+//
+// Fixture values are taken verbatim from the real aborted run
+// runs/Qwen3.8-27B-UD-Q2_K_XL_20260829-144400/results.json, not invented.
+
+describe("T260 failure_kind drives the explanation", () => {
+  it("no_code explains prompt adherence, where the old cascade said 'crashed'", () => {
+    // Pre-schema-4 this record reads as a crash: status `error` with a detail
+    // that does not begin "compile:" is compute.ts's "Crashed before the tests
+    // finished." The kind says the real cause — no fenced block at all.
+    const over = { status: "error" as const, detail: "boom", solved: false, first_failed: [] };
+    expect(failureExplanation(rec(over)).reason).toMatch(/crashed/i);
+
+    const withKind = failureExplanation(rec({ ...over, failure_kind: "no_code" }));
+    expect(withKind.reason).toMatch(/no fenced code block/i);
+    expect(withKind.reason).not.toMatch(/crashed/i);
+    expect(withKind.reason).not.toMatch(/compile/i);
+  });
+
+  it("did_not_compile and ran_and_failed produce different text", () => {
+    const base = { status: "fail" as const, solved: false, first_failed: [] };
+    const a = failureExplanation(rec({ ...base, failure_kind: "did_not_compile" })).reason;
+    const b = failureExplanation(rec({ ...base, failure_kind: "ran_and_failed" })).reason;
+    expect(a).toBeTruthy();
+    expect(b).toBeTruthy();
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/did not compile/i);
+    expect(b).toMatch(/compiled and ran/i);
+  });
+
+  it("a record WITHOUT failure_kind falls back to the old text", () => {
+    const e = failureExplanation(
+      rec({ status: "format", solved: false, first_failed: [] }),
+    );
+    expect(e.reason).toBe(
+      "No fenced code block in the reply, so nothing could be tested.",
+    );
+  });
+
+  it("an UNRECOGNISED failure_kind falls back rather than blanking", () => {
+    const e = failureExplanation(
+      rec({ status: "timeout", solved: false, first_failed: [], failure_kind: "from_the_future" }),
+    );
+    expect(e.reason).toMatch(/did not finish in time/i);
+  });
+
+  it("a solved record still has no failure reason", () => {
+    expect(failureExplanation(rec({ status: "pass", solved: true })).reason).toBeNull();
+    expect(upstreamFailureText(rec({ failure_kind: "", unsolved_reason: "" }))).toBeNull();
+  });
+});
+
+describe("T260 unsolved_reason is rendered verbatim", () => {
+  it("passes the sentence through unchanged", () => {
+    const sentence = "Ran out of context while still inside a reasoning block.";
+    const e = failureExplanation(
+      rec({ status: "fail", solved: false, first_failed: [], unsolved_reason: sentence }),
+    );
+    expect(e.reason).toBe(sentence);
+  });
+
+  it("wins over failure_kind when both are present", () => {
+    const sentence = "3 of 45 assertions failed.";
+    expect(
+      upstreamFailureText(
+        rec({ unsolved_reason: sentence, failure_kind: "ran_and_failed" }),
+      ),
+    ).toBe(sentence);
+  });
+
+  it("EMPTY unsolved_reason with failure_kind no_reply falls back to the kind", () => {
+    // The real aborted run: every record is exactly this shape.
+    const e = failureExplanation(
+      rec({
+        status: "server",
+        solved: false,
+        first_failed: [],
+        unsolved_reason: "",
+        failure_kind: "no_reply",
+      }),
+    );
+    expect(e.reason).toMatch(/never answered/i);
+  });
+});
+
+describe("T260 summary totals", () => {
+  const summaryOf = (over: Record<string, unknown>) =>
+    ({ ...(benchRun.summary as object), ...over }) as Parameters<
+      typeof heroStatFigures
+    >[3];
+
+  it("total_completion_tokens 0 with non-zero seconds yields NO number", () => {
+    // The real aborted run: 832.3 seconds, 0 tokens. Dividing one way gives a
+    // misleading 0 t/s; the other way divides by zero. Neither may render.
+    const r = summaryGenRate({ total_gen_seconds: 832.3, total_completion_tokens: 0 });
+    expect(r).toBeNull();
+    expect(Number.isNaN(r as unknown as number)).toBe(false);
+  });
+
+  it("zero seconds does not divide by zero", () => {
+    expect(summaryGenRate({ total_gen_seconds: 0, total_completion_tokens: 500 })).toBeNull();
+  });
+
+  it("absent totals yield null so the caller falls back", () => {
+    expect(summaryGenRate({})).toBeNull();
+    expect(summaryGenRate(null)).toBeNull();
+  });
+
+  it("a real pair divides", () => {
+    expect(summaryGenRate({ total_gen_seconds: 10, total_completion_tokens: 500 })).toBe(50);
+  });
+
+  it("the summary total is USED when present and the record mean when absent", () => {
+    const records = [rec({ completion_tokens: 100, gen_seconds: 0.5 })];
+    const withSummary = heroStatFigures(
+      records,
+      60,
+      false,
+      summaryOf({ total_gen_seconds: 10, total_completion_tokens: 500 }),
+    );
+    expect(withSummary.meanRate).toBe(50);
+
+    const without = heroStatFigures(records, 60, false);
+    expect(without.meanRate).toBe(200); // 100 / 0.5, the pre-schema-4 derivation
+  });
+
+  it("the two derivations AGREE on a fixture with no exclusions", () => {
+    // They are different statistics — a pooled ratio vs a mean of per-sample
+    // ratios — so they coincide only where the per-sample rates are uniform.
+    // This fixture is uniform and has no server records to exclude.
+    const records = [
+      rec({ completion_tokens: 100, gen_seconds: 0.5 }),
+      rec({ completion_tokens: 200, gen_seconds: 1.0 }),
+    ];
+    const pooled = heroStatFigures(
+      records,
+      60,
+      false,
+      summaryOf({ total_gen_seconds: 1.5, total_completion_tokens: 300 }),
+    );
+    const perSample = heroStatFigures(records, 60, false);
+    expect(pooled.meanRate).toBe(200);
+    expect(perSample.meanRate).toBe(200);
+    expect(pooled.meanRate).toBe(perSample.meanRate);
+  });
+
+  it("an all-server run renders no throughput at all", () => {
+    // graded is empty AND the totals refuse — both paths must decline.
+    const records = [rec({ status: "server", solved: false, completion_tokens: 0, gen_seconds: 832.26 })];
+    const figs = heroStatFigures(
+      records,
+      832,
+      false,
+      summaryOf({ total_gen_seconds: 832.3, total_completion_tokens: 0 }),
+    );
+    expect(figs.meanRate).toBeNull();
+  });
+});
+
+describe("T260 unsolved task list", () => {
+  it("prefers the summary's list", () => {
+    const upstream = ["js/formula_engine", "js/interval_set", "js/retry_backoff"];
+    expect(unsolvedTasks({ unsolved: upstream }, [])).toEqual(upstream);
+  });
+
+  it("DEDUPLICATES: a task unsolved twice at --n 3 appears once", () => {
+    const records = [
+      rec({ task: "js/a", sample: 0, status: "fail", solved: false }),
+      rec({ task: "js/a", sample: 1, status: "fail", solved: false }),
+      rec({ task: "js/a", sample: 2, status: "fail", solved: false }),
+    ];
+    // Both paths: upstream already deduped, fallback must dedupe too.
+    expect(unsolvedTasks({ unsolved: ["js/a", "js/a"] }, records)).toEqual(["js/a"]);
+    expect(unsolvedTasks(null, records)).toEqual(["js/a"]);
+  });
+
+  it("the fallback matches the upstream list on a graded run", () => {
+    const records = [
+      rec({ task: "js/a", status: "fail", solved: false }),
+      rec({ task: "js/b", status: "pass", solved: true }),
+    ];
+    expect(unsolvedTasks(null, records)).toEqual(["js/a"]);
+    expect(unsolvedTasks({ unsolved: ["js/a"] }, records)).toEqual(["js/a"]);
+  });
+
+  it("a task solved in ANY sample is not unsolved", () => {
+    const records = [
+      rec({ task: "js/a", sample: 0, status: "fail", solved: false }),
+      rec({ task: "js/a", sample: 1, status: "pass", solved: true }),
+    ];
+    expect(unsolvedTasks(null, records)).toEqual([]);
+  });
+
+  it("the fallback excludes server-only tasks; upstream may still list them", () => {
+    // Documented divergence: localbench knows what was PLANNED, the records
+    // only show what was GRADED. A task the endpoint never answered for is not
+    // evidence the model failed it.
+    const records = [rec({ task: "js/a", status: "server", solved: false })];
+    expect(unsolvedTasks(null, records)).toEqual([]);
+    expect(unsolvedTasks({ unsolved: ["js/a"] }, records)).toEqual(["js/a"]);
+  });
+});
+
+describe("T260 drowned-draft rescue", () => {
+  it("the carry limit is bench.py's two per task", () => {
+    expect(DRAFT_CARRY_LIMIT).toBe(2);
   });
 });

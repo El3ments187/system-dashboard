@@ -16,6 +16,7 @@ import type {
   BenchRecord,
   BenchRunDetail,
   BenchRunRow,
+  BenchSummary,
   CellState,
 } from "./types";
 
@@ -125,6 +126,44 @@ function solvedInAtLeastOne(
     );
   }
   return out;
+}
+
+/**
+ * The run's unsolved tasks — localbench's own list when it publishes one
+ * (schema 4+), derived from the records otherwise.
+ *
+ * Dedup and sort are the contract, and they are what `--n > 1` needs: a task
+ * unsolved in two of three samples is ONE unsolved task. The fallback
+ * reproduces that, so the two paths cannot report different counts for the same
+ * run.
+ *
+ * They are NOT identical in every case, and the real aborted run shows where
+ * they part: localbench lists all three of its tasks as unsolved even though
+ * every sample is `server`, while the record-derived fallback excludes tasks
+ * with nothing graded — a task the endpoint never answered for has no evidence
+ * the MODEL failed it. Upstream is preferred precisely because it knows what
+ * was planned; the fallback only knows what was graded.
+ */
+/**
+ * How many drowned drafts localbench will carry forward per task.
+ *
+ * bench.py's report states the rule: the rescue is "limited to two per task".
+ * Named here so the UI can show `carries_used` AGAINST it — a bare "2" hides
+ * that the sample had no rescue left, which is the only reason the number is
+ * worth showing.
+ */
+export const DRAFT_CARRY_LIMIT = 2;
+
+export function unsolvedTasks(
+  summary: Pick<BenchSummary, "unsolved"> | null | undefined,
+  records: BenchRecord[],
+): string[] {
+  const upstream = summary?.unsolved;
+  if (Array.isArray(upstream)) return [...new Set(upstream)].sort();
+  const out = new Set<string>();
+  for (const [task, solved] of solvedInAtLeastOne(records))
+    if (!solved) out.add(task);
+  return [...out].sort();
 }
 
 export interface FlakyResult {
@@ -324,6 +363,72 @@ export interface FailureExplanation {
  * The mode names mirror bench.py's own `explain()` (`:556`) and
  * `_failure_headline()` (`:621`) rather than inventing a third vocabulary.
  */
+/**
+ * localbench's `failure_kind`, in words. schema_version 4+.
+ *
+ * One line per value of bench.py's own vocabulary, so the two cannot drift
+ * into describing different sets. `no_code` and `did_not_compile` are kept
+ * pointedly distinct: the first is the model ignoring the prompt's format, the
+ * second is code that was produced and would not build. The old cascade told
+ * them apart only by sniffing `detail` for a "compile:" prefix (see below),
+ * which is a guess about a message rather than a fact about the run.
+ *
+ * An unrecognised kind returns null and the pre-schema-4 cascade runs, so a
+ * value added upstream cannot blank the panel.
+ */
+const FAILURE_KIND_TEXT: Record<string, string> = {
+  no_reply: "The endpoint never answered, so there is no reply to grade.",
+  cut: "The reply was cut off before it finished.",
+  context_limit: "Ran out of context before the answer was complete.",
+  no_code:
+    "No fenced code block in the reply — the prompt's format was not followed, so there was nothing to test.",
+  did_not_compile: "The code did not compile, so the tests never ran.",
+  ran_and_failed: "The code compiled and ran, but some assertions failed.",
+};
+
+/**
+ * What localbench itself says about this failure, or null when it says nothing.
+ *
+ * `unsolved_reason` is a sentence written for a reader and is passed through
+ * VERBATIM — porting its cascade into TypeScript is exactly what schema 4 was
+ * meant to stop. It is empty whenever nothing was graded, which is why
+ * `failure_kind` has to be able to answer on its own: the real aborted run
+ * (Q2_K_XL 20260829-144400) carries `failure_kind: "no_reply"` with
+ * `unsolved_reason: ""` on every record, so a UI reading only the sentence
+ * shows nothing at all for the entire run.
+ */
+export function upstreamFailureText(r: BenchRecord): string | null {
+  const sentence = (r.unsolved_reason ?? "").trim();
+  if (sentence) return sentence;
+  const kind = (r.failure_kind ?? "").trim();
+  if (!kind) return null;
+  return FAILURE_KIND_TEXT[kind] ?? null;
+}
+
+/**
+ * The pre-schema-4 cascade, unchanged and still the fallback.
+ *
+ * Extracted verbatim when `failure_kind` was added so the two generations sit
+ * side by side rather than as one branch inside another; the mode names still
+ * mirror bench.py's `explain()` (`:556`) and `_failure_headline()` (`:621`).
+ * The `compile:` sniff is exactly why `failure_kind` is preferable when
+ * present — it infers a category from the text of a message.
+ */
+function legacyFailureReason(r: BenchRecord, timeoutSeconds?: number): string {
+  if (r.status === "format")
+    return "No fenced code block in the reply, so nothing could be tested.";
+  if (r.status === "timeout")
+    return timeoutSeconds
+      ? `Did not finish within ${timeoutSeconds}s, usually an endless loop.`
+      : "Did not finish in time, usually an endless loop.";
+  if (r.status === "server") return "Could not reach the model.";
+  if (r.status === "error")
+    return (r.detail ?? "").trimStart().startsWith("compile:")
+      ? "Did not compile, so the tests never ran."
+      : "Crashed before the tests finished.";
+  return "Compiled and ran, but some tests failed.";
+}
+
 export function failureExplanation(
   r: BenchRecord,
   timeoutSeconds?: number,
@@ -337,25 +442,18 @@ export function failureExplanation(
       : Math.max(0, expected - (r.tests_passed ?? 0) - (r.tests_failed ?? 0));
 
   const hasLabels = (r.first_failed ?? []).length > 0;
-  if (hasLabels || r.status === "pass")
+  if (r.status === "pass")
     return { reason: null, unreached, remedy: null, history: null };
 
-  let reason: string;
-  if (r.status === "format") {
-    reason = "No fenced code block in the reply, so nothing could be tested.";
-  } else if (r.status === "timeout") {
-    reason = timeoutSeconds
-      ? `Did not finish within ${timeoutSeconds}s, usually an endless loop.`
-      : "Did not finish in time, usually an endless loop.";
-  } else if (r.status === "server") {
-    reason = "Could not reach the model.";
-  } else if (r.status === "error") {
-    reason = (r.detail ?? "").trimStart().startsWith("compile:")
-      ? "Did not compile, so the tests never ran."
-      : "Crashed before the tests finished.";
-  } else {
-    reason = "Compiled and ran, but some tests failed.";
-  }
+  // From schema 4 localbench states this itself. Where it does not (an older
+  // file, or a kind this build does not know), the original cascade below runs
+  // unchanged — including its rule that a named assertion list already tells
+  // the story on its own.
+  const upstream = upstreamFailureText(r);
+  if (upstream === null && hasLabels)
+    return { reason: null, unreached, remedy: null, history: null };
+
+  const reason = upstream ?? legacyFailureReason(r, timeoutSeconds);
 
   // The remedies are not interchangeable, which is the whole point: raising
   // --max-tokens does nothing for a bench.py budget stop.
@@ -1588,6 +1686,37 @@ function genRate(r: BenchRecord): number | null {
 }
 
 /**
+ * The run's generation rate from localbench's OWN totals (schema 4+), or null
+ * when it does not offer them or they cannot yield a number.
+ *
+ * Two guards, both load-bearing, and the real aborted run trips the second:
+ * `total_gen_seconds: 832.3` with `total_completion_tokens: 0`. Dividing the
+ * other way is a division by zero; dividing this way yields a clean `0`, which
+ * is worse — it renders as a measured throughput of zero for a run where the
+ * endpoint never answered and nothing was ever generated. Neither is a number
+ * this page will show.
+ *
+ * Note this is a POOLED rate (total ÷ total) over EVERY record including server
+ * samples, which is not the same statistic as the per-sample mean below. They
+ * coincide only when the per-sample rates are uniform.
+ */
+export function summaryGenRate(
+  summary:
+    | Pick<BenchSummary, "total_gen_seconds" | "total_completion_tokens">
+    | null
+    | undefined,
+): number | null {
+  const seconds = summary?.total_gen_seconds;
+  const tokens = summary?.total_completion_tokens;
+  if (seconds == null || tokens == null) return null;
+  // Number.isFinite before the comparison, not `!(x > 0)`: a NaN sneaking in
+  // from a malformed file must decline too, and `NaN <= 0` is false.
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  if (!Number.isFinite(tokens) || tokens <= 0) return null;
+  return tokens / seconds;
+}
+
+/**
  * Every figure the Progress card's relocated stats need, derived in one place.
  * All are null/empty when idle rather than carrying the previous run's numbers.
  *
@@ -1598,13 +1727,23 @@ export function heroStatFigures(
   records: BenchRunDetail["records"],
   elapsedSeconds: number | null,
   running: boolean,
+  /**
+   * localbench's summary, when the run has one. Its totals are preferred over
+   * the per-sample mean; absent (every pre-schema-4 file) the mean is used
+   * exactly as before, so an older run renders unchanged.
+   */
+  summary?: BenchSummary | null,
 ) {
   const graded = gradedRecords(records);
 
   const rates = graded.map(genRate);
   const known = rates.filter((r): r is number => r !== null);
-  const meanRate =
+  const perSampleMeanRate =
     known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : null;
+  // localbench's totals win when it publishes them; otherwise the per-sample
+  // mean, unchanged. `??` and not `||`: a legitimate rate is never 0 here,
+  // because summaryGenRate refuses to return one.
+  const meanRate = summaryGenRate(summary) ?? perSampleMeanRate;
 
   // Cumulative pass rate, so the line shows how the run trended rather than
   // repeating the headline figure.

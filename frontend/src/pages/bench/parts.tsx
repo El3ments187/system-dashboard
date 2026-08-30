@@ -415,13 +415,36 @@ export function AttemptPanel({
     ...(attempt.cut_mid_block
       ? ([["Cut mid-block", "yes"]] as Array<[string, string]>)
       : []),
+    ...((): Array<[string, string]> => {
+      // The drowned-draft rescue (schema 4+), in bench.py's own words: a draft
+      // that ran out of room is "carried forward", either "finished in place"
+      // or used to "seed a retry". This changes what the attempt IS — one
+      // seeded from a draft did not start cold — so comparing attempts without
+      // it compares things that are not alike. One row, so the two flags cannot
+      // collide on a React key.
+      const how: string[] = [];
+      if (attempt.draft_continued) how.push("finished in place");
+      if (attempt.draft_seeded) how.push("seeded a retry");
+      if (how.length === 0) return [];
+      return [["Drowned draft", `carried forward — ${how.join(", ")}`]];
+    })(),
   ];
 
   const explanationLines = attemptFailureExplanation(attempt, record.tests_expected);
-  // first_failed describes attempt 1's named failures only; bench.py does not
-  // record it for later attempts (they are not the cold-start run).
-  const showFirstFailed =
-    attempt.attempt === 1 && (record.first_failed ?? []).length > 0;
+  // Prefer the attempt's OWN failed list (schema 4+). The record's
+  // `first_failed` describes attempt 1 alone, so T249's guard stands: it may
+  // stand in for attempt 1 and never for a later one.
+  //
+  // `?? null` rather than `?? []` on purpose — an ABSENT list is an older file
+  // and falls back, an EMPTY one is schema 4 saying this attempt named no
+  // failed assertions (the real aborted run's server attempts are exactly
+  // that), which must not be overwritten by the record's list.
+  const attemptFailed = attempt.failed ?? null;
+  let failedLabels: string[];
+  if (attemptFailed !== null) failedLabels = attemptFailed;
+  else if (attempt.attempt === 1) failedLabels = record.first_failed ?? [];
+  else failedLabels = [];
+  const showFirstFailed = failedLabels.length > 0;
 
   return (
     <div
@@ -449,7 +472,7 @@ export function AttemptPanel({
       </div>
       {showFirstFailed && (
         <div style={{ marginTop: 6 }}>
-          {(record.first_failed ?? []).slice(0, 6).map((a, i) => (
+          {failedLabels.slice(0, 6).map((a, i) => (
             <div
               key={i}
               data-testid="bench-attempt-first-failed"
