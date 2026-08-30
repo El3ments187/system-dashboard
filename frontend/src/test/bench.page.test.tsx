@@ -1355,6 +1355,51 @@ describe("T23/T24 drilldown", () => {
     expect(max.textContent).toMatch(/Tokens:\s*largest request/i);
   });
 
+  // ── T260: record-level schema-4 fields in the drilldown ──────────────────
+
+  it("T260: carries_used renders AGAINST its limit, not as a bare count", async () => {
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    detail.records.forEach((r) => {
+      (r as unknown as Record<string, unknown>).carries_used = 2;
+    });
+    await openFirstTask(detail);
+    // "2/2" and not "2": a sample that used both had no rescue left.
+    const chip = await screen.findByText("DRAFT CARRIED 2/2");
+    expect(chip).toBeTruthy();
+    // bench.py's own wording for the mechanism.
+    expect(chip.getAttribute("title") ?? "").toMatch(/carried forward/i);
+  });
+
+  it("T260: carries_used 0 renders no chip at all", async () => {
+    // The absence half — a bare `&&` on a count would print a stray 0.
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    detail.records.forEach((r) => {
+      (r as unknown as Record<string, unknown>).carries_used = 0;
+    });
+    await openFirstTask(detail);
+    await screen.findByTestId("bench-gen-tile");
+    expect(screen.queryByText(/DRAFT CARRIED/)).toBeNull();
+  });
+
+  it("T260: a PRE-SCHEMA-4 run renders with no schema-4 artefacts", async () => {
+    // End-to-end degradation guard on the untouched fixture: none of the new
+    // fields exist on it, so none of their surfaces may appear, and the
+    // drilldown must still render everything it did before.
+    const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
+    for (const r of detail.records) {
+      const raw = r as unknown as Record<string, unknown>;
+      expect(raw.failure_kind).toBeUndefined();
+      expect(raw.unsolved_reason).toBeUndefined();
+      expect(raw.carries_used).toBeUndefined();
+    }
+    await openFirstTask(detail);
+    expect(await screen.findByTestId("bench-gen-tile")).toBeTruthy();
+    expect(screen.getByTestId("bench-tokens-sum")).toBeTruthy();
+    expect(screen.getByTestId("bench-tokens-max")).toBeTruthy();
+    expect(screen.queryByText(/DRAFT CARRIED/)).toBeNull();
+    expect(screen.queryByText(/Drowned draft/)).toBeNull();
+  });
+
   it("suffixes token figures with ~ when tokens_estimated is set", async () => {
     const detail = JSON.parse(JSON.stringify(benchRun)) as Detail;
     detail.records.forEach((r) => {
@@ -5514,6 +5559,118 @@ describe("T149 localbench 0–100 score", () => {
     expect(body).toContain("17.3"); // speed_weighted (20%)
     // 42.0 + 7.7 + 17.3 = 67.0 — all four must appear, proving no wire cross
     expect(body).toContain("67.0");
+  });
+
+  // ── T259: the score tile stops taking double width ───────────────────────
+  //
+  // The ratio is an inline style, so jsdom reads it exactly as written. Whether
+  // the long label *fits* at 1fr is a layout question jsdom cannot answer — that
+  // was browser-checked separately (see the T259 note in the report).
+
+  it("T259: the score tile grid has four equal tracks, not 2fr", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY_251 } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-score-tile-grid")).toBeTruthy(),
+    );
+    expect(
+      screen.getByTestId("bench-score-tile-grid").style.gridTemplateColumns,
+    ).toBe("1fr 1fr 1fr 1fr");
+  });
+
+  it("T259: a partial run renders the long label and keeps four equal tracks", async () => {
+    // The longest scoreTileLabel branch (BenchPage.tsx:894): two-digit counts
+    // are the widest realistic case, so 15-of-27 rather than 1-of-27.
+    installFetch({
+      detail: {
+        ...benchRun,
+        summary: {
+          ...SCORED_SUMMARY_251,
+          tasks: 15,
+          suite_tasks: 27,
+          partial: true,
+        },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    // BannerTile puts data-testid on the VALUE div; the label is its sibling
+    // (BenchPage.tsx:714-716), so the label is matched by text, not by testid.
+    expect(screen.getByText("Score / 100 · 15 of 27 tasks")).toBeTruthy();
+    expect(
+      screen.getByTestId("bench-score-tile-grid").style.gridTemplateColumns,
+    ).toBe("1fr 1fr 1fr 1fr");
+  });
+
+  it("T259: a full run reads 'Score / 100' and the three component tiles are unchanged", async () => {
+    installFetch({ detail: { ...benchRun, summary: SCORED_SUMMARY_251 } });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("bench-headline-score")).toBeTruthy(),
+    );
+    expect(screen.getByText("Score / 100")).toBeTruthy();
+    // Not the partial form — no task count appended.
+    expect(screen.queryByText(/Score \/ 100 · \d+ of \d+ tasks/)).toBeNull();
+    // The neighbours T259 must not disturb.
+    expect(screen.getByTestId("bench-passes-weighted").textContent).toContain("42.0");
+    expect(screen.getByTestId("bench-tests-weighted").textContent).toContain("7.7");
+    expect(screen.getByTestId("bench-speed-weighted").textContent).toContain("17.3");
+  });
+
+  // ── T261: what a warming run can and cannot say ──────────────────────────
+  //
+  // NO dashboard fix was applied for T261. The field report showed the file has
+  // nothing to read: bench.py calls write_results at run start, after each
+  // sample and at run end, but NOT when a task begins, so `live.current_task`
+  // is "" for the whole first sample and thereafter names the task that last
+  // FINISHED. These lock in that the dashboard reports exactly what it is
+  // given — never more.
+
+  it("T261: a skeleton run marks the named current_task In progress", async () => {
+    installFetch({
+      detail: {
+        ...benchRun,
+        records: [],
+        status: "running",
+        live: {
+          current_task: "js/retry_backoff",
+          current_attempt: 1,
+          done: 0,
+          total: 27,
+        },
+      },
+    });
+    render(<BenchPage />);
+    // The roster rows render from /api/bench/tasks, which resolves BEFORE the
+    // detail fetch — so waiting only for rows to exist asserts against a null
+    // detail. Wait for the detail-derived state itself.
+    await waitFor(() => {
+      const row = screen
+        .getAllByTestId("bench-task-row")
+        .find((r) => r.textContent?.includes("js/retry_backoff"));
+      expect(row?.textContent).toContain("In progress");
+    });
+  });
+
+  it("T261: an EMPTY current_task marks nothing in progress — every task queued", async () => {
+    // This is the real first-sample state on disk, measured against a live run.
+    installFetch({
+      detail: {
+        ...benchRun,
+        records: [],
+        status: "running",
+        live: { current_task: "", current_attempt: 0, done: 0, total: 27 },
+      },
+    });
+    render(<BenchPage />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("bench-task-row").length).toBeGreaterThan(0),
+    );
+    const rows = screen.getAllByTestId("bench-task-row");
+    for (const r of rows) expect(r.textContent).not.toContain("In progress");
+    expect(rows.some((r) => r.textContent?.includes("queued"))).toBe(true);
   });
 
   it("speed_weighted renders alone on -165 runs (per-tile degradation)", async () => {
@@ -10218,5 +10375,88 @@ describe("T249 attempt panel: failure count leads", () => {
     const r = makeRec({ first_failed: ["assertion_alpha", "assertion_beta"] });
     render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
     expect(screen.queryByTestId("bench-attempt-first-failed")).toBeNull();
+  });
+
+  // ── T260: schema-4 per-attempt fields ────────────────────────────────────
+
+  it("T260: attempt 2 shows ITS OWN failed labels, not the record's", () => {
+    // T249 forbade labels on attempt 2 because only first_failed existed and it
+    // describes attempt 1. schema 4 gives the attempt its own list.
+    const att: BenchAttempt = {
+      attempt: 2,
+      status: "fail",
+      tests_passed: 39,
+      tests_failed: 15,
+      failed: ["own_alpha", "own_beta"],
+    };
+    const r = makeRec({ first_failed: ["record_gamma"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toContain("own_alpha");
+    expect(text).toContain("own_beta");
+    // The record's attempt-1 list must not leak onto attempt 2.
+    expect(text).not.toContain("record_gamma");
+  });
+
+  it("T260: an EMPTY attempt.failed does not fall back to the record's list", () => {
+    // The real aborted run's server attempts are exactly this: schema 4 saying
+    // "this attempt named no failed assertions". Absent means older file;
+    // empty means a stated fact, and must not be overwritten.
+    const att: BenchAttempt = { attempt: 1, status: "server", ended: "no_reply", failed: [] };
+    const r = makeRec({ first_failed: ["record_gamma"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    expect(screen.queryByTestId("bench-attempt-first-failed")).toBeNull();
+  });
+
+  it("T260: a pre-schema-4 attempt 1 still shows the record's first_failed", () => {
+    // Degradation guard: no `failed` key at all.
+    const att: BenchAttempt = { attempt: 1, status: "fail", tests_passed: 1, tests_failed: 2 };
+    const r = makeRec({ first_failed: ["assertion_alpha"] });
+    render(<AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={r} />);
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).toContain("assertion_alpha");
+  });
+
+  it("T260: draft_seeded and draft_continued say different things", () => {
+    const base = { attempt: 2, status: "fail" as const, tests_passed: 1, tests_failed: 1 };
+    const r = makeRec({});
+
+    const { unmount } = render(
+      <AttemptPanel
+        attempt={{ ...base, draft_continued: true }}
+        task="java/indent_lexer"
+        sample={1}
+        record={r}
+      />,
+    );
+    const continued = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    unmount();
+
+    render(
+      <AttemptPanel
+        attempt={{ ...base, draft_seeded: true }}
+        task="java/indent_lexer"
+        sample={1}
+        record={r}
+      />,
+    );
+    const seeded = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+
+    // bench.py's own wording, and the two must not be interchangeable.
+    expect(continued).toContain("finished in place");
+    expect(seeded).toContain("seeded a retry");
+    expect(continued).not.toBe(seeded);
+    expect(continued).not.toContain("seeded a retry");
+    expect(seeded).not.toContain("finished in place");
+  });
+
+  it("T260: neither draft flag renders nothing about a carried draft", () => {
+    // The absence case — the one usually missing.
+    const att: BenchAttempt = { attempt: 1, status: "fail", tests_passed: 1, tests_failed: 1 };
+    render(
+      <AttemptPanel attempt={att} task="java/indent_lexer" sample={1} record={makeRec({})} />,
+    );
+    const text = screen.getByTestId("bench-attempt-panel").textContent ?? "";
+    expect(text).not.toContain("Drowned draft");
   });
 });
