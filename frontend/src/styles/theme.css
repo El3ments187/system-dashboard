@@ -2036,7 +2036,15 @@ button.status-chip:hover:not(:disabled) {
    fill rather than a bright red fill, so the two are separable at a glance
    by intensity without inventing a new hue. */
 .bench-att.error {
-  background: color-mix(in srgb, var(--danger) 35%, var(--bg-card));
+  /* 35% mixed into a near-black --bg-card (#0a0a0a) rendered as near-black:
+     contrast 1.53 against the card, so the cell read as empty or broken rather
+     than dim red (user-reported). 50% is where the *worse* of the two required
+     separations peaks — measured contrast against the card background and
+     against .miss, on a dark card and a white one, which pull in opposite
+     directions: raising the share keeps helping on dark but walks toward .miss
+     on light. dark 1.53 -> 1.96, light 1.60 -> 1.90, both still well clear of
+     .miss's solid fill. */
+  background: color-mix(in srgb, var(--danger) 50%, var(--bg-card));
 }
 
 /* Run status dot (T74). Colour is a second signal only — the label beside it
