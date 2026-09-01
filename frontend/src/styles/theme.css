@@ -1863,6 +1863,27 @@ button.status-chip:hover:not(:disabled) {
   border-radius: 3px;
   display: inline-block;
 }
+/* An 11px target is too small to hit reliably — a user clicked attempt 3
+   repeatedly, hit nothing, and concluded the panel was broken. Same remedy as
+   T238's splitter: the cell stays 11px visually, a transparent overlay carries
+   the hit area.
+
+   Scoped to `button.bench-att` deliberately. AttemptCell renders a <button>
+   only when it has an onClick and a plain <i> otherwise, so the legend's
+   decorative swatches are excluded here by construction — giving them a hit
+   area would make the key below the table feel clickable when it is not. */
+button.bench-att {
+  position: relative;
+}
+button.bench-att::after {
+  content: "";
+  position: absolute;
+  /* Vertical is unconstrained (the cells sit in one row), so 3px each side
+     takes 11px to 17px. Horizontal is capped by the 3px gap between adjacent
+     cells: 1.5px each side meets the neighbour exactly without overlapping it,
+     so a click near the boundary can never resolve to the wrong cell. */
+  inset: -3px -1.5px;
+}
 .bench-att.solved {
   background: var(--success);
 }

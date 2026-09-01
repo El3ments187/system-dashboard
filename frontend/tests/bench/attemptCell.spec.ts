@@ -1,14 +1,16 @@
 /**
- * T268 Part 1 — the bench attempt cell's `error` fill.
+ * T268 — the bench attempt cell: `error` legibility and hit area.
  *
- * Not observable in jsdom: the fill is a `color-mix()` over two custom
- * properties, and jsdom computes no cascade. These assertions therefore live
- * here, in a real browser.
+ * Both faults are CSS-level and neither is observable in jsdom: `error`'s fill
+ * is a `color-mix()` over two custom properties (jsdom computes no cascade),
+ * and the hit area is a `::after` overlay (jsdom has no pseudo-element boxes
+ * and no layout). These assertions therefore live here, in a real browser.
  *
  * The strip is injected rather than harvested from the page: which cell states
  * appear on /bench depends on whatever run happens to be on disk, and `error`
  * is not guaranteed. Injecting exercises the real stylesheet — which is what is
- * under test — without depending on run data.
+ * under test — without depending on run data. It is positioned at integer
+ * coordinates so hit-testing is not skewed by fractional rects.
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -19,6 +21,7 @@ const STRIP_HTML = `
     <span class="bench-strip">
       <span class="bench-sgrp">
         <button class="bench-att error" id="t268-a"></button>
+        <button class="bench-att error" id="t268-b"></button>
         <button class="bench-att miss" id="t268-c"></button>
       </span>
     </span>
@@ -42,8 +45,8 @@ async function mount(page: Page, bg: "dark" | "light") {
   );
 }
 
-/** Contrast ratios between the cell fills and the card background, computed
- *  in-page so `color-mix()` is actually resolved. */
+/** Contrast ratio between two elements' resolved background colours, plus the
+ *  card background, computed in-page so `color-mix()` is actually resolved. */
 async function contrasts(page: Page) {
   return page.evaluate(() => {
     // Chrome returns "rgb(r, g, b)" (0-255) or "color(srgb r g b)" (0-1).
@@ -112,3 +115,77 @@ for (const bg of ["dark", "light"] as const) {
     expect(c.legendRgb).toEqual(c.errorRgb);
   });
 }
+
+test("T268: the cell keeps its 11px visual size", async ({ page }) => {
+  await mount(page, "dark");
+  const box = await page.evaluate(() => {
+    const r = document.getElementById("t268-a")!.getBoundingClientRect();
+    const i = document.getElementById("t268-legend")!.getBoundingClientRect();
+    return { btn: [r.width, r.height], legend: [i.width, i.height] };
+  });
+  // The strip is 3 cells per sample across 29 tasks -- growing the cell would
+  // change the whole table's rhythm. Only the hit area may grow.
+  expect(box.btn).toEqual([11, 11]);
+  expect(box.legend).toEqual([11, 11]);
+});
+
+test("T268: a click outside the visual cell still hits it", async ({ page }) => {
+  await mount(page, "dark");
+  const probe = await page.evaluate(() => {
+    const a = document.getElementById("t268-a")!;
+    const r = a.getBoundingClientRect();
+    const owner = (x: number, y: number) => document.elementFromPoint(x, y) === a;
+    return {
+      above2: owner(r.left + r.width / 2, r.top - 2),
+      below2: owner(r.left + r.width / 2, r.bottom + 2),
+      left1: owner(r.left - 1, r.top + r.height / 2),
+      // 3px vertical is the whole overlay, so 4px must fall outside it --
+      // otherwise the assertion above would pass on an unbounded target.
+      above4: owner(r.left + r.width / 2, r.top - 4),
+    };
+  });
+  expect(probe.above2).toBe(true);
+  expect(probe.below2).toBe(true);
+  expect(probe.left1).toBe(true);
+  expect(probe.above4).toBe(false);
+});
+
+test("T268: adjacent cells' hit areas do not overlap", async ({ page }) => {
+  await mount(page, "dark");
+  const geo = await page.evaluate(() => {
+    const a = document.getElementById("t268-a")!.getBoundingClientRect();
+    const b = document.getElementById("t268-b")!.getBoundingClientRect();
+    const inset = getComputedStyle(document.getElementById("t268-a")!, "::after").inset;
+    // Horizontal growth is capped by the flex gap; parse it rather than
+    // hard-coding, so a gap change fails here instead of silently overlapping.
+    // `auto` (no overlay at all) means no growth -- 0, not NaN, so this stays a
+    // real geometry check rather than failing merely because the rule is absent.
+    const parsed = parseFloat(inset.split(" ")[1] ?? inset);
+    const horiz = Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+    return { gap: b.left - a.right, horiz, aOverlayRight: a.right + horiz, bOverlayLeft: b.left - horiz };
+  });
+  // Touching is fine; crossing is not -- an overlap makes a click near the
+  // boundary select the neighbour.
+  expect(geo.aOverlayRight).toBeLessThanOrEqual(geo.bOverlayLeft);
+  expect(geo.horiz * 2).toBeLessThanOrEqual(geo.gap);
+});
+
+test("T268: a decorative swatch gains no hit area", async ({ page }) => {
+  await mount(page, "dark");
+  const legend = await page.evaluate(() => {
+    const i = document.getElementById("t268-legend")!;
+    const r = i.getBoundingClientRect();
+    return {
+      afterContent: getComputedStyle(i, "::after").content,
+      // 2px above a real cell hits it; the legend must not behave that way.
+      above2IsSelf:
+        document.elementFromPoint(r.left + r.width / 2, r.top - 2) === i,
+      tag: i.tagName.toLowerCase(),
+    };
+  });
+  // The rule is scoped to `button.bench-att`, and AttemptCell only renders a
+  // <button> when it has an onClick -- so the legend is excluded structurally.
+  expect(legend.tag).toBe("i");
+  expect(legend.afterContent).toBe("none");
+  expect(legend.above2IsSelf).toBe(false);
+});
