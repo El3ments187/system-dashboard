@@ -189,6 +189,13 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 
 const MONO = '"JetBrains Mono", "Fira Code", monospace';
 
+// The Context card's own value/label sizes, matching the MetricTile props its
+// CURRENT / MAX / REMAINING tiles pass (valueSize 16, labelSize 8.5). The
+// Generation strip below them reuses these so its token count is
+// sized as a value rather than as a label.
+const GEN_VALUE_SIZE = 16;
+const GEN_LABEL_SIZE = 8.5;
+
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export default function LlamaCppPage() {
   const {
@@ -221,7 +228,6 @@ export default function LlamaCppPage() {
   const [heldGenTps, setHeldGenTps] = useState<number | null>(null);
   const [heldPromptTps, setHeldPromptTps] = useState<number | null>(null);
   const prevModelRef = useRef<string>("");
-  const [lastGenProgress, setLastGenProgress] = useState<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,32 +306,6 @@ export default function LlamaCppPage() {
     slot0?.n_prompt_tokens_cache != null
       ? slot0.n_prompt_tokens_cache
       : (m?.tokens_cached ?? null);
-
-  /**
-   * No `--max-tokens` means llama-server has no predicted total: generation
-   * runs until EOS or the context limit, so `n_predict` is 0 or absent and a
-   * percentage has no denominator.
-   *
-   * Chosen over plotting progress toward the context limit because the Context
-   * card two tiles away already shows exactly that, with a working ring —
-   * drawing the same fact twice in two shapes is worse than saying the bar has
-   * nothing to measure. The token count stays either way.
-   */
-  const genUncapped = (() => {
-    const np = slot0?.n_predict ?? 0;
-    return !Number.isFinite(np) || np <= 0;
-  })();
-
-  const genProgressPct: number | null = (() => {
-    const nd = slot0?.n_decoded;
-    const np = slot0?.n_predict;
-    return nd != null && np != null && np > 0
-      ? Math.round((nd / np) * 100)
-      : null;
-  })();
-  if (genProgressPct !== null && genProgressPct !== lastGenProgress) {
-    setLastGenProgress(genProgressPct);
-  }
 
   useEffect(() => {
     if (m?.gen_tps != null) setHeldGenTps(m.gen_tps);
@@ -853,7 +833,7 @@ export default function LlamaCppPage() {
                     marginBottom: 2,
                   }}
                 >
-                  Last Generation Speed
+                  Generation Speed
                 </div>
                 <div
                   style={{ display: "flex", alignItems: "baseline", gap: 3 }}
@@ -1206,7 +1186,7 @@ export default function LlamaCppPage() {
                   ))}
                 </div>
               </div>
-              {/* Generation Progress strip */}
+              {/* Generation strip: status dot + this reply's token count */}
               {slot0 && slotCtx != null && (
                 <div
                   style={{
@@ -1232,7 +1212,7 @@ export default function LlamaCppPage() {
                         letterSpacing: "0.5px",
                       }}
                     >
-                      Generation Progress
+                      Generation
                     </span>
                     <span
                       data-testid="gen-status-badge"
@@ -1267,36 +1247,6 @@ export default function LlamaCppPage() {
                       {slot0.is_processing ? "Generating" : "Idle"}
                     </span>
                   </div>
-                  {genUncapped ? (
-                    // An empty bar reads as broken. Say why it cannot fill.
-                    <div
-                      data-testid="gen-progress-uncapped"
-                      style={{
-                        height: 8,
-                        display: "flex",
-                        alignItems: "center",
-                        fontSize: 8,
-                        fontFamily: MONO,
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      no token cap set — runs to EOS or the context limit
-                    </div>
-                  ) : (
-                    <div className="card-progress" style={{ height: 8 }}>
-                      <div
-                        data-testid="gen-progress-bar"
-                        className={`card-progress-bar ${thresholdClass(
-                          (genProgressPct ?? lastGenProgress) > 0
-                            ? (genProgressPct ?? lastGenProgress)
-                            : null,
-                        )}`}
-                        style={{
-                          width: `${genProgressPct ?? lastGenProgress}%`,
-                        }}
-                      />
-                    </div>
-                  )}
                   <div
                     style={{
                       display: "flex",
@@ -1321,15 +1271,70 @@ export default function LlamaCppPage() {
                       // "Remaining", made them look like one contradictory
                       // metric — user-reported. Labels below make the two
                       // ceilings unambiguous without changing either value.
+                      // n_decoded is a VALUE, not a label. At fontSize 8 it was
+                      // the smallest text on the page, in the lowest-contrast
+                      // colour, and unlabelled — so it read as a duplicate of
+                      // CURRENT two tiles away. It is not: CURRENT is total
+                      // context in use (prompt + generation), this is tokens
+                      // produced in THIS reply. Number at the card's value size,
+                      // descriptor at its label size — MetricTile's own pattern
+                      // (the Context tiles above use 16 / 8.5).
+                      //
+                      // The descriptor is kept SHORT and the number is never
+                      // widened by a suffix: appending " token" to a count in
+                      // this card caused two user-reported truncations already
+                      // (see LlamaCppPage.test.tsx "no redundant unit suffix"
+                      // and "counter tiles compact at >=1M").
                       return unbounded ? (
-                        <span title="Tokens generated so far, unbounded request">
-                          {nd != null ? nd.toLocaleString() : "—"} token
+                        <span
+                          data-testid="gen-decoded"
+                          title="Tokens generated in this reply (n_decoded) — not the total context in use, shown as CURRENT above"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "baseline",
+                            minWidth: 0,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: GEN_VALUE_SIZE,
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            {nd != null ? nd.toLocaleString() : "—"}
+                          </span>
+                          {/* A real space, not a flex `gap` — the gap is
+                              visual only, so textContent (and anything
+                              copying or reading it aloud) saw "58,069tokens". */}
+                          <span style={{ fontSize: GEN_LABEL_SIZE }}>
+                            {" "}
+                            {nd === 1 ? "token" : "tokens"} generated this reply
+                          </span>
                         </span>
                       ) : (
                         <>
-                          <span title="Generation length cap for this request (n_predict) — separate from the model's context window shown above">
-                            {nd != null ? nd.toLocaleString() : "—"} /{" "}
-                            {np.toLocaleString()} gen. limit
+                          <span
+                            data-testid="gen-decoded"
+                            title="Tokens generated in this reply (n_decoded) against this request's generation-length cap (n_predict) — separate from the model's context window shown above"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "baseline",
+                              minWidth: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: GEN_VALUE_SIZE,
+                                color: "var(--text-primary)",
+                              }}
+                            >
+                              {nd != null ? nd.toLocaleString() : "—"}
+                            </span>
+                            {/* Real space, not a flex `gap` — see above. */}
+                            <span style={{ fontSize: GEN_LABEL_SIZE }}>
+                              {" "}
+                              / {np.toLocaleString()} gen. limit
+                            </span>
                           </span>
                           <span title="Tokens remaining before hitting the generation-length cap, not the context window">
                             Gen. remaining{" "}

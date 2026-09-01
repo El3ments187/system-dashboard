@@ -1767,9 +1767,7 @@ async fn update_profile_metrics_for_script(script_path: &str) {
         // print_timing line has been seen (e.g. server started before the
         // dashboard was running).
         let log_tg = log_manager::get_log_manager().get_live_tg(script_path);
-        if log_tg.is_some() {
-            current_tps = log_tg;
-        }
+        current_tps = log_manager::prefer_log_rate(current_tps, log_tg);
 
         update_profile_metrics(
             script_path,

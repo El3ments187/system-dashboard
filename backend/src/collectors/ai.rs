@@ -1096,6 +1096,25 @@ pub async fn collect_ai_metrics(
         derived.context_tokens = props.as_ref().and_then(|p| p.context_tokens);
     }
 
+    // The `/metrics` gauges report 0 until a request *completes*, so both rate
+    // tiles read blank for the whole of a long generation. llama-server's log
+    // carries live rates throughout — `tg` every ~3s once 100 tokens are in,
+    // and `pp` for any prompt taking 3s or more — so prefer those and keep the
+    // gauge as the between-requests fallback. Same precedence TPS in Run Models
+    // uses, via the same `prefer_log_rate`.
+    //
+    // Placed here, not in compute_derived_metrics: the rates are keyed by
+    // script_path, which that function has no access to. `derived` is built
+    // once above and feeds both the history buffer and the API response, so
+    // this is the one site that covers both.
+    if let Some(script) = running_script.as_deref() {
+        let mgr = crate::api::log_manager::get_log_manager();
+        derived.gen_tps =
+            crate::api::log_manager::prefer_log_rate(derived.gen_tps, mgr.get_live_tg(script));
+        derived.prompt_tps =
+            crate::api::log_manager::prefer_log_rate(derived.prompt_tps, mgr.get_live_pp(script));
+    }
+
     // Build token usage from derived metrics
     let token_usage = if derived.prompt_tokens > 0 || derived.completion_tokens > 0 {
         Some(AiTokenUsage {

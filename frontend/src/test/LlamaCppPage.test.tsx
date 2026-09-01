@@ -936,37 +936,41 @@ describe("LlamaCppPage generation progress slot fields", () => {
   const slotCtx = (slot: Record<string, unknown>) =>
     baseCtx({ slots: [{ id: 0, n_ctx: 8192, n_prompt_tokens: 512, ...slot }] });
 
-  it("T262: n_predict 0 renders the explanation, NOT an empty bar", async () => {
-    // The observed case: MAX TOKENS 0, so llama-server has no predicted total
-    // and the bar could only ever render at width 0% — which reads as broken.
+  // T266 deleted the bar and the "no token cap set" line that explained why it
+  // could not fill. Both branches of T262's fallback are therefore gone, and
+  // the three tests that asserted them went with the feature — they are not
+  // loosened, the thing they covered no longer exists. What replaces them is
+  // the absence assertion below, plus T262b's count tests, which still stand.
+
+  it("T266: no progress bar is rendered, capped or uncapped", async () => {
+    // Absent, not zero-width — the bar duplicated the Context ring.
+    for (const slot of [
+      { is_processing: true, n_decoded: 58069, n_predict: 0 },
+      { is_processing: true, n_decoded: 2048, n_predict: 4096 },
+    ]) {
+      mockedCtx.mockReturnValue(slotCtx(slot));
+      const { unmount } = render(<LlamaCppPage />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(screen.queryByTestId("gen-progress-bar")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("gen-progress-uncapped"),
+      ).not.toBeInTheDocument();
+      expect(document.querySelector(".card-progress")).toBeNull();
+      // The count survives the removal in both cases.
+      expect(screen.getByTestId("gen-decoded")).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("T266: the Generating status dot still renders", async () => {
     mockedCtx.mockReturnValue(
-      slotCtx({ is_processing: true, n_decoded: 58069, n_predict: 0 }),
+      slotCtx({ is_processing: true, n_decoded: 1200, n_predict: 0 }),
     );
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("gen-progress-uncapped")).toBeInTheDocument();
-    expect(screen.queryByTestId("gen-progress-bar")).not.toBeInTheDocument();
-  });
-
-  it("T262: n_predict absent behaves as zero", async () => {
-    mockedCtx.mockReturnValue(slotCtx({ is_processing: true, n_decoded: 1200 }));
-    render(<LlamaCppPage />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByTestId("gen-progress-uncapped")).toBeInTheDocument();
-    expect(screen.queryByTestId("gen-progress-bar")).not.toBeInTheDocument();
-  });
-
-  it("T262: a capped request still renders a real percentage", async () => {
-    // The fallback must not swallow the case the bar was built for.
-    mockedCtx.mockReturnValue(
-      slotCtx({ is_processing: true, n_decoded: 2048, n_predict: 4096 }),
+    expect(screen.getByTestId("gen-status-badge")).toHaveTextContent(
+      "Generating",
     );
-    render(<LlamaCppPage />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    const bar = screen.getByTestId("gen-progress-bar");
-    expect(bar).toBeInTheDocument();
-    expect(bar).toHaveStyle({ width: "50%" });
-    expect(screen.queryByTestId("gen-progress-uncapped")).not.toBeInTheDocument();
   });
 
   it("T262: the token count still renders in both cases", async () => {
@@ -986,6 +990,64 @@ describe("LlamaCppPage generation progress slot fields", () => {
     expect(screen.getByText(/2,048/)).toBeInTheDocument();
   });
 
+  // ── T262b: the count was a value rendered at label size, and unlabelled ──
+  //
+  // Sibling faults to the empty bar, in the same strip. n_decoded rendered at
+  // fontSize 8 in --text-muted (the smallest text on the page) with no label
+  // but a hover-only `title`. A reader compares it to CURRENT two tiles away,
+  // sees a similar number, and reasonably assumes it is the same thing —
+  // CURRENT is total context in use (prompt + generation), this is tokens
+  // produced in THIS reply. They diverge exactly when the prompt is large.
+
+  it("T262b: the count renders at the card's value size, not at label size", async () => {
+    // The Context tiles above pass valueSize 16 / labelSize 8.5; this count
+    // sat at 8 — a label size for a value.
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 58069, n_predict: 0 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const strip = screen.getByTestId("gen-decoded");
+    expect(within(strip).getByText("58,069")).toHaveStyle({
+      fontSize: "16px",
+    });
+  });
+
+  it("T262b: the count is labelled, so it cannot be read as CURRENT", async () => {
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 58069, n_predict: 0 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("gen-decoded")).toHaveTextContent(
+      "58,069 tokens generated this reply",
+    );
+  });
+
+  it("T262b: the unit word is singular at exactly one token", async () => {
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 1, n_predict: 0 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const strip = screen.getByTestId("gen-decoded");
+    expect(strip).toHaveTextContent(/\b1 token\b/);
+    expect(strip).not.toHaveTextContent(/\btokens\b/);
+  });
+
+  it("T262b: a capped request sizes its count the same, with the cap as label", async () => {
+    // The fix must not apply to the uncapped branch only — the capped strip
+    // shows the same n_decoded and had the same 8px value.
+    mockedCtx.mockReturnValue(
+      slotCtx({ is_processing: true, n_decoded: 2048, n_predict: 4096 }),
+    );
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const strip = screen.getByTestId("gen-decoded");
+    expect(within(strip).getByText("2,048")).toHaveStyle({ fontSize: "16px" });
+    expect(strip).toHaveTextContent("/ 4,096 gen. limit");
+  });
+
   it("shows unbounded format (no Remaining) when slot has no n_predict", async () => {
     mockedCtx.mockReturnValue(
       baseCtx({
@@ -998,7 +1060,10 @@ describe("LlamaCppPage generation progress slot fields", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     // n_predict is null → unbounded: no "/ 0" and no "Remaining:"
     expect(screen.queryByText(/Remaining:/)).not.toBeInTheDocument();
-    expect(screen.getByText(/— tok/)).toBeInTheDocument();
+    // T262b: the count and its unit word are now separate spans (value size
+    // vs label size), so assert the strip's text content rather than a single
+    // adjacent text node. Same rule, markup-independent.
+    expect(screen.getByTestId("gen-decoded")).toHaveTextContent(/— tokens/);
   });
 
   it("shows n_remain = 0 when generation is complete", async () => {
@@ -1042,7 +1107,8 @@ describe("LlamaCppPage generation progress slot fields", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     // Unbounded: no "/ 0" denominator and no "Remaining: 0"
     expect(screen.queryByText(/Remaining:/)).not.toBeInTheDocument();
-    expect(screen.getByText(/5 tok/)).toBeInTheDocument();
+    // T262b: see above — count and unit word are separate spans now.
+    expect(screen.getByTestId("gen-decoded")).toHaveTextContent(/5 tokens/);
   });
 
   it("shows capped format when n_predict is positive", async () => {
@@ -1083,10 +1149,33 @@ describe("LlamaCppPage Gen TPS display", () => {
     mockedCtx.mockReturnValue(baseCtx({ gen_tps: null }));
     render(<LlamaCppPage />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    // The label div and value span share a parent container div
-    const labelDiv = screen.getByText("Last Generation Speed").closest("div");
-    const container = labelDiv?.parentElement;
-    expect(container?.textContent).toContain("—");
+    // T265: was `getByText("Last Generation Speed").closest("div")`. The tile
+    // carries a data-testid, so select by that — a label rename should not read
+    // as "the tile vanished", which is how the text query failed.
+    expect(screen.getByTestId("thrpt-gen-tps").textContent).toContain("—");
+  });
+
+  it("T265: the generation tile is no longer prefixed 'Last'", async () => {
+    // `tg` refreshes every ~3s *during* a generation, so the tile shows now,
+    // not the last completed request. T218's "Last" would overstate it.
+    mockedCtx.mockReturnValue(baseCtx({ gen_tps: 42.5 }));
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const tile = screen.getByTestId("thrpt-gen-tps");
+    expect(tile).toHaveTextContent("Generation Speed");
+    expect(tile).not.toHaveTextContent("Last Generation Speed");
+  });
+
+  it("T265: the prompt tile KEEPS 'Last' — the asymmetry is deliberate", async () => {
+    // llama.cpp only prints a `pp` rate for prompts taking 3s or more, so this
+    // tile falls back to the gauge — a genuine last-completed figure — for any
+    // short prompt. Renaming it for symmetry with generation would overstate it.
+    mockedCtx.mockReturnValue(baseCtx({ prompt_tps: 331.9 }));
+    render(<LlamaCppPage />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.getByTestId("thrpt-prompt-tps")).toHaveTextContent(
+      "Last Prompt Speed",
+    );
   });
 });
 
@@ -1665,49 +1754,11 @@ describe("LlamaCppPage gen-status-badge", () => {
   });
 });
 
-// ─── Gen progress bar: threshold color classes ────────────────────────
-
-describe("LlamaCppPage gen-progress-bar threshold classes", () => {
-  function makeSlotCtx(n_decoded: number, n_predict: number) {
-    return baseCtx({
-      slots: [
-        {
-          id: 0,
-          n_ctx: 131072,
-          n_prompt_tokens: 100,
-          is_processing: true,
-          n_decoded,
-          n_predict,
-          n_remain: n_predict - n_decoded,
-        },
-      ],
-    });
-  }
-
-  it("has progress-bar-normal class below 70%", async () => {
-    mockedCtx.mockReturnValue(makeSlotCtx(200, 1000));
-    render(<LlamaCppPage />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    const bar = screen.getByTestId("gen-progress-bar");
-    expect(bar.className).toContain("progress-bar-normal");
-  });
-
-  it("has progress-bar-warning class at 70–84%", async () => {
-    mockedCtx.mockReturnValue(makeSlotCtx(720, 1000));
-    render(<LlamaCppPage />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    const bar = screen.getByTestId("gen-progress-bar");
-    expect(bar.className).toContain("progress-bar-warning");
-  });
-
-  it("has progress-bar-critical class at 85%+", async () => {
-    mockedCtx.mockReturnValue(makeSlotCtx(900, 1000));
-    render(<LlamaCppPage />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    const bar = screen.getByTestId("gen-progress-bar");
-    expect(bar.className).toContain("progress-bar-critical");
-  });
-});
+// T266 removed the generation progress bar (it duplicated the Context ring),
+// so the three tests that rendered it to check threshold colours are gone.
+// `thresholdClass` itself keeps full coverage in its own describe above —
+// null / normal / warning / critical — and is still used elsewhere on this
+// page and in llamacpp/parts.ts.
 
 // ─── Runtime card rows by data-testid ────────────────────────────────
 

@@ -8,7 +8,9 @@ use tokio::sync::broadcast;
 
 pub const MAX_LOG_LINES: usize = 5000;
 const BROADCAST_CAPACITY: usize = 512;
-/// `get_live_tg` returns `None` if no `print_timing` line arrived within this window.
+/// `get_live_tg` and `get_live_pp` return `None` if no matching line arrived
+/// within this window. One timer for both rates — a stopped or idle server
+/// stops printing, and a minutes-old rate must not be shown as current.
 const LIVE_TG_STALE_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -51,6 +53,9 @@ struct ProfileLogBuffer {
     /// Running-average t/s parsed from the most recent `print_timing` log line.
     live_tg: Option<f64>,
     live_tg_at: Option<Instant>,
+    /// Prompt-processing t/s from the most recent `prompt processing` log line.
+    live_pp: Option<f64>,
+    live_pp_at: Option<Instant>,
 }
 
 impl ProfileLogBuffer {
@@ -62,6 +67,8 @@ impl ProfileLogBuffer {
             process_exited: false,
             live_tg: None,
             live_tg_at: None,
+            live_pp: None,
+            live_pp_at: None,
         }
     }
 }
@@ -91,6 +98,10 @@ impl LogManager {
             buf.live_tg = Some(tg);
             buf.live_tg_at = Some(Instant::now());
         }
+        if let Some(pp) = parse_pp_from_timing_line(&line.text) {
+            buf.live_pp = Some(pp);
+            buf.live_pp_at = Some(Instant::now());
+        }
         buf.history.push_back(line.clone());
         let _ = buf.sender.send(LogEvent::Log { line });
     }
@@ -110,6 +121,8 @@ impl LogManager {
             buf.process_exited = false;
             buf.live_tg = None;
             buf.live_tg_at = None;
+            buf.live_pp = None;
+            buf.live_pp_at = None;
         }
     }
 
@@ -126,6 +139,23 @@ impl LogManager {
             return None;
         }
         buf.live_tg
+    }
+
+    /// Returns the prompt-processing rate from the most recent
+    /// `prompt processing` log line, or `None` if none arrived within
+    /// `LIVE_TG_STALE_SECS` seconds.
+    ///
+    /// llama-server only prints that line for prompts taking 3s or more, so a
+    /// run of short prompts legitimately yields `None` here — callers fall back
+    /// to the `/metrics` gauge, which is correct between requests.
+    pub fn get_live_pp(&self, script_path: &str) -> Option<f64> {
+        let inner = self.inner.read().unwrap();
+        let buf = inner.get(script_path)?;
+        let at = buf.live_pp_at?;
+        if at.elapsed() > Duration::from_secs(LIVE_TG_STALE_SECS) {
+            return None;
+        }
+        buf.live_pp
     }
 
     pub fn subscribe(
@@ -189,6 +219,46 @@ pub(crate) fn parse_tg_from_timing_line(text: &str) -> Option<f64> {
         }
     }
     None
+}
+
+/// Parse the prompt-processing rate from a llama-server `prompt processing`
+/// log line.
+///
+/// Example line (llama.cpp `print_timings_pp`, `tools/server/server-context.cpp`):
+/// ```text
+/// 383.58.946.679 I slot update_slots: id  0 | task 172319 | prompt processing, n_tokens =   4096, progress = 1.00, t =  12.34 s / 331.85 tokens per second
+/// ```
+///
+/// The rate is the number immediately before `tokens per second`. Returns
+/// `None` if the line is not a prompt-processing line (fast-path) or if the
+/// rate is zero/negative.
+pub(crate) fn parse_pp_from_timing_line(text: &str) -> Option<f64> {
+    if !text.contains("prompt processing") {
+        return None;
+    }
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    for i in 1..tokens.len().saturating_sub(2) {
+        if tokens[i] == "tokens" && tokens[i + 1] == "per" && tokens[i + 2] == "second" {
+            let val: f64 = tokens[i - 1].parse().ok()?;
+            if val > 0.0 {
+                return Some(val);
+            }
+            return None;
+        }
+    }
+    None
+}
+
+/// Prefer a log-derived rate over the `/metrics` gauge.
+///
+/// **The single precedence rule** shared by `current_tps`, `gen_tps` and
+/// `prompt_tps`. The gauge reports 0 until a request *completes*, so during a
+/// long generation it is silent while the log is not; the log is silent for a
+/// server the dashboard did not start (its stdout is never captured) and for
+/// prompts too short to print a `pp` line. Each covers the other's gap.
+#[must_use]
+pub fn prefer_log_rate(gauge: Option<f64>, log: Option<f64>) -> Option<f64> {
+    log.or(gauge)
 }
 
 /// Classify the severity of a raw log line from llama.cpp stdout/stderr.
@@ -555,5 +625,104 @@ mod tests {
         assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
         mgr.clear("/test.sh");
         assert_eq!(mgr.get_live_tg("/test.sh"), None);
+    }
+
+    // ─── parse_pp_from_timing_line (T265) ───────────────────────────────
+
+    /// Shape of llama.cpp's `print_timings_pp` (tools/server/server-context.cpp),
+    /// with the SLT_INF slot prefix it is emitted behind.
+    const PP_LINE: &str = "383.58.946.679 I slot update_slots: id  0 | task 172319 | prompt processing, n_tokens =   4096, progress = 1.00, t =  12.34 s / 331.85 tokens per second";
+
+    #[test]
+    fn parse_pp_reads_the_rate_before_tokens_per_second() {
+        assert_eq!(parse_pp_from_timing_line(PP_LINE), Some(331.85));
+    }
+
+    #[test]
+    fn parse_pp_non_prompt_line_returns_none_without_parsing() {
+        // Fast-path, and a tg line must not be mistaken for a pp one.
+        assert_eq!(
+            parse_pp_from_timing_line(
+                "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 12.35 t/s, tg_3s = 11.00 t/s"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_pp_zero_yields_none() {
+        let line = "slot update_slots: id 0 | prompt processing, n_tokens = 1, progress = 1.00, t = 3.00 s / 0.00 tokens per second";
+        assert_eq!(parse_pp_from_timing_line(line), None);
+    }
+
+    #[test]
+    fn parse_pp_malformed_line_does_not_panic() {
+        assert_eq!(
+            parse_pp_from_timing_line("prompt processing, tokens per second"),
+            None
+        );
+        assert_eq!(
+            parse_pp_from_timing_line(
+                "prompt processing, t = 1.0 s / notanumber tokens per second"
+            ),
+            None
+        );
+        assert_eq!(parse_pp_from_timing_line("prompt processing"), None);
+    }
+
+    #[test]
+    fn live_pp_is_none_before_any_prompt_processing_line() {
+        let mgr = LogManager::new();
+        mgr.add_line("/test.sh", make_line("startup complete"));
+        assert_eq!(mgr.get_live_pp("/test.sh"), None);
+    }
+
+    #[test]
+    fn live_pp_is_set_after_prompt_processing_line() {
+        let mgr = LogManager::new();
+        mgr.add_line("/test.sh", make_line(PP_LINE));
+        assert_eq!(mgr.get_live_pp("/test.sh"), Some(331.85));
+    }
+
+    #[test]
+    fn tg_and_pp_are_tracked_independently() {
+        // A generation line must not clear or set the prompt rate, or vice
+        // versa — they arrive at different times and expire independently.
+        let mgr = LogManager::new();
+        let tg = "383.58.946.679 I slot print_timing: id  0 | task 1 | n_gen = 100, tg = 12.35 t/s, tg_3s = 11.00 t/s";
+        mgr.add_line("/test.sh", make_line(tg));
+        assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
+        assert_eq!(mgr.get_live_pp("/test.sh"), None);
+
+        mgr.add_line("/test.sh", make_line(PP_LINE));
+        assert_eq!(mgr.get_live_tg("/test.sh"), Some(12.35));
+        assert_eq!(mgr.get_live_pp("/test.sh"), Some(331.85));
+    }
+
+    #[test]
+    fn clear_resets_live_pp() {
+        let mgr = LogManager::new();
+        mgr.add_line("/test.sh", make_line(PP_LINE));
+        assert_eq!(mgr.get_live_pp("/test.sh"), Some(331.85));
+        mgr.clear("/test.sh");
+        assert_eq!(mgr.get_live_pp("/test.sh"), None);
+    }
+
+    // ─── prefer_log_rate: the one precedence rule (T265) ────────────────
+
+    #[test]
+    fn prefer_log_rate_prefers_the_log_over_an_idle_gauge() {
+        // The bug: mid-generation the gauge is 0 (so None) while the log is live.
+        assert_eq!(prefer_log_rate(None, Some(29.0)), Some(29.0));
+        // And the log wins even when the gauge has a stale completed-request value.
+        assert_eq!(prefer_log_rate(Some(83.0), Some(29.0)), Some(29.0));
+    }
+
+    #[test]
+    fn prefer_log_rate_falls_back_to_the_gauge() {
+        // No log line: a short prompt prints no `pp`, and a server the dashboard
+        // did not start streams nothing at all. The gauge is correct here.
+        assert_eq!(prefer_log_rate(Some(83.0), None), Some(83.0));
+        assert_eq!(prefer_log_rate(None, None), None);
     }
 }
